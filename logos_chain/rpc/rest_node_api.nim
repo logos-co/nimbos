@@ -34,6 +34,36 @@ RestJson.useDefaultSerializationFor(
   RestNodePeerCount,
 )
 
+## --- Logos HTTP API stub types (used by `node_http_client_api.nim`) ---
+
+type
+  ## Mirrors `CryptarchiaMode` from `node_http_client_api.nim`
+  LogosRpcCryptarchiaMode* = enum
+    lrcBootstrapping
+    lrcOnline
+
+  ## Mirrors `CryptarchiaInfo` from `node_http_client_api.nim`
+  LogosRpcCryptarchiaInfo* = object
+    lib*: string
+    tip*: string
+    slot*: uint64
+    height*: uint64
+    mode*: LogosRpcCryptarchiaMode
+
+  ## Minimal wallet balance body
+  LogosRpcWalletBalance* = object
+    balance*: string
+
+  ## Minimal transfer-funds response body
+  LogosRpcTransferFundsResponse* = object
+    txHash*: string
+
+RestJson.useDefaultSerializationFor(
+  LogosRpcCryptarchiaInfo,
+  LogosRpcWalletBalance,
+  LogosRpcTransferFundsResponse,
+)
+
 proc normalize*(address: MultiAddress, value: PeerId): MaResult[MultiAddress] =
   ## Checks if `address` has `p2p` suffix, and if not add it.
   let
@@ -153,88 +183,129 @@ proc installNodeApiHandlers*(router: var RestRouter, node: BeaconNode) =
     cachedVersion =
       RestApiResponse.prepareJsonResponse((version: nimbusAgentStr))
 
-  # https://ethereum.github.io/beacon-APIs/#/Node/getPeers
-  router.api2(MethodGet, "/eth/v1/node/peers") do (
-    state: seq[PeerStateKind],
-    direction: seq[PeerDirectKind]) -> RestApiResponse:
-    let connectionMask =
-      block:
-        if state.isErr():
-          return RestApiResponse.jsonError(Http400, InvalidPeerStateValueError,
-                                           $state.error())
-        validateState(state.get()).valueOr:
-          return RestApiResponse.jsonError(Http400, InvalidPeerStateValueError,
-                                           $error)
-    let directionMask =
-      block:
-        if direction.isErr():
-          return RestApiResponse.jsonError(Http400,
-                                           InvalidPeerDirectionValueError,
-                                           $direction.error())
-        validateDirection(direction.get()).valueOr:
-          return RestApiResponse.jsonError(Http400,
-                                           InvalidPeerDirectionValueError,
-                                           $error)
-    var res: seq[RestNodePeer]
-    for peer in node.network.peers.values():
-      if (peer.connectionState in connectionMask) and
-         (peer.direction in directionMask):
-        let peer = RestNodePeer(
-          peer_id: $peer.peerId,
-          enr: if peer.enr.isSome(): peer.enr.get().toURI() else: "",
-          last_seen_p2p_address: getLastSeenAddress(node, peer.peerId),
-          state: peer.connectionState.toString(),
-          direction: peer.direction.toString(),
-          # Fields `agent` and `proto` are not part of specification
-          agent: node.network.switch.peerStore[AgentBook][peer.peerId],
-          proto: node.network.switch.peerStore[ProtoVersionBook][peer.peerId]
-        )
-        res.add(peer)
-    RestApiResponse.jsonResponseWMeta(res, (count: RestNumeric(len(res))))
+  ## -------------------------------------------------------------------
+  ## Logos HTTP API compatibility (stub implementations)
+  ##
+  ## These endpoints are provided so that the Nim client in
+  ## `node_http_client_api.nim` can talk to this node using the same
+  ## paths as the Rust `CommonHttpClient`. The implementations are
+  ## intentionally minimal and return placeholder data.
+  ## -------------------------------------------------------------------
 
-  # https://ethereum.github.io/beacon-APIs/#/Node/getPeerCount
-  router.api2(MethodGet, "/eth/v1/node/peer_count") do () -> RestApiResponse:
-    var res: RestNodePeerCount
-    for item in node.network.peers.values():
-      case item.connectionState
-      of ConnectionState.Connecting:
-        inc(res.connecting)
-      of ConnectionState.Connected:
-        inc(res.connected)
-      of ConnectionState.Disconnecting:
-        inc(res.disconnecting)
-      of ConnectionState.Disconnected:
-        inc(res.disconnected)
-      of ConnectionState.None:
-        discard
-    RestApiResponse.jsonResponse(res)
+  # GET /cryptarchia/blocks?slot_from={slotFrom}&slot_to={slotTo}
+  router.api2(MethodGet, "/cryptarchia/blocks") do () -> RestApiResponse:
+    ## Stub: return an empty list of blocks.
+    let blocks: seq[string] = @[]
+    RestApiResponse.jsonResponse(blocks)
 
-  # https://ethereum.github.io/beacon-APIs/#/Node/getPeer
-  router.api2(MethodGet, "/eth/v1/node/peers/{peer_id}") do (
-    peer_id: PeerId) -> RestApiResponse:
-    let peer =
-      block:
-        if peer_id.isErr():
-          return RestApiResponse.jsonError(Http400, InvalidPeerIdValueError,
-                                           $peer_id.error())
-        let res = node.network.peers.getOrDefault(peer_id.get())
-        if isNil(res):
-          return RestApiResponse.jsonError(Http404, PeerNotFoundError)
-        res
-    RestApiResponse.jsonResponse(
-      (
-        peer_id: $peer.peerId,
-        enr: if peer.enr.isSome(): peer.enr.get().toURI() else: "",
-        last_seen_p2p_address: getLastSeenAddress(node, peer.peerId),
-        state: peer.connectionState.toString(),
-        direction: peer.direction.toString(),
-        agent: node.network.switch.peerStore[AgentBook][peer.peerId],
-          # Fields `agent` and `proto` are not part of specification
-        proto: node.network.switch.peerStore[ProtoVersionBook][peer.peerId]
-          # Fields `agent` and `proto` are not part of specification
-      )
+  # GET /cryptarchia/headers[?from={headerId}&to={headerId}]
+  router.api2(MethodGet, "/cryptarchia/headers") do (
+    from: Option[string],
+    to_: Option[string],
+  ) -> RestApiResponse:
+    ## Stub: return empty list of headers.
+    discard from, to_
+    RestApiResponse.response("[]", Http200, jsonMediaType)
+
+  # GET /cryptarchia/info
+  router.api2(MethodGet, "/cryptarchia/info") do () -> RestApiResponse:
+    let info = LogosRpcCryptarchiaInfo(
+      lib: "",
+      tip: "",
+      slot: 0'u64,
+      height: 0'u64,
+      mode: LogosRpcCryptarchiaMode.lrcBootstrapping,
     )
+    RestApiResponse.jsonResponse(info)
 
-  # https://ethereum.github.io/beacon-APIs/#/Node/getNodeVersion
-  router.api2(MethodGet, "/eth/v1/node/version") do () -> RestApiResponse:
-    RestApiResponse.response(cachedVersion, Http200, "application/json")
+  # POST /leader/claim
+  router.api2(MethodPost, "/leader/claim") do () -> RestApiResponse:
+    ## Stub: return empty JSON.
+    RestApiResponse.response("{}", Http200, jsonMediaType)
+
+  # GET /mantle/metrics
+  router.api2(MethodGet, "/mantle/metrics") do () -> RestApiResponse:
+    ## Stub: return empty JSON metrics.
+    RestApiResponse.response("{}", Http200, jsonMediaType)
+
+  # GET /mantle/sdp/declarations
+  router.api2(MethodGet, "/mantle/sdp/declarations") do () -> RestApiResponse:
+    ## Stub: return empty JSON list.
+    RestApiResponse.response("[]", Http200, jsonMediaType)
+
+  # POST /mantle/status
+  router.api2(MethodPost, "/mantle/status") do (
+    body: ContentBody,
+  ) -> RestApiResponse:
+    ## Stub: accept status payload and return empty JSON.
+    discard body.strData
+    RestApiResponse.response("{}", Http200, jsonMediaType)
+
+  # POST /mempool/add/tx
+  router.api2(MethodPost, "/mempool/add/tx") do (body: ContentBody) -> RestApiResponse:
+    ## Stub: accept the transaction payload but do nothing with it.
+    discard body.strData
+    RestApiResponse.response("", Http200, jsonMediaType)
+
+  # GET /network/info
+  router.api2(MethodGet, "/network/info") do () -> RestApiResponse:
+    ## Stub: return empty JSON object.
+    RestApiResponse.response("{}", Http200, jsonMediaType)
+
+  # POST /sdp/activity
+  router.api2(MethodPost, "/sdp/activity") do (
+    body: ContentBody,
+  ) -> RestApiResponse:
+    ## Stub: accept activity and return empty JSON.
+    discard body.strData
+    RestApiResponse.response("{}", Http200, jsonMediaType)
+
+  # POST /sdp/declaration
+  router.api2(MethodPost, "/sdp/declaration") do (
+    body: ContentBody,
+  ) -> RestApiResponse:
+    ## Stub: accept declaration and return empty JSON.
+    discard body.strData
+    RestApiResponse.response("{}", Http200, jsonMediaType)
+
+  # POST /sdp/withdrawal
+  router.api2(MethodPost, "/sdp/withdrawal") do (
+    body: ContentBody,
+  ) -> RestApiResponse:
+    ## Stub: accept withdrawal and return empty JSON.
+    discard body.strData
+    RestApiResponse.response("{}", Http200, jsonMediaType)
+
+  # POST /storage/block
+  router.api2(MethodPost, "/storage/block") do (body: ContentBody) -> RestApiResponse:
+    ## Stub: no blocks are available from this node.
+    discard body.strData
+    RestApiResponse.jsonError(Http404, BlocksUnavailable)
+
+  # POST /test/membership/update
+  router.api2(MethodPost, "/test/membership/update") do (
+    body: ContentBody,
+  ) -> RestApiResponse:
+    ## Stub: accept membership update and return empty JSON.
+    discard body.strData
+    RestApiResponse.response("{}", Http200, jsonMediaType)
+
+  # GET /wallet/{public_key}/balance[?tip={headerId}]
+  router.api2(MethodGet, "/wallet/{public_key}/balance") do (
+    public_key: string,
+    tip: Option[string],
+  ) -> RestApiResponse:
+    ## Stub: always return balance "0".
+    let body = LogosRpcWalletBalance(balance: "0")
+    RestApiResponse.jsonResponse(body)
+
+  # POST /wallet/transactions/transfer-funds
+  router.api2(MethodPost, "/wallet/transactions/transfer-funds") do (
+    body: ContentBody,
+  ) -> RestApiResponse:
+    ## Stub: accept request and return a dummy transaction hash.
+    discard body.strData
+    let resp = LogosRpcTransferFundsResponse(txHash: "0x0")
+    RestApiResponse.jsonResponse(resp)
+
+
