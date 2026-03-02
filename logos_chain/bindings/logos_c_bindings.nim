@@ -1,14 +1,15 @@
-# Nim dummy/stub API for logos-blockchain C FFI export
-#
-# This file provides dummy implementations of all functions from the
-# logos-blockchain C API. These functions are exported to C FFI and can be
-# compiled as a C library. All functions return empty/default values.
+# nimbos
+# Copyright (c) 2026 Status Research & Development GmbH
+# Licensed and distributed under either of
+#   * MIT license (license terms in the root directory or at https://opensource.org/licenses/MIT).
+#   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
+# at your option. This file may not be copied, modified, or distributed except according to those terms.
 #
 # To compile as a C library:
-#   nim c --skipUserCfg:on --skipProjCfg:on --skipParentCfg:on --app:staticlib --out:liblogos_blockchain.a logos_c_bindings.nim
-#
-# Note: All functions that take pointers are unsafe. The caller must ensure
-# all pointers are valid and properly aligned.
+#   nim c --skipUserCfg:on --skipProjCfg:on --skipParentCfg:on \
+#     --app:staticlib --out:liblogos_blockchain.a logos_c_bindings.nim
+
+{.push raises: [], gcsafe.}
 
 type
   OperationStatus* = enum
@@ -117,7 +118,8 @@ proc free_cryptarchia_info*(pointer: ptr CryptarchiaInfo) {.exportc, cdecl.} =
   discard
 
 proc start_lb_node*(
-    config_path: cstring, deployment: cstring
+    config_path: cstring,
+    deployment: cstring
 ): InitializedLogosBlockchainNodeResult {.exportc, cdecl.} =
   result.value = nil
   result.error = Ok
@@ -129,7 +131,8 @@ proc free_cstring*(blockPtr: cstring) {.exportc, cdecl.} =
   discard
 
 proc subscribe_to_new_blocks*(
-    node: ptr LogosBlockchainNode, callback_per_block: CCallback_c_char
+    node: ptr LogosBlockchainNode,
+    callback_per_block: CCallback_c_char
 ) {.exportc, cdecl.} =
   discard
 
@@ -144,13 +147,16 @@ proc free_known_addresses*(addresses: KnownAddresses) {.exportc, cdecl.} =
   discard
 
 proc get_balance*(
-    node: ptr LogosBlockchainNode, wallet_address: ptr uint8, optional_tip: ptr HeaderId
+    node: ptr LogosBlockchainNode,
+    wallet_address: ptr uint8,
+    optional_tip: ptr HeaderId
 ): BalanceResult {.exportc, cdecl.} =
   result.value = 0
   result.error = Ok
 
 proc transfer_funds*(
-    node: ptr LogosBlockchainNode, arguments: ptr TransferFundsArguments
+    node: ptr LogosBlockchainNode,
+    arguments: ptr TransferFundsArguments
 ): TransferFundsResult {.exportc, cdecl.} =
   result.value = default(Hash)
   result.error = Ok
