@@ -34,15 +34,13 @@ RestJson.useDefaultSerializationFor(
   RestNodePeerCount,
 )
 
-## --- Logos HTTP API stub types (used by `node_http_client_api.nim`) ---
+## --- Logos HTTP API stub types ---
 
 type
-  ## Mirrors `CryptarchiaMode` from `node_http_client_api.nim`
   LogosRpcCryptarchiaMode* = enum
     lrcBootstrapping
     lrcOnline
 
-  ## Mirrors `CryptarchiaInfo` from `node_http_client_api.nim`
   LogosRpcCryptarchiaInfo* = object
     lib*: string
     tip*: string
@@ -186,15 +184,12 @@ proc installNodeApiHandlers*(router: var RestRouter, node: BeaconNode) =
   ## -------------------------------------------------------------------
   ## Logos HTTP API compatibility (stub implementations)
   ##
-  ## These endpoints are provided so that the Nim client in
-  ## `node_http_client_api.nim` can talk to this node using the same
-  ## paths as the Rust `CommonHttpClient`. The implementations are
-  ## intentionally minimal and return placeholder data.
+  ## These endpoints provide compatibility with the Logos HTTP API.
+  ## The implementations are intentionally minimal and return placeholder data.
   ## -------------------------------------------------------------------
 
   # GET /cryptarchia/blocks?slot_from={slotFrom}&slot_to={slotTo}
   router.api2(MethodGet, "/cryptarchia/blocks") do () -> RestApiResponse:
-    ## Stub: return an empty list of blocks.
     let blocks: seq[string] = @[]
     RestApiResponse.jsonResponse(blocks)
 
@@ -203,7 +198,6 @@ proc installNodeApiHandlers*(router: var RestRouter, node: BeaconNode) =
     from: Option[string],
     to_: Option[string],
   ) -> RestApiResponse:
-    ## Stub: return empty list of headers.
     discard from, to_
     RestApiResponse.response("[]", Http200, jsonMediaType)
 
@@ -220,43 +214,36 @@ proc installNodeApiHandlers*(router: var RestRouter, node: BeaconNode) =
 
   # POST /leader/claim
   router.api2(MethodPost, "/leader/claim") do () -> RestApiResponse:
-    ## Stub: return empty JSON.
     RestApiResponse.response("{}", Http200, jsonMediaType)
 
   # GET /mantle/metrics
   router.api2(MethodGet, "/mantle/metrics") do () -> RestApiResponse:
-    ## Stub: return empty JSON metrics.
     RestApiResponse.response("{}", Http200, jsonMediaType)
 
   # GET /mantle/sdp/declarations
   router.api2(MethodGet, "/mantle/sdp/declarations") do () -> RestApiResponse:
-    ## Stub: return empty JSON list.
     RestApiResponse.response("[]", Http200, jsonMediaType)
 
   # POST /mantle/status
   router.api2(MethodPost, "/mantle/status") do (
     body: ContentBody,
   ) -> RestApiResponse:
-    ## Stub: accept status payload and return empty JSON.
     discard body.strData
     RestApiResponse.response("{}", Http200, jsonMediaType)
 
   # POST /mempool/add/tx
   router.api2(MethodPost, "/mempool/add/tx") do (body: ContentBody) -> RestApiResponse:
-    ## Stub: accept the transaction payload but do nothing with it.
     discard body.strData
     RestApiResponse.response("", Http200, jsonMediaType)
 
   # GET /network/info
   router.api2(MethodGet, "/network/info") do () -> RestApiResponse:
-    ## Stub: return empty JSON object.
     RestApiResponse.response("{}", Http200, jsonMediaType)
 
   # POST /sdp/activity
   router.api2(MethodPost, "/sdp/activity") do (
     body: ContentBody,
   ) -> RestApiResponse:
-    ## Stub: accept activity and return empty JSON.
     discard body.strData
     RestApiResponse.response("{}", Http200, jsonMediaType)
 
@@ -264,7 +251,6 @@ proc installNodeApiHandlers*(router: var RestRouter, node: BeaconNode) =
   router.api2(MethodPost, "/sdp/declaration") do (
     body: ContentBody,
   ) -> RestApiResponse:
-    ## Stub: accept declaration and return empty JSON.
     discard body.strData
     RestApiResponse.response("{}", Http200, jsonMediaType)
 
@@ -272,13 +258,11 @@ proc installNodeApiHandlers*(router: var RestRouter, node: BeaconNode) =
   router.api2(MethodPost, "/sdp/withdrawal") do (
     body: ContentBody,
   ) -> RestApiResponse:
-    ## Stub: accept withdrawal and return empty JSON.
     discard body.strData
     RestApiResponse.response("{}", Http200, jsonMediaType)
 
   # POST /storage/block
   router.api2(MethodPost, "/storage/block") do (body: ContentBody) -> RestApiResponse:
-    ## Stub: no blocks are available from this node.
     discard body.strData
     RestApiResponse.jsonError(Http404, BlocksUnavailable)
 
@@ -286,7 +270,6 @@ proc installNodeApiHandlers*(router: var RestRouter, node: BeaconNode) =
   router.api2(MethodPost, "/test/membership/update") do (
     body: ContentBody,
   ) -> RestApiResponse:
-    ## Stub: accept membership update and return empty JSON.
     discard body.strData
     RestApiResponse.response("{}", Http200, jsonMediaType)
 
@@ -295,7 +278,6 @@ proc installNodeApiHandlers*(router: var RestRouter, node: BeaconNode) =
     public_key: string,
     tip: Option[string],
   ) -> RestApiResponse:
-    ## Stub: always return balance "0".
     let body = LogosRpcWalletBalance(balance: "0")
     RestApiResponse.jsonResponse(body)
 
@@ -303,7 +285,6 @@ proc installNodeApiHandlers*(router: var RestRouter, node: BeaconNode) =
   router.api2(MethodPost, "/wallet/transactions/transfer-funds") do (
     body: ContentBody,
   ) -> RestApiResponse:
-    ## Stub: accept request and return a dummy transaction hash.
     discard body.strData
     let resp = LogosRpcTransferFundsResponse(txHash: "0x0")
     RestApiResponse.jsonResponse(resp)
