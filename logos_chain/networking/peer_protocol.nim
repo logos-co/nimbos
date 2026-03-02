@@ -9,7 +9,7 @@
 
 import
   chronicles, stew/base10, metrics,
-  ../networking/eth2_network
+  ../networking/lb_network
 
 logScope:
   topics = "peer_proto"

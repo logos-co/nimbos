@@ -12,7 +12,7 @@ import
   eth/enr/enr,
   libp2p/[multiaddress, multicodec, peerstore],
   ../version, ../logos_chain_node,
-  ../networking/[eth2_network, peer_pool],
+  ../networking/[lb_network, peer_pool],
   ../spec/datatypes/base,
   ./rest_utils
 

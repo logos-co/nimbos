@@ -29,13 +29,13 @@ import
   ssz_serialization,
   ".."/[version, conf],
   ../spec/datatypes/base,
-  "."/[eth2_discovery, eth2_protocol_dsl,
+  "."/[lb_discovery, lb_protocol_dsl,
        libp2p_json_serialization, peer_pool, peer_scores]
 
 export
   tables, chronos, ratelimit, version, multiaddress, peerinfo, p2pProtocol,
   connection, libp2p_json_serialization, ssz_serialization, results,
-  eth2_discovery, peer_pool, peer_scores
+  lb_discovery, peer_pool, peer_scores
 
 logScope:
   topics = "networking"
@@ -1769,7 +1769,7 @@ proc p2pProtocolBackendImpl*(p: P2PProtocol): Backend =
   result.SerializationFormat = Format
   result.RequestResultsWrapper = ident "NetRes"
 
-  result.implementMsg = proc (msg: eth2_protocol_dsl.Message) =
+  result.implementMsg = proc (msg: lb_protocol_dsl.Message) =
     if msg.kind == msgResponse:
       return
 
@@ -1880,7 +1880,7 @@ proc p2pProtocolBackendImpl*(p: P2PProtocol): Backend =
     # network - the counter is global across all modules / protocols of the
     # application
     let
-      id = CacheCounter"eth2_network_protocol_id"
+      id = CacheCounter"lb_network_protocol_id"
       tmp = id.value
     id.inc(1)
 
@@ -2106,7 +2106,7 @@ proc subscribe*(
 
 proc newValidationResultFuture(v: ValidationResult): Future[ValidationResult]
     {.async: (raises: [CancelledError], raw: true).} =
-  let res = newFuture[ValidationResult]("eth2_network.execValidator")
+  let res = newFuture[ValidationResult]("lb_network.execValidator")
   res.complete(v)
   res
 

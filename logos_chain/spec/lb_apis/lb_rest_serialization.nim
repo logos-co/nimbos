@@ -14,9 +14,9 @@ import
   libp2p/peerid,
   presto/common as presto_common,
   ssz_serialization,
-  ./eth2_rest_json_serialization
+  ./lb_rest_json_serialization
 
-export peerid, presto_common, eth2_rest_json_serialization, ssz_serialization
+export peerid, presto_common, lb_rest_json_serialization, ssz_serialization
 
 func decodeMediaType*(
     contentType: Opt[ContentTypeData]): Result[MediaType, string] =

@@ -16,12 +16,12 @@ import
 
   # Local modules
   "."/conf,
-  ./networking/eth2_network,
+  ./networking/lb_network,
   ./spec/datatypes/base
 
 export
   osproc, chronos, presto, server, conf,
-  eth2_network, base
+  lb_network, base
 
 type
   BeaconNode* = ref object

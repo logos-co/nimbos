@@ -10,7 +10,7 @@
 import
   chronicles, chronos, snappy, snappy/codec,
   ../spec/datatypes/base,
-  ../networking/eth2_network,
+  ../networking/lb_network,
   ../rpc/rest_constants
 
 logScope:

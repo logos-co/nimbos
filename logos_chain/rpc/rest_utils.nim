@@ -9,12 +9,12 @@
 
 import std/macros,
        results, stew/byteutils, presto/route,
-       ../spec/eth2_apis/[rest_types, eth2_rest_serialization, rest_common],
+       ../spec/lb_apis/[rest_types, lb_rest_serialization, rest_common],
        ../logos_chain_node,
        "."/rest_constants
 
 export
-  results, eth2_rest_serialization, rest_types,
+  results, lb_rest_serialization, rest_types,
   rest_constants, rest_common, route
 
 func disallowInterruptionsAux(body: NimNode) =
