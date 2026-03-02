@@ -194,12 +194,8 @@ proc installNodeApiHandlers*(router: var RestRouter, node: BeaconNode) =
     RestApiResponse.jsonResponse(blocks)
 
   # GET /cryptarchia/headers[?from={headerId}&to={headerId}]
-  router.api2(MethodGet, "/cryptarchia/headers") do (
-    from: Option[string],
-    to_: Option[string],
-  ) -> RestApiResponse:
-    discard from, to_
-    RestApiResponse.response("[]", Http200, jsonMediaType)
+  router.api2(MethodGet, "/cryptarchia/headers") do () -> RestApiResponse:
+    RestApiResponse.response("[]", Http200, $jsonMediaType)
 
   # GET /cryptarchia/info
   router.api2(MethodGet, "/cryptarchia/info") do () -> RestApiResponse:
@@ -214,64 +210,47 @@ proc installNodeApiHandlers*(router: var RestRouter, node: BeaconNode) =
 
   # POST /leader/claim
   router.api2(MethodPost, "/leader/claim") do () -> RestApiResponse:
-    RestApiResponse.response("{}", Http200, jsonMediaType)
+    RestApiResponse.response("{}", Http200, $jsonMediaType)
 
   # GET /mantle/metrics
   router.api2(MethodGet, "/mantle/metrics") do () -> RestApiResponse:
-    RestApiResponse.response("{}", Http200, jsonMediaType)
+    RestApiResponse.response("{}", Http200, $jsonMediaType)
 
   # GET /mantle/sdp/declarations
   router.api2(MethodGet, "/mantle/sdp/declarations") do () -> RestApiResponse:
-    RestApiResponse.response("[]", Http200, jsonMediaType)
+    RestApiResponse.response("[]", Http200, $jsonMediaType)
 
   # POST /mantle/status
-  router.api2(MethodPost, "/mantle/status") do (
-    body: ContentBody,
-  ) -> RestApiResponse:
-    discard body.strData
-    RestApiResponse.response("{}", Http200, jsonMediaType)
+  router.api2(MethodPost, "/mantle/status") do () -> RestApiResponse:
+    RestApiResponse.response("{}", Http200, $jsonMediaType)
 
   # POST /mempool/add/tx
-  router.api2(MethodPost, "/mempool/add/tx") do (body: ContentBody) -> RestApiResponse:
-    discard body.strData
-    RestApiResponse.response("", Http200, jsonMediaType)
+  router.api2(MethodPost, "/mempool/add/tx") do () -> RestApiResponse:
+    RestApiResponse.response("", Http200, $jsonMediaType)
 
   # GET /network/info
   router.api2(MethodGet, "/network/info") do () -> RestApiResponse:
-    RestApiResponse.response("{}", Http200, jsonMediaType)
+    RestApiResponse.response("{}", Http200, $jsonMediaType)
 
   # POST /sdp/activity
-  router.api2(MethodPost, "/sdp/activity") do (
-    body: ContentBody,
-  ) -> RestApiResponse:
-    discard body.strData
-    RestApiResponse.response("{}", Http200, jsonMediaType)
+  router.api2(MethodPost, "/sdp/activity") do () -> RestApiResponse:
+    RestApiResponse.response("{}", Http200, $jsonMediaType)
 
   # POST /sdp/declaration
-  router.api2(MethodPost, "/sdp/declaration") do (
-    body: ContentBody,
-  ) -> RestApiResponse:
-    discard body.strData
-    RestApiResponse.response("{}", Http200, jsonMediaType)
+  router.api2(MethodPost, "/sdp/declaration") do () -> RestApiResponse:
+    RestApiResponse.response("{}", Http200, $jsonMediaType)
 
   # POST /sdp/withdrawal
-  router.api2(MethodPost, "/sdp/withdrawal") do (
-    body: ContentBody,
-  ) -> RestApiResponse:
-    discard body.strData
-    RestApiResponse.response("{}", Http200, jsonMediaType)
+  router.api2(MethodPost, "/sdp/withdrawal") do () -> RestApiResponse:
+    RestApiResponse.response("{}", Http200, $jsonMediaType)
 
   # POST /storage/block
-  router.api2(MethodPost, "/storage/block") do (body: ContentBody) -> RestApiResponse:
-    discard body.strData
+  router.api2(MethodPost, "/storage/block") do () -> RestApiResponse:
     RestApiResponse.jsonError(Http404, BlocksUnavailable)
 
   # POST /test/membership/update
-  router.api2(MethodPost, "/test/membership/update") do (
-    body: ContentBody,
-  ) -> RestApiResponse:
-    discard body.strData
-    RestApiResponse.response("{}", Http200, jsonMediaType)
+  router.api2(MethodPost, "/test/membership/update") do () -> RestApiResponse:
+    RestApiResponse.response("{}", Http200, $jsonMediaType)
 
   # GET /wallet/{public_key}/balance[?tip={headerId}]
   router.api2(MethodGet, "/wallet/{public_key}/balance") do (
@@ -282,10 +261,7 @@ proc installNodeApiHandlers*(router: var RestRouter, node: BeaconNode) =
     RestApiResponse.jsonResponse(body)
 
   # POST /wallet/transactions/transfer-funds
-  router.api2(MethodPost, "/wallet/transactions/transfer-funds") do (
-    body: ContentBody,
-  ) -> RestApiResponse:
-    discard body.strData
+  router.api2(MethodPost, "/wallet/transactions/transfer-funds") do () -> RestApiResponse:
     let resp = LogosRpcTransferFundsResponse(txHash: "0x0")
     RestApiResponse.jsonResponse(resp)
 
