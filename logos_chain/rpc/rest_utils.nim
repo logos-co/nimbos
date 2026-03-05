@@ -15,7 +15,7 @@ import std/macros,
 
 export
   results, eth2_rest_serialization, rest_types,
-  rest_constants, rest_common, route
+  rest_constants, rest_common, route, Hash, decodeString
 
 func disallowInterruptionsAux(body: NimNode) =
   for n in body:
@@ -44,3 +44,22 @@ const
   jsonMediaType* = MediaType.init("application/json")
   sszMediaType* = MediaType.init("application/octet-stream")
   textEventStreamMediaType* = MediaType.init("text/event-stream")
+
+type
+  Hash* = array[32, uint8]
+  HeaderId* = Hash
+  ZkPublicKey* = array[32, uint8] #TODO Replace with Fr type
+
+func decodeHash(value: string): Result[Hash, cstring] =
+  try:
+    let bytes = hexToSeqByte(value)
+    if bytes.len != 32:
+      return err("Hash must be 32 bytes (64 hex characters)")
+    var res: Hash
+    copyMem(addr res[0], addr bytes[0], 32)
+    ok(Result[Hash, cstring], res)
+  except ValueError:
+    err("Invalid hex string for Hash")
+
+func decodeString*(t: typedesc[Hash], value: string): Result[Hash, cstring] =
+  decodeHash(value)

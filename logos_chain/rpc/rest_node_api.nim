@@ -14,13 +14,17 @@ import
   ../version, ../logos_chain_node,
   ../networking/[eth2_network, peer_pool],
   ../spec/datatypes/base,
-  ./rest_utils
+  ./rest_utils,
+  ./rest_paths
+
+from presto/common import ContentBody
 
 export rest_utils
 
 logScope: topics = "rest_node"
 
 type
+  Hash = rest_utils.Hash
   ConnectionStateSet* = set[ConnectionState]
   PeerTypeSet* = set[PeerType]
 
@@ -32,34 +36,6 @@ type
 
 RestJson.useDefaultSerializationFor(
   RestNodePeerCount,
-)
-
-## --- Logos HTTP API stub types ---
-
-type
-  LogosRpcCryptarchiaMode* = enum
-    lrcBootstrapping
-    lrcOnline
-
-  LogosRpcCryptarchiaInfo* = object
-    lib*: string
-    tip*: string
-    slot*: uint64
-    height*: uint64
-    mode*: LogosRpcCryptarchiaMode
-
-  ## Minimal wallet balance body
-  LogosRpcWalletBalance* = object
-    balance*: string
-
-  ## Minimal transfer-funds response body
-  LogosRpcTransferFundsResponse* = object
-    txHash*: string
-
-RestJson.useDefaultSerializationFor(
-  LogosRpcCryptarchiaInfo,
-  LogosRpcWalletBalance,
-  LogosRpcTransferFundsResponse,
 )
 
 proc normalize*(address: MultiAddress, value: PeerId): MaResult[MultiAddress] =
@@ -185,84 +161,98 @@ proc installNodeApiHandlers*(router: var RestRouter, node: BeaconNode) =
   ## Logos HTTP API compatibility (stub implementations)
   ##
   ## These endpoints provide compatibility with the Logos HTTP API.
-  ## The implementations are intentionally minimal and return placeholder data.
+  ## The implementations are intentionally minimal and return empty payloads.
   ## -------------------------------------------------------------------
 
-  # GET /cryptarchia/blocks?slot_from={slotFrom}&slot_to={slotTo}
-  router.api2(MethodGet, "/cryptarchia/blocks") do () -> RestApiResponse:
-    let blocks: seq[string] = @[]
-    RestApiResponse.jsonResponse(blocks)
-
   # GET /cryptarchia/headers[?from={headerId}&to={headerId}]
-  router.api2(MethodGet, "/cryptarchia/headers") do () -> RestApiResponse:
+  router.api2(MethodGet, CRYPTARCHIA_HEADERS) do (
+    `from`: Option[HeaderId],
+    `to`: Option[HeaderId],
+  ) -> RestApiResponse:
     RestApiResponse.response("[]", Http200, $jsonMediaType)
 
+  # GET /cryptarchia/lib/stream
+  router.api2(MethodGet, CRYPTARCHIA_LIB_STREAM) do () -> RestApiResponse:
+    RestApiResponse.response("", Http200, $jsonMediaType)
+
   # GET /cryptarchia/info
-  router.api2(MethodGet, "/cryptarchia/info") do () -> RestApiResponse:
-    let info = LogosRpcCryptarchiaInfo(
-      lib: "",
-      tip: "",
-      slot: 0'u64,
-      height: 0'u64,
-      mode: LogosRpcCryptarchiaMode.lrcBootstrapping,
-    )
-    RestApiResponse.jsonResponse(info)
+  router.api2(MethodGet, CRYPTARCHIA_INFO_PATH) do () -> RestApiResponse:
+    RestApiResponse.response("{}", Http200, $jsonMediaType)
 
   # POST /leader/claim
-  router.api2(MethodPost, "/leader/claim") do () -> RestApiResponse:
+  router.api2(MethodPost, LEADER_CLAIM) do () -> RestApiResponse:
     RestApiResponse.response("{}", Http200, $jsonMediaType)
 
   # GET /mantle/metrics
-  router.api2(MethodGet, "/mantle/metrics") do () -> RestApiResponse:
+  router.api2(MethodGet, MANTLE_METRICS) do () -> RestApiResponse:
     RestApiResponse.response("{}", Http200, $jsonMediaType)
-
-  # GET /mantle/sdp/declarations
-  router.api2(MethodGet, "/mantle/sdp/declarations") do () -> RestApiResponse:
-    RestApiResponse.response("[]", Http200, $jsonMediaType)
 
   # POST /mantle/status
-  router.api2(MethodPost, "/mantle/status") do () -> RestApiResponse:
-    RestApiResponse.response("{}", Http200, $jsonMediaType)
+  router.api2(MethodPost, MANTLE_STATUS) do (
+    contentBody: Option[ContentBody],
+  ) -> RestApiResponse:
+    RestApiResponse.response("[]", Http200, $jsonMediaType)
 
   # POST /mempool/add/tx
-  router.api2(MethodPost, "/mempool/add/tx") do () -> RestApiResponse:
+  router.api2(MethodPost, MEMPOOL_ADD_TX) do (
+    contentBody: Option[ContentBody],
+  ) -> RestApiResponse:
     RestApiResponse.response("", Http200, $jsonMediaType)
 
   # GET /network/info
-  router.api2(MethodGet, "/network/info") do () -> RestApiResponse:
+  router.api2(MethodGet, NETWORK_INFO) do () -> RestApiResponse:
     RestApiResponse.response("{}", Http200, $jsonMediaType)
 
   # POST /sdp/activity
-  router.api2(MethodPost, "/sdp/activity") do () -> RestApiResponse:
+  router.api2(MethodPost, SDP_POST_ACTIVITY) do (
+    contentBody: Option[ContentBody],
+  ) -> RestApiResponse:
     RestApiResponse.response("{}", Http200, $jsonMediaType)
 
   # POST /sdp/declaration
-  router.api2(MethodPost, "/sdp/declaration") do () -> RestApiResponse:
-    RestApiResponse.response("{}", Http200, $jsonMediaType)
+  router.api2(MethodPost, SDP_POST_DECLARATION) do (
+    contentBody: Option[ContentBody],
+  ) -> RestApiResponse:
+    RestApiResponse.jsonResponse("")
 
   # POST /sdp/withdrawal
-  router.api2(MethodPost, "/sdp/withdrawal") do () -> RestApiResponse:
+  router.api2(MethodPost, SDP_POST_WITHDRAWAL) do (
+    contentBody: Option[ContentBody],
+  ) -> RestApiResponse:
     RestApiResponse.response("{}", Http200, $jsonMediaType)
 
   # POST /storage/block
-  router.api2(MethodPost, "/storage/block") do () -> RestApiResponse:
-    RestApiResponse.jsonError(Http404, BlocksUnavailable)
+  router.api2(MethodPost, STORAGE_BLOCK) do (
+    contentBody: Option[ContentBody],
+  ) -> RestApiResponse:
+    RestApiResponse.response("\"\"", Http200, $jsonMediaType)
 
   # POST /test/membership/update
-  router.api2(MethodPost, "/test/membership/update") do () -> RestApiResponse:
+  router.api2(MethodPost, UPDATE_MEMBERSHIP) do () -> RestApiResponse:
     RestApiResponse.response("{}", Http200, $jsonMediaType)
 
   # GET /wallet/{public_key}/balance[?tip={headerId}]
-  router.api2(MethodGet, "/wallet/{public_key}/balance") do (
-    public_key: string,
-    tip: Option[string],
+  router.api2(MethodGet, WALLET_BALANCE_PATH) do (
+    `public_key`: ZkPublicKey,
+    tip: Option[HeaderId],
   ) -> RestApiResponse:
-    let body = LogosRpcWalletBalance(balance: "0")
-    RestApiResponse.jsonResponse(body)
+    RestApiResponse.response("{}", Http200, $jsonMediaType)
 
   # POST /wallet/transactions/transfer-funds
-  router.api2(MethodPost, "/wallet/transactions/transfer-funds") do () -> RestApiResponse:
-    let resp = LogosRpcTransferFundsResponse(txHash: "0x0")
-    RestApiResponse.jsonResponse(resp)
+  router.api2(MethodPost, WALLET_TRANSACTIONS_TRANSFER_FUNDS_PATH) do (
+    contentBody: Option[ContentBody],
+  ) -> RestApiResponse:
+    RestApiResponse.response("{}", Http200, $jsonMediaType)
+
+  # GET /blocks[?slot_from={slotFrom}&slot_to={slotTo}]
+  router.api2(MethodGet, BLOCKS) do (
+    slot_from: Option[uint64],
+    slot_to: Option[uint64],
+  ) -> RestApiResponse:
+    RestApiResponse.response("[]", Http200, $jsonMediaType)
+
+  # GET /blocks/stream
+  router.api2(MethodGet, BLOCKS_STREAM) do () -> RestApiResponse:
+    RestApiResponse.response("", Http200, $jsonMediaType)
 
 
