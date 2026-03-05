@@ -12,7 +12,7 @@
 {.push raises: [], gcsafe.}
 
 type
-  OperationStatus* = enum
+  OperationStatus* {.pure.} = enum
     Ok = 0
     NotFound = 1
     NullPointer = 2
@@ -26,14 +26,14 @@ type
     StopError = 10
     ConfigurationError = 11
 
-  DeploymentType* = enum
+  DeploymentType* {.pure.} = enum
     WellKnown = 0
     Custom = 1
 
-  WellKnownDeployment* = enum
+  WellKnownDeployment* {.pure.} = enum
     Devnet = 0
 
-  State* = enum
+  State* {.pure.} = enum
     Bootstrapping = 0
     Online = 1
 
