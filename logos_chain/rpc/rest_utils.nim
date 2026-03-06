@@ -48,7 +48,8 @@ const
 type
   Hash* = array[32, uint8]
   HeaderId* = Hash
-  ZkPublicKey* = array[32, uint8] #TODO Replace with Fr type
+  ZkPublicKey* = ZkHash
+  ZkHash* = array[32, uint8] #TODO Replace with Fr type
 
 func decodeHash(value: string): Result[Hash, cstring] =
   try:

@@ -304,6 +304,20 @@ proc validateBeaconApiQueries*(key: string, value: string): int =
     0
   of "{block_root}":
     0
+  of "{public_key}":
+    # Logos wallet public key: 32-byte value encoded as 64 hex chars.
+    # Accept both plain hex and a 0x-prefixed form.
+    let body =
+      if value.len >= 2 and (value[0] in {'0'} and value[1] in {'x', 'X'}):
+        value[2 .. ^1]
+      else:
+        value
+    if body.len != 64:
+      return 1
+    for ch in body:
+      if ch notin {'0' .. '9', 'a' .. 'f', 'A' .. 'F'}:
+        return 1
+    0
   of "{pubkey}":
     int(value.len != 98)
   else:

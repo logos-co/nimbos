@@ -9,10 +9,9 @@
 
 # All tests except scenarios, which as compiled separately for mainnet and minimal
 
-import
-  ./testutil
+import ./testutil
 
 import # Unit test
-  ./test_peer_pool
+  ./test_peer_pool, ./test_rest_node_api
 
 summarizeLongTests("AllTests")
