@@ -414,6 +414,27 @@ endef
 ### Other
 ###
 
+.PHONY: logos-lib logos-headers logos-bindings
+
+# Build C static library from logos_c_bindings.nim into the bindings folder
+logos-lib: | build deps
+	+ $(ENV_SCRIPT) $(NIMC) c $(NIM_PARAMS) \
+		--app:staticlib \
+		--out:logos_chain/bindings/liblogos_blockchain.a \
+		logos_chain/bindings/logos_c_bindings.nim
+
+# Generate C header for the bindings into the bindings folder
+logos-headers: | build deps
+	+ $(ENV_SCRIPT) $(NIMC) c $(NIM_PARAMS) \
+		--compileOnly \
+		--header \
+		logos_chain/bindings/logos_c_bindings.nim
+	cp nimcache/release/logos_c_bindings/logos_c_bindings.h \
+		logos_chain/bindings/logos_c_bindings.h
+
+# Convenience target: build both the static lib and the C header
+logos-bindings: logos-lib logos-headers
+
 nimbus-pkg: | nimbus_beacon_node
 	xcodebuild -project installer/macos/nimbus-pkg.xcodeproj -scheme nimbus-pkg build
 	packagesbuild installer/macos/nimbus-pkg.pkgproj
