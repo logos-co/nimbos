@@ -5,9 +5,12 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option. This file may not be copied, modified, or distributed except according to those terms.
 #
-# To compile as a C library:
-#   nim c --skipUserCfg:on --skipProjCfg:on --skipParentCfg:on \
-#     --app:staticlib --out:liblogos_blockchain.a logos_c_bindings.nim
+## C library bindings for the Logos blockchain node (FFI).
+##
+## From the repo root, use the Makefile targets:
+##   make logos-lib       - build static library (liblogos_blockchain.a)
+##   make logos-headers   - generate C header (logos_c_bindings.h)
+##   make logos-bindings  - build both library and header
 
 {.push raises: [], gcsafe.}
 
@@ -37,8 +40,8 @@ type
     Bootstrapping = 0
     Online = 1
 
-  Hash* = array[32, uint8]
-  HeaderId* = Hash
+  LogosDigest* = array[32, uint8]
+  HeaderId* = LogosDigest
   Value* = uint64
 
   Deployment* = object
@@ -92,7 +95,7 @@ type
     error: OperationStatus
 
   TransferFundsResult* = object
-    value: Hash
+    value: LogosDigest
     error: OperationStatus
 
   TransferFundsArguments* = object
@@ -106,68 +109,59 @@ type
 proc generate_user_config*(
     args: GenerateConfigArgs
 ): OperationStatus {.exportc, cdecl.} =
-  result = Ok
+  Ok
 
 proc get_cryptarchia_info*(
     node: ptr LogosBlockchainNode
 ): CryptarchiaInfoResult {.exportc, cdecl.} =
-  result.value = nil
-  result.error = Ok
+  CryptarchiaInfoResult(value: nil, error: Ok)
 
 proc free_cryptarchia_info*(pointer: ptr CryptarchiaInfo) {.exportc, cdecl.} =
   discard
 
 proc start_lb_node*(
-    config_path: cstring,
-    deployment: cstring
+    config_path: cstring, deployment: cstring
 ): InitializedLogosBlockchainNodeResult {.exportc, cdecl.} =
-  result.value = nil
-  result.error = Ok
+  InitializedLogosBlockchainNodeResult(value: nil, error: Ok)
 
 proc stop_node*(node: ptr LogosBlockchainNode): OperationStatus {.exportc, cdecl.} =
-  result = Ok
+  Ok
 
 proc free_cstring*(blockPtr: cstring) {.exportc, cdecl.} =
   discard
 
 proc subscribe_to_new_blocks*(
-    node: ptr LogosBlockchainNode,
-    callback_per_block: CCallback_c_char
+    node: ptr LogosBlockchainNode, callback_per_block: CCallback_c_char
 ) {.exportc, cdecl.} =
   discard
 
 proc get_known_addresses*(
     node: ptr LogosBlockchainNode
 ): KnownAddressesResult {.exportc, cdecl.} =
-  result.value.addresses = nil
-  result.value.len = 0
-  result.error = Ok
+  KnownAddressesResult(value: KnownAddresses(addresses: nil, len: 0), error: Ok)
 
 proc free_known_addresses*(addresses: KnownAddresses) {.exportc, cdecl.} =
   discard
 
 proc get_balance*(
-    node: ptr LogosBlockchainNode,
-    wallet_address: ptr uint8,
-    optional_tip: ptr HeaderId
+    node: ptr LogosBlockchainNode, wallet_address: ptr uint8, optional_tip: ptr HeaderId
 ): BalanceResult {.exportc, cdecl.} =
-  result.value = 0
-  result.error = Ok
+  BalanceResult(value: 0, error: Ok)
 
 proc transfer_funds*(
-    node: ptr LogosBlockchainNode,
-    arguments: ptr TransferFundsArguments
+    node: ptr LogosBlockchainNode, arguments: ptr TransferFundsArguments
 ): TransferFundsResult {.exportc, cdecl.} =
-  result.value = default(Hash)
-  result.error = Ok
+  TransferFundsResult(value: default(LogosDigest), error: Ok)
 
-proc free_transfer_funds*(pointer: ptr Hash) {.exportc, cdecl.} =
+proc free_transfer_funds*(pointer: ptr LogosDigest) {.exportc, cdecl.} =
   discard
 
-proc is_ok*(self: ptr OperationStatus): bool {.exportc, cdecl.} =
+func is_ok*(self: ptr OperationStatus): bool {.exportc, cdecl.} =
   if self == nil:
     return false
-  result = self[] == Ok
+  self[] == Ok
 
-proc is_error*(self: ptr OperationStatus): bool {.exportc, cdecl.} =
-  result = not is_ok(self)
+func is_error*(self: ptr OperationStatus): bool {.exportc, cdecl.} =
+  not is_ok(self)
+
+{.pop.}
