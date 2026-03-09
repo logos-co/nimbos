@@ -430,10 +430,8 @@ logos-headers: | build deps
 	+ $(ENV_SCRIPT) $(NIMC) c $(NIM_PARAMS) \
 		--verbosity:2 \
 		--compileOnly \
-		--header \
+		--header:logos_chain/bindings/logos_c_bindings.h \
 		logos_chain/bindings/logos_c_bindings.nim
-	cp nimcache/release/logos_c_bindings/logos_c_bindings.h \
-		logos_chain/bindings/logos_c_bindings.h
 
 # Convenience target: build both the static lib and the C header
 logos-bindings: logos-lib logos-headers
