@@ -10,8 +10,7 @@
 
 import std/strutils
 import chronos, chronos/apps, chronos/unittest2/asynctests
-import presto/route
-import presto/server
+import presto/[route, server]
 import
   "../vendor/nim-presto/tests/helpers"
     # httpClient(): send GET/POST and get response (status, data, headers)

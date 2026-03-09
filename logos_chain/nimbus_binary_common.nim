@@ -11,7 +11,7 @@
 
 import
   # Standard library
-  std/[cpuinfo, exitprocs, os, tables, terminal, typetraits],
+  std/[cpuinfo, exitprocs, os, tables, terminal, typetraits, strutils],
 
   # Nimble packages
   chronos, confutils, presto, toml_serialization, metrics,
@@ -303,7 +303,7 @@ proc validateBeaconApiQueries*(key: string, value: string): int =
     if body.len != 64:
       return 1
     for ch in body:
-      if ch notin {'0' .. '9', 'a' .. 'f', 'A' .. 'F'}:
+      if ch notin HexDigits:
         return 1
     0
   else:

@@ -35,4 +35,3 @@ const
 
   # Testing paths
   UPDATE_MEMBERSHIP* = "/test/membership/update"
-
