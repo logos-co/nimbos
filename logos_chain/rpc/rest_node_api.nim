@@ -253,5 +253,3 @@ proc installNodeApiHandlers*(router: var RestRouter, node: BeaconNode) =
   # GET /blocks/stream
   router.api2(MethodGet, BLOCKS_STREAM) do () -> RestApiResponse:
     RestApiResponse.response("", Http200, $jsonMediaType)
-
-
