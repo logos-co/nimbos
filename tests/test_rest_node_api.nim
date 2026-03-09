@@ -19,9 +19,6 @@ import ../logos_chain/rpc/rest_paths
 import ../logos_chain/rpc/rest_node_api
 import ../logos_chain/nimbus_binary_common  # validateBeaconApiQueries
 
-when defined(nimHasUsed):
-  {.used.}
-
 suite "Logos REST node API stub endpoints":
   var
     server: RestServerRef
