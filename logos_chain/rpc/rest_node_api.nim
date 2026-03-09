@@ -157,7 +157,7 @@ proc installNodeApiHandlers*(router: var RestRouter, node: BeaconNode) =
       RestApiResponse.prepareJsonResponse((version: nimbusAgentStr))
 
   ## -------------------------------------------------------------------
-  ## Logos HTTP API compatibility (stub implementations)
+  ## Logos Chain HTTP API compatibility (stub implementations)
   ##
   ## These endpoints provide compatibility with the Logos HTTP API.
   ## The implementations are intentionally minimal and return empty payloads.
