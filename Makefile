@@ -124,7 +124,8 @@ GIT_SUBMODULE_UPDATE := $(GIT_SUBMODULE_ENV) git $(GIT_SUBMODULE_CONFIG) submodu
 else # "variables.mk" was included. Business as usual until the end of this file.
 
 # default target, because it's the first one that doesn't start with '.'
-all: | $(TOOLS) $(PLATFORM_SPECIFIC_TARGETS)
+# Also build logos-bindings (C bindings library + header) in CI.
+all: | $(TOOLS) $(PLATFORM_SPECIFIC_TARGETS) logos-bindings
 
 # must be included after the default target
 -include $(BUILD_SYSTEM_DIR)/makefiles/targets.mk
@@ -419,6 +420,7 @@ endef
 # Build C static library from logos_c_bindings.nim into the bindings folder
 logos-lib: | build deps
 	+ $(ENV_SCRIPT) $(NIMC) c $(NIM_PARAMS) \
+		--verbosity:2 \
 		--app:staticlib \
 		--out:logos_chain/bindings/liblogos_blockchain.a \
 		logos_chain/bindings/logos_c_bindings.nim
@@ -426,6 +428,7 @@ logos-lib: | build deps
 # Generate C header for the bindings into the bindings folder
 logos-headers: | build deps
 	+ $(ENV_SCRIPT) $(NIMC) c $(NIM_PARAMS) \
+		--verbosity:2 \
 		--compileOnly \
 		--header \
 		logos_chain/bindings/logos_c_bindings.nim
