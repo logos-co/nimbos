@@ -24,7 +24,6 @@ export rest_utils
 logScope: topics = "rest_node"
 
 type
-  Hash = rest_utils.Hash
   ConnectionStateSet* = set[ConnectionState]
   PeerTypeSet* = set[PeerType]
 

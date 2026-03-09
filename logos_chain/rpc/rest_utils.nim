@@ -15,7 +15,7 @@ import std/macros,
 
 export
   results, eth2_rest_serialization, rest_types,
-  rest_constants, rest_common, route, Hash, decodeString
+  rest_constants, rest_common, route, decodeString
 
 func disallowInterruptionsAux(body: NimNode) =
   for n in body:
@@ -46,21 +46,21 @@ const
   textEventStreamMediaType* = MediaType.init("text/event-stream")
 
 type
-  Hash* = array[32, uint8]
-  HeaderId* = Hash
+  LogosDigest* = array[32, byte]
+  HeaderId* = LogosDigest
   ZkPublicKey* = ZkHash
-  ZkHash* = array[32, uint8] #TODO Replace with Fr type
+  ZkHash* = array[32, byte] #TODO Replace with Fr type
 
-func decodeHash(value: string): Result[Hash, cstring] =
+func decodeLogosDigest(value: string): Result[LogosDigest, cstring] =
   try:
     let bytes = hexToSeqByte(value)
     if bytes.len != 32:
       return err("Hash must be 32 bytes (64 hex characters)")
-    var res: Hash
+    var res: LogosDigest
     copyMem(addr res[0], addr bytes[0], 32)
-    ok(Result[Hash, cstring], res)
+    ok(Result[LogosDigest, cstring], res)
   except ValueError:
     err("Invalid hex string for Hash")
 
-func decodeString*(t: typedesc[Hash], value: string): Result[Hash, cstring] =
-  decodeHash(value)
+func decodeString*(t: typedesc[LogosDigest], value: string): Result[LogosDigest, cstring] =
+  decodeLogosDigest(value)
