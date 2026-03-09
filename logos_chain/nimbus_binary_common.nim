@@ -290,19 +290,7 @@ proc validateBeaconApiQueries*(key: string, value: string): int =
   ## This is rough validation procedure which should be simple and fast,
   ## because it will be used for query routing.
   case key
-  of "{epoch}":
-    0
-  of "{slot}":
-    0
-  of "{peer_id}":
-    0
-  of "{state_id}":
-    0
-  of "{block_id}":
-    0
-  of "{validator_id}":
-    0
-  of "{block_root}":
+  of "slot_from", "slot_to":
     0
   of "{public_key}":
     # Logos wallet public key: 32-byte value encoded as 64 hex chars.
@@ -318,8 +306,6 @@ proc validateBeaconApiQueries*(key: string, value: string): int =
       if ch notin {'0' .. '9', 'a' .. 'f', 'A' .. 'F'}:
         return 1
     0
-  of "{pubkey}":
-    int(value.len != 98)
   else:
     1
 

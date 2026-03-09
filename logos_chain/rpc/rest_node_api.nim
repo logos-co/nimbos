@@ -164,10 +164,10 @@ proc installNodeApiHandlers*(router: var RestRouter, node: BeaconNode) =
   ## The implementations are intentionally minimal and return empty payloads.
   ## -------------------------------------------------------------------
 
-  # GET /cryptarchia/headers[?from={headerId}&to={headerId}]
+  # GET /cryptarchia/headers[?slot_from={headerId}&slot_to={headerId}]
   router.api2(MethodGet, CRYPTARCHIA_HEADERS) do (
-    `from`: Option[HeaderId],
-    `to`: Option[HeaderId],
+    slot_from: Option[HeaderId],
+    slot_to: Option[HeaderId],
   ) -> RestApiResponse:
     RestApiResponse.response("[]", Http200, $jsonMediaType)
 
