@@ -15,7 +15,7 @@
 {.push raises: [], gcsafe.}
 
 type
-  OperationStatus* {.pure.} = enum
+  OperationStatus* {.pure, exportc.} = enum
     Ok = 0
     NotFound = 1
     NullPointer = 2
@@ -29,81 +29,81 @@ type
     StopError = 10
     ConfigurationError = 11
 
-  DeploymentType* {.pure.} = enum
+  DeploymentType* {.pure, exportc.} = enum
     WellKnown = 0
     Custom = 1
 
-  WellKnownDeployment* {.pure.} = enum
+  WellKnownDeployment* {.pure, exportc.} = enum
     Devnet = 0
 
-  State* {.pure.} = enum
+  State* {.pure, exportc.} = enum
     Bootstrapping = 0
     Online = 1
 
-  LogosDigest* = array[32, uint8]
-  HeaderId* = LogosDigest
-  Value* = uint64
+  LogosDigest* {.exportc.} = array[32, byte]
+  HeaderId* {.exportc.} = LogosDigest
+  Value* {.exportc.} = uint64
 
-  Deployment* = object
+  Deployment* {.exportc.} = object
     deployment_type: DeploymentType
     well_known_deployment: WellKnownDeployment
     custom_deployment_config_path: cstring
 
-  GenerateConfigArgs* = object
-    initial_peers: ptr UncheckedArray[cstring]
-    initial_peers_count: ptr uint32
-    output: cstring
-    net_port: ptr uint16
-    blend_port: ptr uint16
-    http_addr: cstring
-    external_address: cstring
-    no_public_ip_check: ptr bool
-    deployment: ptr Deployment
-    state_path: cstring
+  GenerateConfigArgs* {.exportc.} = object
+    initial_peers*: ptr UncheckedArray[cstring]
+    initial_peers_count*: ptr uint32           
+    output*: cstring                           
+    net_port*: ptr uint16                      
+    blend_port*: ptr uint16                    
+    http_addr*: cstring                        
+    external_address*: cstring                 
+    no_public_ip_check*: ptr bool              
+    deployment*: ptr Deployment                
+    state_path*: cstring                       
 
-  CryptarchiaInfo* = object
+  CryptarchiaInfo* {.exportc.} = object
     lib: HeaderId
     tip: HeaderId
     slot: uint64
     height: uint64
     mode: State
 
-  CryptarchiaInfoResult* = object
+  CryptarchiaInfoResult* {.exportc.} = object
     value: ptr CryptarchiaInfo
     error: OperationStatus
 
-  LogosBlockchainNode* = object
+  LogosBlockchainNode* {.exportc.} = object
     overwatch: pointer
     runtime: pointer
 
-  InitializedLogosBlockchainNodeResult* = object
+  InitializedLogosBlockchainNodeResult* {.exportc.} = object
     value: ptr LogosBlockchainNode
     error: OperationStatus
 
   CCallback_c_char* = proc(data: cstring) {.cdecl.}
 
-  KnownAddresses* = object
-    addresses: ptr UncheckedArray[ptr uint8]
+  KnownAddresses* {.exportc.} = object
+    addresses: ptr UncheckedArray[ptr byte]
     len: uint
 
-  KnownAddressesResult* = object
+  KnownAddressesResult* {.exportc.} = object
     value: KnownAddresses
     error: OperationStatus
 
-  BalanceResult* = object
+  BalanceResult* {.exportc.} = object
     value: Value
     error: OperationStatus
 
-  TransferFundsResult* = object
+  TransferFundsResult* {.exportc.} = object
     value: LogosDigest
     error: OperationStatus
 
-  TransferFundsArguments* = object
+  TransferFundsArguments* {.exportc.} = object
     optional_tip: ptr HeaderId
-    change_public_key: ptr uint8
-    funding_public_keys: ptr UncheckedArray[ptr uint8]
+    change_public_key: ptr byte
+    funding_public_keys: ptr UncheckedArray[ptr byte]
     funding_public_keys_len: uint
-    recipient_public_key: ptr uint8
+    recipient_public_key: ptr byte
     amount: uint64
 
 proc generate_user_config*(
@@ -144,7 +144,7 @@ proc free_known_addresses*(addresses: KnownAddresses) {.exportc, cdecl.} =
   discard
 
 proc get_balance*(
-    node: ptr LogosBlockchainNode, wallet_address: ptr uint8, optional_tip: ptr HeaderId
+    node: ptr LogosBlockchainNode, wallet_address: ptr byte, optional_tip: ptr HeaderId
 ): BalanceResult {.exportc, cdecl.} =
   BalanceResult(value: 0, error: Ok)
 
