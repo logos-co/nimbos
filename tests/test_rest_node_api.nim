@@ -23,8 +23,6 @@ when defined(nimHasUsed):
   {.used.}
 
 suite "Logos REST node API stub endpoints":
-  echo "REST node API suite setup"
-
   var
     server: RestServerRef
     address: TransportAddress
@@ -159,5 +157,3 @@ suite "Logos REST node API stub endpoints":
     check res.status == 200
     check res.data.len == 0
     check res.headers.getString("content-type") == "application/json"
-
-  echo "REST node API suite teardown"
