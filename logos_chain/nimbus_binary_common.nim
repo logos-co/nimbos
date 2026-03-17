@@ -16,11 +16,10 @@ import
   # Nimble packages
   chronos, confutils, presto, toml_serialization, metrics,
   chronicles, chronicles/helpers as chroniclesHelpers, chronicles/topics_registry,
-  stew/io2, metrics/chronos_httpserver, taskpools,
+  stew/[io2, byteutils], metrics/chronos_httpserver, taskpools,
 
   # Local modules
-  ./buildinfo,
-  ./utils/hex_utils
+  ./buildinfo
 
 from system/ansi_c import c_malloc
 
@@ -294,9 +293,11 @@ proc validateBeaconApiQueries*(key: string, value: string): int =
   of "slot_from", "slot_to":
     0
   of "{public_key}":
-    if isValidHexWithOptional0x(value, 64):
+    try:
+      var tmp: array[32, byte]
+      hexToByteArrayStrict(value, tmp)
       0
-    else:
+    except ValueError:
       1
   else:
     1

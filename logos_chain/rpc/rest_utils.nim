@@ -53,14 +53,11 @@ type
 
 func decodeLogosDigest(value: string): Result[LogosDigest, cstring] =
   try:
-    let bytes = hexToSeqByte(value)
-    if bytes.len != 32:
-      return err("Hash must be 32 bytes (64 hex characters)")
     var res: LogosDigest
-    copyMem(addr res[0], addr bytes[0], 32)
+    hexToByteArrayStrict(value, res)
     ok(Result[LogosDigest, cstring], res)
   except ValueError:
-    err("Invalid hex string for Hash")
+    err("Invalid hex string for LogosDigest")
 
 func decodeString*(t: typedesc[LogosDigest], value: string): Result[LogosDigest, cstring] =
   decodeLogosDigest(value)

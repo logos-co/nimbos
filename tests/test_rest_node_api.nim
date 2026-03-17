@@ -140,6 +140,7 @@ suite "Logos REST node API stub endpoints":
 
   asyncTest "validateBeaconApiQueries rejects invalid wallet public_key lengths and characters":
     check validateBeaconApiQueries("{public_key}", "0".repeat(63)) == 1
+    check validateBeaconApiQueries("{public_key}", "0".repeat(65)) == 1
     check validateBeaconApiQueries("{public_key}", "g".repeat(64)) == 1
 
   asyncTest "POST /wallet/transactions/transfer-funds returns empty object":
