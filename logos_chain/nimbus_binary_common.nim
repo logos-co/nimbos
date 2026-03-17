@@ -19,7 +19,8 @@ import
   stew/io2, metrics/chronos_httpserver, taskpools,
 
   # Local modules
-  ./buildinfo
+  ./buildinfo,
+  ./utils/hex_utils
 
 from system/ansi_c import c_malloc
 
@@ -293,19 +294,10 @@ proc validateBeaconApiQueries*(key: string, value: string): int =
   of "slot_from", "slot_to":
     0
   of "{public_key}":
-    # Logos wallet public key: 32-byte value encoded as 64 hex chars.
-    # Accept both plain hex and a 0x-prefixed form.
-    let body =
-      if value.len >= 2 and (value[0] in {'0'} and value[1] in {'x', 'X'}):
-        value[2 .. ^1]
-      else:
-        value
-    if body.len != 64:
-      return 1
-    for ch in body:
-      if ch notin HexDigits:
-        return 1
-    0
+    if isValidHexWithOptional0x(value, 64):
+      0
+    else:
+      1
   else:
     1
 

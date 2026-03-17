@@ -12,6 +12,6 @@
 import ./testutil
 
 import # Unit test
-  ./test_peer_pool, ./test_rest_node_api
+  ./test_peer_pool, ./test_rest_node_api, ./test_hex_utils
 
 summarizeLongTests("AllTests")

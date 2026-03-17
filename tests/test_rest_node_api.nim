@@ -133,6 +133,15 @@ suite "Logos REST node API stub endpoints":
     let res = await httpClient(address, MethodGet, walletPath, "")
     check res.status == 404
 
+  asyncTest "validateBeaconApiQueries accepts valid wallet public_key with and without 0x":
+    let key = "0".repeat(64)
+    check validateBeaconApiQueries("{public_key}", key) == 0
+    check validateBeaconApiQueries("{public_key}", "0x" & key) == 0
+
+  asyncTest "validateBeaconApiQueries rejects invalid wallet public_key lengths and characters":
+    check validateBeaconApiQueries("{public_key}", "0".repeat(63)) == 1
+    check validateBeaconApiQueries("{public_key}", "g".repeat(64)) == 1
+
   asyncTest "POST /wallet/transactions/transfer-funds returns empty object":
     let res = await httpClient(
       address, MethodPost, WALLET_TRANSACTIONS_TRANSFER_FUNDS_PATH, "{}",
