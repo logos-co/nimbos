@@ -14,9 +14,11 @@
 ##
 ## NOTE: There is currently no public Nomos / Logos spec document that defines
 ## this C FFI (types and function signatures). This ABI is implementation-
-## defined and should be kept in sync with the upstream Logos C bindings /
-## reference implementation in:
+## defined for now; the only authoritative description of a Logos C API lives
+## in the current Rust implementation:
 ## https://github.com/logos-blockchain/logos-blockchain/tree/master/c-bindings/src/api
+## Once a formal spec exists, this module should be reviewed against it rather
+## than against any particular implementation.
 
 {.push raises: [], gcsafe.}
 
