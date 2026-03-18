@@ -16,8 +16,10 @@ import std/macros,
 ## NOTE: The `rest_types` / `eth2_rest_serialization` / `rest_common` imports
 ## mirror the upstream Eth2 REST API type definitions, but the Logos-specific
 ## REST surface (paths, query parameters, and payloads) is not specified in any
-## Nomos research/spec document. The concrete REST behavior in this module is
-## instead aligned with the existing `logos-blockchain` implementation:
+## Nomos research/spec document. The concrete REST behavior in this module
+## currently follows the Rust `logos-blockchain` implementation simply because
+## it is the only reference; once a formal Logos REST spec exists, that spec
+## should become the authoritative source instead:
 ## https://github.com/logos-blockchain/logos-blockchain
 
 export

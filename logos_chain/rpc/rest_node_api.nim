@@ -10,8 +10,10 @@
 ## NOTE: This module contains stub implementations for Logos HTTP API
 ## compatibility. The REST endpoints and many of their query parameters are
 ## currently **not** specified in any Nomos research/spec document. Where
-## endpoint paths or parameter names matter, they are derived from the
-## existing `logos-blockchain` implementation so that clients can interoperate:
+## endpoint paths or parameter names matter, they currently follow the Rust
+## `logos-blockchain` implementation simply because it is the only reference;
+## once a formal Logos REST spec exists, it should become the authoritative
+## source instead:
 ## https://github.com/logos-blockchain/logos-blockchain
 
 import
@@ -169,8 +171,9 @@ proc installNodeApiHandlers*(router: var RestRouter, node: BeaconNode) =
   ## These endpoints provide compatibility with the Logos HTTP API.
   ## The implementations are intentionally minimal and return empty payloads.
   ## NOTE: No written Nomos spec currently declares these REST endpoints.
-  ## Where relevant, query parameter naming follows the official
-  ## `logos-blockchain` implementation:
+  ## For now, query parameter naming follows the Rust `logos-blockchain`
+  ## implementation (see handlers.rs) only because it is the only source;
+  ## a future Logos REST spec should take precedence:
   ## https://github.com/logos-blockchain/logos-blockchain/blob/master/nodes/node/binary/src/api/handlers.rs#L219
   ## -------------------------------------------------------------------
 
