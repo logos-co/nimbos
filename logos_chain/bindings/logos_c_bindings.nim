@@ -11,6 +11,12 @@
 ##   make logos-lib       - build static library (liblogos_blockchain.a)
 ##   make logos-headers   - generate C header (logos_c_bindings.h)
 ##   make logos-bindings  - build both library and header
+##
+## NOTE: There is currently no public Nomos / Logos spec document that defines
+## this C FFI (types and function signatures). This ABI is implementation-
+## defined and should be kept in sync with the upstream Logos C bindings /
+## reference implementation in:
+## https://github.com/logos-blockchain/logos-blockchain/tree/master/c-bindings/src/api
 
 {.push raises: [], gcsafe.}
 
