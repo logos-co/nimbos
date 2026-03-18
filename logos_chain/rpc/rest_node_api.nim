@@ -7,6 +7,13 @@
 
 {.push raises: [], gcsafe.}
 
+## NOTE: This module contains stub implementations for Logos HTTP API
+## compatibility. The REST endpoints and many of their query parameters are
+## currently **not** specified in any Nomos research/spec document. Where
+## endpoint paths or parameter names matter, they are derived from the
+## existing `logos-blockchain` implementation so that clients can interoperate:
+## https://github.com/logos-blockchain/logos-blockchain
+
 import
   chronicles,
   eth/enr/enr,
@@ -161,12 +168,16 @@ proc installNodeApiHandlers*(router: var RestRouter, node: BeaconNode) =
   ##
   ## These endpoints provide compatibility with the Logos HTTP API.
   ## The implementations are intentionally minimal and return empty payloads.
+  ## NOTE: No written Nomos spec currently declares these REST endpoints.
+  ## Where relevant, query parameter naming follows the official
+  ## `logos-blockchain` implementation:
+  ## https://github.com/logos-blockchain/logos-blockchain/blob/master/nodes/node/binary/src/api/handlers.rs#L219
   ## -------------------------------------------------------------------
 
-  # GET /cryptarchia/headers[?slot_from={headerId}&slot_to={headerId}]
+  # GET /cryptarchia/headers[?from={headerId}&to={headerId}]
   router.api2(MethodGet, CRYPTARCHIA_HEADERS) do (
-    slot_from: Option[HeaderId],
-    slot_to: Option[HeaderId],
+    `from`: Option[HeaderId],
+    `to`: Option[HeaderId],
   ) -> RestApiResponse:
     RestApiResponse.response("[]", Http200, $jsonMediaType)
 
@@ -244,6 +255,11 @@ proc installNodeApiHandlers*(router: var RestRouter, node: BeaconNode) =
     RestApiResponse.response("{}", Http200, $jsonMediaType)
 
   # GET /blocks[?slot_from={slotFrom}&slot_to={slotTo}]
+  ## NOTE: No written Nomos spec currently declares this REST endpoint or its
+  ## query parameter names. The `slot_from` / `slot_to` parameters follow the
+  ## official `logos-blockchain` implementation, which defines
+  ## `BlockRangeQuery { slot_from, slot_to }` in:
+  ## https://github.com/logos-blockchain/logos-blockchain/blob/master/nodes/node/binary/src/api/queries.rs#L7
   router.api2(MethodGet, BLOCKS) do (
     slot_from: Option[uint64],
     slot_to: Option[uint64],

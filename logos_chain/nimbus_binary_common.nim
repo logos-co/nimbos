@@ -289,8 +289,17 @@ proc init*(T: type RestServerRef,
 proc validateBeaconApiQueries*(key: string, value: string): int =
   ## This is rough validation procedure which should be simple and fast,
   ## because it will be used for query routing.
+  ## NOTE: There is currently no Nomos REST or wallet spec that explicitly
+  ## defines the `slot_from` / `slot_to` / `from` / `to` query parameters or the external
+  ## string format for `{public_key}`. For `{public_key}`, this module
+  ## follows the official implementation in `logos-blockchain`, where a
+  ## `ZkPublicKey` is:
+  ##   - represented as a single BN254 field element `Fr`
+  ##   - converted to 32 little-endian bytes via `fr_to_bytes`
+  ##   - hex-encoded with `hex::encode` to a 64‑char lowercase hex string
+  ##     (optionally prefixed with `0x` on input here).
   case key
-  of "slot_from", "slot_to":
+  of "slot_from", "slot_to", "from", "to":
     0
   of "{public_key}":
     try:
