@@ -1,4 +1,4 @@
-# Copyright (c) 2019-2025 Status Research & Development GmbH. Licensed under
+# Copyright (c) 2026 Status Research & Development GmbH. Licensed under
 # either of:
 # - Apache License, version 2.0
 # - MIT license
@@ -124,7 +124,8 @@ GIT_SUBMODULE_UPDATE := $(GIT_SUBMODULE_ENV) git $(GIT_SUBMODULE_CONFIG) submodu
 else # "variables.mk" was included. Business as usual until the end of this file.
 
 # default target, because it's the first one that doesn't start with '.'
-all: | $(TOOLS) $(PLATFORM_SPECIFIC_TARGETS)
+# Also build logos-bindings (C bindings library + header) in CI.
+all: | $(TOOLS) $(PLATFORM_SPECIFIC_TARGETS) logos-bindings
 
 # must be included after the default target
 -include $(BUILD_SYSTEM_DIR)/makefiles/targets.mk
@@ -413,6 +414,27 @@ endef
 ###
 ### Other
 ###
+
+.PHONY: logos-lib logos-headers logos-bindings
+
+# Build C static library from logos_c_bindings.nim into the bindings folder
+logos-lib: | build deps
+	+ $(ENV_SCRIPT) $(NIMC) c $(NIM_PARAMS) \
+		--verbosity:2 \
+		--app:staticlib \
+		--out:logos_chain/bindings/liblogos_blockchain.a \
+		logos_chain/bindings/logos_c_bindings.nim
+
+# Generate C header for the bindings into the bindings folder
+logos-headers: | build deps
+	+ $(ENV_SCRIPT) $(NIMC) c $(NIM_PARAMS) \
+		--verbosity:2 \
+		--compileOnly \
+		--header:logos_chain/bindings/logos_c_bindings.h \
+		logos_chain/bindings/logos_c_bindings.nim
+
+# Convenience target: build both the static lib and the C header
+logos-bindings: logos-lib logos-headers
 
 nimbus-pkg: | nimbus_beacon_node
 	xcodebuild -project installer/macos/nimbus-pkg.xcodeproj -scheme nimbus-pkg build
