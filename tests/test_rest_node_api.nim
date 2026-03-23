@@ -16,7 +16,7 @@ import
     # httpClient(): send GET/POST and get response (status, data, headers)
 import ../logos_chain/rpc/rest_paths
 import ../logos_chain/rpc/rest_node_api
-import ../logos_chain/nimbus_binary_common  # validateBeaconApiQueries
+from ../logos_chain/nimbus_binary_common import validateBeaconApiQueries
 
 suite "Logos REST node API stub endpoints":
   var
