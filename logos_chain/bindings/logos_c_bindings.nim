@@ -15,10 +15,10 @@
 ## NOTE: There is currently no public Nomos / Logos spec document that defines
 ## this C FFI (types and function signatures). This ABI is implementation-
 ## defined for now; the only authoritative description of a Logos C API lives
-## in the current Rust implementation:
+## in the current Rust implementation (until a formal spec is published/updated):
 ## https://github.com/logos-blockchain/logos-blockchain/tree/master/c-bindings/src/api
-## Once a formal spec exists, this module should be reviewed against it rather
-## than against any particular implementation.
+## Once a formal spec exists/updates, this module should be reviewed and
+## updated against the spec (rather than being treated as spec-authoritative).
 
 {.push raises: [], gcsafe.}
 
@@ -59,15 +59,15 @@ type
 
   GenerateConfigArgs* {.exportc.} = object
     initial_peers*: ptr UncheckedArray[cstring]
-    initial_peers_count*: ptr uint32           
-    output*: cstring                           
-    net_port*: ptr uint16                      
-    blend_port*: ptr uint16                    
-    http_addr*: cstring                        
-    external_address*: cstring                 
-    no_public_ip_check*: ptr bool              
-    deployment*: ptr Deployment                
-    state_path*: cstring                       
+    initial_peers_count*: ptr uint32
+    output*: cstring
+    net_port*: ptr uint16
+    blend_port*: ptr uint16
+    http_addr*: cstring
+    external_address*: cstring
+    no_public_ip_check*: ptr bool
+    deployment*: ptr Deployment
+    state_path*: cstring
 
   CryptarchiaInfo* {.exportc.} = object
     lib: HeaderId
@@ -114,54 +114,54 @@ type
     recipient_public_key: ptr byte
     amount: uint64
 
-proc generate_user_config*(
+func generate_user_config*(
     args: GenerateConfigArgs
 ): OperationStatus {.exportc, cdecl.} =
   Ok
 
-proc get_cryptarchia_info*(
+func get_cryptarchia_info*(
     node: ptr LogosBlockchainNode
 ): CryptarchiaInfoResult {.exportc, cdecl.} =
   CryptarchiaInfoResult(value: nil, error: Ok)
 
-proc free_cryptarchia_info*(pointer: ptr CryptarchiaInfo) {.exportc, cdecl.} =
+func free_cryptarchia_info*(pointer: ptr CryptarchiaInfo): void {.exportc, cdecl.} =
   discard
 
-proc start_lb_node*(
+func start_lb_node*(
     config_path: cstring, deployment: cstring
 ): InitializedLogosBlockchainNodeResult {.exportc, cdecl.} =
   InitializedLogosBlockchainNodeResult(value: nil, error: Ok)
 
-proc stop_node*(node: ptr LogosBlockchainNode): OperationStatus {.exportc, cdecl.} =
+func stop_node*(node: ptr LogosBlockchainNode): OperationStatus {.exportc, cdecl.} =
   Ok
 
-proc free_cstring*(blockPtr: cstring) {.exportc, cdecl.} =
+func free_cstring*(blockPtr: cstring): void {.exportc, cdecl.} =
   discard
 
-proc subscribe_to_new_blocks*(
+func subscribe_to_new_blocks*(
     node: ptr LogosBlockchainNode, callback_per_block: CCallback_c_char
-) {.exportc, cdecl.} =
+): void {.exportc, cdecl.} =
   discard
 
-proc get_known_addresses*(
+func get_known_addresses*(
     node: ptr LogosBlockchainNode
 ): KnownAddressesResult {.exportc, cdecl.} =
   KnownAddressesResult(value: KnownAddresses(addresses: nil, len: 0), error: Ok)
 
-proc free_known_addresses*(addresses: KnownAddresses) {.exportc, cdecl.} =
+func free_known_addresses*(addresses: KnownAddresses): void {.exportc, cdecl.} =
   discard
 
-proc get_balance*(
+func get_balance*(
     node: ptr LogosBlockchainNode, wallet_address: ptr byte, optional_tip: ptr HeaderId
 ): BalanceResult {.exportc, cdecl.} =
   BalanceResult(value: 0, error: Ok)
 
-proc transfer_funds*(
+func transfer_funds*(
     node: ptr LogosBlockchainNode, arguments: ptr TransferFundsArguments
 ): TransferFundsResult {.exportc, cdecl.} =
   TransferFundsResult(value: default(LogosDigest), error: Ok)
 
-proc free_transfer_funds*(pointer: ptr LogosDigest) {.exportc, cdecl.} =
+func free_transfer_funds*(pointer: ptr LogosDigest): void {.exportc, cdecl.} =
   discard
 
 func is_ok*(self: ptr OperationStatus): bool {.exportc, cdecl.} =
