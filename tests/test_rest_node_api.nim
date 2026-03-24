@@ -11,9 +11,7 @@
 import std/strutils
 import chronos, chronos/apps, chronos/unittest2/asynctests
 import presto/[route, server]
-import
-  "../vendor/nim-presto/tests/helpers"
-    # httpClient(): send GET/POST and get response (status, data, headers)
+import ./helpers
 import ../logos_chain/rpc/rest_paths
 import ../logos_chain/rpc/rest_node_api
 from ../logos_chain/nimbus_binary_common import validateBeaconApiQueries
