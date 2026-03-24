@@ -13,9 +13,18 @@ import std/macros,
        ../logos_chain_node,
        "."/rest_constants
 
+## NOTE: The `rest_types` / `eth2_rest_serialization` / `rest_common` imports
+## mirror the upstream Eth2 REST API type definitions, but the Logos-specific
+## REST surface (paths, query parameters, and payloads) is not specified in any
+## Nomos research/spec document. The concrete REST behavior in this module
+## currently follows the Rust `logos-blockchain` implementation simply because
+## it is the only reference; once a formal Logos REST spec exists, that spec
+## should become the authoritative source instead:
+## https://github.com/logos-blockchain/logos-blockchain
+
 export
   results, eth2_rest_serialization, rest_types,
-  rest_constants, rest_common, route
+  rest_constants, rest_common, route, decodeString
 
 func disallowInterruptionsAux(body: NimNode) =
   for n in body:
@@ -44,3 +53,20 @@ const
   jsonMediaType* = MediaType.init("application/json")
   sszMediaType* = MediaType.init("application/octet-stream")
   textEventStreamMediaType* = MediaType.init("text/event-stream")
+
+type
+  LogosDigest* = array[32, byte]
+  HeaderId* = LogosDigest
+  ZkPublicKey* = ZkHash
+  ZkHash* = array[32, byte] #TODO Replace with Fr type
+
+func decodeLogosDigest(value: string): Result[LogosDigest, cstring] =
+  try:
+    var res: LogosDigest
+    hexToByteArrayStrict(value, res)
+    ok(Result[LogosDigest, cstring], res)
+  except ValueError:
+    err("Invalid hex string for LogosDigest")
+
+func decodeString*(t: typedesc[LogosDigest], value: string): Result[LogosDigest, cstring] =
+  decodeLogosDigest(value)

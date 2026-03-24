@@ -7,6 +7,15 @@
 
 {.push raises: [], gcsafe.}
 
+## NOTE: This module contains stub implementations for Logos HTTP API
+## compatibility. The REST endpoints and many of their query parameters are
+## currently **not** specified in any Nomos research/spec document. Where
+## endpoint paths or parameter names matter, they currently follow the Rust
+## `logos-blockchain` implementation simply because it is the only reference;
+## once a formal Logos REST spec exists, it should become the authoritative
+## source instead:
+## https://github.com/logos-blockchain/logos-blockchain
+
 import
   chronicles,
   eth/enr/enr,
@@ -14,7 +23,10 @@ import
   ../version, ../logos_chain_node,
   ../networking/[eth2_network, peer_pool],
   ../spec/datatypes/base,
-  ./rest_utils
+  ./rest_utils,
+  ./rest_paths
+
+from presto/common import ContentBody
 
 export rest_utils
 
@@ -153,88 +165,110 @@ proc installNodeApiHandlers*(router: var RestRouter, node: BeaconNode) =
     cachedVersion =
       RestApiResponse.prepareJsonResponse((version: nimbusAgentStr))
 
-  # https://ethereum.github.io/beacon-APIs/#/Node/getPeers
-  router.api2(MethodGet, "/eth/v1/node/peers") do (
-    state: seq[PeerStateKind],
-    direction: seq[PeerDirectKind]) -> RestApiResponse:
-    let connectionMask =
-      block:
-        if state.isErr():
-          return RestApiResponse.jsonError(Http400, InvalidPeerStateValueError,
-                                           $state.error())
-        validateState(state.get()).valueOr:
-          return RestApiResponse.jsonError(Http400, InvalidPeerStateValueError,
-                                           $error)
-    let directionMask =
-      block:
-        if direction.isErr():
-          return RestApiResponse.jsonError(Http400,
-                                           InvalidPeerDirectionValueError,
-                                           $direction.error())
-        validateDirection(direction.get()).valueOr:
-          return RestApiResponse.jsonError(Http400,
-                                           InvalidPeerDirectionValueError,
-                                           $error)
-    var res: seq[RestNodePeer]
-    for peer in node.network.peers.values():
-      if (peer.connectionState in connectionMask) and
-         (peer.direction in directionMask):
-        let peer = RestNodePeer(
-          peer_id: $peer.peerId,
-          enr: if peer.enr.isSome(): peer.enr.get().toURI() else: "",
-          last_seen_p2p_address: getLastSeenAddress(node, peer.peerId),
-          state: peer.connectionState.toString(),
-          direction: peer.direction.toString(),
-          # Fields `agent` and `proto` are not part of specification
-          agent: node.network.switch.peerStore[AgentBook][peer.peerId],
-          proto: node.network.switch.peerStore[ProtoVersionBook][peer.peerId]
-        )
-        res.add(peer)
-    RestApiResponse.jsonResponseWMeta(res, (count: RestNumeric(len(res))))
+  ## -------------------------------------------------------------------
+  ## Logos Chain HTTP API compatibility (stub implementations)
+  ##
+  ## These endpoints provide compatibility with the Logos HTTP API.
+  ## The implementations are intentionally minimal and return empty payloads.
+  ## NOTE: No written Nomos spec currently declares these REST endpoints.
+  ## For now, query parameter naming follows the Rust `logos-blockchain`
+  ## implementation (see handlers.rs) only because it is the only source;
+  ## a future Logos REST spec should take precedence:
+  ## https://github.com/logos-blockchain/logos-blockchain/blob/master/nodes/node/binary/src/api/handlers.rs#L219
+  ## -------------------------------------------------------------------
 
-  # https://ethereum.github.io/beacon-APIs/#/Node/getPeerCount
-  router.api2(MethodGet, "/eth/v1/node/peer_count") do () -> RestApiResponse:
-    var res: RestNodePeerCount
-    for item in node.network.peers.values():
-      case item.connectionState
-      of ConnectionState.Connecting:
-        inc(res.connecting)
-      of ConnectionState.Connected:
-        inc(res.connected)
-      of ConnectionState.Disconnecting:
-        inc(res.disconnecting)
-      of ConnectionState.Disconnected:
-        inc(res.disconnected)
-      of ConnectionState.None:
-        discard
-    RestApiResponse.jsonResponse(res)
+  # GET /cryptarchia/headers[?from={headerId}&to={headerId}]
+  router.api2(MethodGet, CRYPTARCHIA_HEADERS) do (
+    `from`: Option[HeaderId],
+    `to`: Option[HeaderId],
+  ) -> RestApiResponse:
+    RestApiResponse.response("[]", Http200, $jsonMediaType)
 
-  # https://ethereum.github.io/beacon-APIs/#/Node/getPeer
-  router.api2(MethodGet, "/eth/v1/node/peers/{peer_id}") do (
-    peer_id: PeerId) -> RestApiResponse:
-    let peer =
-      block:
-        if peer_id.isErr():
-          return RestApiResponse.jsonError(Http400, InvalidPeerIdValueError,
-                                           $peer_id.error())
-        let res = node.network.peers.getOrDefault(peer_id.get())
-        if isNil(res):
-          return RestApiResponse.jsonError(Http404, PeerNotFoundError)
-        res
-    RestApiResponse.jsonResponse(
-      (
-        peer_id: $peer.peerId,
-        enr: if peer.enr.isSome(): peer.enr.get().toURI() else: "",
-        last_seen_p2p_address: getLastSeenAddress(node, peer.peerId),
-        state: peer.connectionState.toString(),
-        direction: peer.direction.toString(),
-        agent: node.network.switch.peerStore[AgentBook][peer.peerId],
-          # Fields `agent` and `proto` are not part of specification
-        proto: node.network.switch.peerStore[ProtoVersionBook][peer.peerId]
-          # Fields `agent` and `proto` are not part of specification
-      )
-    )
+  # GET /cryptarchia/lib/stream
+  router.api2(MethodGet, CRYPTARCHIA_LIB_STREAM) do () -> RestApiResponse:
+    RestApiResponse.response("", Http200, $jsonMediaType)
 
-  # https://ethereum.github.io/beacon-APIs/#/Node/getNodeVersion
-  router.api2(MethodGet, "/eth/v1/node/version") do () -> RestApiResponse:
-    RestApiResponse.response(cachedVersion, Http200, "application/json")
+  # GET /cryptarchia/info
+  router.api2(MethodGet, CRYPTARCHIA_INFO_PATH) do () -> RestApiResponse:
+    RestApiResponse.response("{}", Http200, $jsonMediaType)
+
+  # POST /leader/claim
+  router.api2(MethodPost, LEADER_CLAIM) do () -> RestApiResponse:
+    RestApiResponse.response("{}", Http200, $jsonMediaType)
+
+  # GET /mantle/metrics
+  router.api2(MethodGet, MANTLE_METRICS) do () -> RestApiResponse:
+    RestApiResponse.response("{}", Http200, $jsonMediaType)
+
+  # POST /mantle/status
+  router.api2(MethodPost, MANTLE_STATUS) do (
+    contentBody: Option[ContentBody],
+  ) -> RestApiResponse:
+    RestApiResponse.response("[]", Http200, $jsonMediaType)
+
+  # POST /mempool/add/tx
+  router.api2(MethodPost, MEMPOOL_ADD_TX) do (
+    contentBody: Option[ContentBody],
+  ) -> RestApiResponse:
+    RestApiResponse.response("", Http200, $jsonMediaType)
+
+  # GET /network/info
+  router.api2(MethodGet, NETWORK_INFO) do () -> RestApiResponse:
+    RestApiResponse.response("{}", Http200, $jsonMediaType)
+
+  # POST /sdp/activity
+  router.api2(MethodPost, SDP_POST_ACTIVITY) do (
+    contentBody: Option[ContentBody],
+  ) -> RestApiResponse:
+    RestApiResponse.response("{}", Http200, $jsonMediaType)
+
+  # POST /sdp/declaration
+  router.api2(MethodPost, SDP_POST_DECLARATION) do (
+    contentBody: Option[ContentBody],
+  ) -> RestApiResponse:
+    RestApiResponse.jsonResponse("")
+
+  # POST /sdp/withdrawal
+  router.api2(MethodPost, SDP_POST_WITHDRAWAL) do (
+    contentBody: Option[ContentBody],
+  ) -> RestApiResponse:
+    RestApiResponse.response("{}", Http200, $jsonMediaType)
+
+  # POST /storage/block
+  router.api2(MethodPost, STORAGE_BLOCK) do (
+    contentBody: Option[ContentBody],
+  ) -> RestApiResponse:
+    RestApiResponse.response("\"\"", Http200, $jsonMediaType)
+
+  # POST /test/membership/update
+  router.api2(MethodPost, UPDATE_MEMBERSHIP) do () -> RestApiResponse:
+    RestApiResponse.response("{}", Http200, $jsonMediaType)
+
+  # GET /wallet/{public_key}/balance[?tip={headerId}]
+  router.api2(MethodGet, WALLET_BALANCE_PATH) do (
+    `public_key`: ZkPublicKey,
+    tip: Option[HeaderId],
+  ) -> RestApiResponse:
+    RestApiResponse.response("{}", Http200, $jsonMediaType)
+
+  # POST /wallet/transactions/transfer-funds
+  router.api2(MethodPost, WALLET_TRANSACTIONS_TRANSFER_FUNDS_PATH) do (
+    contentBody: Option[ContentBody],
+  ) -> RestApiResponse:
+    RestApiResponse.response("{}", Http200, $jsonMediaType)
+
+  # GET /blocks[?slot_from={slotFrom}&slot_to={slotTo}]
+  ## NOTE: No written Nomos spec currently declares this REST endpoint or its
+  ## query parameter names. The `slot_from` / `slot_to` parameters follow the
+  ## official `logos-blockchain` implementation, which defines
+  ## `BlockRangeQuery { slot_from, slot_to }` in:
+  ## https://github.com/logos-blockchain/logos-blockchain/blob/master/nodes/node/binary/src/api/queries.rs#L7
+  router.api2(MethodGet, BLOCKS) do (
+    slot_from: Option[uint64],
+    slot_to: Option[uint64],
+  ) -> RestApiResponse:
+    RestApiResponse.response("[]", Http200, $jsonMediaType)
+
+  # GET /blocks/stream
+  router.api2(MethodGet, BLOCKS_STREAM) do () -> RestApiResponse:
+    RestApiResponse.response("", Http200, $jsonMediaType)
