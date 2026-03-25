@@ -67,7 +67,7 @@ proc init*(
     validateBeaconApiQueries, nimbusAgentStr, config)
 
   let
-    network = createEth2Node(
+    network = createLBNode(
       rng,
       config,
       rng[].getRandomNetKeys(),
@@ -262,3 +262,5 @@ proc main*() {.noinline, raises: [CatchableError].} =
 
 when isMainModule:
   main()
+
+{.pop.}

@@ -25,7 +25,7 @@ export
 
 type
   BeaconNode* = ref object
-    network*: Eth2Node
+    network*: LBNode
     netKeys*: NetKeyPair
     config*: BeaconNodeConf
     restServer*: RestServerRef
@@ -43,3 +43,5 @@ template findIt*(s: openArray, predicate: untyped): int =
 
 template rng*(node: BeaconNode): ref HmacDrbgContext =
   node.network.rng
+
+{.pop.}
