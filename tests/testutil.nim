@@ -7,9 +7,7 @@
 
 {.push raises: [].}
 
-import
-  testutils/markdown_reports,
-  unittest2
+import testutils/markdown_reports, unittest2
 
 from std/algorithm import SortOrder, sort
 from std/strformat import `&`
@@ -18,8 +16,7 @@ from std/times import Duration, inNanoseconds
 
 export unittest2
 
-type
-  TestDuration = tuple[duration: float, label: string]
+type TestDuration = tuple[duration: float, label: string]
 
 var testTimes: seq[TestDuration]
 var status = initOrderedTable[string, OrderedTable[string, Status]]()
@@ -31,7 +28,9 @@ func toFloatSeconds(duration: Duration): float =
 
 method testEnded*(formatter: TimingCollector, testResult: TestResult) =
   {.gcsafe.}: # Lie!
-    status.mgetOrPut(testResult.suiteName, initOrderedTable[string, Status]())[testResult.testName] =
+    status.mgetOrPut(testResult.suiteName, initOrderedTable[string, Status]())[
+      testResult.testName
+    ] =
       case testResult.status
       of TestStatus.OK: Status.OK
       of TestStatus.FAILED: Status.Fail
@@ -51,10 +50,13 @@ proc summarizeLongTests*(name: string) =
       if i >= 10:
         break
 
-    status.sort do (a: (string, OrderedTable[string, Status]),
-                    b: (string, OrderedTable[string, Status])) -> int: cmp(a[0], b[0])
+    status.sort do(
+      a: (string, OrderedTable[string, Status]),
+      b: (string, OrderedTable[string, Status])
+    ) -> int:
+      cmp(a[0], b[0])
 
-    generateReport(name, status, width=90, withTotals=false)
+    generateReport(name, status, width = 90, withTotals = false)
   except CatchableError as exc:
     raiseAssert exc.msg
 
