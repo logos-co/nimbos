@@ -13,6 +13,9 @@ import
   ./testutil
 
 import # Unit test
-  ./test_peer_pool
+  ./test_peer_pool,
+  ./test_logos_p2p
 
 summarizeLongTests("AllTests")
+
+{.pop.}
