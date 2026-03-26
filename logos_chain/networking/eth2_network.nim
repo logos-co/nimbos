@@ -65,7 +65,7 @@ type
     peerId*: PeerId
     stamp*: chronos.Moment
 
-  LBNode* = ref object of RootObj
+  LBP2PNode* = ref object of RootObj
     switch*: Switch
     pubsub*: GossipSub
     discovery*: Eth2DiscoveryProtocol
@@ -97,7 +97,7 @@ type
     average*: float
 
   Peer* = ref object
-    network*: LBNode
+    network*: LBP2PNode
     peerId*: PeerId
     discoveryId*: Eth2DiscoveryId
     connectionState*: ConnectionState
@@ -168,10 +168,10 @@ type
     ResourceUnavailable
 
   PeerStateInitializer* = proc(peer: Peer): RootRef {.gcsafe, raises: [].}
-  NetworkStateInitializer* = proc(network: LBNode): RootRef {.gcsafe, raises: [].}
+  NetworkStateInitializer* = proc(network: LBP2PNode): RootRef {.gcsafe, raises: [].}
   OnPeerConnectedHandler* = proc(peer: Peer, incoming: bool): Future[void] {.async: (raises: [CancelledError]).}
   OnPeerDisconnectedHandler* = proc(peer: Peer): Future[void] {.async: (raises: [CancelledError]).}
-  MounterProc* = proc(network: LBNode) {.gcsafe, raises: [].}
+  MounterProc* = proc(network: LBP2PNode) {.gcsafe, raises: [].}
   MessageContentPrinter* = proc(msg: pointer): string {.gcsafe, raises: [].}
 
   DisconnectionReason* = enum
@@ -335,7 +335,7 @@ func shortProtocolId(protocolId: string): string =
       protocolId.high
   protocolId[start..ends]
 
-proc openStream(node: LBNode,
+proc openStream(node: LBP2PNode,
                 peer: Peer,
                 protocolId: string): Future[NetRes[Connection]]
                 {.async: (raises: [CancelledError]).} =
@@ -348,7 +348,7 @@ proc openStream(node: LBNode,
     debug "Dialing failed", exc = exc.msg
     neterr BrokenConnection
 
-proc init(T: type Peer, network: LBNode, peerId: PeerId): Peer {.gcsafe.}
+proc init(T: type Peer, network: LBP2PNode, peerId: PeerId): Peer {.gcsafe.}
 
 func getState*(peer: Peer, proto: ProtocolInfo): RootRef =
   doAssert peer.protocolStates[proto.index] != nil, $proto.index
@@ -362,17 +362,17 @@ template state*(peer: Peer, Protocol: type): untyped =
   type S = Protocol.State
   S(getState(peer, Protocol.protocolInfo))
 
-func getNetworkState*(node: LBNode, proto: ProtocolInfo): RootRef =
+func getNetworkState*(node: LBP2PNode, proto: ProtocolInfo): RootRef =
   doAssert node.protocolStates[proto.index] != nil, $proto.index
   node.protocolStates[proto.index]
 
-template protocolState*(node: LBNode, Protocol: type): untyped =
+template protocolState*(node: LBP2PNode, Protocol: type): untyped =
   mixin NetworkState
   bind getNetworkState
   type S = Protocol.NetworkState
   S(getNetworkState(node, Protocol.protocolInfo))
 
-func initProtocolState*[T](state: T, x: Peer|LBNode) {.raises: [].} =
+func initProtocolState*[T](state: T, x: Peer|LBP2PNode) {.raises: [].} =
   discard
 
 template networkState*(connection: Peer, Protocol: type): untyped =
@@ -380,24 +380,24 @@ template networkState*(connection: Peer, Protocol: type): untyped =
   ## particular connection.
   protocolState(connection.network, Protocol)
 
-func peerId*(node: LBNode): PeerId =
+func peerId*(node: LBP2PNode): PeerId =
   node.switch.peerInfo.peerId
 
-func nodeId*(node: LBNode): NodeId =
+func nodeId*(node: LBP2PNode): NodeId =
   # `secp256k1` keys are always stored inside PeerId.
   toNodeId(keys.PublicKey(node.switch.peerInfo.publicKey.skkey))
 
-func enrRecord*(node: LBNode): Record =
+func enrRecord*(node: LBP2PNode): Record =
   node.discovery.localNode.record
 
-proc getPeer(node: LBNode, peerId: PeerId): Peer =
+proc getPeer(node: LBP2PNode, peerId: PeerId): Peer =
   node.peers.withValue(peerId, peer) do:
     return peer[]
   do:
     let peer = Peer.init(node, peerId)
     return node.peers.mgetOrPut(peerId, peer)
 
-proc peerFromStream(network: LBNode, conn: Connection): Peer =
+proc peerFromStream(network: LBP2PNode, conn: Connection): Peer =
   result = network.getPeer(conn.peerId)
   result.peerId = conn.peerId
 
@@ -473,7 +473,7 @@ template awaitQuota*(peerParam: Peer, costParam: float, protocolIdParam: string)
     await peer.quota.consume(cost.int)
 
 template awaitQuota*(
-    networkParam: LBNode, costParam: float, protocolIdParam: string) =
+    networkParam: LBP2PNode, costParam: float, protocolIdParam: string) =
   let
     network = networkParam
     cost = int(costParam)
@@ -492,7 +492,7 @@ const
   libp2pRequestCost = allowedOpsPerSecondCost(8)
     ## Maximum number of libp2p requests per peer per second
 
-proc isSeen(network: LBNode, peerId: PeerId): bool =
+proc isSeen(network: LBP2PNode, peerId: PeerId): bool =
   ## Returns ``true`` if ``peerId`` present in SeenTable and time period is not
   ## yet expired.
   let currentTime = now(chronos.Moment)
@@ -508,7 +508,7 @@ proc isSeen(network: LBNode, peerId: PeerId): bool =
     else:
       true
 
-proc addSeen(network: LBNode, peerId: PeerId,
+proc addSeen(network: LBP2PNode, peerId: PeerId,
               period: chronos.Duration) =
   ## Adds peer with PeerId ``peerId`` to SeenTable and timeout ``period``.
   let item = SeenItem(peerId: peerId, stamp: now(chronos.Moment) + period)
@@ -1107,7 +1107,7 @@ proc implementSendProcBody(sendProc: SendProc, isChunkStream: bool) =
 
   sendProc.useStandardBody(nil, nil, sendCallGenerator)
 
-proc handleIncomingStream(network: LBNode,
+proc handleIncomingStream(network: LBP2PNode,
                           conn: Connection,
                           protocolId: string,
                           MsgType: type) {.async: (raises: [CancelledError]).} =
@@ -1329,7 +1329,7 @@ func toPeerAddr*(r: enr.TypedRecord,
 
   ok(PeerAddr(peerId: peerId, addrs: addrs))
 
-proc checkPeer(node: LBNode, peerAddr: PeerAddr): bool =
+proc checkPeer(node: LBP2PNode, peerAddr: PeerAddr): bool =
   logScope: peer = peerAddr.peerId
   let peerId = peerAddr.peerId
   if node.peerPool.hasPeer(peerId):
@@ -1342,7 +1342,7 @@ proc checkPeer(node: LBNode, peerAddr: PeerAddr): bool =
     else:
       true
 
-proc dialPeer(node: LBNode, peerAddr: PeerAddr, index = 0) {.async: (raises: [CancelledError]).} =
+proc dialPeer(node: LBP2PNode, peerAddr: PeerAddr, index = 0) {.async: (raises: [CancelledError]).} =
   ## Establish connection with remote peer identified by address ``peerAddr``.
   logScope:
     peer = peerAddr.peerId
@@ -1378,7 +1378,7 @@ proc dialPeer(node: LBNode, peerAddr: PeerAddr, index = 0) {.async: (raises: [Ca
     inc nbc_failed_dials
     node.addSeen(peerAddr.peerId, SeenTableTimeDeadPeer)
 
-proc connectWorker(node: LBNode, index: int) {.async: (raises: [CancelledError]).} =
+proc connectWorker(node: LBP2PNode, index: int) {.async: (raises: [CancelledError]).} =
   debug "Connection worker started", index = index
   while true:
     # This loop will never produce HIGH CPU usage because it will wait
@@ -1400,7 +1400,7 @@ proc connectWorker(node: LBNode, index: int) {.async: (raises: [CancelledError])
 # This queue/dedupe/backoff strategy is our implementation choice for that goal,
 # even though the spec does not dictate this exact mechanism per se.
 proc enqueueBootstrapPeers(
-    node: LBNode, source: string) {.async: (raises: [CancelledError]).} =
+    node: LBP2PNode, source: string) {.async: (raises: [CancelledError]).} =
   var queued = 0
   var skippedConnected = 0
   var skippedPending = 0
@@ -1434,7 +1434,7 @@ func toPeerAddr(node: Node): Result[PeerAddr, cstring] =
   let peerAddr = ? nodeRecord.toPeerAddr(tcpProtocol)
   ok(peerAddr)
 
-proc runDiscoveryLoop(node: LBNode) {.async: (raises: [CancelledError]).} =
+proc runDiscoveryLoop(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
   debug "Starting discovery loop"
 
   while true:
@@ -1553,7 +1553,7 @@ proc handlePeer*(peer: Peer) {.async: (raises: [CancelledError]).} =
                                          connections = peer.connections
 
 proc onConnEvent(
-    node: LBNode, peerId: PeerId, event: ConnEvent) {.
+    node: LBP2PNode, peerId: PeerId, event: ConnEvent) {.
     async: (raises: [CancelledError]).} =
   let peer = node.getPeer(peerId)
   case event.kind
@@ -1633,7 +1633,7 @@ proc onConnEvent(
               peer = peerId, peer_state = peer.connectionState
       peer.connectionState = Disconnected
 
-proc new(T: type LBNode,
+proc new(T: type LBP2PNode,
          config: BeaconNodeConf,
          switch: Switch, pubsub: GossipSub,
          ip: Opt[IpAddress], tcpPort, udpPort: Opt[Port],
@@ -1691,7 +1691,7 @@ proc new(T: type LBNode,
 
   node
 
-proc registerProtocol*(node: LBNode, Proto: type, state: Proto.NetworkState) =
+proc registerProtocol*(node: LBP2PNode, Proto: type, state: Proto.NetworkState) =
   # This convoluted registration process is a leftover from the shared p2p macro
   # and should be refactored
   let proto = Proto.protocolInfo()
@@ -1703,7 +1703,7 @@ proc registerProtocol*(node: LBNode, Proto: type, state: Proto.NetworkState) =
     if msg.protocolMounter != nil:
       msg.protocolMounter node
 
-proc startListening*(node: LBNode) {.async.} =
+proc startListening*(node: LBP2PNode) {.async.} =
   if node.discoveryEnabled:
     try:
        node.discovery.open()
@@ -1732,11 +1732,11 @@ proc startListening*(node: LBNode) {.async.} =
   else:
     debug "No advertised addresses configured"
 
-proc peerPingerHeartbeat(node: LBNode): Future[void] {.async: (raises: [CancelledError]).}
-proc peerTrimmerHeartbeat(node: LBNode): Future[void] {.async: (raises: [CancelledError]).}
-proc bootstrapHeartbeat(node: LBNode): Future[void] {.async: (raises: [CancelledError]).}
+proc peerPingerHeartbeat(node: LBP2PNode): Future[void] {.async: (raises: [CancelledError]).}
+proc peerTrimmerHeartbeat(node: LBP2PNode): Future[void] {.async: (raises: [CancelledError]).}
+proc bootstrapHeartbeat(node: LBP2PNode): Future[void] {.async: (raises: [CancelledError]).}
 
-proc start*(node: LBNode) {.async: (raises: [CancelledError]).} =
+proc start*(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
   proc onPeerCountChanged() =
     trace "Number of peers has been changed", length = len(node.peerPool)
     nbc_peers.set int64(len(node.peerPool))
@@ -1758,7 +1758,7 @@ proc start*(node: LBNode) {.async: (raises: [CancelledError]).} =
   node.peerTrimmerHeartbeatFut = node.peerTrimmerHeartbeat()
   node.bootstrapHeartbeatFut = node.bootstrapHeartbeat()
 
-proc stop*(node: LBNode) {.async: (raises: [CancelledError]).} =
+proc stop*(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
   # Ignore errors in futures, since we're shutting down (but log them on the
   # TRACE level, if a timeout is reached).
   #
@@ -1783,11 +1783,11 @@ proc stop*(node: LBNode) {.async: (raises: [CancelledError]).} =
     timeout = 5.seconds
     completed = await withTimeout(allFutures(waitedFutures), timeout)
   if not completed:
-    trace "LBNode.stop(): timeout reached", timeout = timeout,
+    trace "LBP2PNode.stop(): timeout reached", timeout = timeout,
       futureErrors = waitedFutures.filterIt(not isNil(it.error)).mapIt(
         it.error.msg)
 
-proc init(T: type Peer, network: LBNode, peerId: PeerId): Peer =
+proc init(T: type Peer, network: LBP2PNode, peerId: PeerId): Peer =
   let res = Peer(
     peerId: peerId,
     network: network,
@@ -1815,7 +1815,7 @@ proc p2pProtocolBackendImpl*(p: P2PProtocol): Backend =
     Format = ident "SSZ"
     Connection = bindSym "Connection"
     Peer = bindSym "Peer"
-    LBNode = bindSym "LBNode"
+    LBP2PNode = bindSym "LBP2PNode"
     registerMsg = bindSym "registerMsg"
     initProtocol = bindSym "initProtocol"
     msgVar = ident "msg"
@@ -1826,7 +1826,7 @@ proc p2pProtocolBackendImpl*(p: P2PProtocol): Backend =
   new result
 
   result.PeerType = Peer
-  result.NetworkType = LBNode
+  result.NetworkType = LBP2PNode
   result.setEventHandlers = bindSym "setEventHandlers"
   result.SerializationFormat = Format
   result.RequestResultsWrapper = ident "NetRes"
@@ -1896,7 +1896,7 @@ proc p2pProtocolBackendImpl*(p: P2PProtocol): Backend =
                                  `msgVar`: `MsgRecName`): untyped =
         `userHandlerCall`
 
-      proc `protocolMounterName`(`networkVar`: `LBNode`) {.raises: [].} =
+      proc `protocolMounterName`(`networkVar`: `LBP2PNode`) {.raises: [].} =
         proc snappyThunk(
             `streamVar`: `Connection`,
             `protocolVar`: string
@@ -1957,7 +1957,7 @@ const
   MetadataRequestFrequency = 30.minutes
   MetadataRequestMaxFailures = 3
 
-proc peerPingerHeartbeat(node: LBNode) {.async: (raises: [CancelledError]).} =
+proc peerPingerHeartbeat(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
   while true:
     let heartbeatStart_m = Moment.now()
     var updateFutures: seq[Future[void]]
@@ -1980,7 +1980,7 @@ proc peerPingerHeartbeat(node: LBNode) {.async: (raises: [CancelledError]).} =
 
     await sleepAsync(5.seconds)
 
-proc peerTrimmerHeartbeat(node: LBNode) {.async: (raises: [CancelledError]).} =
+proc peerTrimmerHeartbeat(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
   # Disconnect peers in excess of the (soft) max peer count
   while true:
     # Only count Connected peers (to avoid counting Disconnecting ones)
@@ -1995,7 +1995,7 @@ proc peerTrimmerHeartbeat(node: LBNode) {.async: (raises: [CancelledError]).} =
 
     await sleepAsync(1.seconds div max(1, excessPeers))
 
-proc bootstrapHeartbeat(node: LBNode) {.async: (raises: [CancelledError]).} =
+proc bootstrapHeartbeat(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
   if node.bootstrapPeers.len == 0:
     return
 
@@ -2083,7 +2083,7 @@ proc createLBNode*(
     rng: ref HmacDrbgContext,
     config: BeaconNodeConf,
     netKeys: NetKeyPair,
-): Result[LBNode, string] =
+): Result[LBP2PNode, string] =
   let
     # Would be configurable
     # Keep discovery's UDP port stable (see `eth2_discovery.nim`),
@@ -2183,7 +2183,7 @@ proc createLBNode*(
   except LPError as exc: # Invalid params..
     return err("Cannot mount pubsub: " & exc.msg)
 
-  let node = LBNode.new(
+  let node = LBP2PNode.new(
     config, switch, pubsub, extIp,
     # TODO: replace `asEthKey` with LBKey once discovery/ENR uses Logos types.
     extQuicPort, extUdpPort, netKeys.seckey.asEthKey,
@@ -2201,15 +2201,15 @@ proc createLBNode*(
 
   ok node
 
-func announcedENR*(node: LBNode): enr.Record =
-  doAssert node.discovery != nil, "The LBNode must be initialized"
+func announcedENR*(node: LBP2PNode): enr.Record =
+  doAssert node.discovery != nil, "The LBP2PNode must be initialized"
   node.discovery.localNode.record
 
 func shortForm*(id: NetKeyPair): string =
   $PeerId.init(id.pubkey)
 
 proc subscribe*(
-    node: LBNode, topic: string, topicParams: TopicParams,
+    node: LBP2PNode, topic: string, topicParams: TopicParams,
     enableTopicMetrics: bool = false) =
   if enableTopicMetrics:
     node.pubsub.knownTopics.incl(topic)
@@ -2226,7 +2226,7 @@ proc newValidationResultFuture(v: ValidationResult): Future[ValidationResult]
   res
 
 func addValidator*[MsgType](
-    node: LBNode,
+    node: LBP2PNode,
     topic: string,
     msgValidator: ValidationSyncProc[MsgType]
 ) =
@@ -2262,7 +2262,7 @@ func addValidator*[MsgType](
   node.pubsub.addValidator(topic, execValidator)
 
 proc addAsyncValidator*[MsgType](
-    node: LBNode,
+    node: LBP2PNode,
     topic: string,
     msgValidator: ValidationAsyncProc[MsgType]
 ) =
@@ -2294,7 +2294,7 @@ proc addAsyncValidator*[MsgType](
 
   node.pubsub.addValidator(topic, execValidator)
 
-proc unsubscribe*(node: LBNode, topic: string) =
+proc unsubscribe*(node: LBP2PNode, topic: string) =
   node.pubsub.unsubscribeAll(topic)
 
 func gossipEncode(msg: auto): seq[byte] =
@@ -2305,7 +2305,7 @@ func gossipEncode(msg: auto): seq[byte] =
 
   snappy.encode(uncompressed)
 
-proc broadcast(node: LBNode, topic: string, msg: seq[byte]):
+proc broadcast(node: LBP2PNode, topic: string, msg: seq[byte]):
     Future[SendResult] {.async: (raises: [CancelledError]).} =
   let peers = await node.pubsub.publish(topic, msg)
 
@@ -2317,7 +2317,7 @@ proc broadcast(node: LBNode, topic: string, msg: seq[byte]):
     # Increments libp2p_gossipsub_failed_publish metric
     err("No peers on libp2p topic")
 
-proc broadcast(node: LBNode, topic: string, msg: auto):
+proc broadcast(node: LBP2PNode, topic: string, msg: auto):
     Future[SendResult] {.async: (raises: [CancelledError], raw: true).} =
   # Avoid {.async.} copies of message while broadcasting
   broadcast(node, topic, gossipEncode(msg))
