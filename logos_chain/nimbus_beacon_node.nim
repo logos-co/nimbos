@@ -30,7 +30,7 @@ from libp2p/protocols/pubsub/gossipsub import
 logScope: topics = "beacnde"
 
 proc initFullNode(
-    node: BeaconNode,
+    node: LBNode,
     rng: ref HmacDrbgContext,
 ) {.async: (raises: [CancelledError]).} =
   template config(): auto = node.config
@@ -48,14 +48,14 @@ proc initFullNode(
     BeaconSync, default(BeaconSync.NetworkState))
 
 proc init*(
-    T: type BeaconNode,
+    T: type LBNode,
     rng: ref HmacDrbgContext,
     config: BeaconNodeConf,
-): Future[Opt[BeaconNode]] {.async: (raises: [CancelledError]).} =
+): Future[Opt[LBNode]] {.async: (raises: [CancelledError]).} =
   var config = config
 
   if ProcessState.stopIt(notice("Shutting down", reason = it)):
-    return Opt.none(BeaconNode)
+    return Opt.none(LBNode)
 
   # Doesn't use std/random directly, but dependencies might
   randomize(rng[].rand(high(int)))
@@ -73,9 +73,9 @@ proc init*(
       rng[].getRandomNetKeys(),
     ).valueOr:
       error "Failed to initialize node", err = error
-      return Opt.none(BeaconNode)
+      return Opt.none(LBNode)
 
-  ok BeaconNode(
+  ok LBNode(
     network: network,
     config: config,
     restServer: restServer,
@@ -87,14 +87,14 @@ func subnetLog(v: BitArray): string =
 when defined(windows):
   from winservice import establishWindowsService, reportServiceStatusSuccess
 
-proc onSlotStart(node: BeaconNode): Future[bool] {.async.} =
+proc onSlotStart(node: LBNode): Future[bool] {.async.} =
   when defined(windows):
     if node.config.runAsService:
       reportServiceStatusSuccess()
 
   false
 
-proc runSlotLoop(node: BeaconNode) {.async.} =
+proc runSlotLoop(node: LBNode) {.async.} =
   info "Scheduling first slot action"
 
   while true:
@@ -108,11 +108,11 @@ proc runSlotLoop(node: BeaconNode) {.async.} =
     if breakLoop:
       break
 
-proc onSecond(node: BeaconNode, time: Moment) =
+proc onSecond(node: LBNode, time: Moment) =
   # Nim GC metrics (for the main thread)
   updateThreadMetrics()
 
-proc runOnSecondLoop(node: BeaconNode) {.async.} =
+proc runOnSecondLoop(node: LBNode) {.async.} =
   const
     sleepTime = chronos.seconds(1)
     nanosecondsIn1s = float(sleepTime.nanoseconds)
@@ -126,20 +126,20 @@ proc runOnSecondLoop(node: BeaconNode) {.async.} =
     let processingTime = finished - afterSleep
     trace "onSecond task completed", sleepTime, processingTime
 
-func connectedPeersCount(node: BeaconNode): int =
+func connectedPeersCount(node: LBNode): int =
   len(node.network.peerPool)
 
-proc installRestHandlers(restServer: RestServerRef, node: BeaconNode) =
+proc installRestHandlers(restServer: RestServerRef, node: LBNode) =
   restServer.router.installNodeApiHandlers(node)
 
-proc installMessageValidators(node: BeaconNode) =
+proc installMessageValidators(node: LBNode) =
   node.network.addValidator(
     "/some/topic", proc (
       signedBlock: AttestationData,
       src: PeerId,
     ): ValidationResult = ValidationResult.Accept)
 
-proc stop(node: BeaconNode) =
+proc stop(node: LBNode) =
   try:
     waitFor node.network.stop()
   except CatchableError as exc:
@@ -147,7 +147,7 @@ proc stop(node: BeaconNode) =
 
   waitFor node.metricsServer.stopMetricsServer()
 
-proc initializeNetworking(node: BeaconNode) {.async.} =
+proc initializeNetworking(node: LBNode) {.async.} =
   node.installMessageValidators()
 
   info "Listening to incoming network requests"
@@ -157,7 +157,7 @@ proc initializeNetworking(node: BeaconNode) {.async.} =
 
 type StopFuture = Future[void].Raising([CancelledError])
 
-proc run*(node: BeaconNode, stopper: StopFuture) {.raises: [CatchableError].} =
+proc run*(node: LBNode, stopper: StopFuture) {.raises: [CatchableError].} =
   waitFor node.initializeNetworking()
 
   ProcessState.notifyRunning()
@@ -201,7 +201,7 @@ proc doRunBeaconNode(
 
   let
     taskpool = setupTaskpool(config.numThreads)
-    node = waitFor(BeaconNode.init(rng, config)).valueOr:
+    node = waitFor(LBNode.init(rng, config)).valueOr:
       return
 
   # Nim GC metrics (for the main thread) will be collected in onSecond(), but

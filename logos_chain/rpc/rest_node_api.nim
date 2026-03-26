@@ -120,7 +120,7 @@ proc toString(direction: PeerType): string =
   of PeerType.Outgoing:
     "outbound"
 
-proc getLastSeenAddress(node: BeaconNode, id: PeerId): string =
+proc getLastSeenAddress(node: LBNode, id: PeerId): string =
   let
     address = node.network.switch.peerStore[LastSeenBook][id].valueOr:
       return ""
@@ -128,7 +128,7 @@ proc getLastSeenAddress(node: BeaconNode, id: PeerId): string =
       return ""
   $normalized
 
-proc getDiscoveryAddresses(node: BeaconNode): seq[string] =
+proc getDiscoveryAddresses(node: LBNode): seq[string] =
   let
     typedRec = TypedRecord.fromRecord(node.network.enrRecord())
     peerAddr = typedRec.toPeerAddr(udpProtocol).valueOr:
@@ -143,7 +143,7 @@ proc getDiscoveryAddresses(node: BeaconNode): seq[string] =
       addresses.add($(res.get()))
   addresses
 
-proc getP2PAddresses(node: BeaconNode): seq[string] =
+proc getP2PAddresses(node: LBNode): seq[string] =
   let
     pinfo = node.network.switch.peerInfo
     maddress = MultiAddress.init(multiCodec("p2p"), pinfo.peerId).valueOr:
@@ -160,7 +160,7 @@ proc getP2PAddresses(node: BeaconNode): seq[string] =
       addresses.add($(res.get()))
   addresses
 
-proc installNodeApiHandlers*(router: var RestRouter, node: BeaconNode) =
+proc installNodeApiHandlers*(router: var RestRouter, node: LBNode) =
   let
     cachedVersion =
       RestApiResponse.prepareJsonResponse((version: nimbusAgentStr))
