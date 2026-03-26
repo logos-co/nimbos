@@ -85,9 +85,11 @@ type
     rng*: ref HmacDrbgContext
     peers*: Table[PeerId, Peer]
     announcedAddresses*: seq[MultiAddress]
+    bootstrapPeers*: seq[PeerAddr]
     validTopics: HashSet[string]
     peerPingerHeartbeatFut: Future[void].Raising([CancelledError])
     peerTrimmerHeartbeatFut: Future[void].Raising([CancelledError])
+    bootstrapHeartbeatFut: Future[void].Raising([CancelledError])
     quota: TokenBucket ## Global quota mainly for high-bandwidth stuff
 
   AverageThroughput* = object
@@ -1392,6 +1394,41 @@ proc connectWorker(node: LBNode, index: int) {.async: (raises: [CancelledError])
     # excluding peer here after processing.
     node.connTable.excl(remotePeerAddr.peerId)
 
+## The spec motivates having bootstrap dialing and avoiding connection spam,
+## even when it does not dictate this exact queue/dedupe/retry design.
+# The spec motivates having bootstrap dialing and avoiding connection spam.
+# This queue/dedupe/backoff strategy is our implementation choice for that goal,
+# even though the spec does not dictate this exact mechanism per se.
+proc enqueueBootstrapPeers(
+    node: LBNode, source: string) {.async: (raises: [CancelledError]).} =
+  var queued = 0
+  var skippedConnected = 0
+  var skippedPending = 0
+  var skippedSeen = 0
+
+  for peerAddr in node.bootstrapPeers:
+    let peerId = peerAddr.peerId
+    if node.peerPool.hasPeer(peerId):
+      inc skippedConnected
+      debug "Skipping bootstrap peer: already connected", source, peer = peerId
+      continue
+    if peerId in node.connTable:
+      inc skippedPending
+      debug "Skipping bootstrap peer: already pending", source, peer = peerId
+      continue
+    if node.isSeen(peerId):
+      inc skippedSeen
+      debug "Skipping bootstrap peer: in reconnect backoff", source, peer = peerId
+      continue
+
+    node.connTable.incl(peerId)
+    await node.connQueue.addLast(peerAddr)
+    inc queued
+    debug "Queued bootstrap peer", source, peer = peerId, addrs = peerAddr.addrs
+
+  notice "Bootstrap enqueue pass complete",
+    source, queued, skippedConnected, skippedPending, skippedSeen
+
 func toPeerAddr(node: Node): Result[PeerAddr, cstring] =
   let nodeRecord = TypedRecord.fromRecord(node.record)
   let peerAddr = ? nodeRecord.toPeerAddr(tcpProtocol)
@@ -1602,6 +1639,7 @@ proc new(T: type LBNode,
          ip: Opt[IpAddress], tcpPort, udpPort: Opt[Port],
          privKey: keys.PrivateKey, discovery: bool,
          announcedAddresses: openArray[MultiAddress],
+         bootstrapPeers: openArray[PeerAddr],
          rng: ref HmacDrbgContext): T =
   when not defined(local_testnet):
     let
@@ -1629,6 +1667,7 @@ proc new(T: type LBNode,
     connectTimeout: connectTimeout,
     seenThreshold: seenThreshold,
     announcedAddresses: @announcedAddresses,
+    bootstrapPeers: @bootstrapPeers,
     quota: TokenBucket.new(maxGlobalQuota, fullReplenishTime)
   )
 
@@ -1695,6 +1734,7 @@ proc startListening*(node: LBNode) {.async.} =
 
 proc peerPingerHeartbeat(node: LBNode): Future[void] {.async: (raises: [CancelledError]).}
 proc peerTrimmerHeartbeat(node: LBNode): Future[void] {.async: (raises: [CancelledError]).}
+proc bootstrapHeartbeat(node: LBNode): Future[void] {.async: (raises: [CancelledError]).}
 
 proc start*(node: LBNode) {.async: (raises: [CancelledError]).} =
   proc onPeerCountChanged() =
@@ -1706,18 +1746,17 @@ proc start*(node: LBNode) {.async: (raises: [CancelledError]).} =
   for i in 0 ..< ConcurrentConnections:
     node.connWorkers.add connectWorker(node, i)
 
+  if node.bootstrapPeers.len > 0:
+    await node.enqueueBootstrapPeers("startup")
+  else:
+    notice "No libp2p bootstrap multiaddrs configured"
+
   if node.discoveryEnabled:
     node.discovery.start()
     traceAsyncErrors node.runDiscoveryLoop()
-  else:
-    notice "Discovery disabled; trying bootstrap nodes",
-      nodes = node.discovery.bootstrapRecords.len
-    for enr in node.discovery.bootstrapRecords:
-      let pa = TypedRecord.fromRecord(enr).toPeerAddr(tcpProtocol)
-      if pa.isOk():
-        await node.connQueue.addLast(pa.get())
   node.peerPingerHeartbeatFut = node.peerPingerHeartbeat()
   node.peerTrimmerHeartbeatFut = node.peerTrimmerHeartbeat()
+  node.bootstrapHeartbeatFut = node.bootstrapHeartbeat()
 
 proc stop*(node: LBNode) {.async: (raises: [CancelledError]).} =
   # Ignore errors in futures, since we're shutting down (but log them on the
@@ -1735,6 +1774,8 @@ proc stop*(node: LBNode) {.async: (raises: [CancelledError]).} =
     waitedFutures.add FutureBase(node.peerPingerHeartbeatFut.cancelAndWait())
   if not isNil(node.peerTrimmerHeartbeatFut):
     waitedFutures.add FutureBase(node.peerTrimmerHeartbeatFut.cancelAndWait())
+  if not isNil(node.bootstrapHeartbeatFut):
+    waitedFutures.add FutureBase(node.bootstrapHeartbeatFut.cancelAndWait())
   if node.discoveryEnabled:
     waitedFutures.add FutureBase(node.discovery.closeWait())
 
@@ -1954,6 +1995,18 @@ proc peerTrimmerHeartbeat(node: LBNode) {.async: (raises: [CancelledError]).} =
 
     await sleepAsync(1.seconds div max(1, excessPeers))
 
+proc bootstrapHeartbeat(node: LBNode) {.async: (raises: [CancelledError]).} =
+  if node.bootstrapPeers.len == 0:
+    return
+
+  while true:
+    if node.peerPool.len < node.wantedPeers:
+      await node.enqueueBootstrapPeers("heartbeat")
+    # This retry cadence is not specified in the Nomos P2P specs.
+    # We use 30s as a pragmatic default: fast enough for recovery, slow enough
+    # to avoid dial/log spam while existing attempts are still in progress/backoff.
+    await sleepAsync(30.seconds)
+
 # TODO: Replace with an LBKey (or Logos-native key) wrapper; this only bridges
 # libp2p `PrivateKey` to `eth/common/keys` for discovery / ENR code paths.
 func asEthKey*(key: PrivateKey): keys.PrivateKey =
@@ -1978,6 +2031,10 @@ func quicEndPoint(address: IpAddress, port: Port): Result[MultiAddress, string] 
     )
   except MaError as exc:
     err(exc.msg)
+
+proc loadBootstrapPeers(config: BeaconNodeConf): seq[PeerAddr] =
+  for (peerId, maddr) in loadBootstrapNodes(config):
+    result.add(PeerAddr(peerId: peerId, addrs: @[maddr]))
 
 func initNetKeys(privKey: PrivateKey): NetKeyPair =
   let pubKey = privKey.getPublicKey().expect("working public key from random")
@@ -2075,6 +2132,7 @@ proc createLBNode*(
       err(ValidationResult.Reject)
 
   let
+    bootstrapPeers = loadBootstrapPeers(config)
     params = GossipSubParams.init(
       pruneBackoff = chronos.minutes(1),
       unsubscribeBackoff = chronos.seconds(10),
@@ -2129,8 +2187,13 @@ proc createLBNode*(
     config, switch, pubsub, extIp,
     # TODO: replace `asEthKey` with LBKey once discovery/ENR uses Logos types.
     extQuicPort, extUdpPort, netKeys.seckey.asEthKey,
-    discovery = true, announcedAddresses,
+    discovery = true, announcedAddresses, bootstrapPeers,
     rng = rng)
+
+  if bootstrapPeers.len > 0:
+    notice "Loaded libp2p bootstrap multiaddrs", count = bootstrapPeers.len
+  else:
+    notice "No libp2p bootstrap multiaddrs loaded"
 
   node.pubsub.subscriptionValidator =
     proc(topic: string): bool {.gcsafe, raises: [].} =
