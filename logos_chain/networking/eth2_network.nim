@@ -1349,7 +1349,7 @@ proc dialPeer(node: LBNode, peerAddr: PeerAddr, index = 0) {.async: (raises: [Ca
   if not(node.checkPeer(peerAddr)):
     return
 
-  debug "Connecting to discovered peer"
+  debug "Connecting to discovered peer", addrs = peerAddr.addrs
   var deadline = sleepAsync(node.connectTimeout)
   var workfut = node.switch.connect(
     peerAddr.peerId,
@@ -1366,12 +1366,13 @@ proc dialPeer(node: LBNode, peerAddr: PeerAddr, index = 0) {.async: (raises: [Ca
         deadline.cancelSoon()
       inc nbc_successful_dials
     else:
-      debug "Connection to remote peer timed out"
+      debug "Connection to remote peer timed out",
+        timeout = node.connectTimeout, addrs = peerAddr.addrs
       inc nbc_timeout_dials
       node.addSeen(peerAddr.peerId, SeenTableTimeTimeout)
       await cancelAndWait(workfut)
   except CatchableError as exc:
-    debug "Connection to remote peer failed", msg = exc.msg
+    debug "Connection to remote peer failed", msg = exc.msg, addrs = peerAddr.addrs
     inc nbc_failed_dials
     node.addSeen(peerAddr.peerId, SeenTableTimeDeadPeer)
 
@@ -1678,6 +1679,19 @@ proc startListening*(node: LBNode) {.async.} =
     fatal "Failed to start LibP2P transport. Listen address/port may be already in use",
           exc = exc.msg
     quit 1
+
+  let fullAddrsRes = node.switch.peerInfo.fullAddrs()
+  if fullAddrsRes.isOk:
+    notice "LibP2P transport started", fullAddrs = fullAddrsRes.get()
+  else:
+    warn "LibP2P transport started, but couldn't compute fullAddrs()",
+      error = fullAddrsRes.error
+
+  if node.announcedAddresses.len > 0:
+    notice "Configured advertised addresses",
+      announcedAddresses = node.announcedAddresses
+  else:
+    debug "No advertised addresses configured"
 
 proc peerPingerHeartbeat(node: LBNode): Future[void] {.async: (raises: [CancelledError]).}
 proc peerTrimmerHeartbeat(node: LBNode): Future[void] {.async: (raises: [CancelledError]).}
