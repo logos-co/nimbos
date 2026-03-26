@@ -27,7 +27,7 @@ type
   LBNode* = ref object
     network*: LBP2PNode
     netKeys*: NetKeyPair
-    config*: BeaconNodeConf
+    config*: LBNodeConf
     restServer*: RestServerRef
     metricsServer*: Opt[MetricsHttpServerRef]
     shutdownEvent*: AsyncEvent

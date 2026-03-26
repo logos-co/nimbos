@@ -1634,7 +1634,7 @@ proc onConnEvent(
       peer.connectionState = Disconnected
 
 proc new(T: type LBP2PNode,
-         config: BeaconNodeConf,
+         config: LBNodeConf,
          switch: Switch, pubsub: GossipSub,
          ip: Opt[IpAddress], tcpPort, udpPort: Opt[Port],
          privKey: keys.PrivateKey, discovery: bool,
@@ -2032,7 +2032,7 @@ func quicEndPoint(address: IpAddress, port: Port): Result[MultiAddress, string] 
   except MaError as exc:
     err(exc.msg)
 
-proc loadBootstrapPeers(config: BeaconNodeConf): seq[PeerAddr] =
+proc loadBootstrapPeers(config: LBNodeConf): seq[PeerAddr] =
   for (peerId, maddr) in loadBootstrapNodes(config):
     result.add(PeerAddr(peerId: peerId, addrs: @[maddr]))
 
@@ -2055,7 +2055,7 @@ func gossipId(data: openArray[byte], topic: string): seq[byte] =
   ctx.finish().data[0..19]
 
 proc newBeaconSwitch(
-    config: BeaconNodeConf,
+    config: LBNodeConf,
     seckey: PrivateKey,
     address: MultiAddress,
     rng: ref HmacDrbgContext,
@@ -2081,7 +2081,7 @@ proc newBeaconSwitch(
 
 proc createLBNode*(
     rng: ref HmacDrbgContext,
-    config: BeaconNodeConf,
+    config: LBNodeConf,
     netKeys: NetKeyPair,
 ): Result[LBP2PNode, string] =
   let
@@ -2092,7 +2092,7 @@ proc createLBNode*(
     # Naming note:
     # - `udpPort` (imported from `eth2_discovery.nim`) is the discovery UDP port
     # - `quicPort` is the QUIC listener UDP port
-    quicPort = 5001.Port
+    quicPort = config.quicPort
 
     listenAddress =
       if config.listenAddress.isSome():
@@ -2187,7 +2187,7 @@ proc createLBNode*(
     config, switch, pubsub, extIp,
     # TODO: replace `asEthKey` with LBKey once discovery/ENR uses Logos types.
     extQuicPort, extUdpPort, netKeys.seckey.asEthKey,
-    discovery = true, announcedAddresses, bootstrapPeers,
+    discovery = config.discv5Enabled, announcedAddresses, bootstrapPeers,
     rng = rng)
 
   if bootstrapPeers.len > 0:

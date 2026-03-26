@@ -52,9 +52,9 @@ else:
 
 type
   BNStartUpCmd* {.pure.} = enum
-    beaconNode # match name in unified binary
+    lbNode ## default startup command (CLI name derived by confutils, e.g. `lb-node`)
 
-  BeaconNodeConf* = object
+  LBNodeConf* = object
     # When updating, coordinate option names with EL and other binaries
     configFile* {.
       desc: "Loads the configuration from a TOML file"
@@ -182,9 +182,9 @@ type
 
     case cmd* {.
       command
-      defaultValue: BNStartUpCmd.beaconNode .}: BNStartUpCmd
+      defaultValue: BNStartUpCmd.lbNode .}: BNStartUpCmd
 
-    of BNStartUpCmd.beaconNode:
+    of BNStartUpCmd.lbNode:
       runAsServiceFlag* {.
         windowsOnly
         defaultValue: false,
@@ -205,6 +205,16 @@ type
         desc: "Listening address for the Ethereum LibP2P and Discovery v5 traffic"
         defaultValueDesc: "*"
         name: "listen-address" .}: Option[IpAddress]
+
+      quicPort* {.
+        desc: "UDP port for the QUIC (libp2p) listener"
+        defaultValue: 5001
+        name: "quic-port" .}: Port
+
+      discv5Enabled* {.
+        desc: "Enable discv5 peer discovery (disable for isolated libp2p tests)"
+        defaultValue: true
+        name: "discv5" .}: bool
 
       maxPeers* {.
         desc: "The target number of peers to connect to"
@@ -281,7 +291,7 @@ type
         defaultValue: 8008
         name: "metrics-port" .}: Port
 
-  AnyConf* = BeaconNodeConf
+  AnyConf* = LBNodeConf
 
 func parseCmdArg*(T: type Uri, input: string): T
                  {.raises: [ValueError].} =
@@ -309,7 +319,7 @@ func databaseDir*(dataDir: OutDir): string =
 template databaseDir*(config: AnyConf): string =
   config.dataDir.databaseDir
 
-func runAsService*(config: BeaconNodeConf): bool =
+func runAsService*(config: LBNodeConf): bool =
   config.runAsServiceFlag
 
 template writeValue*(writer: var JsonWriter,

@@ -90,7 +90,7 @@ proc loadBootstrapFile*(bootstrapFile: string,
     error "Unknown bootstrap file format", ext
     quit 1
 
-proc loadBootstrapNodes*(config: BeaconNodeConf): seq[(PeerId, MultiAddress)] =
+proc loadBootstrapNodes*(config: LBNodeConf): seq[(PeerId, MultiAddress)] =
   var bootstrapPeers: seq[(PeerId, MultiAddress)]
   for node in config.bootstrapNodes:
     addBootstrapNode(node, bootstrapPeers)
@@ -98,7 +98,7 @@ proc loadBootstrapNodes*(config: BeaconNodeConf): seq[(PeerId, MultiAddress)] =
   bootstrapPeers
 
 proc new*(T: type Eth2DiscoveryProtocol,
-          config: BeaconNodeConf,
+          config: LBNodeConf,
           enrIp: Opt[IpAddress], enrTcpPort, enrUdpPort: Opt[Port],
           pk: keys.PrivateKey,
           rng: ref HmacDrbgContext):

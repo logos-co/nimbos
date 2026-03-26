@@ -27,7 +27,7 @@ from libp2p/protocols/pubsub/errors import ValidationResult
 from libp2p/protocols/pubsub/gossipsub import
   TopicParams, validateParameters, init
 
-logScope: topics = "beacnde"
+logScope: topics = "logos_nd"
 
 proc initFullNode(
     node: LBNode,
@@ -50,7 +50,7 @@ proc initFullNode(
 proc init*(
     T: type LBNode,
     rng: ref HmacDrbgContext,
-    config: BeaconNodeConf,
+    config: LBNodeConf,
 ): Future[Opt[LBNode]] {.async: (raises: [CancelledError]).} =
   var config = config
 
@@ -183,10 +183,10 @@ proc run*(node: LBNode, stopper: StopFuture) {.raises: [CatchableError].} =
   # time to say goodbye
   node.stop()
 
-proc doRunBeaconNode(
-    config: var BeaconNodeConf, rng: ref HmacDrbgContext
+proc doRunLBNode(
+    config: var LBNodeConf, rng: ref HmacDrbgContext
 ) {.raises: [CatchableError].} =
-  info "Launching beacon node",
+  info "Launching Logos node",
     version = fullVersionStr,
     cmdParams = commandLineParams(),
     config
@@ -194,7 +194,7 @@ proc doRunBeaconNode(
   ProcessState.setupStopHandlers()
 
   # This should be in a data directory
-  createPidFile("beacon_node.pid")
+  createPidFile("lb_node.pid")
 
   if ProcessState.stopIt(notice("Shutting down", reason = it)):
     return
@@ -213,16 +213,16 @@ proc doRunBeaconNode(
 
   node.run(nil)
 
-proc handleStartUpCmd(config: var BeaconNodeConf) {.raises: [CatchableError].} =
+proc handleStartUpCmd(config: var LBNodeConf) {.raises: [CatchableError].} =
   let rng = HmacDrbgContext.new()
-  doRunBeaconNode(config, rng)
+  doRunLBNode(config, rng)
 
 # noinline to keep it in stack traces
 proc main*() {.noinline, raises: [CatchableError].} =
   const copyright =
     "Copyright (c) 2026-" & compileYear & " Status Research & Development GmbH"
 
-  var config = BeaconNodeConf.loadWithBanners(clientId, copyright, [""]).valueOr:
+  var config = LBNodeConf.loadWithBanners(clientId, copyright, [""]).valueOr:
     writePanicLine error # Logging not yet set up
     quit QuitFailure
 
@@ -231,7 +231,7 @@ proc main*() {.noinline, raises: [CatchableError].} =
 
   ## This Ctrl+C handler exits the program in non-graceful way.
   ## It's responsible for handling Ctrl+C in sub-commands such
-  ## as `wallets *` and `deposits *`. In a regular beacon node
+  ## as `wallets *` and `deposits *`. In a regular Logos node
   ## run, it will be overwritten later with a different handler
   ## performing a graceful exit.
   proc exitImmediatelyOnCtrlC() {.noconv.} =
@@ -253,7 +253,7 @@ proc main*() {.noinline, raises: [CatchableError].} =
       proc exitService() =
         ProcessState.scheduleStop("exitService")
       establishWindowsService(clientId, copyright, [""],
-                              "nimbus_beacon_node", BeaconNodeConf,
+                              "nimbus_beacon_node", LBNodeConf,
                               handleStartUpCmd, exitService)
     else:
       handleStartUpCmd(config)
