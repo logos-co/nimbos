@@ -102,7 +102,7 @@ proc runSlotLoop(node: LBNode) {.async.} =
     # control to other tasks which may or may not finish within the allotted
     # time, so below, we need to be wary that the ship might have sailed
     # already.
-    await sleepAsync(1000)
+    await sleepAsync(chronos.seconds(1))
 
     let breakLoop = await onSlotStart(node)
     if breakLoop:
