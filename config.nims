@@ -88,6 +88,12 @@ if defined(windows):
   # toolchain: https://github.com/status-im/nimbus-eth2/issues/3121
   switch("define", "nimRawSetjmp")
 
+  # MinGW/Clang (not MSVC): BoringSSL in vendor/nim-ngtcp2 enables OPENSSL_PTHREADS when
+  # __MINGW32__ is set (libs/boringssl/crypto/internal.h), so thread_pthread.cc is compiled.
+  # Those symbols resolve from libwinpthread.
+  when not defined(vcc):
+    switch("passL", "-lwinpthread")
+
 # https://github.com/status-im/nimbus-eth2/blob/stable/docs/cpu_features.md#ssse3-supplemental-sse3
 # suggests that SHA256 hashing with SSSE3 is 20% faster than without SSSE3, so
 # given its near-ubiquity in the x86 installed base, it renders a distribution
