@@ -1394,8 +1394,6 @@ proc connectWorker(node: LBP2PNode, index: int) {.async: (raises: [CancelledErro
     # excluding peer here after processing.
     node.connTable.excl(remotePeerAddr.peerId)
 
-## The spec motivates having bootstrap dialing and avoiding connection spam,
-## even when it does not dictate this exact queue/dedupe/retry design.
 # The spec motivates having bootstrap dialing and avoiding connection spam.
 # This queue/dedupe/backoff strategy is our implementation choice for that goal,
 # even though the spec does not dictate this exact mechanism per se.
@@ -2002,7 +2000,7 @@ proc bootstrapHeartbeat(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
   while true:
     if node.peerPool.len < node.wantedPeers:
       await node.enqueueBootstrapPeers("heartbeat")
-    # This retry cadence is not specified in the Nomos P2P specs.
+    # This retry cadence is not specified in the Logos Chain P2P specs.
     # We use 30s as a pragmatic default: fast enough for recovery, slow enough
     # to avoid dial/log spam while existing attempts are still in progress/backoff.
     await sleepAsync(30.seconds)
@@ -2015,7 +2013,7 @@ func asEthKey*(key: PrivateKey): keys.PrivateKey =
 template udpEndpoint(address, port): auto =
   MultiAddress.init(address, udpProtocol, port)
 
-## Specs mandate QUIC (`quic-v1`) as the Nomos libp2p transport baseline:
+## Specs mandate QUIC (`quic-v1`) as the Logos Chain libp2p transport baseline:
 ## https://nomos-tech.notion.site/P2P-Network-Specification-206261aa09df81db8100d5f410e39d75?pvs=25
 ##
 ## Build a QUIC listener/dialable multiaddr endpoint:

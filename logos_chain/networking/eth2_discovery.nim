@@ -27,15 +27,6 @@ type
 
 const udpPort* = 5000.Port
 
-iterator strippedLines(filename: string): string {.raises: [ref IOError].} =
-  ## Yields non-empty, trimmed, non-comment lines from ``filename``.
-  for line in lines(filename):
-    let stripped = strip(line)
-    if stripped.startsWith('#'):
-      continue
-    if stripped.len > 0:
-      yield stripped
-
 func parseBootstrapAddress*(address: string):
     Result[(PeerId, MultiAddress), string] =
   let trimmed = address.strip()
@@ -44,7 +35,7 @@ func parseBootstrapAddress*(address: string):
   if not trimmed.startsWith("/"):
     return err("Bootstrap address must be a libp2p multiaddr")
 
-  ## Nomos bootstrap addresses are libp2p multiaddrs with `/p2p/<PeerId>`
+  ## Logos Chain bootstrap addresses are libp2p multiaddrs with `/p2p/<PeerId>`
   ## and QUIC v1 over UDP (`/udp/.../quic-v1`).
   ## Spec: https://nomos-tech.notion.site/P2P-Network-Specification-206261aa09df81db8100d5f410e39d75?pvs=25
   let parsed = parseFullAddress(trimmed)
@@ -61,6 +52,16 @@ func parseBootstrapAddress*(address: string):
     return err("Bootstrap multiaddr must include /quic-v1")
 
   ok((peerId, baseAddr))
+
+iterator strippedLines(filename: string): string {.raises: [ref IOError].} =
+  ## Yields non-empty, trimmed, non-comment lines from ``filename``.
+  for line in lines(filename):
+    let stripped = strip(line)
+    if stripped.startsWith('#'):
+      continue
+    
+    if stripped.len > 0:
+      yield stripped
 
 proc addBootstrapNode*(bootstrapAddr: string,
                        bootstrapPeers: var seq[(PeerId, MultiAddress)]) =
@@ -103,10 +104,9 @@ proc new*(T: type Eth2DiscoveryProtocol,
           pk: keys.PrivateKey,
           rng: ref HmacDrbgContext):
           T =
-  # TODO
-  # Implement more configuration options:
-  # * for setting up a specific key
-  # * for using a persistent database
+  # ENR-based bootstrap was removed from the Logos path; `bootstrapEnrs` stays
+  # empty for now only to satisfy `newProtocol`'s API. TODO: drop or replace
+  # once discovery is wired without this parameter.
   let bootstrapEnrs: seq[enr.Record] = @[]
 
   let listenAddress =

@@ -7,7 +7,7 @@
 
 {.push raises: [], gcsafe.}
 
-## NOTE: The Logos HTTP paths below are not specified in any current Nomos
+## NOTE: The Logos HTTP paths below are not specified in any current Logos Chain
 ## research/spec document. Their concrete values presently follow the Rust
 ## `logos-blockchain` implementation simply because it is the only reference;
 ## once a formal Logos REST specification is available, that spec should become

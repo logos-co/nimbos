@@ -9,7 +9,7 @@
 
 ## NOTE: This module contains stub implementations for Logos HTTP API
 ## compatibility. The REST endpoints and many of their query parameters are
-## currently **not** specified in any Nomos research/spec document. Where
+## currently **not** specified in any Logos Chain research/spec document. Where
 ## endpoint paths or parameter names matter, they currently follow the Rust
 ## `logos-blockchain` implementation simply because it is the only reference;
 ## once a formal Logos REST spec exists, it should become the authoritative
@@ -170,7 +170,7 @@ proc installNodeApiHandlers*(router: var RestRouter, node: LBNode) =
   ##
   ## These endpoints provide compatibility with the Logos HTTP API.
   ## The implementations are intentionally minimal and return empty payloads.
-  ## NOTE: No written Nomos spec currently declares these REST endpoints.
+  ## NOTE: No written Logos Chain spec currently declares these REST endpoints.
   ## For now, query parameter naming follows the Rust `logos-blockchain`
   ## implementation (see handlers.rs) only because it is the only source;
   ## a future Logos REST spec should take precedence:
@@ -258,7 +258,7 @@ proc installNodeApiHandlers*(router: var RestRouter, node: LBNode) =
     RestApiResponse.response("{}", Http200, $jsonMediaType)
 
   # GET /blocks[?slot_from={slotFrom}&slot_to={slotTo}]
-  ## NOTE: No written Nomos spec currently declares this REST endpoint or its
+  ## NOTE: No written Logos Chain spec currently declares this REST endpoint or its
   ## query parameter names. The `slot_from` / `slot_to` parameters follow the
   ## official `logos-blockchain` implementation, which defines
   ## `BlockRangeQuery { slot_from, slot_to }` in:

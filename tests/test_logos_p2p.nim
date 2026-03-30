@@ -221,7 +221,6 @@ suite "P2P stack — bootstrap and discovery":
     let dialer = dialerRes.get()
 
     try:
-      await dialer.startListening()
       await dialer.start()
 
       let ok = await waitLibp2pConnected(dialer.switch, listenerPeerId)
