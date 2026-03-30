@@ -18,7 +18,7 @@ import
   toml_serialization/std/uri as confTomlUri,
   serialization/errors,
   stew/[io2, byteutils],
-  eth/net/nat,
+  eth/net/nat, # TODO(logos-chain-networking): replace NatConfig/eth-net-nat with Logos-native reachability config
   eth/enr/enr,
   json_serialization, json_serialization/std/net as jsnet,
   chronos/transports/common,
@@ -202,7 +202,7 @@ type
         name: "bootstrap-file" .}: InputFile
 
       listenAddress* {.
-        desc: "Listening address for the Ethereum LibP2P and Discovery v5 traffic"
+        desc: "Listening address for Logos Chain libp2p and Discovery v5 traffic"
         defaultValueDesc: "*"
         name: "listen-address" .}: Option[IpAddress]
 
@@ -224,7 +224,9 @@ type
       hardMaxPeers* {.
         desc: "The maximum number of peers to connect to. Defaults to maxPeers * 1.5"
         name: "hard-max-peers" .}: Option[int]
-
+      
+      # TODO(logos-chain-networking): replace this eth-net NatConfig field with a
+      # Logos-native public-address/reachability configuration type.
       nat* {.
         desc: "Specify method to use for determining public address. " &
               "Must be one of: any, none, upnp, pmp, extip:<IP>"
