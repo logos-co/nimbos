@@ -226,7 +226,10 @@ type
         name: "hard-max-peers" .}: Option[int]
       
       # TODO(logos-chain-networking): replace this eth-net NatConfig field with a
-      # Logos-native public-address/reachability configuration type.
+      # Logos-native public-address/reachability configuration type. Current UX
+      # is confusing: setting a plain public IP via `extip:<IP>` hangs off the
+      # `nat` flag, mixing NAT strategy selection with \"what address to
+      # advertise\".
       nat* {.
         desc: "Specify method to use for determining public address. " &
               "Must be one of: any, none, upnp, pmp, extip:<IP>"
