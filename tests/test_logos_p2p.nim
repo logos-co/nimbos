@@ -282,46 +282,61 @@ suite "P2P stack — bootstrap and discovery":
       await listener.stop()
 
   test "Kademlia: DHT protocol registered as /logos-blockchain/kad/1.0.0 (mainnet)":
-    discard
+    # TODO(logos-chain-networking): implement Logos Kademlia wiring and assertions
+    skip()
 
   test "Kademlia: DHT protocol registered as /logos-blockchain-testnet/kad/1.0.0 (testnet)":
-    discard
+    # TODO(logos-chain-networking): implement Logos Kademlia wiring and assertions
+    skip()
 
 suite "P2P stack — protocol negotiation and Identify":
   test "Multistream: connection negotiates an application protocol by exact protocol ID string":
-    discard
+    # TODO(logos-chain-networking): assert multistream-select (libp2p's protocol
+    # negotiation layer) chooses the Logos protocol IDs (`/logos-blockchain/...`)
+    # exactly as required by the Logos P2P spec.
+    skip()
 
   test "Identify: handler registered for /logos-blockchain/identify/1.0.0 (mainnet)":
-    discard
+    # TODO(logos-chain-networking): verify Identify handler registration for mainnet ID
+    skip()
 
   test "Identify: handler registered for /logos-blockchain-testnet/identify/1.0.0 (testnet)":
-    discard
+    # TODO(logos-chain-networking): verify Identify handler registration for testnet ID
+    skip()
 
   test "Identify exchange: peers report protocol support compatible with NAT / AutoNAT discovery needs":
-    discard
+    # TODO(logos-chain-networking): cover Identify exchange behavior for AutoNAT needs
+    skip()
 
 suite "P2P stack — NAT and AutoNAT v2":
   test "AutoNAT v2 client uses /libp2p/autonat/2/dial-request toward reachable peers":
-    discard
+    # TODO(logos-chain-networking): implement AutoNAT v2 client coverage
+    skip()
 
   test "AutoNAT v2 server responds on /libp2p/autonat/2/dial-back when node is public":
-    discard
+    # TODO(logos-chain-networking): implement AutoNAT v2 server coverage
+    skip()
 
 suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
   test "GossipSub: subscribes and publishes /logos-blockchain/mempool/1.0.0 (mainnet)":
-    discard
+    # TODO(logos-chain-networking): wire mainnet mempool topic and assert behavior
+    skip()
 
   test "GossipSub: subscribes and publishes /logos-blockchain/cryptarchia/1.0.0 (mainnet)":
-    discard
+    # TODO(logos-chain-networking): wire mainnet cryptarchia topic and assert behavior
+    skip()
 
   test "GossipSub: subscribes and publishes /logos-blockchain-testnet/mempool/1.0.0 (testnet)":
-    discard
+    # TODO(logos-chain-networking): wire testnet mempool topic and assert behavior
+    skip()
 
   test "GossipSub: subscribes and publishes /logos-blockchain-testnet/cryptarchia/1.0.0 (testnet)":
-    discard
+    # TODO(logos-chain-networking): wire testnet cryptarchia topic and assert behavior
+    skip()
 
 suite "P2P stack — on-the-wire encoding":
   test "Network Wire Format: payloads on negotiated streams follow Logos Chain wire format spec":
-    discard
+    # TODO(logos-chain-networking): implement Network Wire Format coverage
+    skip()
 
 {.pop.}
