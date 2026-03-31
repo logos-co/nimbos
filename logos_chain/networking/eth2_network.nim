@@ -2061,7 +2061,6 @@ proc newBeaconSwitch(
   let service: Service = WildcardAddressResolverService.new()
 
   var sb = SwitchBuilder.new()
-  # Order of multiplexers matters, the first will be default
   try:
     ok sb
     .withPrivateKey(seckey)
@@ -2071,7 +2070,6 @@ proc newBeaconSwitch(
     .withMaxConnections(config.maxPeers)
     .withAgentVersion(config.agentString)
     .withQuicTransport()
-    .withYamux(inTimeout = chronos.minutes(5), outTimeout = chronos.minutes(5))
     .withServices(@[service])
     .build()
   except LPError as exc:

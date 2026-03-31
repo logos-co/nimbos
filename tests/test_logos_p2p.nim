@@ -91,10 +91,6 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
       sb = sb.withAddress(addr2)
       sb = sb.withRng(rng2)
       sb = sb.withNoise()
-      sb = sb.withYamux(
-        inTimeout = chronos.minutes(5),
-        outTimeout = chronos.minutes(5)
-      )
       sb = sb.withQuicTransport()
       sb = sb.withMaxConnections(conf2.maxPeers)
       sb = sb.withAgentVersion(conf2.agentString)
