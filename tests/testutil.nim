@@ -9,7 +9,7 @@
 
 import testutils/markdown_reports, unittest2
 import
-  std/net,
+  std/[net, times],
   chronos
 import
   ../logos_chain/conf,
@@ -20,7 +20,6 @@ import
 from std/algorithm import SortOrder, sort
 from std/strformat import `&`
 from std/tables import OrderedTable, `[]=`, initOrderedTable, mgetOrPut, sort
-import std/times
 
 export unittest2
 
@@ -68,7 +67,7 @@ proc summarizeLongTests*(name: string) =
   except CatchableError as exc:
     raiseAssert exc.msg
 
-const TestLoopbackIp* = static(parseIpAddress("127.0.0.1"))
+const TestLoopbackIp* = parseIpAddress("127.0.0.1")
 
 proc waitLibp2pConnected*(sw: Switch, remote: PeerId): Future[bool] {.async.} =
   for i in 0 ..< 150:
@@ -80,24 +79,34 @@ proc waitLibp2pConnected*(sw: Switch, remote: PeerId): Future[bool] {.async.} =
 proc makeBootstrapConfs*(listenerPort, dialerPort: Port): tuple[
     confL: LBNodeConf, confD: LBNodeConf,
     rngL: ref HmacDrbgContext, rngD: ref HmacDrbgContext] =
-  result.rngL = HmacDrbgContext.new()
-  result.rngD = HmacDrbgContext.new()
   # TODO(logos-chain-networking): remove NatConfig dependency from test helpers once
   # networking no longer relies on eth/net/nat-config style plumbing.
   let natCfg = NatConfig(hasExtIp: true, extIp: TestLoopbackIp)
-  result.confL.listenAddress = some(TestLoopbackIp)
-  result.confL.nat = natCfg
-  result.confL.quicPort = listenerPort
-  result.confL.discv5Enabled = false
-  result.confL.maxPeers = 8
-  result.confL.hardMaxPeers = some(8)
-  result.confL.agentString = "p2p-bootstrap-listener"
-  result.confD.listenAddress = some(TestLoopbackIp)
-  result.confD.nat = natCfg
-  result.confD.quicPort = dialerPort
-  result.confD.discv5Enabled = false
-  result.confD.maxPeers = 8
-  result.confD.hardMaxPeers = some(8)
-  result.confD.agentString = "p2p-bootstrap-dialer"
+  let rngL = HmacDrbgContext.new()
+  let rngD = HmacDrbgContext.new()
+  (
+    confL: LBNodeConf(
+      cmd: BNStartUpCmd.lbNode,
+      listenAddress: some(TestLoopbackIp),
+      nat: natCfg,
+      quicPort: listenerPort,
+      discv5Enabled: false,
+      maxPeers: 8,
+      hardMaxPeers: some(8),
+      agentString: "p2p-bootstrap-listener",
+    ),
+    confD: LBNodeConf(
+      cmd: BNStartUpCmd.lbNode,
+      listenAddress: some(TestLoopbackIp),
+      nat: natCfg,
+      quicPort: dialerPort,
+      discv5Enabled: false,
+      maxPeers: 8,
+      hardMaxPeers: some(8),
+      agentString: "p2p-bootstrap-dialer",
+    ),
+    rngL: rngL,
+    rngD: rngD,
+  )
 
 addOutputFormatter(new TimingCollector)
