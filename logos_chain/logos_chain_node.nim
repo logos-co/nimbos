@@ -24,10 +24,10 @@ export
   eth2_network, base
 
 type
-  BeaconNode* = ref object
-    network*: Eth2Node
+  LBNode* = ref object
+    network*: LBP2PNode
     netKeys*: NetKeyPair
-    config*: BeaconNodeConf
+    config*: LBNodeConf
     restServer*: RestServerRef
     metricsServer*: Opt[MetricsHttpServerRef]
     shutdownEvent*: AsyncEvent
@@ -41,5 +41,7 @@ template findIt*(s: openArray, predicate: untyped): int =
       break
   res
 
-template rng*(node: BeaconNode): ref HmacDrbgContext =
+template rng*(node: LBNode): ref HmacDrbgContext =
   node.network.rng
+
+{.pop.}

@@ -24,7 +24,7 @@ suite "Logos REST node API stub endpoints":
   block:
     let serverAddress = initTAddress("127.0.0.1:0")
     var router = RestRouter.init(validateBeaconApiQueries)
-    router.installNodeApiHandlers(nil) # BeaconNode is nil for stubs
+    router.installNodeApiHandlers(nil) # LBNode is nil for stubs
 
     let sres = RestServerRef.new(router, serverAddress)
     server = sres.get()

@@ -9,7 +9,7 @@
 
 ## NOTE: This module contains stub implementations for Logos HTTP API
 ## compatibility. The REST endpoints and many of their query parameters are
-## currently **not** specified in any Nomos research/spec document. Where
+## currently **not** specified in any Logos Chain research/spec document. Where
 ## endpoint paths or parameter names matter, they currently follow the Rust
 ## `logos-blockchain` implementation simply because it is the only reference;
 ## once a formal Logos REST spec exists, it should become the authoritative
@@ -120,7 +120,7 @@ proc toString(direction: PeerType): string =
   of PeerType.Outgoing:
     "outbound"
 
-proc getLastSeenAddress(node: BeaconNode, id: PeerId): string =
+proc getLastSeenAddress(node: LBNode, id: PeerId): string =
   let
     address = node.network.switch.peerStore[LastSeenBook][id].valueOr:
       return ""
@@ -128,7 +128,7 @@ proc getLastSeenAddress(node: BeaconNode, id: PeerId): string =
       return ""
   $normalized
 
-proc getDiscoveryAddresses(node: BeaconNode): seq[string] =
+proc getDiscoveryAddresses(node: LBNode): seq[string] =
   let
     typedRec = TypedRecord.fromRecord(node.network.enrRecord())
     peerAddr = typedRec.toPeerAddr(udpProtocol).valueOr:
@@ -143,7 +143,7 @@ proc getDiscoveryAddresses(node: BeaconNode): seq[string] =
       addresses.add($(res.get()))
   addresses
 
-proc getP2PAddresses(node: BeaconNode): seq[string] =
+proc getP2PAddresses(node: LBNode): seq[string] =
   let
     pinfo = node.network.switch.peerInfo
     maddress = MultiAddress.init(multiCodec("p2p"), pinfo.peerId).valueOr:
@@ -160,7 +160,7 @@ proc getP2PAddresses(node: BeaconNode): seq[string] =
       addresses.add($(res.get()))
   addresses
 
-proc installNodeApiHandlers*(router: var RestRouter, node: BeaconNode) =
+proc installNodeApiHandlers*(router: var RestRouter, node: LBNode) =
   let
     cachedVersion =
       RestApiResponse.prepareJsonResponse((version: nimbusAgentStr))
@@ -170,7 +170,7 @@ proc installNodeApiHandlers*(router: var RestRouter, node: BeaconNode) =
   ##
   ## These endpoints provide compatibility with the Logos HTTP API.
   ## The implementations are intentionally minimal and return empty payloads.
-  ## NOTE: No written Nomos spec currently declares these REST endpoints.
+  ## NOTE: No written Logos Chain spec currently declares these REST endpoints.
   ## For now, query parameter naming follows the Rust `logos-blockchain`
   ## implementation (see handlers.rs) only because it is the only source;
   ## a future Logos REST spec should take precedence:
@@ -258,7 +258,7 @@ proc installNodeApiHandlers*(router: var RestRouter, node: BeaconNode) =
     RestApiResponse.response("{}", Http200, $jsonMediaType)
 
   # GET /blocks[?slot_from={slotFrom}&slot_to={slotTo}]
-  ## NOTE: No written Nomos spec currently declares this REST endpoint or its
+  ## NOTE: No written Logos Chain spec currently declares this REST endpoint or its
   ## query parameter names. The `slot_from` / `slot_to` parameters follow the
   ## official `logos-blockchain` implementation, which defines
   ## `BlockRangeQuery { slot_from, slot_to }` in:

@@ -27,10 +27,10 @@ from libp2p/protocols/pubsub/errors import ValidationResult
 from libp2p/protocols/pubsub/gossipsub import
   TopicParams, validateParameters, init
 
-logScope: topics = "beacnde"
+logScope: topics = "logos_nd"
 
 proc initFullNode(
-    node: BeaconNode,
+    node: LBNode,
     rng: ref HmacDrbgContext,
 ) {.async: (raises: [CancelledError]).} =
   template config(): auto = node.config
@@ -48,14 +48,14 @@ proc initFullNode(
     BeaconSync, default(BeaconSync.NetworkState))
 
 proc init*(
-    T: type BeaconNode,
+    T: type LBNode,
     rng: ref HmacDrbgContext,
-    config: BeaconNodeConf,
-): Future[Opt[BeaconNode]] {.async: (raises: [CancelledError]).} =
+    config: LBNodeConf,
+): Future[Opt[LBNode]] {.async: (raises: [CancelledError]).} =
   var config = config
 
   if ProcessState.stopIt(notice("Shutting down", reason = it)):
-    return Opt.none(BeaconNode)
+    return Opt.none(LBNode)
 
   # Doesn't use std/random directly, but dependencies might
   randomize(rng[].rand(high(int)))
@@ -67,15 +67,15 @@ proc init*(
     validateBeaconApiQueries, nimbusAgentStr, config)
 
   let
-    network = createEth2Node(
+    network = createLBNode(
       rng,
       config,
       rng[].getRandomNetKeys(),
     ).valueOr:
       error "Failed to initialize node", err = error
-      return Opt.none(BeaconNode)
+      return Opt.none(LBNode)
 
-  ok BeaconNode(
+  ok LBNode(
     network: network,
     config: config,
     restServer: restServer,
@@ -87,14 +87,14 @@ func subnetLog(v: BitArray): string =
 when defined(windows):
   from winservice import establishWindowsService, reportServiceStatusSuccess
 
-proc onSlotStart(node: BeaconNode): Future[bool] {.async.} =
+proc onSlotStart(node: LBNode): Future[bool] {.async.} =
   when defined(windows):
     if node.config.runAsService:
       reportServiceStatusSuccess()
 
   false
 
-proc runSlotLoop(node: BeaconNode) {.async.} =
+proc runSlotLoop(node: LBNode) {.async.} =
   info "Scheduling first slot action"
 
   while true:
@@ -102,17 +102,17 @@ proc runSlotLoop(node: BeaconNode) {.async.} =
     # control to other tasks which may or may not finish within the allotted
     # time, so below, we need to be wary that the ship might have sailed
     # already.
-    await sleepAsync(1000)
+    await sleepAsync(chronos.seconds(1))
 
     let breakLoop = await onSlotStart(node)
     if breakLoop:
       break
 
-proc onSecond(node: BeaconNode, time: Moment) =
+proc onSecond(node: LBNode, time: Moment) =
   # Nim GC metrics (for the main thread)
   updateThreadMetrics()
 
-proc runOnSecondLoop(node: BeaconNode) {.async.} =
+proc runOnSecondLoop(node: LBNode) {.async.} =
   const
     sleepTime = chronos.seconds(1)
     nanosecondsIn1s = float(sleepTime.nanoseconds)
@@ -126,20 +126,20 @@ proc runOnSecondLoop(node: BeaconNode) {.async.} =
     let processingTime = finished - afterSleep
     trace "onSecond task completed", sleepTime, processingTime
 
-func connectedPeersCount(node: BeaconNode): int =
+func connectedPeersCount(node: LBNode): int =
   len(node.network.peerPool)
 
-proc installRestHandlers(restServer: RestServerRef, node: BeaconNode) =
+proc installRestHandlers(restServer: RestServerRef, node: LBNode) =
   restServer.router.installNodeApiHandlers(node)
 
-proc installMessageValidators(node: BeaconNode) =
+proc installMessageValidators(node: LBNode) =
   node.network.addValidator(
     "/some/topic", proc (
       signedBlock: AttestationData,
       src: PeerId,
     ): ValidationResult = ValidationResult.Accept)
 
-proc stop(node: BeaconNode) =
+proc stop(node: LBNode) =
   try:
     waitFor node.network.stop()
   except CatchableError as exc:
@@ -147,7 +147,7 @@ proc stop(node: BeaconNode) =
 
   waitFor node.metricsServer.stopMetricsServer()
 
-proc initializeNetworking(node: BeaconNode) {.async.} =
+proc initializeNetworking(node: LBNode) {.async.} =
   node.installMessageValidators()
 
   info "Listening to incoming network requests"
@@ -157,7 +157,7 @@ proc initializeNetworking(node: BeaconNode) {.async.} =
 
 type StopFuture = Future[void].Raising([CancelledError])
 
-proc run*(node: BeaconNode, stopper: StopFuture) {.raises: [CatchableError].} =
+proc run*(node: LBNode, stopper: StopFuture) {.raises: [CatchableError].} =
   waitFor node.initializeNetworking()
 
   ProcessState.notifyRunning()
@@ -183,10 +183,10 @@ proc run*(node: BeaconNode, stopper: StopFuture) {.raises: [CatchableError].} =
   # time to say goodbye
   node.stop()
 
-proc doRunBeaconNode(
-    config: var BeaconNodeConf, rng: ref HmacDrbgContext
+proc doRunLBNode(
+    config: var LBNodeConf, rng: ref HmacDrbgContext
 ) {.raises: [CatchableError].} =
-  info "Launching beacon node",
+  info "Launching Logos node",
     version = fullVersionStr,
     cmdParams = commandLineParams(),
     config
@@ -194,14 +194,14 @@ proc doRunBeaconNode(
   ProcessState.setupStopHandlers()
 
   # This should be in a data directory
-  createPidFile("beacon_node.pid")
+  createPidFile("lb_node.pid")
 
   if ProcessState.stopIt(notice("Shutting down", reason = it)):
     return
 
   let
     taskpool = setupTaskpool(config.numThreads)
-    node = waitFor(BeaconNode.init(rng, config)).valueOr:
+    node = waitFor(LBNode.init(rng, config)).valueOr:
       return
 
   # Nim GC metrics (for the main thread) will be collected in onSecond(), but
@@ -213,16 +213,16 @@ proc doRunBeaconNode(
 
   node.run(nil)
 
-proc handleStartUpCmd(config: var BeaconNodeConf) {.raises: [CatchableError].} =
+proc handleStartUpCmd(config: var LBNodeConf) {.raises: [CatchableError].} =
   let rng = HmacDrbgContext.new()
-  doRunBeaconNode(config, rng)
+  doRunLBNode(config, rng)
 
 # noinline to keep it in stack traces
 proc main*() {.noinline, raises: [CatchableError].} =
   const copyright =
     "Copyright (c) 2026-" & compileYear & " Status Research & Development GmbH"
 
-  var config = BeaconNodeConf.loadWithBanners(clientId, copyright, [""]).valueOr:
+  var config = LBNodeConf.loadWithBanners(clientId, copyright, [""]).valueOr:
     writePanicLine error # Logging not yet set up
     quit QuitFailure
 
@@ -231,7 +231,7 @@ proc main*() {.noinline, raises: [CatchableError].} =
 
   ## This Ctrl+C handler exits the program in non-graceful way.
   ## It's responsible for handling Ctrl+C in sub-commands such
-  ## as `wallets *` and `deposits *`. In a regular beacon node
+  ## as `wallets *` and `deposits *`. In a regular Logos node
   ## run, it will be overwritten later with a different handler
   ## performing a graceful exit.
   proc exitImmediatelyOnCtrlC() {.noconv.} =
@@ -253,7 +253,7 @@ proc main*() {.noinline, raises: [CatchableError].} =
       proc exitService() =
         ProcessState.scheduleStop("exitService")
       establishWindowsService(clientId, copyright, [""],
-                              "nimbus_beacon_node", BeaconNodeConf,
+                              "nimbus_beacon_node", LBNodeConf,
                               handleStartUpCmd, exitService)
     else:
       handleStartUpCmd(config)
@@ -262,3 +262,5 @@ proc main*() {.noinline, raises: [CatchableError].} =
 
 when isMainModule:
   main()
+
+{.pop.}

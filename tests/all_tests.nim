@@ -12,6 +12,10 @@
 import ./testutil
 
 import # Unit test
-  ./test_peer_pool, ./test_rest_node_api
+  ./test_peer_pool,
+  ./test_logos_p2p,
+  ./test_rest_node_api
 
 summarizeLongTests("AllTests")
+
+{.pop.}

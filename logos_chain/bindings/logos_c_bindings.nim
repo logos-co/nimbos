@@ -12,7 +12,7 @@
 ##   make logos-headers   - generate C header (logos_c_bindings.h)
 ##   make logos-bindings  - build both library and header
 ##
-## NOTE: There is currently no public Nomos / Logos spec document that defines
+## NOTE: There is currently no public Logos Chain spec document that defines
 ## this C FFI (types and function signatures). This ABI is implementation-
 ## defined for now; the only authoritative description of a Logos C API lives
 ## in the current Rust implementation (until a formal spec is published/updated):
