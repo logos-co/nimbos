@@ -12,7 +12,6 @@ import
   std/[os, random, strutils, times],
   chronos, chronicles,
   metrics, metrics/chronos_httpserver,
-  stew/io2,
   eth/enr/enr,
   eth/p2p/discoveryv5/random2,
   ./rpc/rest_api,
@@ -186,6 +185,11 @@ proc run*(node: LBNode, stopper: StopFuture) {.raises: [CatchableError].} =
 proc doRunLBNode(
     config: var LBNodeConf, rng: ref HmacDrbgContext
 ) {.raises: [CatchableError].} =
+  let depRes = mergeDeploymentSettingsFile(config)
+  if depRes.isErr:
+    fatal "Invalid deployment-settings file", err = depRes.error
+    quit QuitFailure
+
   info "Launching Logos node",
     version = fullVersionStr,
     cmdParams = commandLineParams(),

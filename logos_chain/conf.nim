@@ -23,6 +23,7 @@ import
   json_serialization, json_serialization/std/net as jsnet,
   chronos/transports/common,
   ./spec/datatypes/base,
+  ./deployment_settings,
   ./nimbus_binary_common
 
 from std/os import dirExists, getHomeDir, `/`
@@ -33,6 +34,7 @@ export
   enabledLogLevel,
   defs, parseCmdArg, completeCmdArg,
   confTomlDefs, confTomlNet, confTomlUri, jsnet,
+  deployment_settings,
   nimbus_binary_common
 
 const
@@ -42,6 +44,8 @@ const
   defaultSigningNodeRequestTimeout* = 60
   defaultGasLimit* = 60_000_000
   defaultAdminListenAddressDesc* = $defaultAdminListenAddress
+  ## Default ``--deployment-settings`` path (cfgsync example layout; run node from repo root or override).
+  defaultDeploymentSettingsExamplePath* = "config/examples/deployment-settings.example.yaml"
 
 when defined(windows):
   {.pragma: windowsOnly.}
@@ -296,6 +300,41 @@ type
         defaultValue: 8008
         name: "metrics-port" .}: Port
 
+      deploymentSettingsFile* {.
+        desc: "cfgsync deployment-settings YAML (network protocol IDs, mempool pubsub topic, cryptarchia gossipsub protocol)"
+        defaultValue: some(InputFile(defaultDeploymentSettingsExamplePath))
+        name: "deployment-settings" .}: Option[InputFile]
+
+      deploymentKademliaProtocol* {.
+        hidden
+        desc: "From --deployment-settings: network.kademlia_protocol_name"
+        defaultValue: ""
+        name: "deployment-kademlia-protocol" .}: string
+
+      deploymentIdentifyProtocol* {.
+        hidden
+        desc: "From --deployment-settings: network.identify_protocol_name"
+        defaultValue: ""
+        name: "deployment-identify-protocol" .}: string
+
+      deploymentChainSyncProtocol* {.
+        hidden
+        desc: "From --deployment-settings: network.chain_sync_protocol_name"
+        defaultValue: ""
+        name: "deployment-chain-sync-protocol" .}: string
+
+      deploymentMempoolPubsubTopic* {.
+        hidden
+        desc: "From --deployment-settings: mempool.pubsub_topic"
+        defaultValue: ""
+        name: "deployment-mempool-pubsub-topic" .}: string
+
+      deploymentCryptarchiaGossipsubProtocol* {.
+        hidden
+        desc: "From --deployment-settings: cryptarchia.gossipsub_protocol"
+        defaultValue: ""
+        name: "deployment-cryptarchia-gossipsub-protocol" .}: string
+
   AnyConf* = LBNodeConf
 
 func parseCmdArg*(T: type Uri, input: string): T
@@ -348,3 +387,22 @@ proc formatIt*(v: Option[IpAddress]): string =
     $v.get()
   else:
     "*"
+
+proc mergeDeploymentSettingsFile*(config: var LBNodeConf): Result[void, string] =
+  ## If ``--deployment-settings`` is set, read YAML, parse, validate, and copy
+  ## protocol strings into ``config``.
+  if config.deploymentSettingsFile.isNone():
+    return ok()
+  let path = string config.deploymentSettingsFile.get()
+  let textRes = readAllChars(path)
+  if textRes.isErr():
+    return err("deployment-settings: cannot read " & path & ": " & ioErrorMsg(textRes.error))
+  let text = textRes.get()
+  let ds = ? parseDeploymentSettings(text)
+  ? validateDeploymentSettings(ds)
+  config.deploymentKademliaProtocol = ds.network.kademliaProtocolName
+  config.deploymentIdentifyProtocol = ds.network.identifyProtocolName
+  config.deploymentChainSyncProtocol = ds.network.chainSyncProtocolName
+  config.deploymentMempoolPubsubTopic = ds.mempool.pubsubTopic
+  config.deploymentCryptarchiaGossipsubProtocol = ds.cryptarchia.gossipsubProtocol
+  ok()
