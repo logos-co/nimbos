@@ -1,0 +1,8 @@
+network:
+  kademlia_protocol_name: logos/kad/1.0.0
+  identify_protocol_name: /logos/identify/1.0.0
+  chain_sync_protocol_name: /logos/sync/1.0.0
+mempool:
+  pubsub_topic: /logos/mempool/1.0.0
+cryptarchia:
+  gossipsub_protocol: /logos/cryptarchia/1.0.0

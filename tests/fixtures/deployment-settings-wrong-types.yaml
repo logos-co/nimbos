@@ -1,0 +1,6 @@
+# network must be a mapping; kademlia must be a scalar string
+network: "not a mapping"
+mempool:
+  pubsub_topic: /d
+cryptarchia:
+  gossipsub_protocol: /e

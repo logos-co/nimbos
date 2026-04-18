@@ -1,0 +1,9 @@
+# All required keys present but empty strings (invalid after parse)
+network:
+  kademlia_protocol_name: ""
+  identify_protocol_name: /b
+  chain_sync_protocol_name: /c
+mempool:
+  pubsub_topic: /d
+cryptarchia:
+  gossipsub_protocol: /e
