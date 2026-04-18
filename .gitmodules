@@ -149,3 +149,8 @@
 	path = vendor/nim-blscurve
 	url = https://github.com/status-im/nim-blscurve
 	branch = master
+[submodule "vendor/nim-yaml"]
+	path = vendor/nim-yaml
+	url = https://github.com/flyx/NimYAML.git
+	ignore = untracked
+	branch = devel
