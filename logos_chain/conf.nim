@@ -387,22 +387,3 @@ proc formatIt*(v: Option[IpAddress]): string =
     $v.get()
   else:
     "*"
-
-proc mergeDeploymentSettingsFile*(config: var LBNodeConf): Result[void, string] =
-  ## If ``--deployment-settings`` is set, read YAML, parse, validate, and copy
-  ## protocol strings into ``config``.
-  if config.deploymentSettingsFile.isNone():
-    return ok()
-  let path = string config.deploymentSettingsFile.get()
-  let textRes = readAllChars(path)
-  if textRes.isErr():
-    return err("deployment-settings: cannot read " & path & ": " & ioErrorMsg(textRes.error))
-  let text = textRes.get()
-  let ds = ? parseDeploymentSettings(text)
-  ? validateDeploymentSettings(ds)
-  config.deploymentKademliaProtocol = ds.network.kademliaProtocolName
-  config.deploymentIdentifyProtocol = ds.network.identifyProtocolName
-  config.deploymentChainSyncProtocol = ds.network.chainSyncProtocolName
-  config.deploymentMempoolPubsubTopic = ds.mempool.pubsubTopic
-  config.deploymentCryptarchiaGossipsubProtocol = ds.cryptarchia.gossipsubProtocol
-  ok()

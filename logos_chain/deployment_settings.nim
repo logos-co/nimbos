@@ -3,30 +3,24 @@
 # Licensed and distributed under either of
 #   * MIT license (license terms in the root directory or at https://opensource.org/licenses/MIT).
 #   * Apache v2 license (license terms in the root directory or at https://opensource.org/licenses/LICENSE-2.0).
-# at your option. This file may not be copied, modified, or distributed except according to those terms.
+# at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-## Parse cfgsync **deployment-settings** YAML (subset: nested maps and string/number scalars).
+## Parse cfgsync **deployment-settings** YAML via [NimYAML](https://nimyaml.org) (YAML 1.2).
 ## Used to drive libp2p protocol IDs and pubsub topics from deployment config.
 
-{.push raises: [], gcsafe.}
+{.push raises: [].}
 
 import
-  std/[options, strutils, tables],
-  results
+  std/[options, strutils],
+  results,
+  stew/io2,
+  yaml/[dom, loading]
+
+export YamlNode, YamlNodeKind
+
+
 
 type
-  YamlNodeKind* = enum
-    ykScalar
-    ykMap
-
-  YamlNode* = ref YamlNodeObj
-  YamlNodeObj* = object
-    case kind*: YamlNodeKind
-    of ykScalar:
-      scalar*: string
-    of ykMap:
-      map*: OrderedTable[string, YamlNode]
-
   DeploymentNetworkSettings* = object
     kademliaProtocolName*: string
     identifyProtocolName*: string
@@ -43,128 +37,43 @@ type
     mempool*: DeploymentMempoolSettings
     cryptarchia*: DeploymentCryptarchiaSettings
 
-func lineIndent(line: string): int =
-  var n = 0
-  while n < line.len and line[n] == ' ':
-    inc n
-  n
-
-func stripLineComment(line: string): string =
-  var inS = false
-  var inD = false
-  var i = 0
-  while i < line.len:
-    let c = line[i]
-    if not inS and not inD and c == '#':
-      return line[0 ..< i].strip(leading = false, trailing = true)
-    if not inD and c == '\'':
-      inS = not inS
-    elif not inS and c == '\"':
-      inD = not inD
-    inc i
-  line.strip(leading = false, trailing = true)
-
-func findKeyValueSep(s: string): int =
-  ## Index of separating ``:`` between YAML key and value (not inside quotes).
-  var i = 0
-  while i < s.len:
-    let c = s[i]
-    if c == '\'':
-      inc i
-      while i < s.len and s[i] != '\'':
-        inc i
-      if i < s.len:
-        inc i
-    elif c == '\"':
-      inc i
-      while i < s.len and s[i] != '\"':
-        inc i
-      if i < s.len:
-        inc i
-    elif c == ':':
-      return i
-    else:
-      inc i
-  -1
-
-proc splitKeyValue(line: string): (string, string) =
-  let sep = findKeyValueSep(line)
-  if sep < 0:
-    return ("", "")
-  let key = line[0 ..< sep].strip()
-  var value = ""
-  if sep + 1 < line.len:
-    value = line[sep + 1 .. ^1].strip()
-  if value.len >= 2 and value[0] == value[^1] and value[0] in {'\'', '\"'}:
-    value = value[1 ..< ^1]
-  (key, value)
-
-proc prepareLines(text: string): seq[string] =
-  for raw in text.splitLines():
-    let stripped = stripLineComment(raw)
-    if stripped.len > 0:
-      result.add(stripped)
-
-proc parseYamlMap(lines: seq[string], i: var int, mapIndent: int): Result[YamlNode, string] =
-  var m = initOrderedTable[string, YamlNode]()
-  while i < lines.len:
-    let ind = lineIndent(lines[i])
-    if ind < mapIndent:
-      break
-    if ind > mapIndent:
-      return err("deployment-settings YAML: unexpected indent at line: " & lines[i])
-    let content = lines[i][ind .. ^1]
-    inc i
-    let (key, valueAfterColon) = splitKeyValue(content)
-    if key.len == 0:
-      continue
-    if valueAfterColon.len > 0:
-      m[key] = YamlNode(kind: ykScalar, scalar: valueAfterColon)
-      continue
-    var childIndent = -1
-    var j = i
-    while j < lines.len:
-      let indJ = lineIndent(lines[j])
-      if strip(lines[j]).len == 0:
-        inc j
-        continue
-      if indJ <= ind:
-        break
-      childIndent = indJ
-      break
-    if childIndent < 0:
-      m[key] = YamlNode(kind: ykScalar, scalar: "")
-      continue
-    let child = ? parseYamlMap(lines, i, childIndent)
-    m[key] = child
-  ok(YamlNode(kind: ykMap, map: m))
-
 proc parseDeploymentSettingsYaml*(text: string): Result[YamlNode, string] =
-  let lines = prepareLines(text)
-  var i = 0
-  parseYamlMap(lines, i, 0)
+  try:
+    var root: YamlNode
+    load(text, root)
+    ok(root)
+  except YamlConstructionError as e:
+    err("deployment-settings: " & e.msg)
+  except YamlParserError as e:
+    err("deployment-settings: " & e.msg)
+  except IOError as e:
+    err("deployment-settings: " & e.msg)
+  except OSError as e:
+    err("deployment-settings: " & e.msg)
 
-func yamlGetMap(node: YamlNode, key: string): Option[YamlNode] =
-  if node.isNil or node.kind != ykMap:
+func yamlGetMap*(node: YamlNode, key: string): Option[YamlNode] =
+  if node.isNil or node.kind != yMapping:
     return none(YamlNode)
-  let v = node.map.getOrDefault(key, nil)
-  if v.isNil:
-    return none(YamlNode)
-  some(v)
+  try:
+    some(node[key])
+  except KeyError:
+    none(YamlNode)
 
 func yamlPathScalar(root: YamlNode, keys: openArray[string]): Option[string] =
   var cur = root
   for i, k in keys:
-    if cur.isNil or cur.kind != ykMap:
+    if cur.isNil or cur.kind != yMapping:
       return none(string)
-    let nxt = yamlGetMap(cur, k).get(nil)
-    if nxt.isNil:
+    var nxt: YamlNode
+    try:
+      nxt = cur[k]
+    except KeyError:
       return none(string)
     if i == keys.high:
-      if nxt.kind == ykScalar:
-        return some(nxt.scalar)
+      if nxt.kind == yScalar:
+        return some(nxt.content)
       return none(string)
-    if nxt.kind != ykMap:
+    if nxt.kind != yMapping:
       return none(string)
     cur = nxt
   none(string)
@@ -188,7 +97,7 @@ proc deploymentSettingsFromYaml*(root: YamlNode): Result[DeploymentSettings, str
 
 proc parseDeploymentSettings*(text: string): Result[DeploymentSettings, string] =
   let root = ? parseDeploymentSettingsYaml(text)
-  if root.kind != ykMap:
+  if root.kind != yMapping:
     return err("deployment-settings: expected top-level mapping")
   deploymentSettingsFromYaml(root)
 
@@ -208,3 +117,23 @@ proc validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
   need(ds.mempool.pubsubTopic.startsWith("/"), "mempool.pubsub_topic must start with '/'")
   need(ds.cryptarchia.gossipsubProtocol.startsWith("/"), "cryptarchia.gossipsub_protocol must start with '/'")
   ok()
+
+proc mergeDeploymentSettingsFile*[T](config: var T): Result[void, string] =
+  ## Generic over ``config`` so this module does not import ``conf`` (would be circular with ``conf`` importing us).
+  if config.deploymentSettingsFile.isNone():
+    return ok()
+  let path = string(config.deploymentSettingsFile.get())
+  let textRes = readAllChars(path)
+  if textRes.isErr():
+    return err("deployment-settings: cannot read " & path & ": " & ioErrorMsg(textRes.error))
+  let text = textRes.get()
+  let ds = ? parseDeploymentSettings(text)
+  ? validateDeploymentSettings(ds)
+  config.deploymentKademliaProtocol = ds.network.kademliaProtocolName
+  config.deploymentIdentifyProtocol = ds.network.identifyProtocolName
+  config.deploymentChainSyncProtocol = ds.network.chainSyncProtocolName
+  config.deploymentMempoolPubsubTopic = ds.mempool.pubsubTopic
+  config.deploymentCryptarchiaGossipsubProtocol = ds.cryptarchia.gossipsubProtocol
+  ok()
+
+{.pop.}

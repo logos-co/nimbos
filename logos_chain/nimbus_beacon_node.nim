@@ -17,6 +17,7 @@ import
   ./rpc/rest_api,
   ./spec/datatypes/base,
   ./sync/sync_protocol,
+  ./deployment_settings,
   ./[
     logos_chain_node, buildinfo,
     nimbus_binary_common, process_state]
