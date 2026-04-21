@@ -15,7 +15,7 @@ import ../logos_chain/conf
 
 const testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
 
-const examplePath = testsDir / "../config/examples/deployment-settings.example.yaml"
+const deploymentSettingsPath = testsDir / "../config/deployment-settings.yaml"
 
 const incompleteFixturePath = testsDir / "fixtures/deployment-settings-incomplete.yaml"
 
@@ -99,9 +99,9 @@ cryptarchia:
 """
 
 suite "deployment-settings":
-  test "parse and validate example YAML":
-    check fileExists(examplePath)
-    let text = readAllChars(examplePath).valueOr:
+  test "parse and validate canonical deployment-settings YAML":
+    check fileExists(deploymentSettingsPath)
+    let text = readAllChars(deploymentSettingsPath).valueOr:
       check false
       return
     let ds = parseDeploymentSettings(text).valueOr:
@@ -111,8 +111,8 @@ suite "deployment-settings":
     check ds.network.kademliaProtocolName.len > 0
     check ds.mempool.pubsubTopic.startsWith("/")
 
-  test "example YAML: mantle_tx ops and ops_proofs are block sequences":
-    let text = readAllChars(examplePath).valueOr:
+  test "deployment-settings: mantle_tx ops and ops_proofs are block sequences":
+    let text = readAllChars(deploymentSettingsPath).valueOr:
       check false
       return
     let root = parseDeploymentSettingsYaml(text).valueOr:
@@ -123,14 +123,14 @@ suite "deployment-settings":
     let mt = yamlGetMap(gs, "mantle_tx").get()
     let ops = yamlGetMap(mt, "ops").get()
     check ops.kind == ySequence
-    check ops.elems.len == 3
-    let proofs = yamlGetMap(mt, "ops_proofs").get()
+    check ops.elems.len == 6
+    let proofs = yamlGetMap(gs, "ops_proofs").get()
     check proofs.kind == ySequence
-    check proofs.elems.len == 1
+    check proofs.elems.len == 6
 
   test "mergeDeploymentSettingsFile copies into LBNodeConf":
     var c = LBNodeConf(cmd: BNStartUpCmd.lbNode)
-    c.deploymentSettingsFile = some(InputFile(examplePath))
+    c.deploymentSettingsFile = some(InputFile(deploymentSettingsPath))
     check mergeDeploymentSettingsFile(c).isOk
     check c.deploymentKademliaProtocol.len > 0
     check c.deploymentMempoolPubsubTopic.len > 0

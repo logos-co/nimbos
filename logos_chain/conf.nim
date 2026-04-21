@@ -44,8 +44,8 @@ const
   defaultSigningNodeRequestTimeout* = 60
   defaultGasLimit* = 60_000_000
   defaultAdminListenAddressDesc* = $defaultAdminListenAddress
-  ## Default ``--deployment-settings`` path (cfgsync example layout; run node from repo root or override).
-  defaultDeploymentSettingsExamplePath* = "config/examples/deployment-settings.example.yaml"
+  ## Default ``--deployment-settings`` path (canonical cfgsync layout; run from repo root or override).
+  defaultDeploymentSettingsPath* = "config/deployment-settings.yaml"
 
 when defined(windows):
   {.pragma: windowsOnly.}
@@ -302,7 +302,7 @@ type
 
       deploymentSettingsFile* {.
         desc: "cfgsync deployment-settings YAML (network protocol IDs, mempool pubsub topic, cryptarchia gossipsub protocol)"
-        defaultValue: some(InputFile(defaultDeploymentSettingsExamplePath))
+        defaultValue: some(InputFile(defaultDeploymentSettingsPath))
         name: "deployment-settings" .}: Option[InputFile]
 
       deploymentKademliaProtocol* {.
