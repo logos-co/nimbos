@@ -23,7 +23,7 @@ import
   json_serialization, json_serialization/std/net as jsnet,
   chronos/transports/common,
   ./spec/datatypes/base,
-  ./deployment/deployment_settings as deployment_settings,
+  ./deployment/deployment_settings,
   ./nimbus_binary_common
 
 from std/os import dirExists, getHomeDir, `/`

@@ -16,7 +16,7 @@ import
 
   # Local modules
   "."/conf,
-  ./deployment/deployment_settings as deployment_settings,
+  ./deployment/deployment_settings,
   ./networking/eth2_network,
   ./spec/datatypes/base
 
@@ -29,8 +29,6 @@ type
     network*: LBP2PNode
     netKeys*: NetKeyPair
     config*: LBNodeConf
-    ## Parsed ``--deployment-settings``.
-    ## Genesis is still YamlNode inside ``DeploymentSettings`` until a follow-up models it in Nim.
     deploymentSettings*: DeploymentSettings
     restServer*: RestServerRef
     metricsServer*: Opt[MetricsHttpServerRef]
