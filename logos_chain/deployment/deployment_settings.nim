@@ -5,9 +5,6 @@
 #   * Apache v2 license (license terms in the root directory or at https://opensource.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-## Parse cfgsync **deployment-settings** YAML via [NimYAML](https://nimyaml.org) (YAML 1.2).
-## Used to drive libp2p protocol IDs and pubsub topics from deployment config.
-##
 ## **Genesis state:** ``cryptarchia.genesis_state`` is currently kept as a ``YamlNode``
 ## subtree (plus ``yamlRoot`` for document lifetime). A follow-up change should replace
 ## this with Nim types and deterministic genesis / block construction without changing
@@ -113,7 +110,7 @@ type
     time*: TimeDeploymentSettings
     mempool*: MempoolDeploymentSettings
 
-proc validateDeploymentSettingsStructure(root: YamlNode): Result[void, string] =
+func validateDeploymentSettingsStructure(root: YamlNode): Result[void, string] =
   template need(path: openArray[string]) =
     if yamlGetPathNode(root, path).isNone:
       return err("deployment-settings: missing or invalid path: " & path.join("."))
@@ -159,71 +156,83 @@ proc validateDeploymentSettingsStructure(root: YamlNode): Result[void, string] =
   need(["mempool", "pubsub_topic"])
   ok()
 
-## Maps validated YAML fields into a typed ``DeploymentSettings`` value.
-proc deploymentSettingsFromYaml(root: YamlNode): Result[DeploymentSettings, string] =
-  var ds: DeploymentSettings
-  ds.yamlRoot = root
-
-  ds.blend.common.numBlendLayers = ? reqInt(root, ["blend", "common", "num_blend_layers"])
-  ds.blend.common.minimumNetworkSize = ? reqInt(root, ["blend", "common", "minimum_network_size"])
-  ds.blend.common.protocolName = ? reqScalar(root, ["blend", "common", "protocol_name"])
-  ds.blend.common.dataReplicationFactor = ? reqInt(root, ["blend", "common", "data_replication_factor"])
-
-  ds.blend.core.scheduler.cover.messageFrequencyPerRound = ? reqFloat(
-    root, ["blend", "core", "scheduler", "cover", "message_frequency_per_round"])
-  ds.blend.core.scheduler.cover.intervalsForSafetyBuffer = ? reqInt(
-    root, ["blend", "core", "scheduler", "cover", "intervals_for_safety_buffer"])
-  ds.blend.core.scheduler.delayer.maximumReleaseDelayInRounds = ? reqInt(
-    root, ["blend", "core", "scheduler", "delayer", "maximum_release_delay_in_rounds"])
-
-  ds.blend.core.minimumMessagesCoefficient = ? reqInt(root, ["blend", "core", "minimum_messages_coefficient"])
-  ds.blend.core.normalizationConstant = ? reqFloat(root, ["blend", "core", "normalization_constant"])
-  ds.blend.core.activityThresholdSensitivity = ? reqInt(root, ["blend", "core", "activity_threshold_sensitivity"])
-
-  ds.network.kademliaProtocolName = ? reqScalar(root, ["network", "kademlia_protocol_name"])
-  ds.network.identifyProtocolName = ? reqScalar(root, ["network", "identify_protocol_name"])
-  ds.network.chainSyncProtocolName = ? reqScalar(root, ["network", "chain_sync_protocol_name"])
-
-  ds.cryptarchia.epochConfig.epochStakeDistributionStabilization = ? reqInt(
-    root, ["cryptarchia", "epoch_config", "epoch_stake_distribution_stabilization"])
-  ds.cryptarchia.epochConfig.epochPeriodNonceBuffer = ? reqInt(
-    root, ["cryptarchia", "epoch_config", "epoch_period_nonce_buffer"])
-  ds.cryptarchia.epochConfig.epochPeriodNonceStabilization = ? reqInt(
-    root, ["cryptarchia", "epoch_config", "epoch_period_nonce_stabilization"])
-
-  ds.cryptarchia.securityParam = ? reqInt(root, ["cryptarchia", "security_param"])
-  ds.cryptarchia.slotActivationCoeff.numerator = ? reqInt(root, ["cryptarchia", "slot_activation_coeff", "numerator"])
-  ds.cryptarchia.slotActivationCoeff.denominator = ? reqInt(
-    root, ["cryptarchia", "slot_activation_coeff", "denominator"])
-  ds.cryptarchia.learningRate = ? reqFloat(root, ["cryptarchia", "learning_rate"])
-
-  ds.cryptarchia.sdpConfig.bn.lockPeriod = ? reqInt(
-    root, ["cryptarchia", "sdp_config", "service_params", "BN", "lock_period"])
-  ds.cryptarchia.sdpConfig.bn.inactivityPeriod = ? reqInt(
-    root, ["cryptarchia", "sdp_config", "service_params", "BN", "inactivity_period"])
-  ds.cryptarchia.sdpConfig.bn.retentionPeriod = ? reqInt(
-    root, ["cryptarchia", "sdp_config", "service_params", "BN", "retention_period"])
-  ds.cryptarchia.sdpConfig.bn.timestamp = ? reqInt(
-    root, ["cryptarchia", "sdp_config", "service_params", "BN", "timestamp"])
-  ds.cryptarchia.sdpConfig.minStake.threshold = ? reqInt(root, ["cryptarchia", "sdp_config", "min_stake", "threshold"])
-  ds.cryptarchia.sdpConfig.minStake.timestamp = ? reqInt(root, ["cryptarchia", "sdp_config", "min_stake", "timestamp"])
-
-  ds.cryptarchia.gossipsubProtocol = ? reqScalar(root, ["cryptarchia", "gossipsub_protocol"])
-
+func deploymentSettingsFromYaml(root: YamlNode): Result[DeploymentSettings, string] =
   # Genesis: attach DOM for now; follow-up PR should parse `gs` into Nim types here and
   # then either drop YamlNode or keep both briefly during migration.
   let gs = yamlGetPathNode(root, ["cryptarchia", "genesis_state"])
   if gs.isNone:
     return err("deployment-settings: missing cryptarchia.genesis_state")
-  ds.cryptarchia.genesisState = gs.get
+  ok(DeploymentSettings(
+    yamlRoot: root,
+    blend: BlendSettings(
+      common: BlendCommon(
+        numBlendLayers: ? reqInt(root, ["blend", "common", "num_blend_layers"]),
+        minimumNetworkSize: ? reqInt(root, ["blend", "common", "minimum_network_size"]),
+        protocolName: ? reqScalar(root, ["blend", "common", "protocol_name"]),
+        dataReplicationFactor: ? reqInt(root, ["blend", "common", "data_replication_factor"])
+      ),
+      core: BlendCore(
+        scheduler: BlendScheduler(
+          cover: BlendSchedulerCover(
+            messageFrequencyPerRound: ? reqFloat(
+              root, ["blend", "core", "scheduler", "cover", "message_frequency_per_round"]),
+            intervalsForSafetyBuffer: ? reqInt(
+              root, ["blend", "core", "scheduler", "cover", "intervals_for_safety_buffer"])
+          ),
+          delayer: BlendSchedulerDelayer(
+            maximumReleaseDelayInRounds: ? reqInt(
+              root, ["blend", "core", "scheduler", "delayer", "maximum_release_delay_in_rounds"])
+          )
+        ),
+        minimumMessagesCoefficient: ? reqInt(root, ["blend", "core", "minimum_messages_coefficient"]),
+        normalizationConstant: ? reqFloat(root, ["blend", "core", "normalization_constant"]),
+        activityThresholdSensitivity: ? reqInt(root, ["blend", "core", "activity_threshold_sensitivity"])
+      )
+    ),
+    network: NetworkDeploymentSettings(
+      kademliaProtocolName: ? reqScalar(root, ["network", "kademlia_protocol_name"]),
+      identifyProtocolName: ? reqScalar(root, ["network", "identify_protocol_name"]),
+      chainSyncProtocolName: ? reqScalar(root, ["network", "chain_sync_protocol_name"])
+    ),
+    cryptarchia: CryptarchiaDeploymentSettings(
+      epochConfig: EpochConfig(
+        epochStakeDistributionStabilization: ? reqInt(
+          root, ["cryptarchia", "epoch_config", "epoch_stake_distribution_stabilization"]),
+        epochPeriodNonceBuffer: ? reqInt(
+          root, ["cryptarchia", "epoch_config", "epoch_period_nonce_buffer"]),
+        epochPeriodNonceStabilization: ? reqInt(
+          root, ["cryptarchia", "epoch_config", "epoch_period_nonce_stabilization"])
+      ),
+      securityParam: ? reqInt(root, ["cryptarchia", "security_param"]),
+      slotActivationCoeff: SlotActivationCoeff(
+        numerator: ? reqInt(root, ["cryptarchia", "slot_activation_coeff", "numerator"]),
+        denominator: ? reqInt(root, ["cryptarchia", "slot_activation_coeff", "denominator"])
+      ),
+      learningRate: ? reqFloat(root, ["cryptarchia", "learning_rate"]),
+      sdpConfig: SdpConfig(
+        bn: BnServiceParams(
+          lockPeriod: ? reqInt(root, ["cryptarchia", "sdp_config", "service_params", "BN", "lock_period"]),
+          inactivityPeriod: ? reqInt(root, ["cryptarchia", "sdp_config", "service_params", "BN", "inactivity_period"]),
+          retentionPeriod: ? reqInt(root, ["cryptarchia", "sdp_config", "service_params", "BN", "retention_period"]),
+          timestamp: ? reqInt(root, ["cryptarchia", "sdp_config", "service_params", "BN", "timestamp"])
+        ),
+        minStake: MinStake(
+          threshold: ? reqInt(root, ["cryptarchia", "sdp_config", "min_stake", "threshold"]),
+          timestamp: ? reqInt(root, ["cryptarchia", "sdp_config", "min_stake", "timestamp"])
+        )
+      ),
+      gossipsubProtocol: ? reqScalar(root, ["cryptarchia", "gossipsub_protocol"]),
+      genesisState: gs.get
+    ),
+    time: TimeDeploymentSettings(
+      slotDuration: ? reqScalar(root, ["time", "slot_duration"]),
+      chainStartTime: ? reqScalar(root, ["time", "chain_start_time"])
+    ),
+    mempool: MempoolDeploymentSettings(
+      pubsubTopic: ? reqScalar(root, ["mempool", "pubsub_topic"])
+    )
+  ))
 
-  ds.time.slotDuration = ? reqScalar(root, ["time", "slot_duration"])
-  ds.time.chainStartTime = ? reqScalar(root, ["time", "chain_start_time"])
-
-  ds.mempool.pubsubTopic = ? reqScalar(root, ["mempool", "pubsub_topic"])
-  ok(ds)
-
-## Parses YAML text, validates required structure, and builds deployment settings.
 proc parseDeploymentSettings*(text: string): Result[DeploymentSettings, string] =
   let root = ? parseDeploymentSettingsYaml(text)
   if root.kind != yMapping:
@@ -231,16 +240,55 @@ proc parseDeploymentSettings*(text: string): Result[DeploymentSettings, string] 
   ? validateDeploymentSettingsStructure(root)
   deploymentSettingsFromYaml(root)
 
-## Validates semantic constraints on parsed deployment settings values.
-proc validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
+func validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
   template need(cond: bool, msg: string) =
     if not cond:
       return err(msg)
+  need(ds.blend.common.numBlendLayers > 0, "blend.common.num_blend_layers must be > 0")
+  need(ds.blend.common.minimumNetworkSize > 0, "blend.common.minimum_network_size must be > 0")
+  need(ds.blend.common.dataReplicationFactor >= 0, "blend.common.data_replication_factor must be >= 0")
+  need(ds.blend.core.minimumMessagesCoefficient > 0, "blend.core.minimum_messages_coefficient must be > 0")
+  need(ds.blend.core.normalizationConstant > 0.0, "blend.core.normalization_constant must be > 0")
+  need(ds.blend.core.activityThresholdSensitivity > 0, "blend.core.activity_threshold_sensitivity must be > 0")
+  need(ds.blend.core.scheduler.cover.messageFrequencyPerRound > 0.0,
+    "blend.core.scheduler.cover.message_frequency_per_round must be > 0")
+  need(ds.blend.core.scheduler.cover.intervalsForSafetyBuffer > 0,
+    "blend.core.scheduler.cover.intervals_for_safety_buffer must be > 0")
+  need(ds.blend.core.scheduler.delayer.maximumReleaseDelayInRounds > 0,
+    "blend.core.scheduler.delayer.maximum_release_delay_in_rounds must be > 0")
+
+  need(ds.cryptarchia.epochConfig.epochStakeDistributionStabilization > 0,
+    "cryptarchia.epoch_config.epoch_stake_distribution_stabilization must be > 0")
+  need(ds.cryptarchia.epochConfig.epochPeriodNonceBuffer > 0,
+    "cryptarchia.epoch_config.epoch_period_nonce_buffer must be > 0")
+  need(ds.cryptarchia.epochConfig.epochPeriodNonceStabilization > 0,
+    "cryptarchia.epoch_config.epoch_period_nonce_stabilization must be > 0")
+  need(ds.cryptarchia.securityParam > 0, "cryptarchia.security_param must be > 0")
+  need(ds.cryptarchia.slotActivationCoeff.numerator > 0,
+    "cryptarchia.slot_activation_coeff.numerator must be > 0")
+  need(ds.cryptarchia.slotActivationCoeff.denominator > 0,
+    "cryptarchia.slot_activation_coeff.denominator must be > 0")
+  need(ds.cryptarchia.learningRate > 0.0, "cryptarchia.learning_rate must be > 0")
+  need(ds.cryptarchia.sdpConfig.bn.lockPeriod > 0,
+    "cryptarchia.sdp_config.service_params.BN.lock_period must be > 0")
+  need(ds.cryptarchia.sdpConfig.bn.inactivityPeriod > 0,
+    "cryptarchia.sdp_config.service_params.BN.inactivity_period must be > 0")
+  need(ds.cryptarchia.sdpConfig.bn.retentionPeriod > 0,
+    "cryptarchia.sdp_config.service_params.BN.retention_period must be > 0")
+  need(ds.cryptarchia.sdpConfig.bn.timestamp >= 0,
+    "cryptarchia.sdp_config.service_params.BN.timestamp must be >= 0")
+  need(ds.cryptarchia.sdpConfig.minStake.threshold > 0,
+    "cryptarchia.sdp_config.min_stake.threshold must be > 0")
+  need(ds.cryptarchia.sdpConfig.minStake.timestamp >= 0,
+    "cryptarchia.sdp_config.min_stake.timestamp must be >= 0")
+
   need(not ds.cryptarchia.genesisState.isNil, "missing cryptarchia.genesis_state")
   need(ds.cryptarchia.genesisState.kind == yMapping, "cryptarchia.genesis_state must be a mapping")
   need(ds.network.kademliaProtocolName.len > 0, "empty network.kademlia_protocol_name")
   need(ds.network.identifyProtocolName.len > 0, "empty network.identify_protocol_name")
   need(ds.network.chainSyncProtocolName.len > 0, "empty network.chain_sync_protocol_name")
+  need(ds.time.slotDuration.len > 0, "empty time.slot_duration")
+  need(ds.time.chainStartTime.len > 0, "empty time.chain_start_time")
   need(ds.mempool.pubsubTopic.len > 0, "empty mempool.pubsub_topic")
   need(ds.cryptarchia.gossipsubProtocol.len > 0, "empty cryptarchia.gossipsub_protocol")
   need(ds.blend.common.protocolName.len > 0, "empty blend.common.protocol_name")
@@ -254,7 +302,6 @@ proc validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
   ok()
 
 proc loadDeploymentSettings*(deploymentSettingsFile: InputFile): Result[DeploymentSettings, string] =
-  ## Reads and validates the deployment-settings file.
   let path = string(deploymentSettingsFile)
   let textRes = readAllChars(path)
   if textRes.isErr():
