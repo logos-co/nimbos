@@ -16,18 +16,22 @@ import
 
   # Local modules
   "."/conf,
+  ./deployment/deployment_settings as deployment_settings,
   ./networking/eth2_network,
   ./spec/datatypes/base
 
 export
   osproc, chronos, presto, server, conf,
-  eth2_network, base
+  deployment_settings, eth2_network, base
 
 type
   LBNode* = ref object
     network*: LBP2PNode
     netKeys*: NetKeyPair
     config*: LBNodeConf
+    ## Parsed ``--deployment-settings``.
+    ## Genesis is still YamlNode inside ``DeploymentSettings`` until a follow-up models it in Nim.
+    deploymentSettings*: DeploymentSettings
     restServer*: RestServerRef
     metricsServer*: Opt[MetricsHttpServerRef]
     shutdownEvent*: AsyncEvent

@@ -17,7 +17,7 @@ import
   ./rpc/rest_api,
   ./spec/datatypes/base,
   ./sync/sync_protocol,
-  ./deployment_settings,
+  ./deployment/deployment_settings as deployment_settings,
   ./[
     logos_chain_node, buildinfo,
     nimbus_binary_common, process_state]
@@ -51,6 +51,7 @@ proc init*(
     T: type LBNode,
     rng: ref HmacDrbgContext,
     config: LBNodeConf,
+    deploymentSettings: DeploymentSettings,
 ): Future[Opt[LBNode]] {.async: (raises: [CancelledError]).} =
   var config = config
 
@@ -78,6 +79,7 @@ proc init*(
   ok LBNode(
     network: network,
     config: config,
+    deploymentSettings: deploymentSettings,
     restServer: restServer,
     shutdownEvent: newAsyncEvent())
 
@@ -186,10 +188,11 @@ proc run*(node: LBNode, stopper: StopFuture) {.raises: [CatchableError].} =
 proc doRunLBNode(
     config: var LBNodeConf, rng: ref HmacDrbgContext
 ) {.raises: [CatchableError].} =
-  let depRes = mergeDeploymentSettingsFile(config)
+  let depRes = loadDeploymentSettings(config.deploymentSettingsFile)
   if depRes.isErr:
     fatal "Invalid deployment-settings file", err = depRes.error
     quit QuitFailure
+  let deploymentSettings = depRes.get()
 
   info "Launching Logos node",
     version = fullVersionStr,
@@ -206,7 +209,7 @@ proc doRunLBNode(
 
   let
     taskpool = setupTaskpool(config.numThreads)
-    node = waitFor(LBNode.init(rng, config)).valueOr:
+    node = waitFor(LBNode.init(rng, config, deploymentSettings)).valueOr:
       return
 
   # Nim GC metrics (for the main thread) will be collected in onSecond(), but

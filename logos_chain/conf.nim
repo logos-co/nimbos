@@ -23,7 +23,7 @@ import
   json_serialization, json_serialization/std/net as jsnet,
   chronos/transports/common,
   ./spec/datatypes/base,
-  ./deployment_settings,
+  ./deployment/deployment_settings as deployment_settings,
   ./nimbus_binary_common
 
 from std/os import dirExists, getHomeDir, `/`
@@ -302,38 +302,8 @@ type
 
       deploymentSettingsFile* {.
         desc: "cfgsync deployment-settings YAML (network protocol IDs, mempool pubsub topic, cryptarchia gossipsub protocol)"
-        defaultValue: some(InputFile(defaultDeploymentSettingsPath))
-        name: "deployment-settings" .}: Option[InputFile]
-
-      deploymentKademliaProtocol* {.
-        hidden
-        desc: "From --deployment-settings: network.kademlia_protocol_name"
-        defaultValue: ""
-        name: "deployment-kademlia-protocol" .}: string
-
-      deploymentIdentifyProtocol* {.
-        hidden
-        desc: "From --deployment-settings: network.identify_protocol_name"
-        defaultValue: ""
-        name: "deployment-identify-protocol" .}: string
-
-      deploymentChainSyncProtocol* {.
-        hidden
-        desc: "From --deployment-settings: network.chain_sync_protocol_name"
-        defaultValue: ""
-        name: "deployment-chain-sync-protocol" .}: string
-
-      deploymentMempoolPubsubTopic* {.
-        hidden
-        desc: "From --deployment-settings: mempool.pubsub_topic"
-        defaultValue: ""
-        name: "deployment-mempool-pubsub-topic" .}: string
-
-      deploymentCryptarchiaGossipsubProtocol* {.
-        hidden
-        desc: "From --deployment-settings: cryptarchia.gossipsub_protocol"
-        defaultValue: ""
-        name: "deployment-cryptarchia-gossipsub-protocol" .}: string
+        defaultValue: InputFile(defaultDeploymentSettingsPath)
+        name: "deployment-settings" .}: InputFile
 
   AnyConf* = LBNodeConf
 
