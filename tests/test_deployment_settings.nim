@@ -12,7 +12,7 @@ import std/[os, strutils]
 import unittest2
 import stew/io2
 import ../logos_chain/conf
-import ../logos_chain/deployment/deployment_settings as deployment_settings
+import ../logos_chain/deployment/deployment_settings
 
 const testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
 
@@ -362,6 +362,44 @@ mempool:
     let v = validateDeploymentSettings(ds)
     check v.isErr
     check "empty blend.common.protocol_name" in v.error
+
+  test "validateDeploymentSettings: zero cryptarchia slot coeff denominator":
+    let badYaml = deploymentSettingsBlendBlock & """
+network:
+  kademlia_protocol_name: /a/kad
+  identify_protocol_name: /a/id
+  chain_sync_protocol_name: /a/sync
+""" & "\n" & deploymentSettingsCryptarchiaBlock.replace("denominator: 1", "denominator: 0") &
+      "\n" & deploymentSettingsTimeBlock & """
+mempool:
+  pubsub_topic: /a/mem
+"""
+    let ds = parseDeploymentSettings(badYaml).valueOr:
+      check false
+      return
+    let v = validateDeploymentSettings(ds)
+    check v.isErr
+    check "cryptarchia.slot_activation_coeff.denominator must be > 0" in v.error
+
+  test "validateDeploymentSettings: empty time.slot_duration":
+    let badYaml = deploymentSettingsBlendBlock & """
+network:
+  kademlia_protocol_name: /a/kad
+  identify_protocol_name: /a/id
+  chain_sync_protocol_name: /a/sync
+""" & "\n" & deploymentSettingsCryptarchiaBlock & """
+time:
+  slot_duration: ''
+  chain_start_time: 2020-01-01 00:00:00.0 +00:00:00
+mempool:
+  pubsub_topic: /a/mem
+"""
+    let ds = parseDeploymentSettings(badYaml).valueOr:
+      check false
+      return
+    let v = validateDeploymentSettings(ds)
+    check v.isErr
+    check "empty time.slot_duration" in v.error
 
   test "yamlGetMap: missing key returns none":
     let root = parseDeploymentSettingsYaml(minimalValidYaml).valueOr:
