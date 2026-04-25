@@ -10,8 +10,6 @@
 {.push raises: [], gcsafe.}
 
 import nimcrypto/blake2
-import groth16
-import taskpools
 import poseidon2/[types, io, sponge]
 import ./encoding
 
