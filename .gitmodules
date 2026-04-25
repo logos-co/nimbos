@@ -153,7 +153,7 @@
 	path = vendor/nim-poseidon2
 	url = https://github.com/codex-storage/nim-poseidon2.git
 	ignore = untracked
-	branch = master
+	branch = main
 
 [submodule "vendor/constantine"]
 	path = vendor/constantine
