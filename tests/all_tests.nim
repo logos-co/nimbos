@@ -14,7 +14,8 @@ import ./testutil
 import # Unit test
   ./test_peer_pool,
   ./test_logos_p2p,
-  ./test_rest_node_api
+  ./test_rest_node_api,
+  ./test_poseidon_hasher
 
 summarizeLongTests("AllTests")
 
