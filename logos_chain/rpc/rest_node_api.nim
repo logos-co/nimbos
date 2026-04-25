@@ -21,6 +21,7 @@ import
   eth/enr/enr,
   libp2p/[multiaddress, multicodec, peerstore],
   ../version, ../logos_chain_node,
+  ../bedrock/mantle/primitives,
   ../networking/[eth2_network, peer_pool],
   ../spec/datatypes/base,
   ./rest_utils,
@@ -193,7 +194,7 @@ proc installNodeApiHandlers*(router: var RestRouter, node: LBNode) =
     RestApiResponse.response("{}", Http200, $jsonMediaType)
 
   # POST /leader/claim
-  router.api2(MethodPost, LEADER_CLAIM) do () -> RestApiResponse:
+  router.api2(MethodPost, rest_paths.LEADER_CLAIM) do () -> RestApiResponse:
     RestApiResponse.response("{}", Http200, $jsonMediaType)
 
   # GET /mantle/metrics

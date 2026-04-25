@@ -9,6 +9,7 @@
 
 import std/macros,
        results, stew/byteutils, presto/route,
+       ../bedrock/crypto/hashing,
        ../spec/eth2_apis/[rest_types, eth2_rest_serialization, rest_common],
        ../logos_chain_node,
        "."/rest_constants
@@ -24,7 +25,7 @@ import std/macros,
 
 export
   results, eth2_rest_serialization, rest_types,
-  rest_constants, rest_common, route, decodeString
+  rest_constants, rest_common, route, decodeString, Hash32
 
 func disallowInterruptionsAux(body: NimNode) =
   for n in body:
@@ -55,18 +56,17 @@ const
   textEventStreamMediaType* = MediaType.init("text/event-stream")
 
 type
-  LogosDigest* = array[32, byte]
-  HeaderId* = LogosDigest
-  ZkPublicKey* = ZkHash
-  ZkHash* = array[32, byte] #TODO Replace with Fr type
+  ## Bedrock 32-byte hash (``array[32, byte]``); not **``hashes.Hash32``** (preimage type).
+  Hash32* = hashing.Hash32
+  HeaderId* = Hash32
 
-func decodeLogosDigest(value: string): Result[LogosDigest, cstring] =
+func decodeHash32FromHex(value: string): Result[Hash32, cstring] =
   try:
-    var res: LogosDigest
+    var res: Hash32
     hexToByteArrayStrict(value, res)
-    ok(Result[LogosDigest, cstring], res)
+    ok(Result[Hash32, cstring], res)
   except ValueError:
-    err("Invalid hex string for LogosDigest")
+    err("Invalid hex string for Hash32")
 
-func decodeString*(t: typedesc[LogosDigest], value: string): Result[LogosDigest, cstring] =
-  decodeLogosDigest(value)
+func decodeString*(t: typedesc[Hash32], value: string): Result[Hash32, cstring] =
+  decodeHash32FromHex(value)
