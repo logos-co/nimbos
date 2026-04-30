@@ -59,6 +59,7 @@ func generateZkSignature*(): ZkSignature =
 func poseidon2Hash*(data: openArray[byte]): ZkHash =
   ## Poseidon2 (BN254, t=3) sponge hash over input bytes.
   ## Returns canonical 32-byte little-endian field element encoding.
+  ## TODO(zk): replace this direct sponge call with `Poseidon2Hasher` when ready.
   Sponge.digest(data).toBytes()
 
 # ---------------------------------------------------------------------------
