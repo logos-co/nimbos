@@ -13,15 +13,11 @@
 
 import ./[primitives, operations, tx_types]
 import ../crypto/encoding
-import ../crypto/hashing
 export
   encodeByte, encodeEd25519PublicKey, encodeEd25519Signature, encodeFieldElement,
   encodeGroth16, encodeHash32, encodeU16LeLenPrefixed, encodeU32LeLenPrefixed,
   encodeLe, encodeZkPublicKey,
   encodeZkSignature
-
-const
-  MantleTxHashDomainTag = "MANTLE_TXHASH_V1"
 
 # -----------------------------------------------------------------------------
 # Alias encoders
@@ -411,25 +407,6 @@ func encodeMantleTx*(tx: MantleTx): seq[byte] =
   result = encodeOps(tx.ops)
   result.add(encodeExecutionGasPrice(tx.executionGasPrice))
   result.add(encodeStorageGasPrice(tx.permanentStorageGasPrice))
-
-func blake2bWithMantleTxDomain(txBytes: openArray[byte]): Hash32 =
-  var preimage: seq[byte] = @[]
-  for c in MantleTxHashDomainTag:
-    preimage.add(byte(ord(c)))
-  preimage.add(txBytes)
-  blake2b256Hash(preimage)
-
-func mantleTxHash*(tx: MantleTx): ZkHash =
-  ## Placeholder classic hash (Blake2b-256):
-  ## h.update("MANTLE_TXHASH_V1")
-  ## h.update(encode(tx))
-  ## classic_digest = h.digest()
-  ##
-  ## TODO: once zk/poseidon2/hasher exists in this target, derive ZkHash by
-  ## feeding two little-endian field chunks from classic_digest into ZkHasher.
-  let txBytes = encodeMantleTx(tx)
-  let classicDigest = blake2bWithMantleTxDomain(txBytes)
-  classicDigest
 
 func encodeSignedMantleTx*(signedTx: SignedMantleTx): seq[byte] =
   ## SignedMantleTx = MantleTx || OpsProofs
