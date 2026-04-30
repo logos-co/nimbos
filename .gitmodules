@@ -149,3 +149,13 @@
 	path = vendor/nim-blscurve
 	url = https://github.com/status-im/nim-blscurve
 	branch = master
+[submodule "vendor/nim-poseidon2"]
+	path = vendor/nim-poseidon2
+	url = https://github.com/codex-storage/nim-poseidon2.git
+	ignore = untracked
+	branch = main
+[submodule "vendor/constantine"]
+	path = vendor/constantine
+	url = https://github.com/mratsim/constantine.git
+	ignore = untracked
+	branch = master
