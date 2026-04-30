@@ -15,7 +15,17 @@ import # Unit test
   ./test_peer_pool,
   ./test_logos_p2p,
   ./test_rest_node_api,
-  ./test_deployment_settings
+  ./test_deployment_settings,
+  ./bedrock/crypto/test_hashing,
+  ./bedrock/crypto/test_encoding,
+  ./bedrock/mantle/test_primitives,
+  ./bedrock/mantle/test_operations,
+  ./bedrock/mantle/test_proofs,
+  ./bedrock/mantle/test_tx_types,
+  ./bedrock/mantle/test_tx_encoding,
+  "./bedrock/block/test_block_types",
+  "./bedrock/block/test_genesis",
+  ./bedrock/sdp/test_state
 
 summarizeLongTests("AllTests")
 

@@ -71,10 +71,16 @@ cryptarchia:
   gossipsub_protocol: /a/cryp
   genesis_state:
     mantle_tx:
-      ops: []
+      ops:
+        - opcode: 0
+          payload: {}
+        - opcode: 17
+          payload: {}
       execution_gas_price: 0
       storage_gas_price: 0
-    ops_proofs: []
+    ops_proofs:
+      - NoProof
+      - NoProof
 """
 
 const deploymentSettingsTimeBlock = """
@@ -189,7 +195,7 @@ suite "deployment-settings":
     check ds.network.kademliaProtocolName.len > 0
     check ds.mempool.pubsubTopic.startsWith("/")
     check ds.blend.common.numBlendLayers > 0
-    check ds.cryptarchia.genesisState.kind == yMapping
+    check ds.cryptarchia.genesisState.tx.ops.len > 0
 
   test "deployment-settings: mantle_tx ops and ops_proofs are block sequences":
     let text = readAllChars(deploymentSettingsPath).valueOr:
@@ -342,8 +348,8 @@ suite "deployment-settings":
     check ds.blend.common.protocolName == "/stub/blend"
     check ds.time.slotDuration == "1.0"
     check ds.cryptarchia.securityParam == 1
-    check not ds.cryptarchia.genesisState.isNil
-    check yamlGetPathNode(ds.cryptarchia.genesisState, ["mantle_tx"]).isSome
+    check ds.cryptarchia.genesisState.tx.ops.len == 2
+    check ds.cryptarchia.genesisState.tx.ops.len == 2
 
   test "validateDeploymentSettings: empty blend.common.protocol_name":
     let badYaml = deploymentSettingsBlendBlock.replace(
