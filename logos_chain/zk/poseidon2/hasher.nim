@@ -1,11 +1,17 @@
+# nimbos
+# Copyright (c) 2026 Status Research & Development GmbH
+# Licensed and distributed under either of
+#   * MIT license (license terms in the root directory or at https://opensource.org/licenses/MIT).
+#   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
+# at your option, this file may not be copied, modified, or distributed except according to those terms.
+
+{.push raises: [], gcsafe.}
+
 import std/options
 
 import poseidon2
-import poseidon2/types       # F, zero, one, HorizenLabsNew
-import poseidon2/permutation # permInPlace
+import poseidon2/[types,permutation]       # F, zero, one, HorizenLabsNew 
 import constantine/math/arithmetic
-
-{.push raises: [].}
 
 type Poseidon2Hasher* = object
   s0, s1, s2: F

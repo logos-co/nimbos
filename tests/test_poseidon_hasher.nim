@@ -9,9 +9,10 @@
 {.used.}
 
 import unittest2
-import constantine/math/arithmetic       # fromBig
-import constantine/math/io/io_bigints    # BigInt.fromDecimal (raises: [ValueError])
+
+import constantine/math/[arithmetic, io/io_bigints]
 import poseidon2/types                   # B, F, zero, one, two
+
 import ../logos_chain/zk/poseidon2/hasher
 
 # Reference values cross-checked against logos-blockchain/zk/poseidon2/src/hasher.rs.
