@@ -11,20 +11,8 @@
 
 import ./primitives
 import ./proofs
-export primitives, proofs
-
-const
-  ## Mantle **Op** opcodes. Unassigned codepoints: spec tables
-  ## (gaps in channel/SDP bands, after ``OpLeaderClaim``).
-  OpTransfer* = 0x00'u8
-  OpChannelConfig* = 0x10'u8
-  OpChannelInscribe* = 0x11'u8
-  OpChannelDeposit* = 0x12'u8
-  OpChannelWithdraw* = 0x13'u8
-  OpSdpDeclare* = 0x20'u8
-  OpSdpWithdraw* = 0x21'u8
-  OpSdpActive* = 0x22'u8
-  OpLeaderClaim* = 0x30'u8
+import ./opcodes
+export primitives, proofs, opcodes
 
 # ---------------------------------------------------------------------------
 # Transfer (``OpTransfer``)
@@ -231,5 +219,71 @@ func expectedOpProofKindForOpcode*(opcode: Opcode): OpProofKind =
   else:
     doAssert false, "unknown opcode for OpProof expectation: " & $opcode
     default(OpProofKind)
+
+func defaultOpForOpcode*(opcode: Opcode): Op =
+  ## Canonical default/empty op payload for a given opcode.
+  case opcode
+  of OpTransfer:
+    createTransferOp(TransferPayload(
+      inputs: Inputs(noteIds: @[]),
+      outputs: Outputs(notes: @[]),
+    ))
+  of OpChannelInscribe:
+    createChannelInscribeOp(ChannelInscribePayload(
+      channelId: default(ChannelId),
+      inscription: @[],
+      parent: default(Parent),
+      signer: default(Signer),
+    ))
+  of OpChannelDeposit:
+    createChannelDepositOp(ChannelDepositPayload(
+      channel: default(ChannelId),
+      inputs: @[],
+      metadata: @[],
+    ))
+  of OpChannelWithdraw:
+    createChannelWithdrawOp(ChannelWithdrawPayload(
+      channel: default(ChannelId),
+      outputs: @[],
+      opIdNonce: 0'u32,
+    ))
+  of OpSdpDeclare:
+    createSdpDeclareOp(SdpDeclarePayload(
+      serviceType: default(ServiceType),
+      locators: @[],
+      providerId: default(ProviderId),
+      zkId: default(ZkId),
+      lockedNoteId: default(LockedNoteId),
+    ))
+  of OpSdpWithdraw:
+    createSdpWithdrawOp(SdpWithdrawPayload(
+      declarationId: default(DeclarationId),
+      nonce: default(Nonce),
+      lockedNoteId: default(LockedNoteId),
+    ))
+  of OpSdpActive:
+    createSdpActiveOp(SdpActivePayload(
+      declarationId: default(DeclarationId),
+      nonce: default(Nonce),
+      metadata: @[],
+    ))
+  of OpLeaderClaim:
+    createLeaderClaimOp(LeaderClaimPayload(
+      rewardsRoot: default(RewardsRoot),
+      voucherNullifier: default(VoucherNullifier),
+      publicKey: default(ZkPublicKey),
+    ))
+  of OpChannelConfig:
+    createChannelConfigOp(ChannelConfigPayload(
+      channel: default(ChannelId),
+      keys: @[],
+      postingTimeframe: default(PostingTimeframe),
+      postingTimeout: default(PostingTimeout),
+      configurationThreshold: default(ConfigurationThreshold),
+      withdrawThreshold: default(WithdrawThreshold),
+    ))
+  else:
+    doAssert false, "unknown opcode for default op: " & $opcode
+    default(Op)
 
 {.pop.}

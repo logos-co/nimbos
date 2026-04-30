@@ -11,6 +11,7 @@
 {.push raises: [], gcsafe.}
 
 import ./primitives
+import ./opcodes
 
 type
   OpProofKind* = enum
@@ -81,6 +82,43 @@ func proofTypeForKind(kind: OpProofKind): ProofType =
     ptChannelWithdraw
   of opfLeaderClaim:
     ptProofOfClaim
+
+func defaultOpProofForOpcode*(opcode: Opcode): OpProof =
+  ## Canonical default/empty proof value for a given opcode.
+  case opcode
+  of OpTransfer:
+    OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))
+  of OpChannelInscribe:
+    OpProof(kind: opfChannelInscribe, ed25519SigProof: default(Ed25519SigProof))
+  of OpChannelDeposit:
+    OpProof(kind: opfChannelDeposit, channelDepositProof: default(ZkSigProof))
+  of OpChannelWithdraw:
+    OpProof(
+      kind: opfChannelWithdraw,
+      channelWithdrawOpProof: ChannelWithdrawOpProof(signatures: @[], indexes: @[]),
+    )
+  of OpSdpDeclare:
+    OpProof(
+      kind: opfSdpDeclare,
+      declarationProof: ZkAndEd25519SigsProof(
+        zkSig: default(ZkSigProof),
+        ed25519Sig: default(Ed25519SigProof),
+      ),
+    )
+  of OpSdpWithdraw:
+    OpProof(kind: opfSdpWithdraw, sdpWithdrawProof: default(ZkSigProof))
+  of OpSdpActive:
+    OpProof(kind: opfSdpActive, sdpActiveProof: default(ZkSigProof))
+  of OpLeaderClaim:
+    OpProof(kind: opfLeaderClaim, proofOfClaimProof: default(ProofOfClaimProof))
+  of OpChannelConfig:
+    OpProof(
+      kind: opfChannelConfig,
+      channelConfigOpProof: ChannelWithdrawOpProof(signatures: @[], indexes: @[]),
+    )
+  else:
+    doAssert false, "unknown opcode for default op proof: " & $opcode
+    default(OpProof)
 
 func proofType*(proof: OpProof): ProofType =
   ## Proof family for a concrete proof value.
