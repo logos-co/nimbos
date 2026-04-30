@@ -220,6 +220,15 @@ func expectedOpProofKindForOpcode*(opcode: Opcode): OpProofKind =
     doAssert false, "unknown opcode for OpProof expectation: " & $opcode
     default(OpProofKind)
 
+func isSupportedOpcode*(opcode: Opcode): bool =
+  ## True when opcode is part of the currently supported Mantle operation set.
+  case opcode
+  of OpTransfer, OpChannelInscribe, OpChannelDeposit, OpChannelWithdraw,
+     OpSdpDeclare, OpSdpWithdraw, OpSdpActive, OpLeaderClaim, OpChannelConfig:
+    true
+  else:
+    false
+
 func defaultOpForOpcode*(opcode: Opcode): Op =
   ## Canonical default/empty op payload for a given opcode.
   case opcode
