@@ -303,10 +303,8 @@ func validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
 
 proc loadDeploymentSettings*(deploymentSettingsFile: InputFile): Result[DeploymentSettings, string] =
   let path = string(deploymentSettingsFile)
-  let textRes = readAllChars(path)
-  if textRes.isErr():
-    return err("deployment-settings: cannot read " & path & ": " & ioErrorMsg(textRes.error))
-  let text = textRes.get()
+  let text = readAllChars(path).valueOr:
+    return err("deployment-settings: cannot read " & path & ": " & ioErrorMsg(error))
   let ds = ? parseDeploymentSettings(text)
   ? validateDeploymentSettings(ds)
   ok(ds)

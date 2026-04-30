@@ -188,11 +188,9 @@ proc run*(node: LBNode, stopper: StopFuture) {.raises: [CatchableError].} =
 proc doRunLBNode(
     config: var LBNodeConf, rng: ref HmacDrbgContext
 ) {.raises: [CatchableError].} =
-  let depRes = loadDeploymentSettings(config.deploymentSettingsFile)
-  if depRes.isErr:
-    fatal "Invalid deployment-settings file", err = depRes.error
+  let deploymentSettings = loadDeploymentSettings(config.deploymentSettingsFile).valueOr:
+    fatal "Invalid deployment-settings file", err = error
     quit QuitFailure
-  let deploymentSettings = depRes.get()
 
   info "Launching Logos node",
     version = fullVersionStr,
