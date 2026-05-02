@@ -1,0 +1,2 @@
+# Unclosed flow sequence — invalid YAML
+network: [ x

@@ -23,6 +23,7 @@ import
   json_serialization, json_serialization/std/net as jsnet,
   chronos/transports/common,
   ./spec/datatypes/base,
+  ./deployment/deployment_settings,
   ./nimbus_binary_common
 
 from std/os import dirExists, getHomeDir, `/`
@@ -33,6 +34,7 @@ export
   enabledLogLevel,
   defs, parseCmdArg, completeCmdArg,
   confTomlDefs, confTomlNet, confTomlUri, jsnet,
+  deployment_settings,
   nimbus_binary_common
 
 const
@@ -42,6 +44,8 @@ const
   defaultSigningNodeRequestTimeout* = 60
   defaultGasLimit* = 60_000_000
   defaultAdminListenAddressDesc* = $defaultAdminListenAddress
+  ## Default ``--deployment-settings`` path (canonical cfgsync layout; run from repo root or override).
+  defaultDeploymentSettingsPath* = "config/deployment-settings.yaml"
 
 when defined(windows):
   {.pragma: windowsOnly.}
@@ -295,6 +299,11 @@ type
         desc: "Listening HTTP port of the metrics server"
         defaultValue: 8008
         name: "metrics-port" .}: Port
+
+      deploymentSettingsFile* {.
+        desc: "cfgsync deployment-settings YAML (network protocol IDs, mempool pubsub topic, cryptarchia gossipsub protocol)"
+        defaultValue: InputFile(defaultDeploymentSettingsPath)
+        name: "deployment-settings" .}: InputFile
 
   AnyConf* = LBNodeConf
 

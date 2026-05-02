@@ -1,0 +1,3 @@
+# Intentionally incomplete: missing identify_protocol_name, chain_sync, mempool, cryptarchia.
+network:
+  kademlia_protocol_name: /x/kad/1.0.0

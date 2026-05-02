@@ -149,6 +149,11 @@
 	path = vendor/nim-blscurve
 	url = https://github.com/status-im/nim-blscurve
 	branch = master
+[submodule "vendor/nim-yaml"]
+	path = vendor/nim-yaml
+	url = https://github.com/flyx/NimYAML.git
+	ignore = untracked
+	branch = devel
 [submodule "vendor/nim-poseidon2"]
 	path = vendor/nim-poseidon2
 	url = https://github.com/codex-storage/nim-poseidon2.git

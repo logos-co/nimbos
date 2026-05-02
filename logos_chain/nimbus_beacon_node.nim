@@ -12,12 +12,12 @@ import
   std/[os, random, strutils, times],
   chronos, chronicles,
   metrics, metrics/chronos_httpserver,
-  stew/io2,
   eth/enr/enr,
   eth/p2p/discoveryv5/random2,
   ./rpc/rest_api,
   ./spec/datatypes/base,
   ./sync/sync_protocol,
+  ./deployment/deployment_settings,
   ./[
     logos_chain_node, buildinfo,
     nimbus_binary_common, process_state]
@@ -51,6 +51,7 @@ proc init*(
     T: type LBNode,
     rng: ref HmacDrbgContext,
     config: LBNodeConf,
+    deploymentSettings: DeploymentSettings,
 ): Future[Opt[LBNode]] {.async: (raises: [CancelledError]).} =
   var config = config
 
@@ -78,6 +79,7 @@ proc init*(
   ok LBNode(
     network: network,
     config: config,
+    deploymentSettings: deploymentSettings,
     restServer: restServer,
     shutdownEvent: newAsyncEvent())
 
@@ -186,6 +188,10 @@ proc run*(node: LBNode, stopper: StopFuture) {.raises: [CatchableError].} =
 proc doRunLBNode(
     config: var LBNodeConf, rng: ref HmacDrbgContext
 ) {.raises: [CatchableError].} =
+  let deploymentSettings = loadDeploymentSettings(config.deploymentSettingsFile).valueOr:
+    fatal "Invalid deployment-settings file", err = error
+    quit QuitFailure
+
   info "Launching Logos node",
     version = fullVersionStr,
     cmdParams = commandLineParams(),
@@ -201,7 +207,7 @@ proc doRunLBNode(
 
   let
     taskpool = setupTaskpool(config.numThreads)
-    node = waitFor(LBNode.init(rng, config)).valueOr:
+    node = waitFor(LBNode.init(rng, config, deploymentSettings)).valueOr:
       return
 
   # Nim GC metrics (for the main thread) will be collected in onSecond(), but

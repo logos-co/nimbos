@@ -1,0 +1,53 @@
+# All required keys present but empty strings (invalid after parse)
+blend:
+  common:
+    num_blend_layers: 1
+    minimum_network_size: 1
+    protocol_name: /b/blend
+    data_replication_factor: 0
+  core:
+    scheduler:
+      cover:
+        message_frequency_per_round: 1.0
+        intervals_for_safety_buffer: 1
+      delayer:
+        maximum_release_delay_in_rounds: 1
+    minimum_messages_coefficient: 1
+    normalization_constant: 1.0
+    activity_threshold_sensitivity: 1
+network:
+  kademlia_protocol_name: ""
+  identify_protocol_name: /b
+  chain_sync_protocol_name: /c
+cryptarchia:
+  epoch_config:
+    epoch_stake_distribution_stabilization: 1
+    epoch_period_nonce_buffer: 1
+    epoch_period_nonce_stabilization: 1
+  security_param: 1
+  slot_activation_coeff:
+    numerator: 1
+    denominator: 1
+  learning_rate: 0.5
+  sdp_config:
+    service_params:
+      BN:
+        lock_period: 1
+        inactivity_period: 1
+        retention_period: 1
+        timestamp: 0
+    min_stake:
+      threshold: 1
+      timestamp: 0
+  gossipsub_protocol: /e
+  genesis_state:
+    mantle_tx:
+      ops: []
+      execution_gas_price: 0
+      storage_gas_price: 0
+    ops_proofs: []
+time:
+  slot_duration: '1.0'
+  chain_start_time: 2020-01-01 00:00:00.0 +00:00:00
+mempool:
+  pubsub_topic: /d
