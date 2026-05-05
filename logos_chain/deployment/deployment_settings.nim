@@ -22,6 +22,7 @@ import
   stew/io2,
   yaml/dom,
   "../bedrock/block/genesis",
+  ./deployment_settings_helpers,
   ./helpers
 
 export
@@ -111,7 +112,7 @@ type
     mempool*: MempoolDeploymentSettings
 
 func validateDeploymentSettingsStructure(root: YamlNode): Result[void, string] =
-  template need(path: openArray[string]) =
+  template needPath(path: openArray[string]) =
     if yamlGetPathNode(root, path).isNone:
       return err("deployment-settings: missing or invalid path: " & path.join("."))
   ? requireTopLevelMapping(root, "blend")
@@ -119,153 +120,42 @@ func validateDeploymentSettingsStructure(root: YamlNode): Result[void, string] =
   ? requireTopLevelMapping(root, "cryptarchia")
   ? requireTopLevelMapping(root, "time")
   ? requireTopLevelMapping(root, "mempool")
-  need(["blend", "common", "num_blend_layers"])
-  need(["blend", "common", "minimum_network_size"])
-  need(["blend", "common", "protocol_name"])
-  need(["blend", "common", "data_replication_factor"])
-  need(["blend", "core", "scheduler"])
-  need(["blend", "core", "minimum_messages_coefficient"])
-  need(["blend", "core", "normalization_constant"])
-  need(["blend", "core", "activity_threshold_sensitivity"])
-  need(["blend", "core", "scheduler", "cover", "message_frequency_per_round"])
-  need(["blend", "core", "scheduler", "cover", "intervals_for_safety_buffer"])
-  need(["blend", "core", "scheduler", "delayer", "maximum_release_delay_in_rounds"])
-  need(["network", "kademlia_protocol_name"])
-  need(["network", "identify_protocol_name"])
-  need(["network", "chain_sync_protocol_name"])
-  need(["cryptarchia", "epoch_config", "epoch_stake_distribution_stabilization"])
-  need(["cryptarchia", "epoch_config", "epoch_period_nonce_buffer"])
-  need(["cryptarchia", "epoch_config", "epoch_period_nonce_stabilization"])
-  need(["cryptarchia", "security_param"])
-  need(["cryptarchia", "slot_activation_coeff", "numerator"])
-  need(["cryptarchia", "slot_activation_coeff", "denominator"])
-  need(["cryptarchia", "learning_rate"])
-  need(["cryptarchia", "sdp_config", "service_params", "BN", "lock_period"])
-  need(["cryptarchia", "sdp_config", "service_params", "BN", "inactivity_period"])
-  need(["cryptarchia", "sdp_config", "service_params", "BN", "retention_period"])
-  need(["cryptarchia", "sdp_config", "service_params", "BN", "timestamp"])
-  need(["cryptarchia", "sdp_config", "min_stake", "threshold"])
-  need(["cryptarchia", "sdp_config", "min_stake", "timestamp"])
-  need(["cryptarchia", "gossipsub_protocol"])
-  need(["cryptarchia", "genesis_state", "mantle_tx", "ops"])
-  need(["cryptarchia", "genesis_state", "mantle_tx", "execution_gas_price"])
-  need(["cryptarchia", "genesis_state", "mantle_tx", "storage_gas_price"])
-  need(["cryptarchia", "genesis_state", "ops_proofs"])
-  need(["time", "slot_duration"])
-  need(["time", "chain_start_time"])
-  need(["mempool", "pubsub_topic"])
+  needPath(["blend", "common", "num_blend_layers"])
+  needPath(["blend", "common", "minimum_network_size"])
+  needPath(["blend", "common", "protocol_name"])
+  needPath(["blend", "common", "data_replication_factor"])
+  needPath(["blend", "core", "scheduler"])
+  needPath(["blend", "core", "minimum_messages_coefficient"])
+  needPath(["blend", "core", "normalization_constant"])
+  needPath(["blend", "core", "activity_threshold_sensitivity"])
+  needPath(["blend", "core", "scheduler", "cover", "message_frequency_per_round"])
+  needPath(["blend", "core", "scheduler", "cover", "intervals_for_safety_buffer"])
+  needPath(["blend", "core", "scheduler", "delayer", "maximum_release_delay_in_rounds"])
+  needPath(["network", "kademlia_protocol_name"])
+  needPath(["network", "identify_protocol_name"])
+  needPath(["network", "chain_sync_protocol_name"])
+  needPath(["cryptarchia", "epoch_config", "epoch_stake_distribution_stabilization"])
+  needPath(["cryptarchia", "epoch_config", "epoch_period_nonce_buffer"])
+  needPath(["cryptarchia", "epoch_config", "epoch_period_nonce_stabilization"])
+  needPath(["cryptarchia", "security_param"])
+  needPath(["cryptarchia", "slot_activation_coeff", "numerator"])
+  needPath(["cryptarchia", "slot_activation_coeff", "denominator"])
+  needPath(["cryptarchia", "learning_rate"])
+  needPath(["cryptarchia", "sdp_config", "service_params", "BN", "lock_period"])
+  needPath(["cryptarchia", "sdp_config", "service_params", "BN", "inactivity_period"])
+  needPath(["cryptarchia", "sdp_config", "service_params", "BN", "retention_period"])
+  needPath(["cryptarchia", "sdp_config", "service_params", "BN", "timestamp"])
+  needPath(["cryptarchia", "sdp_config", "min_stake", "threshold"])
+  needPath(["cryptarchia", "sdp_config", "min_stake", "timestamp"])
+  needPath(["cryptarchia", "gossipsub_protocol"])
+  needPath(["cryptarchia", "genesis_state", "mantle_tx", "ops"])
+  needPath(["cryptarchia", "genesis_state", "mantle_tx", "execution_gas_price"])
+  needPath(["cryptarchia", "genesis_state", "mantle_tx", "storage_gas_price"])
+  needPath(["cryptarchia", "genesis_state", "ops_proofs"])
+  needPath(["time", "slot_duration"])
+  needPath(["time", "chain_start_time"])
+  needPath(["mempool", "pubsub_topic"])
   ok()
-
-## Parses one YAML genesis proof entry into an operation-aligned `OpProof`.
-## Supported YAML proof shapes are currently compatibility forms (`NoProof`,
-## Groth16-like mappings with `pi_*`, and legacy combined `zk_sig`+`ed25519_sig`);
-## each is normalized to the proof kind expected by `forOp.opcode`.
-func parseGenesisOpProof(
-  node: YamlNode, idx: int, forOp: Op
-): Result[OpProof, string] =
-
-  let path = "cryptarchia.genesis_state.ops_proofs[" & $idx & "]"
-  let expectedDefaultProof = defaultOpProofForOpcode(forOp.opcode)
-  if node.kind == yScalar:
-    ## TODO(mantle): `NoProof` was removed in Mantle v1.4; drop this compatibility
-    ## branch once we receive the updated deployment file format.
-    if node.content == "NoProof":
-      return ok(expectedDefaultProof)
-    return err("deployment-settings: unsupported scalar proof at " & path)
-
-  if node.kind == yMapping:
-    let hasPiA = yamlGetPathNode(node, ["pi_a"]).isSome
-    let hasZkSig = yamlGetPathNode(node, ["zk_sig"]).isSome
-    let hasEdSig = yamlGetPathNode(node, ["ed25519_sig"]).isSome
-    if hasPiA:
-      ## Groth16-shaped mapping (e.g. ``!ZkSig`` with ``pi_a``/``pi_b``/``pi_c`` and optional
-      ## auxiliary fields). In the operation-aligned proof model, map to the op's expected kind.
-      return ok(expectedDefaultProof)
-    if hasZkSig and hasEdSig:
-      ## Legacy combined proof shape; in operation-aligned mode keep the op-expected kind.
-      return ok(expectedDefaultProof)
-    return err("deployment-settings: unsupported mapping proof at " & path)
-
-  err("deployment-settings: expected scalar or mapping proof at " & path)
-
-## Parses `cryptarchia.genesis_state` into typed Mantle ops/proofs plus gas prices.
-## Current payload/proof decoding is compatibility-oriented and may default or
-## normalize fields until full canonical wire decoding is implemented.
-func parseDeploymentGenesisState(root: YamlNode): Result[SignedMantleTx, string] =
-  let gsOpt = yamlGetPathNode(root, ["cryptarchia", "genesis_state"])
-  if gsOpt.isNone:
-    return err("deployment-settings: missing cryptarchia.genesis_state")
-  let gs = gsOpt.get
-  if gs.kind != yMapping:
-    return err("deployment-settings: cryptarchia.genesis_state must be a mapping")
-
-  let opsOpt = yamlGetPathNode(root, ["cryptarchia", "genesis_state", "mantle_tx", "ops"])
-  if opsOpt.isNone:
-    return err("deployment-settings: missing cryptarchia.genesis_state.mantle_tx.ops")
-  let opsNode = opsOpt.get
-  if opsNode.kind != ySequence:
-    return err("deployment-settings: cryptarchia.genesis_state.mantle_tx.ops must be a sequence")
-
-  let proofsOpt = yamlGetPathNode(root, ["cryptarchia", "genesis_state", "ops_proofs"])
-  if proofsOpt.isNone:
-    return err("deployment-settings: missing cryptarchia.genesis_state.ops_proofs")
-  let proofsNode = proofsOpt.get
-  if proofsNode.kind != ySequence:
-    return err("deployment-settings: cryptarchia.genesis_state.ops_proofs must be a sequence")
-
-  var ops: seq[Op] = @[]
-  for i in 0 ..< opsNode.len:
-    let opNode = opsNode[i]
-    if opNode.kind != yMapping:
-      return err("deployment-settings: expected mapping at cryptarchia.genesis_state.mantle_tx.ops[" & $i & "]")
-
-    let opcodeNode = yamlGetPathNode(opNode, ["opcode"])
-    if opcodeNode.isNone or opcodeNode.get.kind != yScalar:
-      return err("deployment-settings: expected scalar opcode at cryptarchia.genesis_state.mantle_tx.ops[" & $i & "].opcode")
-    let opcodeVal =
-      try:
-        parseInt(opcodeNode.get.content)
-      except ValueError:
-        return err("deployment-settings: expected integer opcode at cryptarchia.genesis_state.mantle_tx.ops[" & $i & "].opcode")
-    if opcodeVal < 0 or opcodeVal > high(Opcode).int:
-      return err("deployment-settings: opcode must be >= 0 at cryptarchia.genesis_state.mantle_tx.ops[" & $i & "].opcode")
-
-    let payloadNode = yamlGetPathNode(opNode, ["payload"])
-    if payloadNode.isNone:
-      return err("deployment-settings: missing payload at cryptarchia.genesis_state.mantle_tx.ops[" & $i & "].payload")
-
-    let opcodeU8 = Opcode(opcodeVal)
-    ## TODO(mantle): encode YAML `payload` mapping to canonical Mantle `payload` bytes.
-    if not isSupportedOpcode(opcodeU8):
-      return err("deployment-settings: unsupported opcode at mantletx op[" & $i &
-        "]: " & $opcodeVal)
-    ops.add(defaultOpForOpcode(opcodeU8))
-
-  if proofsNode.len > ops.len:
-    return err("deployment-settings: len(ops_proofs) must be <= len(ops)")
-
-  var opProofs: seq[OpProof] = newSeq[OpProof](ops.len)
-  for i in 0 ..< ops.len:
-    opProofs[i] = defaultOpProofForOpcode(ops[i].opcode)
-  for i in 0 ..< proofsNode.len:
-    opProofs[i] = ? parseGenesisOpProof(proofsNode[i], i, ops[i])
-
-  let executionGasPrice = ? reqInt(root, ["cryptarchia", "genesis_state", "mantle_tx", "execution_gas_price"])
-  if executionGasPrice < 0:
-    return err("deployment-settings: cryptarchia.genesis_state.mantle_tx.execution_gas_price must be >= 0")
-  let storageGasPrice = ? reqInt(root, ["cryptarchia", "genesis_state", "mantle_tx", "storage_gas_price"])
-  if storageGasPrice < 0:
-    return err("deployment-settings: cryptarchia.genesis_state.mantle_tx.storage_gas_price must be >= 0")
-
-  doAssert ops.len <= MantleMaxOps, "Mantle: too many ops for OpCount byte"
-  let mantleTx = MantleTx(
-    ops: ops,
-    permanentStorageGasPrice: TokenValue(uint64(storageGasPrice)),
-    executionGasPrice: TokenValue(uint64(executionGasPrice))
-  )
-  doAssert opProofs.len == mantleTx.ops.len,
-    "signed mantle tx: len(ops_proofs) must be <= len(ops) before fill"
-  ok(SignedMantleTx(tx: mantleTx, opProofs: opProofs))
 
 func deploymentSettingsFromYaml(root: YamlNode): Result[DeploymentSettings, string] =
   let parsedGenesis = ? parseDeploymentGenesisState(root)
