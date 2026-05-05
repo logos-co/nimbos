@@ -12,12 +12,14 @@ import
   std/[os, random, strutils, times],
   chronos, chronicles,
   metrics, metrics/chronos_httpserver,
+  stew/byteutils,
   eth/enr/enr,
   eth/p2p/discoveryv5/random2,
   ./rpc/rest_api,
   ./spec/datatypes/base,
   ./sync/sync_protocol,
   ./deployment/deployment_settings,
+  "./bedrock/block/genesis",
   ./[
     logos_chain_node, buildinfo,
     nimbus_binary_common, process_state]
@@ -193,6 +195,19 @@ proc doRunLBNode(
     fatal "Invalid deployment-settings file", err = depRes.error
     quit QuitFailure
   let deploymentSettings = depRes.get()
+  let genesisBlock = createGenesisBlock(deploymentSettings.cryptarchia.genesisState)
+  let genesisBlockId = blockId(genesisBlock.header)
+  info "Constructed genesis block from deployment settings",
+    genesisBlockId = byteutils.toHex(genesisBlockId),
+    bedrockVersion = genesisBlock.header.bedrockVersion,
+    slot = genesisBlock.header.slot,
+    parentBlock = byteutils.toHex(genesisBlock.header.parentBlock),
+    blockRoot = byteutils.toHex(genesisBlock.header.blockRoot),
+    txCount = genesisBlock.txs.len,
+    opCount = deploymentSettings.cryptarchia.genesisState.tx.ops.len,
+    proofCount = deploymentSettings.cryptarchia.genesisState.opProofs.len,
+    executionGasPrice = deploymentSettings.cryptarchia.genesisState.tx.executionGasPrice,
+    storageGasPrice = deploymentSettings.cryptarchia.genesisState.tx.permanentStorageGasPrice
 
   info "Launching Logos node",
     version = fullVersionStr,
