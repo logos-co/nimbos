@@ -289,27 +289,27 @@ suite "deployment-settings":
   test "parseDeploymentSettings: non-scalar leaf network.kademlia_protocol_name":
     let r = parseDeploymentSettings(nonScalarLeafYaml[0])
     check r.isErr
-    check "missing" in r.error
+    check "missing or non-scalar" in r.error
 
   test "parseDeploymentSettings: non-scalar leaf network.identify_protocol_name":
     let r = parseDeploymentSettings(nonScalarLeafYaml[1])
     check r.isErr
-    check "missing" in r.error
+    check "missing or non-scalar" in r.error
 
   test "parseDeploymentSettings: non-scalar leaf network.chain_sync_protocol_name":
     let r = parseDeploymentSettings(nonScalarLeafYaml[2])
     check r.isErr
-    check "missing" in r.error
+    check "missing or non-scalar" in r.error
 
   test "parseDeploymentSettings: non-scalar leaf mempool.pubsub_topic":
     let r = parseDeploymentSettings(nonScalarLeafYaml[3])
     check r.isErr
-    check "missing" in r.error
+    check "missing or non-scalar" in r.error
 
   test "parseDeploymentSettings: non-scalar leaf cryptarchia.gossipsub_protocol":
     let r = parseDeploymentSettings(nonScalarLeafYaml[4])
     check r.isErr
-    check "missing" in r.error
+    check "missing or non-scalar" in r.error
 
   test "validateDeploymentSettings: empty kademlia string":
     check fileExists(emptyScalarsFixturePath)
