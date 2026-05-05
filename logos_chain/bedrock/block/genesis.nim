@@ -25,7 +25,7 @@ const
 # Genesis constructors
 # ---------------------------------------------------------------------------
 
-func createGenesisHeader*(genesisMantleTx: SignedMantleTx): Header =
+func createGenesisHeader(genesisMantleTx: SignedMantleTx): Header =
   ## Genesis header constructor using spec defaults:
   ## - parent block id = zero hash
   ## - slot = 0
