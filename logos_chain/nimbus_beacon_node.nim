@@ -28,6 +28,7 @@ from std/sequtils import filterIt, mapIt, toSeq
 from libp2p/protocols/pubsub/errors import ValidationResult
 from libp2p/protocols/pubsub/gossipsub import
   TopicParams, validateParameters, init
+from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
 
 logScope: topics = "logos_nd"
 
@@ -197,6 +198,9 @@ proc doRunLBNode(
   let deploymentSettings = depRes.get()
   let genesisBlock = createGenesisBlock(deploymentSettings.cryptarchia.genesisState)
   let genesisBlockId = blockId(genesisBlock.header)
+  var leaderKeyBytes: array[EdPublicKeySize, byte]
+  let leaderKeyWritten = toBytes(genesisBlock.header.proofOfLeadership.leaderKey, leaderKeyBytes)
+  doAssert leaderKeyWritten == EdPublicKeySize, "failed to encode genesis PoL leader key"
   info "Constructed genesis block from deployment settings",
     genesisBlockId = byteutils.toHex(genesisBlockId),
     bedrockVersion = genesisBlock.header.bedrockVersion,
@@ -207,7 +211,11 @@ proc doRunLBNode(
     opCount = deploymentSettings.cryptarchia.genesisState.tx.ops.len,
     proofCount = deploymentSettings.cryptarchia.genesisState.opProofs.len,
     executionGasPrice = deploymentSettings.cryptarchia.genesisState.tx.executionGasPrice,
-    storageGasPrice = deploymentSettings.cryptarchia.genesisState.tx.permanentStorageGasPrice
+    storageGasPrice = deploymentSettings.cryptarchia.genesisState.tx.permanentStorageGasPrice,
+    polLeaderVoucher = byteutils.toHex(genesisBlock.header.proofOfLeadership.leaderVoucher),
+    polEntropyContribution = byteutils.toHex(genesisBlock.header.proofOfLeadership.entropyContribution),
+    polProof = byteutils.toHex(genesisBlock.header.proofOfLeadership.proof),
+    polLeaderKey = byteutils.toHex(leaderKeyBytes)
 
   info "Launching Logos node",
     version = fullVersionStr,
