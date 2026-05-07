@@ -26,6 +26,7 @@ import # Unit test
   ./bedrock/mantle/test_tx_decoding,
   "./bedrock/block/test_block_types",
   "./bedrock/block/test_genesis",
+  "./bedrock/block/test_devnet_genesis_mantle_tx",
   ./bedrock/sdp/test_state
 
 summarizeLongTests("AllTests")
