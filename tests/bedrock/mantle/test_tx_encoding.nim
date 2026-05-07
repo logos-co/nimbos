@@ -9,6 +9,7 @@
 {.used.}
 
 import unittest2
+import libp2p/multiaddress
 import ../../../logos_chain/bedrock/mantle/primitives
 import ../../../logos_chain/bedrock/mantle/tx_encoding
 import ../../../logos_chain/bedrock/mantle/tx_hashing
@@ -79,6 +80,72 @@ suite "bedrock/mantle/tx_encoding":
     ))
     check wdr.len == 32 + 1 + 4
     check wdr[^4] == 1'u8 # opIdNonce LE low byte
+
+  test "encodeOp includes opcode byte and payload bytes for each op kind":
+    let locator = MultiAddress.init("/ip4/127.0.0.1/udp/30303/quic-v1").tryGet()
+    let ops = @[
+      createTransferOp(TransferPayload(
+        inputs: Inputs(noteIds: @[default(NoteId)]),
+        outputs: Outputs(notes: @[Note(
+          value: 7'u64,
+          zkPublicKey: default(ZkPublicKey),
+        )]),
+      )),
+      createChannelInscribeOp(ChannelInscribePayload(
+        channelId: default(ChannelId),
+        inscription: @[1'u8, 2'u8, 3'u8],
+        parent: default(Parent),
+        signer: default(Signer),
+      )),
+      createChannelDepositOp(ChannelDepositPayload(
+        channel: default(ChannelId),
+        inputs: @[default(NoteId)],
+        metadata: @[0xAB'u8],
+      )),
+      createChannelWithdrawOp(ChannelWithdrawPayload(
+        channel: default(ChannelId),
+        outputs: @[Note(value: 1'u64, zkPublicKey: default(ZkPublicKey))],
+        opIdNonce: 42'u32,
+      )),
+      createSdpDeclareOp(SdpDeclarePayload(
+        serviceType: ServiceType.bn,
+        locators: @[locator],
+        providerId: default(ProviderId),
+        zkId: default(ZkId),
+        lockedNoteId: default(LockedNoteId),
+      )),
+      createSdpWithdrawOp(SdpWithdrawPayload(
+        declarationId: default(DeclarationId),
+        nonce: 1'u64,
+        lockedNoteId: default(LockedNoteId),
+      )),
+      createSdpActiveOp(SdpActivePayload(
+        declarationId: default(DeclarationId),
+        nonce: 2'u64,
+        metadata: @[0xAA'u8, 0xBB'u8],
+      )),
+      createLeaderClaimOp(LeaderClaimPayload(
+        rewardsRoot: default(RewardsRoot),
+        voucherNullifier: default(VoucherNullifier),
+        publicKey: default(PublicKey),
+      )),
+      createChannelConfigOp(ChannelConfigPayload(
+        channel: default(ChannelId),
+        keys: @[],
+        postingTimeframe: 0'u32,
+        postingTimeout: 0'u32,
+        configurationThreshold: 0'u16,
+        withdrawThreshold: 0'u16,
+      )),
+    ]
+
+    for op in ops:
+      let payload = encodeOpPayload(op.payload)
+      let encoded = encodeOp(op)
+      check encoded.len == 1 + payload.len
+      check encoded.len >= 1
+      check encoded[0] == op.opcode
+      check encoded[1 .. ^1] == payload
 
   test "mantleTxHash is sensitive to tx bytes":
     let txA = MantleTx(
