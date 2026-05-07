@@ -22,6 +22,19 @@ const
   GenesisBedrockVersion* = 1'u8
 
 # ---------------------------------------------------------------------------
+# Deployment genesis bundle (mantle tx + chain metadata from cfgsync YAML)
+# ---------------------------------------------------------------------------
+
+type
+  GenesisState* = object
+    signedMantleTx*: SignedMantleTx
+    faucetZkPublicKey*: ZkPublicKey
+    ## From ``cryptarchia.genesis_block.header`` (Bedrock wire fields).
+    header*: Header
+    ## From ``cryptarchia.genesis_block.signature`` (block-level Ed25519).
+    blockSignature*: Ed25519Signature
+
+# ---------------------------------------------------------------------------
 # Genesis constructors
 # ---------------------------------------------------------------------------
 
