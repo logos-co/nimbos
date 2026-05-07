@@ -13,27 +13,38 @@
 import ./tx_types
 import ./tx_encoding
 import ../crypto/hashing
+import poseidon2/[types, io]
+import "../../zk/poseidon2/hasher"
 
 const
   MantleTxHashDomainTag = "MANTLE_TXHASH_V1"
+  HalfBlakeDigestBytesSize = 16
 
-func blake2bWithMantleTxDomain*(txBytes: openArray[byte]): Hash32 =
-  var preimage: seq[byte] = @[]
-  for c in MantleTxHashDomainTag:
-    preimage.add(byte(ord(c)))
-  preimage.add(txBytes)
-  blake2b256Hash(preimage)
+func frFromBytesUnchecked(bytes: openArray[byte]): F =
+  ## Mirrors `fr_from_bytes_unchecked`: interpret little-endian bytes as field input
+  ## without canonical-range checks.
+  var tmp: array[31, byte]
+  doAssert bytes.len <= tmp.len, "fr input chunk too large"
+  for i in 0 ..< bytes.len:
+    tmp[i] = bytes[i]
+  F.fromBytes(tmp)
+
+func mantleTxHashDomainFr(): F =
+  frFromBytesUnchecked(MantleTxHashDomainTag.toOpenArrayByte(0, MantleTxHashDomainTag.high))
+
+func blake2bMantleTxDigest*(txBytes: openArray[byte]): Hash32 =
+  ## Classic digest step: Blake2b-256 over canonical tx bytes.
+  blake2b256Hash(txBytes)
 
 func mantleTxHash*(tx: MantleTx): ZkHash =
-  ## Placeholder classic hash (Blake2b-256):
-  ## h.update("MANTLE_TXHASH_V1")
-  ## h.update(encode(tx))
-  ## classic_digest = h.digest()
-  ##
-  ## TODO: once zk/poseidon2/hasher exists in this target, derive ZkHash by
-  ## feeding two little-endian field chunks from classic_digest into ZkHasher.
+  ## tx_hash = Poseidon2( MANTLE_TXHASH_V1_FR || fr(blake[0..15]) || fr(blake[16..31]) )
   let txBytes = encodeMantleTx(tx)
-  let classicDigest = blake2bWithMantleTxDomain(txBytes)
-  classicDigest
+  let classicDigest = blake2bMantleTxDigest(txBytes)
+
+  let frA = frFromBytesUnchecked(classicDigest.toOpenArray(0, HalfBlakeDigestBytesSize - 1))
+  let frB = frFromBytesUnchecked(classicDigest.toOpenArray(
+    HalfBlakeDigestBytesSize, (2 * HalfBlakeDigestBytesSize) - 1))
+  let preimage = [mantleTxHashDomainFr(), frA, frB]
+  Poseidon2Hasher.digest(preimage).toBytes()
 
 {.pop.}
