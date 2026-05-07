@@ -47,6 +47,44 @@ blend:
     activity_threshold_sensitivity: 1
 """
 
+const deploymentGenesisBlockMin = """
+  genesis_block:
+    header:
+      version: Bedrock
+      parent_block: '0000000000000000000000000000000000000000000000000000000000000000'
+      slot: 0
+      block_root: '0000000000000000000000000000000000000000000000000000000000000000'
+      proof_of_leadership:
+        proof: '0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000'
+        entropy_contribution: '0000000000000000000000000000000000000000000000000000000000000000'
+        leader_key: '0000000000000000000000000000000000000000000000000000000000000000'
+        voucher_cm: '0000000000000000000000000000000000000000000000000000000000000000'
+    signature: '00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000'
+    transactions:
+    - mantle_tx:
+        ops:
+        - opcode: 0
+          payload:
+            inputs: []
+            outputs:
+            - value: 1
+              pk: '0000000000000000000000000000000000000000000000000000000000000001'
+        - opcode: 17
+          payload:
+            channel_id: '0000000000000000000000000000000000000000000000000000000000000000'
+            inscription: '00'
+            parent: '0000000000000000000000000000000000000000000000000000000000000000'
+            signer: 'd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a'
+        execution_gas_price: 0
+        storage_gas_price: 0
+      ops_proofs:
+      - !ZkSig
+        pi_a: [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+        pi_b: [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+        pi_c: [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+      - !Ed25519Sig '00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000'
+"""
+
 const deploymentSettingsCryptarchiaBlock = """
 cryptarchia:
   epoch_config:
@@ -69,24 +107,13 @@ cryptarchia:
       threshold: 1
       timestamp: 0
   gossipsub_protocol: /a/cryp
-  genesis_state:
-    mantle_tx:
-      ops:
-        - opcode: 0
-          payload: {}
-        - opcode: 17
-          payload: {}
-      execution_gas_price: 0
-      storage_gas_price: 0
-    ops_proofs:
-      - NoProof
-      - NoProof
+""" & deploymentGenesisBlockMin & """
+  faucet_pk: '0000000000000000000000000000000000000000000000000000000000000001'
 """
 
 const deploymentSettingsTimeBlock = """
 time:
   slot_duration: '1.0'
-  chain_start_time: 2020-01-01 00:00:00.0 +00:00:00
 """
 
 ## Full structural stub + one protocol leaf as a sequence instead of a scalar (indices 0..4: kademlia, identify, chain_sync, mempool, cryptarchia).
@@ -159,13 +186,9 @@ cryptarchia:
       timestamp: 0
   gossipsub_protocol:
     - /a/cryp
-  genesis_state:
-    mantle_tx:
-      ops: []
-      execution_gas_price: 0
-      storage_gas_price: 0
-    ops_proofs: []
-""" & "\n" & deploymentSettingsTimeBlock & """
+""" & deploymentGenesisBlockMin & """
+  faucet_pk: '0000000000000000000000000000000000000000000000000000000000000001'
+""" & deploymentSettingsTimeBlock & """
 mempool:
   pubsub_topic: /a/mem
 """,
@@ -195,7 +218,7 @@ suite "deployment-settings":
     check ds.network.kademliaProtocolName.len > 0
     check ds.mempool.pubsubTopic.startsWith("/")
     check ds.blend.common.numBlendLayers > 0
-    check ds.cryptarchia.genesisState.tx.ops.len > 0
+    check ds.cryptarchia.genesisState.signedMantleTx.tx.ops.len > 0
 
   test "deployment-settings: mantle_tx ops and ops_proofs are block sequences":
     let text = readAllChars(deploymentSettingsPath).valueOr:
@@ -205,12 +228,14 @@ suite "deployment-settings":
       check false
       return
     let crypt = yamlGetPathNode(root, ["cryptarchia"]).get()
-    let gs = yamlGetPathNode(crypt, ["genesis_state"]).get()
-    let mt = yamlGetPathNode(gs, ["mantle_tx"]).get()
+    let gb = yamlGetPathNode(crypt, ["genesis_block"]).get()
+    let txs = yamlGetPathNode(gb, ["transactions"]).get()
+    let tx0 = txs[0]
+    let mt = yamlGetPathNode(tx0, ["mantle_tx"]).get()
     let ops = yamlGetPathNode(mt, ["ops"]).get()
     check ops.kind == ySequence
     check ops.elems.len == 6
-    let proofs = yamlGetPathNode(gs, ["ops_proofs"]).get()
+    let proofs = yamlGetPathNode(tx0, ["ops_proofs"]).get()
     check proofs.kind == ySequence
     check proofs.elems.len == 6
 
@@ -348,8 +373,8 @@ suite "deployment-settings":
     check ds.blend.common.protocolName == "/stub/blend"
     check ds.time.slotDuration == "1.0"
     check ds.cryptarchia.securityParam == 1
-    check ds.cryptarchia.genesisState.tx.ops.len == 2
-    check ds.cryptarchia.genesisState.tx.ops.len == 2
+    check ds.cryptarchia.genesisState.signedMantleTx.tx.ops.len == 2
+    check ds.cryptarchia.genesisState.signedMantleTx.tx.ops.len == 2
 
   test "validateDeploymentSettings: empty blend.common.protocol_name":
     let badYaml = deploymentSettingsBlendBlock.replace(
@@ -396,7 +421,6 @@ network:
 """ & "\n" & deploymentSettingsCryptarchiaBlock & """
 time:
   slot_duration: ''
-  chain_start_time: 2020-01-01 00:00:00.0 +00:00:00
 mempool:
   pubsub_topic: /a/mem
 """
