@@ -196,7 +196,7 @@ proc doRunLBNode(
     fatal "Invalid deployment-settings file", err = depRes.error
     quit QuitFailure
   let deploymentSettings = depRes.get()
-  let genesisBlock = createGenesisBlock(deploymentSettings.cryptarchia.genesisState)
+  let genesisBlock = createGenesisBlock(deploymentSettings.cryptarchia.genesisState.signedMantleTx)
   let genesisBlockId = blockId(genesisBlock.header)
   var leaderKeyBytes: array[EdPublicKeySize, byte]
   let leaderKeyWritten = toBytes(genesisBlock.header.proofOfLeadership.leaderKey, leaderKeyBytes)
@@ -208,10 +208,10 @@ proc doRunLBNode(
     parentBlock = byteutils.toHex(genesisBlock.header.parentBlock),
     blockRoot = byteutils.toHex(genesisBlock.header.blockRoot),
     txCount = genesisBlock.txs.len,
-    opCount = deploymentSettings.cryptarchia.genesisState.tx.ops.len,
-    proofCount = deploymentSettings.cryptarchia.genesisState.opProofs.len,
-    executionGasPrice = deploymentSettings.cryptarchia.genesisState.tx.executionGasPrice,
-    storageGasPrice = deploymentSettings.cryptarchia.genesisState.tx.permanentStorageGasPrice,
+    opCount = deploymentSettings.cryptarchia.genesisState.signedMantleTx.tx.ops.len,
+    proofCount = deploymentSettings.cryptarchia.genesisState.signedMantleTx.opProofs.len,
+    executionGasPrice = deploymentSettings.cryptarchia.genesisState.signedMantleTx.tx.executionGasPrice,
+    storageGasPrice = deploymentSettings.cryptarchia.genesisState.signedMantleTx.tx.permanentStorageGasPrice,
     polLeaderVoucher = byteutils.toHex(genesisBlock.header.proofOfLeadership.leaderVoucher),
     polEntropyContribution = byteutils.toHex(genesisBlock.header.proofOfLeadership.entropyContribution),
     polProof = byteutils.toHex(genesisBlock.header.proofOfLeadership.proof),
