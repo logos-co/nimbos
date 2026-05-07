@@ -51,10 +51,6 @@ type
 # ---------------------------------------------------------------------------
 
 func validate*(locator: Locator) =
-  doAssert locator.len <= MaxLocatorMultiaddrBytes
-  var locatorStr = newString(locator.len)
-  for i, b in locator:
-    locatorStr[i] = char(b)
-  doAssert MultiAddress.init(locatorStr).isOk
+  doAssert locator.data().buffer.len <= MaxLocatorMultiaddrBytes
 
 {.pop.}

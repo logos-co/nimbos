@@ -11,6 +11,7 @@
 
 import ../crypto/hashing
 import libp2p/crypto/ed25519/ed25519
+import libp2p/multiaddress
 export hashing
 
 # ---------------------------------------------------------------------------
@@ -70,7 +71,7 @@ type
     bn = 0
     da = 1
   ## Wire `UINT16` + payload (multiaddr bytes).
-  Locator* = seq[byte]
+  Locator* = MultiAddress
 
   # --- Op layout helpers ---
   Opcode* = uint8

@@ -13,6 +13,7 @@
 
 import ./[primitives, operations, tx_types]
 import ../crypto/encoding
+import libp2p/multiaddress
 export
   encodeByte, encodeEd25519PublicKey, encodeEd25519Signature, encodeFieldElement,
   encodeGroth16, encodeHash32, encodeU16LeLenPrefixed, encodeU32LeLenPrefixed,
@@ -192,9 +193,10 @@ func encodeLocatorCount*(value: byte): byte =
 
 func encodeLocator*(value: Locator): seq[byte] =
   ## Locator = 2Byte * BYTE ; Max 329 bytes, multiaddr format
-  doAssert value.len <= MaxLocatorMultiaddrBytes,
+  let locatorBytes = value.data().buffer
+  doAssert locatorBytes.len <= MaxLocatorMultiaddrBytes,
     "Locator exceeds max multiaddr byte length"
-  encodeU16LeLenPrefixed(value)
+  encodeU16LeLenPrefixed(locatorBytes)
 
 func encodeSdpDeclare*(value: SdpDeclarePayload): seq[byte] =
   ## SDPDeclare = ServiceType LocatorCount *Locator ProviderId ZkId LockedNoteId
