@@ -27,8 +27,7 @@ jobs:
           ARCHIVE=$(echo nimbus-eth2_Linux_amd64_*.tar.gz)
           echo "::set-output name=archive::"${ARCHIVE}
           echo "::set-output name=archive_dir::"${ARCHIVE%.tar.gz}
-          tar -xzf ${ARCHIVE} ${ARCHIVE%.tar.gz}/build/nimbus_beacon_node.sha512sum
-          tar -xzf ${ARCHIVE} ${ARCHIVE%.tar.gz}/build/nimbus_validator_client.sha512sum
+          tar -xzf ${ARCHIVE} ${ARCHIVE%.tar.gz}/build/logos_chain_node.sha512sum
       - name: Upload archive artefact
         uses: actions/upload-artifact@v4
         with:
@@ -40,13 +39,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Linux_amd64_checksum_bn
-          path: ./dist/${{ steps.make_dist.outputs.archive_dir }}/build/nimbus_beacon_node.sha512sum
-          retention-days: 2
-          overwrite: true    # TODO remove after initial working upload
-      - name: Upload VC checksum artefact
-        uses: actions/upload-artifact@v4
-        with:
-          path: ./dist/${{ steps.make_dist.outputs.archive_dir }}/build/nimbus_validator_client.sha512sum
+          path: ./dist/${{ steps.make_dist.outputs.archive_dir }}/build/logos_chain_node.sha512sum
           retention-days: 2
           overwrite: true    # TODO remove after initial working upload
       - name: Login to Docker Hub
@@ -65,18 +58,13 @@ jobs:
           DOCKER_BUILDKIT=1 docker build -f Dockerfile.bn.amd64 -t statusim/nimbus-eth2:amd64-${TAG} -t statusim/nimbus-eth2:amd64-latest .
           docker push statusim/nimbus-eth2:amd64-${TAG}
           docker push statusim/nimbus-eth2:amd64-latest
-
-          DOCKER_BUILDKIT=1 docker build -f Dockerfile.vc.amd64 -t statusim/nimbus-validator-client:amd64-${TAG} -t statusim/nimbus-validator-client:amd64-latest .
-          docker push statusim/nimbus-validator-client:amd64-${TAG}
-          docker push statusim/nimbus-validator-client:amd64-latest
       - name: Setup ruby # Needed for fpm
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.1' # Not needed with a .ruby-version file
       - name: Create RPM/DEB
         run: |
-          scripts/make_packages.sh -b nimbus_beacon_node -t dist/*.tar.gz --install-fpm
-          scripts/make_packages.sh -b nimbus_validator_client -t dist/*.tar.gz --install-fpm
+          scripts/make_packages.sh -b logos_chain_node -t dist/*.tar.gz --install-fpm
       - name: Upload DEB
         uses: actions/upload-artifact@v4
         with:
@@ -107,8 +95,7 @@ jobs:
           ARCHIVE=$(echo nimbus-eth2_Linux_arm64v8_*.tar.gz)
           echo "::set-output name=archive::"${ARCHIVE}
           echo "::set-output name=archive_dir::"${ARCHIVE%.tar.gz}
-          tar -xzf ${ARCHIVE} ${ARCHIVE%.tar.gz}/build/nimbus_beacon_node.sha512sum
-          tar -xzf ${ARCHIVE} ${ARCHIVE%.tar.gz}/build/nimbus_validator_client.sha512sum
+          tar -xzf ${ARCHIVE} ${ARCHIVE%.tar.gz}/build/logos_chain_node.sha512sum
       - name: Upload archive artefact
         uses: actions/upload-artifact@v4
         with:
@@ -120,13 +107,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Linux_arm64_checksum_bn
-          path: ./dist/${{ steps.make_dist.outputs.archive_dir }}/build/nimbus_beacon_node.sha512sum
-          retention-days: 2
-          overwrite: true    # TODO remove after initial working upload
-      - name: Upload VC checksum artefact
-        uses: actions/upload-artifact@v4
-        with:
-          path: ./dist/${{ steps.make_dist.outputs.archive_dir }}/build/nimbus_validator_client.sha512sum
+          path: ./dist/${{ steps.make_dist.outputs.archive_dir }}/build/logos_chain_node.sha512sum
           retention-days: 2
           overwrite: true    # TODO remove after initial working upload
       - name: Login to Docker Hub
@@ -147,18 +128,13 @@ jobs:
           DOCKER_BUILDKIT=1 docker build -f Dockerfile.bn.arm64 -t statusim/nimbus-eth2:arm64-${TAG} -t statusim/nimbus-eth2:arm64-latest .
           docker push statusim/nimbus-eth2:arm64-${TAG}
           docker push statusim/nimbus-eth2:arm64-latest
-
-          DOCKER_BUILDKIT=1 docker build -f Dockerfile.vc.arm64 -t statusim/nimbus-validator-client:arm64-${TAG} -t statusim/nimbus-validator-client:arm64-latest .
-          docker push statusim/nimbus-validator-client:arm64-${TAG}
-          docker push statusim/nimbus-validator-client:arm64-latest
       - name: Setup ruby # Needed for fpm
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.1' # Not needed with a .ruby-version file
       - name: Create RPM/DEB
         run: |
-          scripts/make_packages.sh -b nimbus_beacon_node -t dist/*.tar.gz --install-fpm
-          scripts/make_packages.sh -b nimbus_validator_client -t dist/*.tar.gz --install-fpm
+          scripts/make_packages.sh -b logos_chain_node -t dist/*.tar.gz --install-fpm
       - name: Upload DEB
         uses: actions/upload-artifact@v4
         with:
@@ -182,8 +158,7 @@ jobs:
           ARCHIVE=$(echo nimbus-eth2_Windows_amd64_*.tar.gz)
           echo "::set-output name=archive::"${ARCHIVE}
           echo "::set-output name=archive_dir::"${ARCHIVE%.tar.gz}
-          tar -xzf ${ARCHIVE} ${ARCHIVE%.tar.gz}/build/nimbus_beacon_node.sha512sum
-          tar -xzf ${ARCHIVE} ${ARCHIVE%.tar.gz}/build/nimbus_validator_client.sha512sum
+          tar -xzf ${ARCHIVE} ${ARCHIVE%.tar.gz}/build/logos_chain_node.sha512sum
       - name: Upload archive artefact
         uses: actions/upload-artifact@v4
         with:
@@ -195,7 +170,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: Windows_amd64_checksum_bn
-          path: ./dist/${{ steps.make_dist.outputs.archive_dir }}/build/nimbus_beacon_node.sha512sum
+          path: ./dist/${{ steps.make_dist.outputs.archive_dir }}/build/logos_chain_node.sha512sum
           retention-days: 2
           overwrite: true    # TODO remove after initial working upload
   build-macos-arm64:
@@ -212,8 +187,7 @@ jobs:
           ARCHIVE=$(echo nimbus-eth2_macOS_arm64_*.tar.gz)
           echo "::set-output name=archive::"${ARCHIVE}
           echo "::set-output name=archive_dir::"${ARCHIVE%.tar.gz}
-          tar -xzf ${ARCHIVE} ${ARCHIVE%.tar.gz}/build/nimbus_beacon_node.sha512sum
-          tar -xzf ${ARCHIVE} ${ARCHIVE%.tar.gz}/build/nimbus_validator_client.sha512sum
+          tar -xzf ${ARCHIVE} ${ARCHIVE%.tar.gz}/build/logos_chain_node.sha512sum
       - name: Upload archive artefact
         uses: actions/upload-artifact@v4
         with:
@@ -225,7 +199,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: macOS_arm64_checksum_bn
-          path: ./dist/${{ steps.make_dist.outputs.archive_dir }}/build/nimbus_beacon_node.sha512sum
+          path: ./dist/${{ steps.make_dist.outputs.archive_dir }}/build/logos_chain_node.sha512sum
           retention-days: 2
           overwrite: true    # TODO remove after initial working upload
   prepare-release:
@@ -313,13 +287,3 @@ jobs:
             --amend statusim/nimbus-eth2:amd64-latest \
             --amend statusim/nimbus-eth2:arm64-latest \
           docker manifest push statusim/nimbus-eth2:multiarch-latest
-          docker manifest create \
-            statusim/nimbus-validator-client:multiarch-${TAG} \
-            --amend statusim/nimbus-validator-client:amd64-${TAG} \
-            --amend statusim/nimbus-validator-client:arm64-${TAG} \
-          docker manifest push statusim/nimbus-validator-client:multiarch-${TAG}
-          docker manifest create \
-            statusim/nimbus-validator-client:multiarch-latest \
-            --amend statusim/nimbus-validator-client:amd64-latest \
-            --amend statusim/nimbus-validator-client:arm64-latest \
-          docker manifest push statusim/nimbus-validator-client:multiarch-latest

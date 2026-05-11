@@ -9,12 +9,10 @@
 
 import std/macros,
        results, stew/byteutils, presto/route,
-       ../spec/eth2_apis/[rest_types, eth2_rest_serialization, rest_common],
-       ../logos_chain_node,
-       "."/rest_constants
+       "."/[types, serialization, common, constants]
 
-## NOTE: The `rest_types` / `eth2_rest_serialization` / `rest_common` imports
-## mirror the upstream Eth2 REST API type definitions, but the Logos-specific
+## NOTE: The `types` / `serialization` / `common` modules mirror the upstream
+## Eth2 REST API type definitions, but the Logos-specific
 ## REST surface (paths, query parameters, and payloads) is not specified in any
 ## Logos Chain research/spec document. The concrete REST behavior in this module
 ## currently follows the Rust `logos-blockchain` implementation simply because
@@ -23,8 +21,8 @@ import std/macros,
 ## https://github.com/logos-blockchain/logos-blockchain
 
 export
-  results, eth2_rest_serialization, rest_types,
-  rest_constants, rest_common, route, decodeString
+  results, serialization, types,
+  constants, common, route, decodeString
 
 func disallowInterruptionsAux(body: NimNode) =
   for n in body:

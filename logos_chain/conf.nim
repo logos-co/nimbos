@@ -22,9 +22,8 @@ import
   eth/enr/enr,
   json_serialization, json_serialization/std/net as jsnet,
   chronos/transports/common,
-  ./spec/datatypes/base,
   ./deployment/deployment_settings,
-  ./nimbus_binary_common
+  ./binary_common
 
 from std/os import dirExists, getHomeDir, `/`
 from std/strutils import parseBiggestUInt, replace
@@ -35,7 +34,7 @@ export
   defs, parseCmdArg, completeCmdArg,
   confTomlDefs, confTomlNet, confTomlUri, jsnet,
   deployment_settings,
-  nimbus_binary_common
+  binary_common
 
 const
   # TODO: How should we select between IPv4 and IPv6

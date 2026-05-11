@@ -7,7 +7,7 @@
 
 {.push raises: [].}
 
-# Utilities common across several nimbus binaries (BN/VC/EC/Portal/etc)
+# Utilities common across Logos chain node binaries.
 
 import
   # Standard library

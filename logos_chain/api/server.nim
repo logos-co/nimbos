@@ -9,9 +9,9 @@
 
 import
   "."/[
-    rest_utils,
-    rest_node_api]
+    utils,
+    handlers]
 
 export
-  rest_utils,
-  rest_node_api
+  utils,
+  handlers

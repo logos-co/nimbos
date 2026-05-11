@@ -12,7 +12,6 @@
 import
   std/[json, tables],
   results,
-  ../datatypes/base,
   stew/base10, httputils
 
 export tables, httputils, results
@@ -147,7 +146,6 @@ type
   GetSpecVCResponse* = DataEnclosedObject[VCRuntimeConfig]
   GetSyncingStatusResponse* = DataEnclosedObject[RestSyncInfo]
   GetVersionResponse* = DataEnclosedObject[RestNodeVersion]
-  ProduceAttestationDataResponse* = DataEnclosedObject[AttestationData]
 
   RestNode* = object
     weight*: uint64

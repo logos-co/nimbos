@@ -13,7 +13,7 @@ import
   chronos
 import
   ../logos_chain/conf,
-  ../logos_chain/networking/eth2_network,
+  ../logos_chain/networking/network,
   libp2p/switch,
   libp2p/peerid
 

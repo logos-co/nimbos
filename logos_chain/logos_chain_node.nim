@@ -5,45 +5,115 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option. This file may not be copied, modified, or distributed except according to those terms.
 
-{.push raises: [], gcsafe.}
+{.push raises: [].}
 
 import
-  std/osproc,
+  system/ansi_c,
+  std/os,
+  chronicles,
+  metrics,
+  ./node,
+  ./api/server,
+  ./[buildinfo, binary_common, process_state]
 
-  # Nimble packages
-  chronos, presto, presto/server, bearssl/rand,
-  metrics, metrics/chronos_httpserver,
+when defined(windows):
+  from ./winservice import establishWindowsService
 
-  # Local modules
-  "."/conf,
-  ./deployment/deployment_settings,
-  ./networking/eth2_network,
-  ./spec/datatypes/base
+logScope: topics = "logos_nd"
 
-export
-  osproc, chronos, presto, server, conf,
-  deployment_settings, eth2_network, base
+proc doRunLBNode(
+    config: var LBNodeConf, rng: ref HmacDrbgContext
+) {.raises: [CatchableError].} =
+  let deploymentSettings = loadDeploymentSettings(config.deploymentSettingsFile).valueOr:
+    fatal "Invalid deployment-settings file", err = error
+    quit QuitFailure
 
-type
-  LBNode* = ref object
-    network*: LBP2PNode
-    netKeys*: NetKeyPair
-    config*: LBNodeConf
-    deploymentSettings*: DeploymentSettings
-    restServer*: RestServerRef
-    metricsServer*: Opt[MetricsHttpServerRef]
-    shutdownEvent*: AsyncEvent
+  info "Launching Logos node",
+    version = fullVersionStr,
+    cmdParams = commandLineParams(),
+    config
 
-# TODO https://github.com/status-im/nim-stew/pull/258
-template findIt*(s: openArray, predicate: untyped): int =
-  var res = -1
-  for i, it {.inject.} in s:
-    if predicate:
-      res = i
-      break
-  res
+  ProcessState.setupStopHandlers()
 
-template rng*(node: LBNode): ref HmacDrbgContext =
-  node.network.rng
+  # This should be in a data directory
+  createPidFile("lb_node.pid")
+
+  if ProcessState.stopIt(notice("Shutting down", reason = it)):
+    return
+
+  let
+    taskpool = setupTaskpool(config.numThreads)
+    node = waitFor(LBNode.init(rng, config, deploymentSettings)).valueOr:
+      return
+
+  # Nim GC metrics (for the main thread) will be collected in onSecond(), but
+  # we disable piggy-backing on other metrics here.
+  setSystemMetricsAutomaticUpdate(false)
+
+  node.metricsServer = waitFor(config.initMetricsServer()).valueOr:
+    return
+
+  let
+    restPort = 5050.Port
+    restAllowedOrigin = none(string)
+    restServer = RestServerRef.init(
+      defaultAdminListenAddress, restPort, restAllowedOrigin,
+      validateBeaconApiQueries, nimbusAgentStr, config)
+
+  restServer.router.installNodeApiHandlers(node)
+  restServer.start()
+
+  try:
+    node.run(nil)
+  finally:
+    waitFor restServer.stop()
+
+proc handleStartUpCmd(config: var LBNodeConf) {.raises: [CatchableError].} =
+  let rng = HmacDrbgContext.new()
+  doRunLBNode(config, rng)
+
+# noinline to keep it in stack traces
+proc main*() {.noinline, raises: [CatchableError].} =
+  const copyright =
+    "Copyright (c) 2026-" & compileYear & " Status Research & Development GmbH"
+
+  var config = LBNodeConf.loadWithBanners(clientId, copyright, [""]).valueOr:
+    writePanicLine error # Logging not yet set up
+    quit QuitFailure
+
+  setupLogging(config.logLevel, config.logStdout, config.logFile)
+  setupFileLimits()
+
+  ## This Ctrl+C handler exits the program in non-graceful way.
+  ## In a regular Logos node run, it will be overwritten later with a
+  ## different handler performing a graceful exit.
+  proc exitImmediatelyOnCtrlC() {.noconv.} =
+    # No allocations in signal handler
+    cstdout.rawWrite("Shutting down after having received SIGINT / ctrl-c")
+    quit QuitSuccess
+  setControlCHook(exitImmediatelyOnCtrlC)
+
+  # equivalent SIGTERM handler
+  when declared(ansi_c.SIGTERM):
+    proc exitImmediatelyOnSIGTERM(signal: cint) {.noconv.} =
+      # No allocations in signal handler
+      cstdout.rawWrite("Shutting down after having received SIGTERM")
+      quit QuitSuccess
+    c_signal(ansi_c.SIGTERM, exitImmediatelyOnSIGTERM)
+
+  when defined(windows):
+    if config.runAsService:
+      proc exitService() =
+        ProcessState.scheduleStop("exitService")
+      establishWindowsService(clientId, copyright, [""],
+                              "logos_chain_node", LBNodeConf,
+                              handleStartUpCmd, exitService)
+    else:
+      handleStartUpCmd(config)
+  else:
+    handleStartUpCmd(config)
+
+when isMainModule:
+  main()
 
 {.pop.}
