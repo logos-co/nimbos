@@ -331,7 +331,9 @@ logos-lib: | build deps
 		logos_chain/c_bindings/logos_c_bindings.nim
 
 # Generate C header for the bindings into the c_bindings folder
-logos-headers: | build deps
+# Depends on logos-lib so the two `nim c` invocations on logos_c_bindings.nim
+# don't race on the shared nimcache/<cfg>/logos_c_bindings/ directory under `make -j`.
+logos-headers: logos-lib | build deps
 	+ $(ENV_SCRIPT) $(NIMC) c $(NIM_PARAMS) \
 		--verbosity:2 \
 		--compileOnly \
