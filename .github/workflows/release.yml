@@ -42,22 +42,6 @@ jobs:
           path: ./dist/${{ steps.make_dist.outputs.archive_dir }}/build/logos_chain_node.sha512sum
           retention-days: 2
           overwrite: true    # TODO remove after initial working upload
-      - name: Login to Docker Hub
-        uses: docker/login-action@v1
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Build and push a Docker images for end users
-        run: |
-          cd dist
-          tar -xzf ${{ steps.make_dist.outputs.archive }}
-          mv ${{ steps.make_dist.outputs.archive_dir }} ../docker/dist/binaries/nimbus-eth2
-          cd ../docker/dist/binaries
-          REFNAME="${{ github.ref }}"
-          TAG="${REFNAME#refs/tags/}"
-          DOCKER_BUILDKIT=1 docker build -f Dockerfile.bn.amd64 -t statusim/nimbus-eth2:amd64-${TAG} -t statusim/nimbus-eth2:amd64-latest .
-          docker push statusim/nimbus-eth2:amd64-${TAG}
-          docker push statusim/nimbus-eth2:amd64-latest
       - name: Setup ruby # Needed for fpm
         uses: ruby/setup-ruby@v1
         with:
@@ -110,24 +94,6 @@ jobs:
           path: ./dist/${{ steps.make_dist.outputs.archive_dir }}/build/logos_chain_node.sha512sum
           retention-days: 2
           overwrite: true    # TODO remove after initial working upload
-      - name: Login to Docker Hub
-        uses: docker/login-action@v1
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-      - name: Build and push a Docker images for end users
-        run: |
-          cd dist
-          tar -xzf ${{ steps.make_dist.outputs.archive }}
-          mv ${{ steps.make_dist.outputs.archive_dir }} ../docker/dist/binaries/nimbus-eth2
-          cd ../docker/dist/binaries
-          REFNAME="${{ github.ref }}"
-          TAG="${REFNAME#refs/tags/}"
-          cp -a /usr/bin/qemu-aarch64-static .
-
-          DOCKER_BUILDKIT=1 docker build -f Dockerfile.bn.arm64 -t statusim/nimbus-eth2:arm64-${TAG} -t statusim/nimbus-eth2:arm64-latest .
-          docker push statusim/nimbus-eth2:arm64-${TAG}
-          docker push statusim/nimbus-eth2:arm64-latest
       - name: Setup ruby # Needed for fpm
         uses: ruby/setup-ruby@v1
         with:
@@ -204,7 +170,7 @@ jobs:
           overwrite: true    # TODO remove after initial working upload
   prepare-release:
     name: Prepare release draft
-    needs: [build-amd64, build-arm64, build-arm, build-win64, build-macos-arm64]
+    needs: [build-amd64, build-arm64, build-win64, build-macos-arm64]
     runs-on: ubuntu-latest
     steps:
       - name: Download artefacts
@@ -266,24 +232,3 @@ jobs:
             Windows_amd64_checksum_bn
             macOS_arm64_archive
             macOS_arm64_checksum_bn
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v1
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build multi-arch Docker images
-        run: |
-          REFNAME="${{ github.ref }}"
-          TAG="${REFNAME#refs/tags/}"
-          docker manifest create \
-            statusim/nimbus-eth2:multiarch-${TAG} \
-            --amend statusim/nimbus-eth2:amd64-${TAG} \
-            --amend statusim/nimbus-eth2:arm64-${TAG} \
-          docker manifest push statusim/nimbus-eth2:multiarch-${TAG}
-          docker manifest create \
-            statusim/nimbus-eth2:multiarch-latest \
-            --amend statusim/nimbus-eth2:amd64-latest \
-            --amend statusim/nimbus-eth2:arm64-latest \
-          docker manifest push statusim/nimbus-eth2:multiarch-latest
