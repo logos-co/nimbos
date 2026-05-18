@@ -15,12 +15,94 @@ import unittest2
 
 import libp2p/builders
 
+import "../../../logos_chain/conf"
+import "../../../logos_chain/networking/eth2_network"
 import "../../../logos_chain/bedrock/block"/[block_types, genesis]
 import "../../../logos_chain/bedrock/local_tree"
 import "../../../logos_chain/sync"/[config, types, initial_block_download]
 import ./helpers
+import ../../testutil
 
 from "../../../logos_chain/bedrock/mantle/primitives" import SlotNumber
+
+proc extendChainAfterGenesis(
+    tree: LocalTree, genesis: Block, extraBlocks: int,
+): BlockId =
+  ## Add ``extraBlocks`` descendants on top of ``genesis``; return the tip id.
+  let sm = minimalSignedTx()
+  var parentHdr = genesis.header
+  var parentId = blockId(genesis.header)
+  for slot in 1 .. extraBlocks:
+    let blk = childBlock(parentHdr, parentId, SlotNumber(slot.uint64), [sm])
+    check tree.addBlockToTree(blk)
+    parentHdr = blk.header
+    parentId = blockId(blk.header)
+  parentId
+
+proc waitLocalTreeBlock(
+    tree: LocalTree, id: BlockId, attempts: int = 150,
+): Future[bool] {.async.} =
+  for _ in 0 ..< attempts:
+    if tree.hasBlock(id):
+      return true
+    await sleepAsync(100.milliseconds)
+  false
+
+proc runLbp2pIbdSyncTest(
+    extraBlocks: int, bootstrapPort, clientPort: Port,
+) {.async.} =
+  let sm = minimalSignedTx()
+  let genesis = createGenesisBlock(sm)
+
+  let treeBootstrap = newLocalTree(genesis)
+  let tipId = extendChainAfterGenesis(treeBootstrap, genesis, extraBlocks)
+  check treeBootstrap.localTipId == tipId
+
+  let treeClient = newLocalTree(genesis)
+
+  let (confBootstrap, confClient, rngBootstrap, rngClient) =
+    makeBootstrapConfs(bootstrapPort, clientPort)
+
+  let bootstrapRes = createLBP2PNode(
+    rngBootstrap,
+    confBootstrap,
+    rngBootstrap[].getRandomNetKeys(),
+    treeBootstrap,
+    testChainSyncProtocol,
+  )
+  check bootstrapRes.isOk
+  let bootstrap = bootstrapRes.get()
+  await bootstrap.startListening()
+
+  let bootstrapPeerId = bootstrap.switch.peerInfo.peerId
+  let bootstrapAddr =
+    "/ip4/127.0.0.1/udp/" & $bootstrapPort &
+    "/quic-v1/p2p/" & $bootstrapPeerId
+
+  var confClientWithBootstrap = confClient
+  confClientWithBootstrap.bootstrapNodes = @[bootstrapAddr]
+
+  let clientRes = createLBP2PNode(
+    rngClient,
+    confClientWithBootstrap,
+    rngClient[].getRandomNetKeys(),
+    treeClient,
+    testChainSyncProtocol,
+  )
+  check clientRes.isOk
+  let client = clientRes.get()
+
+  let waitAttempts = 150 + extraBlocks * 5
+
+  try:
+    await client.start()
+
+    check await waitLibp2pConnected(client.switch, bootstrapPeerId)
+    check await waitLocalTreeBlock(treeClient, tipId, waitAttempts)
+    check treeClient.localTipId == tipId
+  finally:
+    await client.stop()
+    await bootstrap.stop()
 
 # ---------------------------------------------------------------------------
 # Download blocks
@@ -225,5 +307,22 @@ suite "sync/initial_block_download (IBD requester loop)":
     finally:
       await client.stop()
       await server.stop()
+
+# ---------------------------------------------------------------------------
+# LBP2PNode IBD at startup
+# ---------------------------------------------------------------------------
+
+suite "LBP2PNode cryptarchia IBD at startup":
+  asyncTest "bootstrap peer serves chain; client syncs 1-block taller tip on start()":
+    await runLbp2pIbdSyncTest(1, 5033.Port, 5034.Port)
+
+  asyncTest "client syncs 10-block bootstrap chain on start()":
+    await runLbp2pIbdSyncTest(10, 5040.Port, 5041.Port)
+
+  asyncTest "client syncs 50-block bootstrap chain on start()":
+    await runLbp2pIbdSyncTest(50, 5050.Port, 5051.Port)
+
+  asyncTest "client syncs 100-block bootstrap chain on start()":
+    await runLbp2pIbdSyncTest(100, 5060.Port, 5061.Port)
 
 {.pop.}
