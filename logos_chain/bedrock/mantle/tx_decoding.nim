@@ -9,7 +9,7 @@
 ## and aggregate transaction structures (inverse of ``tx_encoding``).
 ## Spec: [v1.3 Mantle Transaction Encoding](https://nomos-tech.notion.site/v1-3-Mantle-Transaction-Encoding-335261aa09df8051a8a6f325aa41f6a7)
 
-{.push raises: [DecodingError], gcsafe.}
+{.push raises: [], gcsafe.}
 
 import ./[primitives, operations, tx_types]
 import ../crypto/decoding
@@ -23,85 +23,85 @@ export
 # Alias decoders
 # -----------------------------------------------------------------------------
 
-func decodeDeclarationId*(data: openArray[byte]): DeclarationId =
+func decodeDeclarationId*(data: openArray[byte]): DeclarationId {.raises: [DecodingError].} =
   decodeHash32(data)
 
-func decodeChannelId*(data: openArray[byte]): ChannelId =
+func decodeChannelId*(data: openArray[byte]): ChannelId {.raises: [DecodingError].} =
   decodeHash32(data)
 
-func decodeParent*(data: openArray[byte]): Parent =
+func decodeParent*(data: openArray[byte]): Parent {.raises: [DecodingError].} =
   decodeHash32(data)
 
-func decodeProviderId*(data: openArray[byte]): ProviderId =
+func decodeProviderId*(data: openArray[byte]): ProviderId {.raises: [DecodingError].} =
   decodeEd25519PublicKey(data)
 
-func decodeZkId*(data: openArray[byte]): ZkId =
+func decodeZkId*(data: openArray[byte]): ZkId {.raises: [DecodingError].} =
   decodeZkPublicKey(data)
 
-func decodeSigner*(data: openArray[byte]): Signer =
+func decodeSigner*(data: openArray[byte]): Signer {.raises: [DecodingError].} =
   decodeEd25519PublicKey(data)
 
-func decodeNoteId*(data: openArray[byte]): NoteId =
+func decodeNoteId*(data: openArray[byte]): NoteId {.raises: [DecodingError].} =
   decodeFieldElement(data)
 
-func decodeLockedNoteId*(data: openArray[byte]): LockedNoteId =
+func decodeLockedNoteId*(data: openArray[byte]): LockedNoteId {.raises: [DecodingError].} =
   decodeNoteId(data)
 
-func decodeRewardsRoot*(data: openArray[byte]): RewardsRoot =
+func decodeRewardsRoot*(data: openArray[byte]): RewardsRoot {.raises: [DecodingError].} =
   decodeFieldElement(data)
 
-func decodeVoucherNullifier*(data: openArray[byte]): VoucherNullifier =
+func decodeVoucherNullifier*(data: openArray[byte]): VoucherNullifier {.raises: [DecodingError].} =
   decodeFieldElement(data)
 
-func decodePublicKey*(data: openArray[byte]): PublicKey =
+func decodePublicKey*(data: openArray[byte]): PublicKey {.raises: [DecodingError].} =
   decodeZkPublicKey(data)
 
-func decodeProofOfClaimProof*(data: openArray[byte]): ProofOfClaimProof =
+func decodeProofOfClaimProof*(data: openArray[byte]): ProofOfClaimProof {.raises: [DecodingError].} =
   decodeGroth16(data)
 
 # -----------------------------------------------------------------------------
 # Numeric value aliases
 # -----------------------------------------------------------------------------
 
-func decodeOpcode*(data: openArray[byte]): Opcode =
+func decodeOpcode*(data: openArray[byte]): Opcode {.raises: [DecodingError].} =
   Opcode(decodeByte(data))
 
-func decodeOpCount*(data: openArray[byte]): OpCount =
+func decodeOpCount*(data: openArray[byte]): OpCount {.raises: [DecodingError].} =
   OpCount(decodeByte(data))
 
-func decodeExecutionGasPrice*(data: openArray[byte]): TokenValue =
+func decodeExecutionGasPrice*(data: openArray[byte]): TokenValue {.raises: [DecodingError].} =
   var pos = 0
   result = TokenValue(readLe[uint64](data, pos))
   finishDecode(data, pos)
 
-func decodeStorageGasPrice*(data: openArray[byte]): TokenValue =
+func decodeStorageGasPrice*(data: openArray[byte]): TokenValue {.raises: [DecodingError].} =
   decodeExecutionGasPrice(data)
 
-func decodeValue*(data: openArray[byte]): Value =
+func decodeValue*(data: openArray[byte]): Value {.raises: [DecodingError].} =
   var pos = 0
   result = readLe[uint64](data, pos)
   finishDecode(data, pos)
 
-func decodeAmount*(data: openArray[byte]): Amount =
+func decodeAmount*(data: openArray[byte]): Amount {.raises: [DecodingError].} =
   decodeValue(data)
 
-func decodeNonce*(data: openArray[byte]): Nonce =
+func decodeNonce*(data: openArray[byte]): Nonce {.raises: [DecodingError].} =
   decodeValue(data)
 
-func decodeOpIdNonce*(data: openArray[byte]): uint32 =
+func decodeOpIdNonce*(data: openArray[byte]): uint32 {.raises: [DecodingError].} =
   var pos = 0
   result = readLe[uint32](data, pos)
   finishDecode(data, pos)
 
-func decodeMetadata*(data: openArray[byte]): Metadata =
+func decodeMetadata*(data: openArray[byte]): Metadata {.raises: [DecodingError].} =
   decodeU32LeLenPrefixed(data)
 
-func decodeSignatureCount*(data: openArray[byte]): SignatureCount =
+func decodeSignatureCount*(data: openArray[byte]): SignatureCount {.raises: [DecodingError].} =
   var pos = 0
   result = SignatureCount(readLe[uint16](data, pos))
   finishDecode(data, pos)
 
-func decodeChannelKeyIndex*(data: openArray[byte]): ChannelKeyIndex =
+func decodeChannelKeyIndex*(data: openArray[byte]): ChannelKeyIndex {.raises: [DecodingError].} =
   var pos = 0
   result = ChannelKeyIndex(readLe[uint16](data, pos))
   finishDecode(data, pos)
@@ -110,50 +110,50 @@ func decodeChannelKeyIndex*(data: openArray[byte]): ChannelKeyIndex =
 # Transfer payload family
 # -----------------------------------------------------------------------------
 
-proc readNote(data: openArray[byte], pos: var int): Note =
+proc readNote(data: openArray[byte], pos: var int): Note {.raises: [DecodingError].} =
   let value = Value(readLe[uint64](data, pos))
   let zkPublicKey = readFixed[32](data, pos)
   Note(value: value, zkPublicKey: zkPublicKey)
 
-proc readInputs(data: openArray[byte], pos: var int): Inputs =
+proc readInputs(data: openArray[byte], pos: var int): Inputs {.raises: [DecodingError].} =
   let count = readByte(data, pos)
   var noteIds = newSeqOfCap[NoteId](count)
   for _ in 0 ..< int(count):
     noteIds.add readFixed[32](data, pos)
   Inputs(noteIds: noteIds)
 
-proc readOutputs(data: openArray[byte], pos: var int): Outputs =
+proc readOutputs(data: openArray[byte], pos: var int): Outputs {.raises: [DecodingError].} =
   let count = readByte(data, pos)
   var notes = newSeqOfCap[Note](count)
   for _ in 0 ..< int(count):
     notes.add readNote(data, pos)
   Outputs(notes: notes)
 
-func decodeNote*(data: openArray[byte]): Note =
+func decodeNote*(data: openArray[byte]): Note {.raises: [DecodingError].} =
   var pos = 0
   result = readNote(data, pos)
   finishDecode(data, pos)
 
-func decodeInputCount*(data: openArray[byte]): byte =
+func decodeInputCount*(data: openArray[byte]): byte {.raises: [DecodingError].} =
   decodeByte(data)
 
-func decodeOutputCount*(data: openArray[byte]): byte =
+func decodeOutputCount*(data: openArray[byte]): byte {.raises: [DecodingError].} =
   decodeByte(data)
 
-func decodeInputs*(data: openArray[byte]): Inputs =
+func decodeInputs*(data: openArray[byte]): Inputs {.raises: [DecodingError].} =
   var pos = 0
   result = readInputs(data, pos)
   finishDecode(data, pos)
 
-func decodeInputsNoteIds*(data: openArray[byte]): seq[NoteId] =
+func decodeInputsNoteIds*(data: openArray[byte]): seq[NoteId] {.raises: [DecodingError].} =
   decodeInputs(data).noteIds
 
-func decodeOutputs*(data: openArray[byte]): Outputs =
+func decodeOutputs*(data: openArray[byte]): Outputs {.raises: [DecodingError].} =
   var pos = 0
   result = readOutputs(data, pos)
   finishDecode(data, pos)
 
-func decodeTransfer*(data: openArray[byte]): TransferPayload =
+func decodeTransfer*(data: openArray[byte]): TransferPayload {.raises: [DecodingError].} =
   var pos = 0
   let inputs = readInputs(data, pos)
   let outputs = readOutputs(data, pos)
@@ -164,10 +164,10 @@ func decodeTransfer*(data: openArray[byte]): TransferPayload =
 # Operation payload family
 # -----------------------------------------------------------------------------
 
-func decodeInscription*(data: openArray[byte]): Inscription =
+func decodeInscription*(data: openArray[byte]): Inscription {.raises: [DecodingError].} =
   decodeU32LeLenPrefixed(data)
 
-proc readServiceType(data: openArray[byte], pos: var int): ServiceType =
+proc readServiceType(data: openArray[byte], pos: var int): ServiceType {.raises: [DecodingError].} =
   let b = readByte(data, pos)
   case b
   of byte(ord(bn)):
@@ -177,26 +177,26 @@ proc readServiceType(data: openArray[byte], pos: var int): ServiceType =
   else:
     raise newException(DecodingError, "invalid ServiceType byte: " & $b)
 
-func decodeServiceType*(data: openArray[byte]): ServiceType =
+func decodeServiceType*(data: openArray[byte]): ServiceType {.raises: [DecodingError].} =
   var pos = 0
   result = readServiceType(data, pos)
   finishDecode(data, pos)
 
-func decodeLocatorCount*(data: openArray[byte]): byte =
+func decodeLocatorCount*(data: openArray[byte]): byte {.raises: [DecodingError].} =
   decodeByte(data)
 
-proc readLocator(data: openArray[byte], pos: var int): Locator =
+proc readLocator(data: openArray[byte], pos: var int): Locator {.raises: [DecodingError].} =
   let raw = readU16LeLenPrefixed(data, pos)
   if raw.len > MaxLocatorMultiaddrBytes:
     raise newException(DecodingError, "Locator exceeds max multiaddr byte length")
   raw
 
-func decodeLocator*(data: openArray[byte]): Locator =
+func decodeLocator*(data: openArray[byte]): Locator {.raises: [DecodingError].} =
   var pos = 0
   result = readLocator(data, pos)
   finishDecode(data, pos)
 
-func decodeSdpDeclare*(data: openArray[byte]): SdpDeclarePayload =
+func decodeSdpDeclare*(data: openArray[byte]): SdpDeclarePayload {.raises: [DecodingError].} =
   var pos = 0
   let serviceType = readServiceType(data, pos)
   let locatorCount = readByte(data, pos)
@@ -219,7 +219,7 @@ func decodeSdpDeclare*(data: openArray[byte]): SdpDeclarePayload =
     lockedNoteId: lockedNoteId,
   )
 
-func decodeSdpWithdraw*(data: openArray[byte]): SdpWithdrawPayload =
+func decodeSdpWithdraw*(data: openArray[byte]): SdpWithdrawPayload {.raises: [DecodingError].} =
   var pos = 0
   let declarationId = readFixed[32](data, pos)
   let nonce = readLe[uint64](data, pos)
@@ -231,7 +231,7 @@ func decodeSdpWithdraw*(data: openArray[byte]): SdpWithdrawPayload =
     lockedNoteId: lockedNoteId,
   )
 
-func decodeSdpActive*(data: openArray[byte]): SdpActivePayload =
+func decodeSdpActive*(data: openArray[byte]): SdpActivePayload {.raises: [DecodingError].} =
   var pos = 0
   let declarationId = readFixed[32](data, pos)
   let nonce = readLe[uint64](data, pos)
@@ -243,7 +243,7 @@ func decodeSdpActive*(data: openArray[byte]): SdpActivePayload =
     metadata: metadata,
   )
 
-func decodeLeaderClaim*(data: openArray[byte]): LeaderClaimPayload =
+func decodeLeaderClaim*(data: openArray[byte]): LeaderClaimPayload {.raises: [DecodingError].} =
   var pos = 0
   let rewardsRoot = readFixed[32](data, pos)
   let voucherNullifier = readFixed[32](data, pos)
@@ -255,7 +255,7 @@ func decodeLeaderClaim*(data: openArray[byte]): LeaderClaimPayload =
     publicKey: publicKey,
   )
 
-func decodeChannelWithdraw*(data: openArray[byte]): ChannelWithdrawPayload =
+func decodeChannelWithdraw*(data: openArray[byte]): ChannelWithdrawPayload {.raises: [DecodingError].} =
   var pos = 0
   let channel = readFixed[32](data, pos)
   let outputs = readOutputs(data, pos)
@@ -267,7 +267,7 @@ func decodeChannelWithdraw*(data: openArray[byte]): ChannelWithdrawPayload =
     opIdNonce: opIdNonce,
   )
 
-func decodeChannelDeposit*(data: openArray[byte]): ChannelDepositPayload =
+func decodeChannelDeposit*(data: openArray[byte]): ChannelDepositPayload {.raises: [DecodingError].} =
   var pos = 0
   let channel = readFixed[32](data, pos)
   let count = readByte(data, pos)
@@ -278,7 +278,7 @@ func decodeChannelDeposit*(data: openArray[byte]): ChannelDepositPayload =
   finishDecode(data, pos)
   ChannelDepositPayload(channel: channel, inputs: inputs, metadata: metadata)
 
-func decodeChannelInscribe*(data: openArray[byte]): ChannelInscribePayload =
+func decodeChannelInscribe*(data: openArray[byte]): ChannelInscribePayload {.raises: [DecodingError].} =
   var pos = 0
   let channelId = readFixed[32](data, pos)
   let inscription = readU32LeLenPrefixed(data, pos)
@@ -298,31 +298,31 @@ func decodeChannelInscribe*(data: openArray[byte]): ChannelInscribePayload =
 # Proof family
 # -----------------------------------------------------------------------------
 
-proc readEd25519Signature(data: openArray[byte], pos: var int): Ed25519Signature =
+proc readEd25519Signature(data: openArray[byte], pos: var int): Ed25519Signature {.raises: [DecodingError].} =
   var sig: Ed25519Signature
   if not sig.init(readFixed[EdSignatureSize](data, pos)):
     raise newException(DecodingError, "invalid Ed25519 signature bytes")
   sig
 
-proc readIndexedEd25519Signature(data: openArray[byte], pos: var int): (Ed25519Signature, ChannelKeyIndex) =
+proc readIndexedEd25519Signature(data: openArray[byte], pos: var int): (Ed25519Signature, ChannelKeyIndex) {.raises: [DecodingError].} =
   let signature = readEd25519Signature(data, pos)
   let index = ChannelKeyIndex(readLe[uint16](data, pos))
   (signature, index)
 
-func decodeEd25519SigProof*(data: openArray[byte]): Ed25519Signature =
+func decodeEd25519SigProof*(data: openArray[byte]): Ed25519Signature {.raises: [DecodingError].} =
   decodeEd25519Signature(data)
 
-func decodeZkSigProof*(data: openArray[byte]): ZkSignature =
+func decodeZkSigProof*(data: openArray[byte]): ZkSignature {.raises: [DecodingError].} =
   decodeZkSignature(data)
 
-func decodeZkAndEd25519SigsProof*(data: openArray[byte]): ZkAndEd25519SigsProof =
+func decodeZkAndEd25519SigsProof*(data: openArray[byte]): ZkAndEd25519SigsProof {.raises: [DecodingError].} =
   var pos = 0
   let zkSig = readFixed[128](data, pos)
   let ed25519Sig = readEd25519Signature(data, pos)
   finishDecode(data, pos)
   ZkAndEd25519SigsProof(zkSig: zkSig, ed25519Sig: ed25519Sig)
 
-proc readChannelWithdrawOpProof(data: openArray[byte], pos: var int): ChannelWithdrawOpProof =
+proc readChannelWithdrawOpProof(data: openArray[byte], pos: var int): ChannelWithdrawOpProof {.raises: [DecodingError].} =
   let count = SignatureCount(readLe[uint16](data, pos))
   var signatures = newSeqOfCap[Ed25519Signature](count)
   var indexes = newSeqOfCap[ChannelKeyIndex](count)
@@ -338,12 +338,12 @@ proc readChannelWithdrawOpProof(data: openArray[byte], pos: var int): ChannelWit
     havePrev = true
   ChannelWithdrawOpProof(signatures: signatures, indexes: indexes)
 
-func decodeChannelWithdrawOpProof*(data: openArray[byte]): ChannelWithdrawOpProof =
+func decodeChannelWithdrawOpProof*(data: openArray[byte]): ChannelWithdrawOpProof {.raises: [DecodingError].} =
   var pos = 0
   result = readChannelWithdrawOpProof(data, pos)
   finishDecode(data, pos)
 
-proc readOpProof(data: openArray[byte], pos: var int, kind: OpProofKind): OpProof =
+proc readOpProof(data: openArray[byte], pos: var int, kind: OpProofKind): OpProof {.raises: [DecodingError].} =
   case kind
   of opfChannelInscribe:
     OpProof(kind: opfChannelInscribe, ed25519SigProof: readEd25519Signature(data, pos))
@@ -375,7 +375,7 @@ proc readOpProof(data: openArray[byte], pos: var int, kind: OpProofKind): OpProo
   of opfChannelDeposit:
     OpProof(kind: opfChannelDeposit, channelDepositProof: readFixed[128](data, pos))
 
-func decodeOpProof*(data: openArray[byte], kind: OpProofKind): OpProof =
+func decodeOpProof*(data: openArray[byte], kind: OpProofKind): OpProof {.raises: [DecodingError].} =
   var pos = 0
   result = readOpProof(data, pos, kind)
   finishDecode(data, pos)
@@ -384,7 +384,7 @@ func decodeOpProof*(data: openArray[byte], kind: OpProofKind): OpProof =
 # Operation aggregate decoders
 # -----------------------------------------------------------------------------
 
-proc readOpPayload(data: openArray[byte], pos: var int, opcode: Opcode): OpPayload =
+proc readOpPayload(data: openArray[byte], pos: var int, opcode: Opcode): OpPayload {.raises: [DecodingError].} =
   case opcode
   of OpTransfer:
     let inputs = readInputs(data, pos)
@@ -487,17 +487,17 @@ proc readOpPayload(data: openArray[byte], pos: var int, opcode: Opcode): OpPaylo
   else:
     raise newException(DecodingError, "unsupported opcode for OpPayload decode: " & $opcode)
 
-proc readOp(data: openArray[byte], pos: var int): Op =
+proc readOp(data: openArray[byte], pos: var int): Op {.raises: [DecodingError].} =
   let opcode = Opcode(readByte(data, pos))
   let payload = readOpPayload(data, pos, opcode)
   Op(opcode: opcode, payload: payload)
 
-func decodeOp*(data: openArray[byte]): Op =
+func decodeOp*(data: openArray[byte]): Op {.raises: [DecodingError].} =
   var pos = 0
   result = readOp(data, pos)
   finishDecode(data, pos)
 
-func decodeOps*(data: openArray[byte]): seq[Op] =
+func decodeOps*(data: openArray[byte]): seq[Op] {.raises: [DecodingError].} =
   var pos = 0
   let count = readByte(data, pos)
   result = newSeqOfCap[Op](count)
@@ -505,7 +505,7 @@ func decodeOps*(data: openArray[byte]): seq[Op] =
     result.add readOp(data, pos)
   finishDecode(data, pos)
 
-func decodeOpsProofs*(ops: openArray[Op], data: openArray[byte]): seq[OpProof] =
+func decodeOpsProofs*(ops: openArray[Op], data: openArray[byte]): seq[OpProof] {.raises: [DecodingError].} =
   var pos = 0
   result = newSeqOfCap[OpProof](ops.len)
   var i = 0
@@ -519,7 +519,7 @@ func decodeOpsProofs*(ops: openArray[Op], data: openArray[byte]): seq[OpProof] =
     raise newException(DecodingError, "OpsProofs length exceeds OpCount")
   finishDecode(data, pos)
 
-func decodeOpPayload*(data: openArray[byte], opcode: Opcode): OpPayload =
+func decodeOpPayload*(data: openArray[byte], opcode: Opcode): OpPayload {.raises: [DecodingError].} =
   var pos = 0
   result = readOpPayload(data, pos, opcode)
   finishDecode(data, pos)
@@ -528,7 +528,7 @@ func decodeOpPayload*(data: openArray[byte], opcode: Opcode): OpPayload =
 # Transaction decoders
 # -----------------------------------------------------------------------------
 
-func decodeMantleTx*(data: openArray[byte]): MantleTx =
+func decodeMantleTx*(data: openArray[byte]): MantleTx {.raises: [DecodingError].} =
   var pos = 0
   let count = readByte(data, pos)
   var ops = newSeqOfCap[Op](count)
@@ -543,7 +543,7 @@ func decodeMantleTx*(data: openArray[byte]): MantleTx =
     permanentStorageGasPrice: permanentStorageGasPrice,
   )
 
-func decodeSignedMantleTx*(data: openArray[byte]): SignedMantleTx =
+func decodeSignedMantleTx*(data: openArray[byte]): SignedMantleTx {.raises: [DecodingError].} =
   var pos = 0
   let count = readByte(data, pos)
   var ops = newSeqOfCap[Op](count)
