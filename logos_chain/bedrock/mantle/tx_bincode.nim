@@ -2,21 +2,20 @@
 # Copyright (c) 2026 Status Research & Development GmbH
 # Licensed and distributed under either of
 #   * MIT license (license terms in the root directory or at https://opensource.org/licenses/MIT).
-#   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
+#   * Apache v2 license (license terms in the root directory or at https://opensource.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to these terms.
 
 ## Nim-bincode serializers for ``SignedMantleTx`` that encode with Mantle
 ## ``encodeSignedMantleTx`` (length-prefixed blob in the outer vector, identical
 ## framing to nested ``seq[seq[byte]]`` on sync wire).
-##
-## Decode path is intentionally a stub: wire bytes under the outer length prefix are
-## skipped until a proper ``decodeSignedMantleTx()`` exists.
 
 {.push raises: [], gcsafe.}
 
 import faststreams
 import bincode
 import ./tx_encoding
+import ./tx_decoding
+from ../crypto/decoding import DecodingError
 
 from ./tx_types import SignedMantleTx
 
@@ -30,10 +29,11 @@ func deserializeSignedMantleTxAt*(
     data: openArray[byte], config: BincodeConfig = standard(),
     start: int = 0,
 ): (SignedMantleTx, int) {.raises: [BincodeError].} =
-  let (_, nbytes) = decodePrefixedByteSeq(data, config, start)
-  # TODO: Need ``decodeSignedMantleTx`` (or Mantle analogue) — parse prefixed blob bytes
-  # into a real ``SignedMantleTx`` instead of skipping payload and returning default.
-  (default(SignedMantleTx), nbytes)
+  let (payload, nbytes) = decodePrefixedByteSeq(data, config, start)
+  try:
+    (decodeSignedMantleTx(payload), nbytes)
+  except DecodingError as e:
+    raise newException(BincodeError, e.msg)
 
 func deserializeSignedMantleTx*(
     data: openArray[byte], config: BincodeConfig = standard()
