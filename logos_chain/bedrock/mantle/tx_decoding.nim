@@ -14,6 +14,7 @@
 import ./[primitives, operations, tx_types]
 import ../crypto/decoding
 import libp2p/crypto/ed25519/ed25519
+import libp2p/multiaddress
 export
   decodeByte, decodeEd25519PublicKey, decodeEd25519Signature, decodeFieldElement,
   decodeGroth16, decodeHash32, decodeU16LeLenPrefixed, decodeU32LeLenPrefixed,
@@ -189,7 +190,10 @@ proc readLocator(data: openArray[byte], pos: var int): Locator {.raises: [Decodi
   let raw = readU16LeLenPrefixed(data, pos)
   if raw.len > MaxLocatorMultiaddrBytes:
     raise newException(DecodingError, "Locator exceeds max multiaddr byte length")
-  raw
+  let ma = MultiAddress.init(raw)
+  if ma.isErr:
+    raise newException(DecodingError, "invalid Locator multiaddr: " & ma.error)
+  ma.get()
 
 func decodeLocator*(data: openArray[byte]): Locator {.raises: [DecodingError].} =
   var pos = 0
