@@ -30,9 +30,6 @@ const
     ## Upper bound on ``KnownBlocks.additionalBlocks`` on the wire (u8 count + 32-byte ids).
     ## Encoders keep a prefix of at most this many extras; decoders reject larger counts.
 
-const MaxIbdDownloadBlocksPerResponse* = 64
-  ## Max ``dbrBlock`` messages per ``writeLp`` response frame (anti-spam).
-
 # ---------------------------------------------------------------------------
 # Chain-sync bincode config
 # ---------------------------------------------------------------------------
