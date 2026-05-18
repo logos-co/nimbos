@@ -56,12 +56,12 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
     conf2.agentString = "p2p-test-node2"
 
     let node1Res =
-      createLBNode(rng1, conf, rng1[].getRandomNetKeys())
+      createLBP2PNode(rng1, conf, rng1[].getRandomNetKeys())
     check:
       node1Res.isOk
 
     if node1Res.isErr():
-      checkpoint("createLBNode failed: " & node1Res.error)
+      checkpoint("createLBP2PNode failed: " & node1Res.error)
       fail()
 
     let node1 = node1Res.get()
@@ -128,10 +128,10 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
     conf.hardMaxPeers = some(4)
     conf.agentString = "p2p-test-node1"
 
-    let nodeRes = createLBNode(rng, conf, rng[].getRandomNetKeys())
+    let nodeRes = createLBP2PNode(rng, conf, rng[].getRandomNetKeys())
     check nodeRes.isOk
     if nodeRes.isErr():
-      checkpoint("createLBNode failed: " & nodeRes.error)
+      checkpoint("createLBP2PNode failed: " & nodeRes.error)
       fail()
     let node = nodeRes.get()
 
@@ -174,10 +174,10 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
     conf.hardMaxPeers = some(4)
     conf.agentString = "p2p-test-node1"
 
-    let nodeRes = createLBNode(rng, conf, rng[].getRandomNetKeys())
+    let nodeRes = createLBP2PNode(rng, conf, rng[].getRandomNetKeys())
     check nodeRes.isOk
     if nodeRes.isErr():
-      checkpoint("createLBNode failed: " & nodeRes.error)
+      checkpoint("createLBP2PNode failed: " & nodeRes.error)
       fail()
     let node = nodeRes.get()
 
@@ -192,10 +192,10 @@ suite "P2P stack — bootstrap and discovery":
 
     let (confL, confD, rngL, rngD) = makeBootstrapConfs(listenerPort, dialerPort)
 
-    let listenerRes = createLBNode(rngL, confL, rngL[].getRandomNetKeys())
+    let listenerRes = createLBP2PNode(rngL, confL, rngL[].getRandomNetKeys())
     check listenerRes.isOk
     if listenerRes.isErr():
-      checkpoint("createLBNode listener: " & listenerRes.error)
+      checkpoint("createLBP2PNode listener: " & listenerRes.error)
       fail()
     let listener = listenerRes.get()
     await listener.startListening()
@@ -208,10 +208,10 @@ suite "P2P stack — bootstrap and discovery":
     var confDial = confD
     confDial.bootstrapNodes = @[bootstrapAddr]
 
-    let dialerRes = createLBNode(rngD, confDial, rngD[].getRandomNetKeys())
+    let dialerRes = createLBP2PNode(rngD, confDial, rngD[].getRandomNetKeys())
     check dialerRes.isOk
     if dialerRes.isErr():
-      checkpoint("createLBNode dialer: " & dialerRes.error)
+      checkpoint("createLBP2PNode dialer: " & dialerRes.error)
       await listener.stop()
       fail()
     let dialer = dialerRes.get()
@@ -247,10 +247,10 @@ suite "P2P stack — bootstrap and discovery":
 
     let (confL, confD, rngL, rngD) = makeBootstrapConfs(listenerPort, dialerPort)
 
-    let listenerRes = createLBNode(rngL, confL, rngL[].getRandomNetKeys())
+    let listenerRes = createLBP2PNode(rngL, confL, rngL[].getRandomNetKeys())
     check listenerRes.isOk
     if listenerRes.isErr():
-      checkpoint("createLBNode listener: " & listenerRes.error)
+      checkpoint("createLBP2PNode listener: " & listenerRes.error)
       fail()
     let listener = listenerRes.get()
     await listener.startListening()
@@ -263,10 +263,10 @@ suite "P2P stack — bootstrap and discovery":
     var confDial = confD
     confDial.bootstrapNodes = @[bootstrapAddr]
 
-    let dialerRes = createLBNode(rngD, confDial, rngD[].getRandomNetKeys())
+    let dialerRes = createLBP2PNode(rngD, confDial, rngD[].getRandomNetKeys())
     check dialerRes.isOk
     if dialerRes.isErr():
-      checkpoint("createLBNode dialer: " & dialerRes.error)
+      checkpoint("createLBP2PNode dialer: " & dialerRes.error)
       await listener.stop()
       fail()
     let dialer = dialerRes.get()
