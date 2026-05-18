@@ -23,6 +23,7 @@ import # Unit test
   ./bedrock/mantle/test_proofs,
   ./bedrock/mantle/test_tx_types,
   ./bedrock/mantle/test_tx_encoding,
+  ./bedrock/mantle/test_tx_decoding,
   "./bedrock/block/test_block_types",
   "./bedrock/block/test_genesis",
   ./bedrock/sdp/test_state
