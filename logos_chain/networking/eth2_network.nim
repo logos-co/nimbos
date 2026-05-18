@@ -1746,9 +1746,25 @@ proc peerPingerHeartbeat(node: LBP2PNode): Future[void] {.async: (raises: [Cance
 proc peerTrimmerHeartbeat(node: LBP2PNode): Future[void] {.async: (raises: [CancelledError]).}
 proc bootstrapHeartbeat(node: LBP2PNode): Future[void] {.async: (raises: [CancelledError]).}
 
+proc waitForBootstrapConnectivity(
+    node: LBP2PNode, attempts: int = 100,
+): Future[bool] {.async: (raises: [CancelledError]).} =
+  if node.bootstrapPeers.len == 0:
+    return true
+  for _ in 0 ..< attempts:
+    for peerAddr in node.bootstrapPeers:
+      if node.switch.isConnected(peerAddr.peerId):
+        return true
+    await sleepAsync(100.milliseconds)
+  false
+
 proc runCryptarchiaIbdAtStartup(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
   if node.localTree == nil or node.chainSyncProtocol.len == 0:
     return
+  if node.bootstrapPeers.len > 0:
+    if not await waitForBootstrapConnectivity(node):
+      warn "Initial block download skipped: bootstrap peer not connected"
+      return
   try:
     await initialBlockDownload(
       node.switch,
