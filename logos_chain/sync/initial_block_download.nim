@@ -8,13 +8,14 @@
 {.push raises: [], gcsafe.}
 
 import
-  std/[options, sets],
+  std/[options, sequtils, sets],
   chronicles,
   chronos,
   libp2p/[switch, peerid, errors],
   libp2p/protocols/protocol,
   libp2p/stream/connection,
-  stew/endians2
+  stew/endians2,
+  stew/byteutils as sbyteutils
 
 import ../bedrock/local_tree
 import "../bedrock/block/block_validation"
@@ -23,6 +24,7 @@ import ./types
 
 from "../bedrock/block/block_types" import Block, BlockId, blockId
 from ../bedrock/mantle/primitives import SlotNumber
+from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
 
 export types
 
@@ -384,10 +386,20 @@ proc onBlock*(
   if not validateBlockHeader(blk, localTree) or not validateBlockBody(blk):
     raise newException(InvalidBlock, "invalid block")
   discard addBlockToTree(localTree, blk)
-  debug "IBD ingested block",
-    id = blockId(blk.header),
-    parent = blk.header.parentBlock,
-    slot = blk.header.slot
+  let h = blk.header
+  var leaderKeyBytes: array[EdPublicKeySize, byte]
+  doAssert toBytes(h.proofOfLeadership.leaderKey, leaderKeyBytes) == EdPublicKeySize
+  info "IBD ingested block",
+    id = sbyteutils.toHex(blockId(h)),
+    bedrockVersion = h.bedrockVersion,
+    parent = sbyteutils.toHex(h.parentBlock),
+    slot = h.slot,
+    blockRoot = sbyteutils.toHex(h.blockRoot),
+    txCount = blk.txs.len,
+    polLeaderVoucher = sbyteutils.toHex(h.proofOfLeadership.leaderVoucher),
+    polEntropyContribution = sbyteutils.toHex(h.proofOfLeadership.entropyContribution),
+    polProof = sbyteutils.toHex(h.proofOfLeadership.proof),
+    polLeaderKey = sbyteutils.toHex(leaderKeyBytes)
 
 # ---------------------------------------------------------------------------
 # IBD: requester loop
@@ -420,27 +432,36 @@ proc downloadBlocks*(
             debug "IBD: GetTip returned failure", peer
             none(BlockId)
           of gtrTip:
-            some(tipOpt.get.tipData.tip)
+            let tip = tipOpt.get.tipData.tip
+            info "IBD: GetTip returned success", peer, targetBlock = sbyteutils.toHex(tip)
+            some(tip)
     if effectiveTarget.isNone:
       debug "IBD: no effective target", peer
       return false
     if hasBlock(localTree, effectiveTarget.get):
-      debug "IBD: target already local", peer, targetBlock = effectiveTarget.get
+      debug "IBD: target already local", peer, targetBlock = sbyteutils.toHex(effectiveTarget.get)
       return true
 
     let additionalKnown =
       if latestDownloaded.isSome: @[blockId(latestDownloaded.get.header)] else: @[]
+    let downloadReq = DownloadBlocksRequest(
+      targetBlock: effectiveTarget.get,
+      knownBlocks: buildKnownBlocks(localTree, additionalKnown),
+    )
     let respOpt = await sendDownloadBlocksRequest(
       sw,
       peer,
-      DownloadBlocksRequest(
-        targetBlock: effectiveTarget.get,
-        knownBlocks: buildKnownBlocks(localTree, additionalKnown),
-      ),
+      downloadReq,
       chainSyncProtocol,
     )
+    info "IBD: download request sent",
+      peer,
+      targetBlock = sbyteutils.toHex(downloadReq.targetBlock),
+      localTip = sbyteutils.toHex(downloadReq.knownBlocks.localTip),
+      latestImmutableBlock = sbyteutils.toHex(downloadReq.knownBlocks.latestImmutableBlock),
+      additionalBlocks = downloadReq.knownBlocks.additionalBlocks.mapIt(sbyteutils.toHex(it))
     if respOpt.isNone:
-      debug "IBD: download request failed", peer, targetBlock = effectiveTarget.get
+      debug "IBD: download request failed", peer, targetBlock = sbyteutils.toHex(effectiveTarget.get)
       return false
 
     let msgs = respOpt.get
@@ -450,9 +471,9 @@ proc downloadBlocks*(
       return false
     let blocks = blocksOpt.get
     if blocks.len == 0:
-      debug "IBD: download returned no blocks", peer, targetBlock = effectiveTarget.get
+      debug "IBD: download returned no blocks", peer, targetBlock = sbyteutils.toHex(effectiveTarget.get)
       return false
-    debug "IBD: applying downloaded blocks", peer, count = blocks.len, targetBlock = effectiveTarget.get
+    info "IBD: applying downloaded blocks", peer, count = blocks.len, targetBlock = sbyteutils.toHex(effectiveTarget.get)
 
     var targetReached = false
     for blk in blocks:
@@ -467,9 +488,9 @@ proc downloadBlocks*(
         return false
 
     if targetReached:
-      debug "IBD: target reached", peer, targetBlock = effectiveTarget.get
+      debug "IBD: target reached", peer, targetBlock = sbyteutils.toHex(effectiveTarget.get)
       return true
-    debug "IBD: batch applied, continuing", peer, blocksApplied = blocks.len
+    info "IBD: batch applied, continuing", peer, blocksApplied = blocks.len
 
 proc initialBlockDownload*(
     sw: Switch,
