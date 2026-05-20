@@ -15,14 +15,15 @@ import results
 import poseidon2/[types, io]
 
 import ../../logos_chain/utils/dynamic_merkle_tree
-import ../../logos_chain/zk/poseidon2/hasher  # Poseidon2Hasher
+import ../../logos_chain/zk/poseidon2/hasher # Poseidon2Hasher
 
 # A trivial Item whose `asField` view is its own F value. Exercises the
 # `mixin asField(item: Item): F` contract.
 type FItem = object
   v: F
 
-func asField(item: FItem): F = item.v
+func asField(item: FItem): F =
+  item.v
 
 func frFomInt(n: int): F =
   ## Deterministic small F from an int — for stable test vectors.

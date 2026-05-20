@@ -16,26 +16,25 @@ import ./primitives
 import poseidon2/[types, io]
 import "../../zk/poseidon2/hasher"
 
-type
-  Utxo* = object
-    transferHash*: ZkHash
-    outputIndex*: int
-    note*: Note
+type Utxo* = object
+  transferHash*: ZkHash
+  outputIndex*: int
+  note*: Note
 
 const NoteIdV1DomainTag = "NOTE_ID_V1"
 
 func noteIdV1DomainFr(): F =
-  frFromBytesLE(
-    NoteIdV1DomainTag.toOpenArrayByte(0, NoteIdV1DomainTag.high)).get
+  frFromBytesLE(NoteIdV1DomainTag.toOpenArrayByte(0, NoteIdV1DomainTag.high)).get
 
 func id*(u: Utxo): NoteId =
   ## Poseidon2 commitment over (domain, transferHash, outputIndex, value, pk).
   let
-    transferFr  = F.fromBytes(u.transferHash).get
+    transferFr = F.fromBytes(u.transferHash).get
     outputIdxFr = frFromBytesLE(uint64(u.outputIndex).toBytesLE).get
-    valueFr     = frFromBytesLE(u.note.value.toBytesLE).get
-    pkFr        = F.fromBytes(u.note.zkPublicKey).get
-  NoteId(Poseidon2Hasher.digest([
-    noteIdV1DomainFr(), transferFr, outputIdxFr, valueFr, pkFr]))
+    valueFr = frFromBytesLE(u.note.value.toBytesLE).get
+    pkFr = F.fromBytes(u.note.zkPublicKey).get
+  NoteId(
+    Poseidon2Hasher.digest([noteIdV1DomainFr(), transferFr, outputIdxFr, valueFr, pkFr])
+  )
 
 {.pop.}

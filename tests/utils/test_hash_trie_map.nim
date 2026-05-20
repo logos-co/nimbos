@@ -18,10 +18,12 @@ import ../../logos_chain/utils/hash_trie_map
 ## collisions and exercise the Collision-node path explicitly.
 type CollidingKey = object
   id: int
-  bucket: int     # used as the hash; equal `bucket` ⇒ hash collision
+  bucket: int # used as the hash; equal `bucket` ⇒ hash collision
 
-func hash(x: CollidingKey): Hash = Hash(x.bucket)
-func `==`(a, b: CollidingKey): bool = a.id == b.id
+func hash(x: CollidingKey): Hash =
+  Hash(x.bucket)
+func `==`(a, b: CollidingKey): bool =
+  a.id == b.id
 
 suite "HashTrieMap basics":
   test "init creates empty map":
@@ -100,12 +102,12 @@ suite "HashTrieMap withValue":
     m = m.insert(1, 100)
 
     var found = -1
-    m.withValue(1) do (v: int):
+    m.withValue(1) do(v: int):
       found = v
     check found == 100
 
     var notFoundRan = false
-    m.withValue(99) do (v: int):
+    m.withValue(99) do(v: int):
       notFoundRan = true
     check not notFoundRan
 
@@ -116,7 +118,7 @@ suite "HashTrieMap withValue":
     var
       seenVal = -1
       missingHit = false
-    m.withValue(1) do (v: int):
+    m.withValue(1) do(v: int):
       seenVal = v
     do:
       missingHit = true
@@ -125,7 +127,7 @@ suite "HashTrieMap withValue":
 
     seenVal = -1
     missingHit = false
-    m.withValue(99) do (v: int):
+    m.withValue(99) do(v: int):
       seenVal = v
     do:
       missingHit = true
@@ -172,9 +174,9 @@ suite "HashTrieMap persistence":
     for i in 0 ..< 50:
       m1 = m1.insert(i, i * 2)
     let snapshot = m1
-    m1 = m1.insert(25, -999)   # overwrite
-    m1 = m1.remove(40)          # delete
-    m1 = m1.insert(1000, 1234)  # extend
+    m1 = m1.insert(25, -999) # overwrite
+    m1 = m1.remove(40) # delete
+    m1 = m1.insert(1000, 1234) # extend
     # Snapshot is untouched by every kind of subsequent mutation.
     check snapshot != m1
     check snapshot.len == 50
@@ -463,7 +465,7 @@ suite "HashTrieMap diverse types":
     m = m.insert("alpha", 1)
     m = m.insert("beta", 2)
     m = m.insert("gamma", 3)
-    m = m.insert("beta", 20)  # overwrite
+    m = m.insert("beta", 20) # overwrite
     check m.len == 3
     check m["alpha"] == 1
     check m["beta"] == 20
@@ -475,7 +477,7 @@ suite "HashTrieMap diverse types":
     let
       k1 = @[0x01'u8, 0x02, 0x03]
       k2 = @[0x04'u8, 0x05]
-      k3 = @[0x01'u8, 0x02, 0x03, 0x04]  # k1 prefix
+      k3 = @[0x01'u8, 0x02, 0x03, 0x04] # k1 prefix
     m = m.insert(k1, 1)
     m = m.insert(k2, 2)
     m = m.insert(k3, 3)
@@ -489,6 +491,7 @@ suite "HashTrieMap diverse types":
   test "object values":
     type Point = object
       x, y: int
+
     var m = HashTrieMap[int, Point].init()
     m = m.insert(1, Point(x: 10, y: 20))
     m = m.insert(2, Point(x: -1, y: -2))

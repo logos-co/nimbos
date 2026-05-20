@@ -20,10 +20,16 @@ import "../../zk/poseidon2/hasher"
 
 const
   MantleTxHashDomainTag = "MANTLE_TXHASH_V1"
+  TransferHashV1DomainTag = "TRANSFER_HASH_V1"
   HalfBlakeDigestBytesSize = 16
 
 func mantleTxHashDomainFr(): F =
   frFromBytesLE(MantleTxHashDomainTag.toOpenArrayByte(0, MantleTxHashDomainTag.high)).get
+
+func transferHashV1DomainFr(): F =
+  frFromBytesLE(
+    TransferHashV1DomainTag.toOpenArrayByte(0, TransferHashV1DomainTag.high)
+  ).get
 
 func blake2bMantleTxDigest*(txBytes: openArray[byte]): Hash32 =
   ## Classic digest step: Blake2b-256 over canonical tx bytes.
@@ -31,14 +37,31 @@ func blake2bMantleTxDigest*(txBytes: openArray[byte]): Hash32 =
 
 func mantleTxHash*(tx: MantleTx): ZkHash =
   ## tx_hash = Poseidon2( MANTLE_TXHASH_V1_FR || fr(blake[0..15]) || fr(blake[16..31]) )
-  let 
+  let
     txBytes = encodeMantleTx(tx)
     classicDigest = blake2bMantleTxDigest(txBytes)
     frA = frFromBytesLE(classicDigest.toOpenArray(0, HalfBlakeDigestBytesSize - 1)).get
-    frB = frFromBytesLE(classicDigest.toOpenArray(
-    HalfBlakeDigestBytesSize,
-    (2 * HalfBlakeDigestBytesSize) - 1)).get
+    frB = frFromBytesLE(
+      classicDigest.toOpenArray(
+        HalfBlakeDigestBytesSize, (2 * HalfBlakeDigestBytesSize) - 1
+      )
+    ).get
     preimage = [mantleTxHashDomainFr(), frA, frB]
+  Poseidon2Hasher.digest(preimage).toBytes()
+
+func transferOpHash*(op: TransferPayload): ZkHash =
+  ## transfer_hash = Poseidon2( TRANSFER_HASH_V1_FR || fr(blake[0..15]) || fr(blake[16..31]) )
+  ## where blake = Blake2b-256(encodeTransfer(op)). Used as `Utxo.transferHash`
+  let
+    bytes = encodeTransfer(op)
+    classicDigest = blake2b256Hash(bytes)
+    frA = frFromBytesLE(classicDigest.toOpenArray(0, HalfBlakeDigestBytesSize - 1)).get
+    frB = frFromBytesLE(
+      classicDigest.toOpenArray(
+        HalfBlakeDigestBytesSize, (2 * HalfBlakeDigestBytesSize) - 1
+      )
+    ).get
+    preimage = [transferHashV1DomainFr(), frA, frB]
   Poseidon2Hasher.digest(preimage).toBytes()
 
 {.pop.}

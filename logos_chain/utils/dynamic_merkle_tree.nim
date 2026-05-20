@@ -35,8 +35,7 @@ type
 
   MerklePath* = array[TreeDepth, MerkleNode]
     ## Inclusion proof: 32 tagged siblings, leaf → root order, root excluded.
-    ## In-memory shape mirrors Rust's ``MerklePath<Fr> = Vec<MerkleNode<Fr>>``;
-    ## wire format (when standardised) is ``u8 side || Fr sibling`` per node.
+    ## Wire format (when standardised) is ``u8 side || Fr sibling`` per node.
 
   NodeKind {.pure.} = enum
     Inner, Empty, Leaf
@@ -199,9 +198,8 @@ func insert*[Item, Hash](t: DynamicMerkleTree[Item, Hash]; item: sink Item):
     if holes.len > 0: holes.pop()
     else:             t.count
   doAssert leafIndex < Capacity, "tree at capacity"
-  let newRoot = insertAt(t.root, leafIndex, item)
   (DynamicMerkleTree[Item, Hash](
-     root: newRoot,
+     root:  insertAt(t.root, leafIndex, item),
      holes: holes,
      count: t.count + 1),
    leafIndex)
@@ -210,11 +208,10 @@ func remove*[Item, Hash](t: DynamicMerkleTree[Item, Hash]; leafIndex: int):
     DynamicMerkleTree[Item, Hash] =
   ## Nulls the leaf and pushes ``leafIndex`` onto the hole heap.
   doAssert leafIndex in 0 ..< Capacity, "leafIndex out of bounds"
-  let newRoot = removeAt(t.root, leafIndex)
   var holes = t.holes
   holes.push(leafIndex)
   DynamicMerkleTree[Item, Hash](
-    root: newRoot,
+    root:  removeAt(t.root, leafIndex),
     holes: holes,
     count: t.count - 1)
 

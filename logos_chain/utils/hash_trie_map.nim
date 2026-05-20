@@ -198,11 +198,10 @@ func makeBranchFromTwoNodes[K, V](
 
   if slotA == slotB:
     # Both share this depth's slot — nest deeper.
-    let child = makeBranchFromTwoNodes(a, b, depth + 1)
     Node[K, V](
       kind: Branch,
       bitmap: 1'u32 shl slotA,
-      children: @[child])
+      children: @[makeBranchFromTwoNodes(a, b, depth + 1)])
   else:
     let
       bm = (1'u32 shl slotA) or (1'u32 shl slotB)
@@ -232,8 +231,10 @@ proc insertNode[K, V](
         collisionHash: h,
         entries: @[(node.leafKey, node.leafValue), (k, v)])
     added = true
-    let newLeaf = Node[K, V](kind: Leaf, leafHash: h, leafKey: k, leafValue: v)
-    makeBranchFromTwoNodes(node, newLeaf, depth)
+    makeBranchFromTwoNodes(
+      node,
+      Node[K, V](kind: Leaf, leafHash: h, leafKey: k, leafValue: v),
+      depth)
 
   of Collision:
     if node.collisionHash == h:
@@ -250,33 +251,32 @@ proc insertNode[K, V](
       return Node[K, V](
         kind: Collision, collisionHash: h, entries: newEntries)
     added = true
-    let newLeaf = Node[K, V](kind: Leaf, leafHash: h, leafKey: k, leafValue: v)
-    makeBranchFromTwoNodes(node, newLeaf, depth)
+    makeBranchFromTwoNodes(
+      node,
+      Node[K, V](kind: Leaf, leafHash: h, leafKey: k, leafValue: v),
+      depth)
 
   of Branch:
     let slot = hashSlot(h, depth)
     if not node.bitmap.bitmapHas(slot):
       added = true
-      let newLeaf =
-        Node[K, V](kind: Leaf, leafHash: h, leafKey: k, leafValue: v)
       let idx = node.bitmap.bitmapIndex(slot)
       var newChildren = newSeq[Node[K, V]](node.children.len + 1)
       for i in 0 ..< idx:
         newChildren[i] = node.children[i]
-      newChildren[idx] = newLeaf
+      newChildren[idx] = Node[K, V](
+        kind: Leaf, leafHash: h, leafKey: k, leafValue: v)
       for i in idx ..< node.children.len:
         newChildren[i + 1] = node.children[i]
       return Node[K, V](
         kind: Branch,
         bitmap: node.bitmap or (1'u32 shl slot),
         children: newChildren)
-    let
-      idx = node.bitmap.bitmapIndex(slot)
-      newChild = insertNode(node.children[idx], h, k, v, depth + 1, added)
+    let idx = node.bitmap.bitmapIndex(slot)
     # Path-copying: copy this Branch's children seq so the old node stays
     # immutable; sibling subtrees stay shared via the seq's element refs.
     var newChildren = node.children
-    newChildren[idx] = newChild
+    newChildren[idx] = insertNode(node.children[idx], h, k, v, depth + 1, added)
     Node[K, V](
       kind: Branch, bitmap: node.bitmap, children: newChildren)
 

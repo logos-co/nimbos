@@ -13,15 +13,16 @@ import results
 
 import ../../../logos_chain/core/mantle/[primitives, utxo]
 
-func mkUtxo(value: Value = 100; outputIndex = 0; pkSeed: byte = 1): Utxo =
+func mkUtxo(value: Value = 100, outputIndex = 0, pkSeed: byte = 1): Utxo =
   var
-    transferHash: ZkHash       # all zeros
-    pk: ZkPublicKey            # all zeros except first byte for variety
+    transferHash: ZkHash # all zeros
+    pk: ZkPublicKey # all zeros except first byte for variety
   pk[0] = pkSeed
   Utxo(
     transferHash: transferHash,
     outputIndex: outputIndex,
-    note: Note(value: value, zkPublicKey: pk))
+    note: Note(value: value, zkPublicKey: pk),
+  )
 
 suite "Utxo.id":
   test "deterministic: same Utxo → same NoteId":

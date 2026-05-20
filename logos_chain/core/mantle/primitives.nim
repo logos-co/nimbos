@@ -12,8 +12,8 @@
 import std/[hashes, options]
 import results
 
-import poseidon2/types   # F, zero
-import poseidon2/io      # F.fromBytes, F.toBytes
+import poseidon2/types # F, zero
+import poseidon2/io # F.fromBytes, F.toBytes
 
 import ../crypto/hashing
 import libp2p/crypto/ed25519/ed25519
@@ -76,6 +76,7 @@ type
   ServiceType* = enum
     bn = 0
     da = 1
+
   ## Wire `UINT16` + payload (multiaddr bytes).
   Locator* = MultiAddress
 
@@ -93,12 +94,15 @@ type
   Note* = object
     value*: Value
     zkPublicKey*: ZkPublicKey
+
   ## Transfer input list wrapper.
   Inputs* = object
     noteIds*: seq[NoteId]
+
   ## Transfer output list wrapper.
   Outputs* = object
     notes*: seq[Note]
+
   PublicKey* = ZkPublicKey
   RewardsRoot* = FieldElement
   VoucherNullifier* = FieldElement
@@ -120,16 +124,21 @@ type
 # NoteId helpers
 # ---------------------------------------------------------------------------
 
-func asField*(n: NoteId): F = F(n)
+func asField*(n: NoteId): F =
   ## Field-element view; mixin contract for ``DynamicMerkleTree[NoteId, _]``.
+  F(n)
 
-func toBytes*(n: NoteId): array[32, byte] = F(n).toBytes()
+func toBytes*(n: NoteId): array[32, byte] =
   ## Canonical 32-byte little-endian serialisation.
+  F(n).toBytes()
 
 func fromBytes*(_: typedesc[NoteId], bytes: array[32, byte]): Opt[NoteId] =
   ## ``Opt.none`` if ``bytes`` overflow the BN254 field modulus.
   let f = F.fromBytes(bytes)
-  if f.isSome: Opt.some(NoteId(f.get)) else: Opt.none(NoteId)
+  if f.isSome:
+    Opt.some(NoteId(f.get))
+  else:
+    Opt.none(NoteId)
 
 func `==`*(a, b: NoteId): bool {.borrow.}
 

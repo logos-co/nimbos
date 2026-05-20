@@ -31,7 +31,9 @@ import # Unit test
   ./core/sdp/test_state,
   ./utils/test_hash_trie_map,
   ./utils/test_dynamic_merkle_tree,
-  ./ledger/test_utxo_store
+  ./ledger/test_utxo_store,
+  ./ledger/test_cryptarchia,
+  ./ledger/test_ledger
 
 summarizeLongTests("AllTests")
 

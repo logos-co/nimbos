@@ -17,16 +17,7 @@ import ../../logos_chain/core/mantle/[primitives, utxo]
 import ../../logos_chain/ledger/utxo_store
 import ../../logos_chain/utils/[dynamic_merkle_tree, hash_trie_map]
 import "../../logos_chain/zk/poseidon2/hasher"
-
-func mkUtxo(value: Value = 100; outputIndex = 0; pkSeed: byte = 1): Utxo =
-  var
-    transferHash: ZkHash
-    pk: ZkPublicKey
-  pk[0] = pkSeed
-  Utxo(
-    transferHash: transferHash,
-    outputIndex: outputIndex,
-    note: Note(value: value, zkPublicKey: pk))
+import ./test_helpers
 
 suite "UtxoStore empty":
   test "fresh store is empty":
@@ -53,7 +44,7 @@ suite "UtxoStore insert / lookup / path":
   test "single insert: contains/get/path all reflect the new entry":
     let
       s0 = UtxoStore.init()
-      u  = mkUtxo()
+      u = mkUtxo()
       id = u.id
       (s1, leafIndex) = s0.insert(id, u)
     check leafIndex == 0
@@ -86,6 +77,7 @@ suite "UtxoStore insert / lookup / path":
       check idx == i
       ids.add(u.id)
       s = s2
+
     check s.len == 50
     for id in ids:
       check s.contains(id)
@@ -94,7 +86,7 @@ suite "UtxoStore insert / lookup / path":
   test "duplicate insert panics":
     let
       s0 = UtxoStore.init()
-      u  = mkUtxo()
+      u = mkUtxo()
       (s1, _) = s0.insert(u.id, u)
     expect AssertionDefect:
       discard s1.insert(u.id, u)
@@ -103,7 +95,7 @@ suite "UtxoStore remove":
   test "remove returns the stored Utxo and drops the entry":
     let
       s0 = UtxoStore.init()
-      u  = mkUtxo()
+      u = mkUtxo()
       (s1, _) = s0.insert(u.id, u)
       r = s1.remove(u.id)
     check r.isOk
@@ -130,8 +122,10 @@ suite "UtxoStore remove":
       let u = mkUtxo(value = Value(i + 1))
       s = s.insert(u.id, u).store
       ids.add(u.id)
+
     for id in ids:
       s = s.remove(id).get.store
+
     check s.root == emptyRoot
     check s.isEmpty
 
@@ -143,7 +137,9 @@ suite "UtxoStore remove":
       let u = mkUtxo(value = Value(i + 1))
       s = s.insert(u.id, u).store
       ids.add(u.id)
+
     s = s.remove(ids[1]).get.store
+
     let uNew = mkUtxo(value = 999)
     check s.insert(uNew.id, uNew).leafIndex == 1
 
@@ -157,5 +153,40 @@ suite "UtxoStore utxos() accessor":
     check entry.isSome
     check entry.get.utxo == u
     check entry.get.leafIndex == idx
+
+suite "UtxoStore root determinism / mixed ops":
+  test "same insertions on two fresh stores yield equal root":
+    var
+      a = UtxoStore.init()
+      b = UtxoStore.init()
+    for i in 0 ..< 50:
+      let u = mkUtxo(value = Value(i + 1), pkSeed = byte(i + 1))
+      a = a.insert(u.id, u).store
+      b = b.insert(u.id, u).store
+    check a.root == b.root
+    check a == b
+
+  test "interleaved insert / remove / insert preserves size and membership":
+    var
+      s = UtxoStore.init()
+      ids = newSeqOfCap[NoteId](4)
+    for i in 0 ..< 4:
+      let u = mkUtxo(value = Value(i + 1), pkSeed = byte(i + 1))
+      s = s.insert(u.id, u).store
+      ids.add(u.id)
+    check s.len == 4
+
+    s = s.remove(ids[1]).get.store
+    check s.len == 3
+    check not s.contains(ids[1])
+
+    s = s.remove(ids[3]).get.store
+    check s.len == 2
+    check not s.contains(ids[3])
+
+    let uNew = mkUtxo(value = 999, pkSeed = 9)
+    s = s.insert(uNew.id, uNew).store
+    check s.len == 3
+    check s.contains(uNew.id)
 
 {.pop.}
