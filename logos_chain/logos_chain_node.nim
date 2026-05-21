@@ -15,11 +15,11 @@ import
   stew/byteutils,
   ./node,
   ./api/server,
-  "./bedrock/block/genesis",
+  "./core/block/genesis",
   ./[buildinfo, binary_common, process_state]
 
 from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
-from "./bedrock/block/block_types" import blockId
+from "./core/block/types" import blockId
 
 when defined(windows):
   from ./winservice import establishWindowsService

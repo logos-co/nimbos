@@ -9,10 +9,10 @@
 {.used.}
 
 import unittest2
-import ../../../logos_chain/bedrock/mantle/operations
-import ../../../logos_chain/bedrock/mantle/tx_types
+import ../../../logos_chain/core/mantle/operations
+import ../../../logos_chain/core/mantle/tx_types
 
-suite "bedrock/mantle/operations":
+suite "core/mantle/operations":
   test "Mantle opcode constants match expected wire values":
     check OpTransfer == 0x00'u8
     check OpChannelConfig == 0x10'u8

@@ -21,9 +21,8 @@ import
   results,
   stew/io2,
   yaml/dom,
-  "../bedrock/block/genesis",
-  ./deployment_settings_helpers,
-  ./helpers
+  "../core/block/genesis",
+  ./deployment_settings_helpers
 
 export
   dom,

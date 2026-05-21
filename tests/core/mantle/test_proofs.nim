@@ -9,10 +9,10 @@
 {.used.}
 
 import unittest2
-import ../../../logos_chain/bedrock/mantle/proofs
-import ../../../logos_chain/bedrock/mantle/operations
+import ../../../logos_chain/core/mantle/proofs
+import ../../../logos_chain/core/mantle/operations
 
-suite "bedrock/mantle/proofs":
+suite "core/mantle/proofs":
   test "proofType maps concrete proof variants to canonical families":
     check proofType(OpProof(
       kind: opfChannelInscribe,

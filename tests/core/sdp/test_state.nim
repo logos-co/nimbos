@@ -10,10 +10,10 @@
 
 import std/sets
 import unittest2
-import ../../../logos_chain/bedrock/mantle/primitives
-import ../../../logos_chain/bedrock/sdp/state
+import ../../../logos_chain/core/mantle/primitives
+import ../../../logos_chain/core/sdp/state
 
-suite "bedrock/sdp/state":
+suite "core/sdp/state":
   test "LockedNote starts with empty declaration set":
     var ln: LockedNote
     check len(ln.declarations) == 0

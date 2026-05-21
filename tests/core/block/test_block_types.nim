@@ -9,11 +9,11 @@
 {.used.}
 
 import unittest2
-import ../../../logos_chain/bedrock/mantle/tx_types
-import ../../../logos_chain/bedrock/mantle/tx_hashing
-import "../../../logos_chain/bedrock/block/block_types"
+import ../../../logos_chain/core/mantle/tx_types
+import ../../../logos_chain/core/mantle/tx_hashing
+import "../../../logos_chain/core/block/types"
 
-suite "bedrock/block/block_types":
+suite "core/block/block_types":
   const testBedrockVersion = 1'u8
 
   proc sampleTx(

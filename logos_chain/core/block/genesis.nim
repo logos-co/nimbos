@@ -10,9 +10,9 @@
 
 {.push raises: [], gcsafe.}
 
-import ./block_types
+import ./types
 import ../crypto/hashing
-export block_types, hashing
+export types, hashing
 
 # ---------------------------------------------------------------------------
 # Genesis constants

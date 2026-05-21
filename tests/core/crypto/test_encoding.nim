@@ -9,9 +9,9 @@
 {.used.}
 
 import unittest2
-import ../../../logos_chain/bedrock/crypto/encoding
+import ../../../logos_chain/core/crypto/encoding
 
-suite "bedrock/crypto/encoding":
+suite "core/crypto/encoding":
   test "encodeLe infers output width from unsigned input type":
     let le16 = encodeLe(0x0123'u16)
     let le32 = encodeLe(0x0123_4567'u32)

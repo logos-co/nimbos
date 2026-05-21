@@ -9,12 +9,12 @@
 {.used.}
 
 import unittest2
-import ../../../logos_chain/bedrock/mantle/primitives
-import ../../../logos_chain/bedrock/mantle/tx_encoding
-import ../../../logos_chain/bedrock/mantle/tx_hashing
-import ../../../logos_chain/bedrock/mantle/tx_types
+import ../../../logos_chain/core/mantle/primitives
+import ../../../logos_chain/core/mantle/tx_encoding
+import ../../../logos_chain/core/mantle/tx_hashing
+import ../../../logos_chain/core/mantle/tx_types
 
-suite "bedrock/mantle/tx_encoding":
+suite "core/mantle/tx_encoding":
   test "encodeValue is uint64 LE gas scalars":
     let v: Value = 0xAABB_CCDD_EEFF_0011'u64
     let b = encodeValue(v)

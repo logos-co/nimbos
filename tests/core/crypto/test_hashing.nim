@@ -9,9 +9,9 @@
 {.used.}
 
 import unittest2
-import ../../../logos_chain/bedrock/crypto/hashing
+import ../../../logos_chain/core/crypto/hashing
 
-suite "bedrock/crypto/hashing":
+suite "core/crypto/hashing":
   test "blake2b256Hash is deterministic":
     let a = blake2b256Hash([1'u8, 2'u8, 3'u8])
     let b = blake2b256Hash([1'u8, 2'u8, 3'u8])

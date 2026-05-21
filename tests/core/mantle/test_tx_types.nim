@@ -9,14 +9,16 @@
 {.used.}
 
 import unittest2
-import ../../../logos_chain/bedrock/mantle/primitives
+import ../../../logos_chain/core/mantle/tx_types
+import ../../../logos_chain/core/mantle/tx_hashing
 
-suite "bedrock/mantle/primitives":
-  test "primitive constants match expected values":
-    check MaxBlockTxs == 1024
-    check MantleMaxOps == 255
-
-  test "References is MaxBlockTxs of Hash32":
-    check default(References).len == MaxBlockTxs
+suite "core/mantle/tx_types":
+  test "mantleTxHash is deterministic for same MantleTx":
+    let tx = MantleTx(
+      ops: @[],
+      executionGasPrice: 0'u64,
+      permanentStorageGasPrice: 0'u64,
+    )
+    check mantleTxHash(tx) == mantleTxHash(tx)
 
 {.pop.}
