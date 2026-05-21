@@ -1,4 +1,4 @@
-# Copyright (c) 2024 Status Research & Development GmbH
+# Copyright (c) 2026 Status Research & Development GmbH
 # Licensed under either of
 #  * Apache License, version 2.0, ([LICENSE-APACHE](LICENSE-APACHE) or
 #    http://www.apache.org/licenses/LICENSE-2.0)
@@ -16,11 +16,11 @@ RUN apt-get clean && apt update \
 
 RUN ldd --version ldd
 
-ADD . /root/nimbus-eth2
+ADD . /root/nimbos
 
-RUN cd /root/nimbus-eth2 \
+RUN cd /root/nimbos \
  && make -j$(nproc) update \
- && make -j$(nproc) V=1 NIMFLAGS="-d:const_preset=mainnet -d:disableMarchNative" LOG_LEVEL=TRACE nimbus_beacon_node
+ && make -j$(nproc) V=1 NIMFLAGS="-d:disableMarchNative" LOG_LEVEL=TRACE logos_chain_node
 
 
 # --------------------------------- #
@@ -35,13 +35,13 @@ RUN apt update && apt -y upgrade
 
 RUN ldd --version ldd
 
-RUN rm -rf /home/user/nimbus-eth2/build/nimbus_beacon_node
+RUN rm -rf /home/user/nimbos/build/logos_chain_node
 
 # "COPY" creates new image layers, so we cram all we can into one command
-COPY --from=build /root/nimbus-eth2/build/nimbus_beacon_node /home/user/nimbus-eth2/build/nimbus_beacon_node
+COPY --from=build /root/nimbos/build/logos_chain_node /home/user/nimbos/build/logos_chain_node
 
-ENV PATH="/home/user/nimbus-eth2/build:${PATH}"
-ENTRYPOINT ["nimbus_beacon_node"]
-WORKDIR /home/user/nimbus-eth2/build
+ENV PATH="/home/user/nimbos/build:${PATH}"
+ENTRYPOINT ["logos_chain_node"]
+WORKDIR /home/user/nimbos/build
 
 STOPSIGNAL SIGINT

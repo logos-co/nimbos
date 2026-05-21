@@ -9,13 +9,10 @@
 
 import std/macros,
        results, stew/byteutils, presto/route,
-       ../bedrock/crypto/hashing,
-       ../spec/eth2_apis/[rest_types, eth2_rest_serialization, rest_common],
-       ../logos_chain_node,
-       "."/rest_constants
+       "."/[types, serialization, common, constants]
 
-## NOTE: The `rest_types` / `eth2_rest_serialization` / `rest_common` imports
-## mirror the upstream Eth2 REST API type definitions, but the Logos-specific
+## NOTE: The `types` / `serialization` / `common` modules mirror the upstream
+## Eth2 REST API type definitions, but the Logos-specific
 ## REST surface (paths, query parameters, and payloads) is not specified in any
 ## Logos Chain research/spec document. The concrete REST behavior in this module
 ## currently follows the Rust `logos-blockchain` implementation simply because
@@ -24,8 +21,8 @@ import std/macros,
 ## https://github.com/logos-blockchain/logos-blockchain
 
 export
-  results, eth2_rest_serialization, rest_types,
-  rest_constants, rest_common, route, decodeString, Hash32
+  results, serialization, types,
+  constants, common, route, decodeString
 
 func disallowInterruptionsAux(body: NimNode) =
   for n in body:
@@ -56,17 +53,18 @@ const
   textEventStreamMediaType* = MediaType.init("text/event-stream")
 
 type
-  ## Bedrock 32-byte hash (``array[32, byte]``); not **``hashes.Hash32``** (preimage type).
-  Hash32* = hashing.Hash32
-  HeaderId* = Hash32
+  LogosDigest* = array[32, byte]
+  HeaderId* = LogosDigest
+  ZkPublicKey* = ZkHash
+  ZkHash* = array[32, byte] #TODO Replace with Fr type
 
-func decodeHash32FromHex(value: string): Result[Hash32, cstring] =
+func decodeLogosDigest(value: string): Result[LogosDigest, cstring] =
   try:
-    var res: Hash32
+    var res: LogosDigest
     hexToByteArrayStrict(value, res)
-    ok(Result[Hash32, cstring], res)
+    ok(Result[LogosDigest, cstring], res)
   except ValueError:
-    err("Invalid hex string for Hash32")
+    err("Invalid hex string for LogosDigest")
 
-func decodeString*(t: typedesc[Hash32], value: string): Result[Hash32, cstring] =
-  decodeHash32FromHex(value)
+func decodeString*(t: typedesc[LogosDigest], value: string): Result[LogosDigest, cstring] =
+  decodeLogosDigest(value)

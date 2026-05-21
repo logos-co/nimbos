@@ -9,12 +9,12 @@
 
 import
   chronos, presto/client,
-  "."/[rest_types, eth2_rest_serialization]
+  "."/[types, serialization]
 
 from std/times import Time, DateTime, toTime, fromUnix, now, utc, `-`,
                       inNanoseconds
 
-export chronos, client, rest_types, eth2_rest_serialization
+export chronos, client, types, serialization
 
 proc raiseUnknownStatusError*(resp: RestPlainResponse) {.
      noreturn, raises: [RestError].} =

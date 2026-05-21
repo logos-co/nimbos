@@ -14,7 +14,7 @@ import ./testutil
 import # Unit test
   ./test_peer_pool,
   ./test_logos_p2p,
-  ./test_rest_node_api,
+  ./test_api_handlers,
   ./test_deployment_settings,
   ./bedrock/crypto/test_hashing,
   ./bedrock/crypto/test_encoding,

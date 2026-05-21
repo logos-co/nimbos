@@ -36,10 +36,10 @@ PKG_ARCH=""
 
 print_help() {
   cat <<EOF
-Usage: $(basename "$0") --tarball dist/nimbus-eth2_Linux_amd64_1.5.4_382be3fd.tar.gz
+Usage: $(basename "$0") --tarball dist/nimbos_Linux_amd64_1.5.4_382be3fd.tar.gz
 
   -h, --help                  this help message
-  -b, --binary                which binary to package (nimbus_beacon_node, nimbus_validator_client, ...)
+  -b, --binary                which binary to package (logos_chain_node, ...)
   -t, --tarball               tarball produced by "make dist-..."
   --install-fpm               install the appropriate fpm version with "gem'
 EOF
