@@ -59,7 +59,7 @@ iterator strippedLines(filename: string): string {.raises: [ref IOError].} =
     let stripped = strip(line)
     if stripped.startsWith('#'):
       continue
-    
+
     if stripped.len > 0:
       yield stripped
 
@@ -116,7 +116,7 @@ proc new*(T: type Eth2DiscoveryProtocol,
       Opt.none(IpAddress)
 
   newProtocol(pk, enrIp, enrTcpPort, enrUdpPort, @[], bootstrapEnrs,
-    bindPort = udpPort, bindIp = listenAddress,
+    bindPort = config.udpPort, bindIp = listenAddress,
     enrAutoUpdate = config.enrAutoUpdate, rng = rng)
 
 proc queryRandom*(
