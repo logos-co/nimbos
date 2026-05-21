@@ -20,15 +20,14 @@ import
   chronicles,
   eth/enr/enr,
   libp2p/[multiaddress, multicodec, peerstore],
-  ../version, ../logos_chain_node,
-  ../networking/[eth2_network, peer_pool],
-  ../spec/datatypes/base,
-  ./rest_utils,
-  ./rest_paths
+  ../version, ../node,
+  ../networking/[network, peer_pool],
+  ./utils,
+  ./paths
 
 from presto/common import ContentBody
 
-export rest_utils
+export utils
 
 logScope: topics = "rest_node"
 

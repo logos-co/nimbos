@@ -11,15 +11,15 @@ import
   std/[macros, strformat, strutils],
   results,
   stew/[base10, byteutils],
+  stint,
   faststreams/textio,
   json_serialization,
   json_serialization/pkg/results,
-  ./rest_types,
-  ../datatypes/base
+  ./types
 
 export
   results, json_serialization, results,
-  rest_types, base
+  types, stint
 
 ## In this format, we must always set `allowUnknownFields = true` in the
 ## decode calls in order to conform the following spec:
@@ -46,7 +46,6 @@ createJsonFlavor RestJson,
 
 #!fmt: off
 RestJson.useDefaultSerializationFor(
-  AttestationData,
   DataEnclosedObject,
   DataMetaEnclosedObject,
   DataOptimisticAndFinalizedObject,

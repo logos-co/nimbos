@@ -28,14 +28,14 @@ import
   eth/net/nat, eth/p2p/discoveryv5/[node, random2],
   ssz_serialization,
   ".."/[version, conf],
-  ../spec/datatypes/base,
-  "."/[eth2_discovery, eth2_protocol_dsl,
+  ../core/utils,
+  "."/[discovery, protocol_dsl,
        libp2p_json_serialization, peer_pool, peer_scores]
 
 export
   tables, chronos, ratelimit, version, multiaddress, peerinfo, p2pProtocol,
   connection, libp2p_json_serialization, ssz_serialization, results,
-  eth2_discovery, peer_pool, peer_scores
+  discovery, peer_pool, peer_scores
 
 logScope:
   topics = "networking"
@@ -1829,7 +1829,7 @@ proc p2pProtocolBackendImpl*(p: P2PProtocol): Backend =
   result.SerializationFormat = Format
   result.RequestResultsWrapper = ident "NetRes"
 
-  result.implementMsg = proc (msg: eth2_protocol_dsl.Message) =
+  result.implementMsg = proc (msg: protocol_dsl.Message) =
     if msg.kind == msgResponse:
       return
 
@@ -1940,7 +1940,7 @@ proc p2pProtocolBackendImpl*(p: P2PProtocol): Backend =
     # network - the counter is global across all modules / protocols of the
     # application
     let
-      id = CacheCounter"eth2_network_protocol_id"
+      id = CacheCounter"network_protocol_id"
       tmp = id.value
     id.inc(1)
 
@@ -2082,11 +2082,11 @@ proc createLBNode*(
 ): Result[LBP2PNode, string] =
   let
     # Would be configurable
-    # Keep discovery's UDP port stable (see `eth2_discovery.nim`),
+    # Keep discovery's UDP port stable (see `discovery.nim`),
     # while moving the QUIC listener to a separate UDP port.
     #
     # Naming note:
-    # - `udpPort` (imported from `eth2_discovery.nim`) is the discovery UDP port
+    # - `udpPort` (imported from `discovery.nim`) is the discovery UDP port
     # - `quicPort` is the QUIC listener UDP port
     quicPort = config.quicPort
 
@@ -2217,7 +2217,7 @@ proc subscribe*(
 
 proc newValidationResultFuture(v: ValidationResult): Future[ValidationResult]
     {.async: (raises: [CancelledError], raw: true).} =
-  let res = newFuture[ValidationResult]("eth2_network.execValidator")
+  let res = newFuture[ValidationResult]("network.execValidator")
   res.complete(v)
   res
 

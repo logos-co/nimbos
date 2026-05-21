@@ -12,9 +12,9 @@ import std/strutils
 import chronos, chronos/apps, chronos/unittest2/asynctests
 import presto/[route, server]
 import ./helpers
-import ../logos_chain/rpc/rest_paths
-import ../logos_chain/rpc/rest_node_api
-from ../logos_chain/nimbus_binary_common import validateBeaconApiQueries
+import ../logos_chain/api/paths
+import ../logos_chain/api/handlers
+from ../logos_chain/binary_common import validateBeaconApiQueries
 
 suite "Logos REST node API stub endpoints":
   var

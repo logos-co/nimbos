@@ -5,29 +5,43 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option. This file may not be copied, modified, or distributed except according to those terms.
 
-{.push raises: [].}
+{.push raises: [], gcsafe.}
 
 import
-  system/ansi_c,
-  std/[os, random, strutils, times],
-  chronos, chronicles,
-  metrics, metrics/chronos_httpserver,
-  eth/enr/enr,
-  eth/p2p/discoveryv5/random2,
-  ./rpc/rest_api,
-  ./spec/datatypes/base,
-  ./sync/sync_protocol,
-  ./deployment/deployment_settings,
-  ./[
-    logos_chain_node, buildinfo,
-    nimbus_binary_common, process_state]
+  std/[osproc, random],
 
-from std/sequtils import filterIt, mapIt, toSeq
-from libp2p/protocols/pubsub/errors import ValidationResult
+  # Nimble packages
+  chronos, chronicles, presto, presto/server, bearssl/rand,
+  metrics, metrics/chronos_httpserver,
+  eth/p2p/discoveryv5/random2,
+
+  # Local modules
+  "."/conf,
+  ./deployment/deployment_settings,
+  ./networking/network,
+  ./core/utils,
+  ./process_state
+
 from libp2p/protocols/pubsub/gossipsub import
-  TopicParams, validateParameters, init
+  TopicParams, init
+
+export
+  osproc, chronos, presto, server, conf,
+  deployment_settings, network, utils
 
 logScope: topics = "logos_nd"
+
+type
+  LBNode* = ref object
+    network*: LBP2PNode
+    netKeys*: NetKeyPair
+    config*: LBNodeConf
+    deploymentSettings*: DeploymentSettings
+    metricsServer*: Opt[MetricsHttpServerRef]
+    shutdownEvent*: AsyncEvent
+
+template rng*(node: LBNode): ref HmacDrbgContext =
+  node.network.rng
 
 proc initFullNode(
     node: LBNode,
@@ -35,7 +49,6 @@ proc initFullNode(
 ) {.async: (raises: [CancelledError]).} =
   template config(): auto = node.config
 
-  proc isWithinWeakSubjectivityPeriod(): bool = true
   proc eventWaiter(): Future[void] {.async: (raises: [CancelledError]).} =
     await node.shutdownEvent.wait()
     ProcessState.scheduleStop("shutdownEvent")
@@ -43,9 +56,6 @@ proc initFullNode(
   asyncSpawn eventWaiter()
 
   node.network.registerProtocol(PeerSync, PeerSync.NetworkState.init())
-
-  node.network.registerProtocol(
-    BeaconSync, default(BeaconSync.NetworkState))
 
 proc init*(
     T: type LBNode,
@@ -61,12 +71,6 @@ proc init*(
   # Doesn't use std/random directly, but dependencies might
   randomize(rng[].rand(high(int)))
 
-  let restPort = 5050.Port
-  const restAllowedOrigin = none(string)
-  let restServer = RestServerRef.init(
-    defaultAdminListenAddress, restPort, restAllowedOrigin,
-    validateBeaconApiQueries, nimbusAgentStr, config)
-
   let
     network = createLBNode(
       rng,
@@ -80,14 +84,10 @@ proc init*(
     network: network,
     config: config,
     deploymentSettings: deploymentSettings,
-    restServer: restServer,
     shutdownEvent: newAsyncEvent())
 
-func subnetLog(v: BitArray): string =
-  $toSeq(v.oneIndices())
-
 when defined(windows):
-  from winservice import establishWindowsService, reportServiceStatusSuccess
+  from winservice import reportServiceStatusSuccess
 
 proc onSlotStart(node: LBNode): Future[bool] {.async.} =
   when defined(windows):
@@ -131,15 +131,10 @@ proc runOnSecondLoop(node: LBNode) {.async.} =
 func connectedPeersCount(node: LBNode): int =
   len(node.network.peerPool)
 
-proc installRestHandlers(restServer: RestServerRef, node: LBNode) =
-  restServer.router.installNodeApiHandlers(node)
-
 proc installMessageValidators(node: LBNode) =
-  node.network.addValidator(
-    "/some/topic", proc (
-      signedBlock: AttestationData,
-      src: PeerId,
-    ): ValidationResult = ValidationResult.Accept)
+  # Placeholder — real validators will be installed once gossip topics
+  # and message types are defined for the Logos chain.
+  discard
 
 proc stop(node: LBNode) =
   try:
@@ -160,13 +155,11 @@ proc initializeNetworking(node: LBNode) {.async.} =
 type StopFuture = Future[void].Raising([CancelledError])
 
 proc run*(node: LBNode, stopper: StopFuture) {.raises: [CatchableError].} =
+  ## Caller is responsible for installing REST handlers and starting the
+  ## REST server before calling `run`.
   waitFor node.initializeNetworking()
 
   ProcessState.notifyRunning()
-
-  if not isNil(node.restServer):
-    node.restServer.installRestHandlers(node)
-    node.restServer.start()
 
   node.network.subscribe("/some/topic", TopicParams.init())
 
@@ -184,89 +177,5 @@ proc run*(node: LBNode, stopper: StopFuture) {.raises: [CatchableError].} =
 
   # time to say goodbye
   node.stop()
-
-proc doRunLBNode(
-    config: var LBNodeConf, rng: ref HmacDrbgContext
-) {.raises: [CatchableError].} =
-  let deploymentSettings = loadDeploymentSettings(config.deploymentSettingsFile).valueOr:
-    fatal "Invalid deployment-settings file", err = error
-    quit QuitFailure
-
-  info "Launching Logos node",
-    version = fullVersionStr,
-    cmdParams = commandLineParams(),
-    config
-
-  ProcessState.setupStopHandlers()
-
-  # This should be in a data directory
-  createPidFile("lb_node.pid")
-
-  if ProcessState.stopIt(notice("Shutting down", reason = it)):
-    return
-
-  let
-    taskpool = setupTaskpool(config.numThreads)
-    node = waitFor(LBNode.init(rng, config, deploymentSettings)).valueOr:
-      return
-
-  # Nim GC metrics (for the main thread) will be collected in onSecond(), but
-  # we disable piggy-backing on other metrics here.
-  setSystemMetricsAutomaticUpdate(false)
-
-  node.metricsServer = waitFor(config.initMetricsServer()).valueOr:
-    return
-
-  node.run(nil)
-
-proc handleStartUpCmd(config: var LBNodeConf) {.raises: [CatchableError].} =
-  let rng = HmacDrbgContext.new()
-  doRunLBNode(config, rng)
-
-# noinline to keep it in stack traces
-proc main*() {.noinline, raises: [CatchableError].} =
-  const copyright =
-    "Copyright (c) 2026-" & compileYear & " Status Research & Development GmbH"
-
-  var config = LBNodeConf.loadWithBanners(clientId, copyright, [""]).valueOr:
-    writePanicLine error # Logging not yet set up
-    quit QuitFailure
-
-  setupLogging(config.logLevel, config.logStdout, config.logFile)
-  setupFileLimits()
-
-  ## This Ctrl+C handler exits the program in non-graceful way.
-  ## It's responsible for handling Ctrl+C in sub-commands such
-  ## as `wallets *` and `deposits *`. In a regular Logos node
-  ## run, it will be overwritten later with a different handler
-  ## performing a graceful exit.
-  proc exitImmediatelyOnCtrlC() {.noconv.} =
-    # No allocations in signal handler
-    cstdout.rawWrite("Shutting down after having received SIGINT / ctrl-c")
-    quit QuitSuccess
-  setControlCHook(exitImmediatelyOnCtrlC)
-
-  # equivalent SIGTERM handler
-  when declared(ansi_c.SIGTERM):
-    proc exitImmediatelyOnSIGTERM(signal: cint) {.noconv.} =
-      # No allocations in signal handler
-      cstdout.rawWrite("Shutting down after having received SIGTERM")
-      quit QuitSuccess
-    c_signal(ansi_c.SIGTERM, exitImmediatelyOnSIGTERM)
-
-  when defined(windows):
-    if config.runAsService:
-      proc exitService() =
-        ProcessState.scheduleStop("exitService")
-      establishWindowsService(clientId, copyright, [""],
-                              "nimbus_beacon_node", LBNodeConf,
-                              handleStartUpCmd, exitService)
-    else:
-      handleStartUpCmd(config)
-  else:
-    handleStartUpCmd(config)
-
-when isMainModule:
-  main()
 
 {.pop.}
