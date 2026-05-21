@@ -9,9 +9,7 @@
 
 {.push raises: [], gcsafe.}
 
-import ./primitives
-import ./proofs
-import ./opcodes
+import ./[primitives, proofs, opcodes]
 export primitives, proofs, opcodes
 
 # ---------------------------------------------------------------------------

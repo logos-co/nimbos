@@ -11,9 +11,7 @@
 {.push raises: [], gcsafe.}
 
 import ../crypto/[hashing, encoding]
-import ../mantle/tx_types
-import ../mantle/tx_encoding
-import ../mantle/tx_hashing
+import ../mantle/[tx_types, tx_encoding, tx_hashing]
 import libp2p/crypto/ed25519/ed25519
 export hashing, tx_types
 
