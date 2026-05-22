@@ -107,7 +107,7 @@ suite "core/block/block_types":
     )
     check createBlockRoot([tx]) == mantleTxHash(tx.tx)
 
-  test "createBlockRoot odd leaf count duplicates last leaf":
+  test "createBlockRoot odd leaf count uses zero padding not duplicate last":
     let txA = sampleTx(
       createTransferOp(TransferPayload(
         inputs: Inputs(noteIds: @[]),
@@ -134,7 +134,7 @@ suite "core/block/block_types":
       15'u64,
       16'u64,
     )
-    check createBlockRoot([txA, txB, txC]) == createBlockRoot([txA, txB, txC, txC])
+    check createBlockRoot([txA, txB, txC]) != createBlockRoot([txA, txB, txC, txC])
 
   test "blockId is deterministic for same header":
     let tx = sampleTx(
