@@ -17,6 +17,7 @@
 
 import
   std/[options, strutils],
+  chronos,
   confutils/defs,
   results,
   stew/io2,
@@ -97,7 +98,7 @@ type
     genesisState*: SignedMantleTx
 
   TimeDeploymentSettings* = object
-    slotDuration*: string
+    slotDuration*: Duration
     chainStartTime*: string
 
   MempoolDeploymentSettings* = object
@@ -220,7 +221,7 @@ func deploymentSettingsFromYaml(root: YamlNode): Result[DeploymentSettings, stri
       genesisState: parsedGenesis
     ),
     time: TimeDeploymentSettings(
-      slotDuration: ? reqScalar(root, ["time", "slot_duration"]),
+      slotDuration: ? reqSlotDuration(root, ["time", "slot_duration"]),
       chainStartTime: ? reqScalar(root, ["time", "chain_start_time"])
     ),
     mempool: MempoolDeploymentSettings(
@@ -279,7 +280,7 @@ func validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
   need(ds.network.kademliaProtocolName.len > 0, "empty network.kademlia_protocol_name")
   need(ds.network.identifyProtocolName.len > 0, "empty network.identify_protocol_name")
   need(ds.network.chainSyncProtocolName.len > 0, "empty network.chain_sync_protocol_name")
-  need(ds.time.slotDuration.len > 0, "empty time.slot_duration")
+  need(ds.time.slotDuration > ZeroDuration, "time.slot_duration must be > 0")
   need(ds.time.chainStartTime.len > 0, "empty time.chain_start_time")
   need(ds.mempool.pubsubTopic.len > 0, "empty mempool.pubsub_topic")
   need(ds.cryptarchia.gossipsubProtocol.len > 0, "empty cryptarchia.gossipsub_protocol")

@@ -16,6 +16,7 @@ import ../crypto/decoding
 import libp2p/crypto/ed25519/ed25519
 export
   decodeByte, decodeEd25519PublicKey, decodeEd25519Signature, decodeFieldElement,
+  decodeFieldElementAt,
   decodeGroth16, decodeHash32, decodeU16LeLenPrefixed, decodeU32LeLenPrefixed,
   decodeZkPublicKey, decodeZkSignature
 
@@ -103,14 +104,14 @@ func decodeChannelKeyIndex*(data: openArray[byte]): ChannelKeyIndex {.raises: [D
 
 proc readNote(data: openArray[byte], pos: var int): Note {.raises: [DecodingError].} =
   let value = Value(readLe[uint64](data, pos))
-  let zkPublicKey = readFixed[32](data, pos)
+  let zkPublicKey = decodeFieldElementAt(data, pos)
   Note(value: value, zkPublicKey: zkPublicKey)
 
 proc readInputs(data: openArray[byte], pos: var int): Inputs {.raises: [DecodingError].} =
   let count = readByte(data, pos)
   var noteIds = newSeqOfCap[NoteId](count)
   for _ in 0 ..< int(count):
-    noteIds.add readFixed[32](data, pos)
+    noteIds.add decodeFieldElementAt(data, pos)
   Inputs(noteIds: noteIds)
 
 proc readOutputs(data: openArray[byte], pos: var int): Outputs {.raises: [DecodingError].} =
@@ -160,8 +161,6 @@ proc readServiceType(data: openArray[byte], pos: var int): ServiceType {.raises:
   case b
   of byte(ord(bn)):
     bn
-  of byte(ord(da)):
-    da
   else:
     raise newException(DecodingError, "invalid ServiceType byte: " & $b)
 
@@ -196,8 +195,8 @@ func decodeSdpDeclare*(data: openArray[byte]): SdpDeclarePayload {.raises: [Deco
   var providerKey: Ed25519PublicKey
   if not providerKey.init(readFixed[EdPublicKeySize](data, pos)):
     raise newException(DecodingError, "invalid ProviderId bytes")
-  let zkId = readFixed[32](data, pos)
-  let lockedNoteId = readFixed[32](data, pos)
+  let zkId = decodeFieldElementAt(data, pos)
+  let lockedNoteId = decodeFieldElementAt(data, pos)
   finishDecode(data, pos)
   SdpDeclarePayload(
     serviceType: serviceType,
@@ -211,7 +210,7 @@ func decodeSdpWithdraw*(data: openArray[byte]): SdpWithdrawPayload {.raises: [De
   var pos = 0
   let declarationId = readFixed[32](data, pos)
   let nonce = readLe[uint64](data, pos)
-  let lockedNoteId = readFixed[32](data, pos)
+  let lockedNoteId = decodeFieldElementAt(data, pos)
   finishDecode(data, pos)
   SdpWithdrawPayload(
     declarationId: declarationId,
@@ -233,9 +232,9 @@ func decodeSdpActive*(data: openArray[byte]): SdpActivePayload {.raises: [Decodi
 
 func decodeLeaderClaim*(data: openArray[byte]): LeaderClaimPayload {.raises: [DecodingError].} =
   var pos = 0
-  let rewardsRoot = readFixed[32](data, pos)
-  let voucherNullifier = readFixed[32](data, pos)
-  let publicKey = readFixed[32](data, pos)
+  let rewardsRoot = decodeFieldElementAt(data, pos)
+  let voucherNullifier = decodeFieldElementAt(data, pos)
+  let publicKey = decodeFieldElementAt(data, pos)
   finishDecode(data, pos)
   LeaderClaimPayload(
     rewardsRoot: rewardsRoot,
@@ -261,7 +260,7 @@ func decodeChannelDeposit*(data: openArray[byte]): ChannelDepositPayload {.raise
   let count = readByte(data, pos)
   var inputs = newSeqOfCap[NoteId](count)
   for _ in 0 ..< int(count):
-    inputs.add readFixed[32](data, pos)
+    inputs.add decodeFieldElementAt(data, pos)
   let metadata = readU32LeLenPrefixed(data, pos)
   finishDecode(data, pos)
   ChannelDepositPayload(channel: channel, inputs: inputs, metadata: metadata)
@@ -393,7 +392,7 @@ proc readOpPayload(data: openArray[byte], pos: var int, opcode: Opcode): OpPaylo
     let count = readByte(data, pos)
     var inputs = newSeqOfCap[NoteId](count)
     for _ in 0 ..< int(count):
-      inputs.add readFixed[32](data, pos)
+      inputs.add decodeFieldElementAt(data, pos)
     let metadata = readU32LeLenPrefixed(data, pos)
     OpPayload(
       kind: ChannelDeposit,
@@ -420,8 +419,8 @@ proc readOpPayload(data: openArray[byte], pos: var int, opcode: Opcode): OpPaylo
     var providerKey: Ed25519PublicKey
     if not providerKey.init(readFixed[EdPublicKeySize](data, pos)):
       raise newException(DecodingError, "invalid ProviderId bytes")
-    let zkId = readFixed[32](data, pos)
-    let lockedNoteId = readFixed[32](data, pos)
+    let zkId = decodeFieldElementAt(data, pos)
+    let lockedNoteId = decodeFieldElementAt(data, pos)
     OpPayload(
       kind: SdpDeclare,
       sdpDeclare: SdpDeclarePayload(
@@ -435,7 +434,7 @@ proc readOpPayload(data: openArray[byte], pos: var int, opcode: Opcode): OpPaylo
   of OpSdpWithdraw:
     let declarationId = readFixed[32](data, pos)
     let nonce = readLe[uint64](data, pos)
-    let lockedNoteId = readFixed[32](data, pos)
+    let lockedNoteId = decodeFieldElementAt(data, pos)
     OpPayload(
       kind: SdpWithdraw,
       sdpWithdraw: SdpWithdrawPayload(
@@ -453,9 +452,9 @@ proc readOpPayload(data: openArray[byte], pos: var int, opcode: Opcode): OpPaylo
       ),
     )
   of OpLeaderClaim:
-    let rewardsRoot = readFixed[32](data, pos)
-    let voucherNullifier = readFixed[32](data, pos)
-    let publicKey = readFixed[32](data, pos)
+    let rewardsRoot = decodeFieldElementAt(data, pos)
+    let voucherNullifier = decodeFieldElementAt(data, pos)
+    let publicKey = decodeFieldElementAt(data, pos)
     OpPayload(
       kind: LeaderClaim,
       leaderClaim: LeaderClaimPayload(

@@ -11,7 +11,8 @@
 
 import ../crypto/hashing
 import libp2p/crypto/ed25519/ed25519
-export hashing
+import poseidon2/[types, io]
+export hashing, types, io
 
 const
   MaxBlockTxs* = 1024
@@ -47,14 +48,13 @@ type
 
   ServiceType* = enum
     bn = 0
-    da = 1
   Locator* = seq[byte]
 
   Opcode* = uint8
   OpCount* = uint8
   HexBytes* = string
 
-  FieldElement* = array[32, byte]
+  FieldElement* = F
   NoteId* = FieldElement
   ZkPublicKey* = FieldElement
   Note* = object

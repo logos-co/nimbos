@@ -11,8 +11,12 @@
 
 {.push raises: [], gcsafe.}
 
+import std/options
 import libp2p/crypto/ed25519/ed25519
 import stew/endians2
+import poseidon2/[types, io]
+import ./hashing
+import ../mantle/primitives
 
 type
   DecodingError* = object of CatchableError
@@ -76,36 +80,44 @@ proc decodeGroth16*(data: openArray[byte]): array[128, byte] {.raises: [Decoding
   result = readFixed[128](data, pos)
   finishDecode(data, pos)
 
-proc decodeFieldElement*(data: openArray[byte]): array[32, byte] {.raises: [DecodingError].} =
+proc decodeFieldElementAt*(data: openArray[byte], pos: var int): F {.raises: [DecodingError].} =
+  let parsed = F.fromBytes(readFixed[32](data, pos))
+  if parsed.isNone:
+    raise newException(DecodingError, "field element exceeds BN254 scalar modulus")
+  parsed.get()
+
+func decodeFieldElement*(data: openArray[byte]): F {.raises: [DecodingError].} =
+  var pos = 0
+  result = decodeFieldElementAt(data, pos)
+  finishDecode(data, pos)
+
+func decodeHash32*(data: openArray[byte]): Hash32 {.raises: [DecodingError].} =
   var pos = 0
   result = readFixed[32](data, pos)
   finishDecode(data, pos)
 
-func decodeHash32*(data: openArray[byte]): array[32, byte] {.raises: [DecodingError].} =
-  decodeFieldElement(data)
-
-proc decodeEd25519PublicKey*(data: openArray[byte]): EdPublicKey {.raises: [DecodingError].} =
+proc decodeEd25519PublicKey*(data: openArray[byte]): Ed25519PublicKey {.raises: [DecodingError].} =
   var pos = 0
   let raw = readFixed[EdPublicKeySize](data, pos)
   finishDecode(data, pos)
-  var key: EdPublicKey
+  var key: Ed25519PublicKey
   if not key.init(raw):
     raise newException(DecodingError, "invalid Ed25519 public key bytes")
   key
 
-proc decodeEd25519Signature*(data: openArray[byte]): EdSignature {.raises: [DecodingError].} =
+proc decodeEd25519Signature*(data: openArray[byte]): Ed25519Signature {.raises: [DecodingError].} =
   var pos = 0
   let raw = readFixed[EdSignatureSize](data, pos)
   finishDecode(data, pos)
-  var sig: EdSignature
+  var sig: Ed25519Signature
   if not sig.init(raw):
     raise newException(DecodingError, "invalid Ed25519 signature bytes")
   sig
 
-func decodeZkSignature*(data: openArray[byte]): array[128, byte] {.raises: [DecodingError].} =
+func decodeZkSignature*(data: openArray[byte]): ZkSignature {.raises: [DecodingError].} =
   decodeGroth16(data)
 
-func decodeZkPublicKey*(data: openArray[byte]): array[32, byte] {.raises: [DecodingError].} =
+func decodeZkPublicKey*(data: openArray[byte]): ZkPublicKey {.raises: [DecodingError].} =
   decodeFieldElement(data)
 
 proc decodeByte*(data: openArray[byte]): byte {.raises: [DecodingError].} =

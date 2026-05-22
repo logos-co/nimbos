@@ -171,7 +171,7 @@ func encodeInscription*(value: Inscription): seq[byte] =
   encodeU32LeLenPrefixed(value)
 
 func encodeServiceType*(value: ServiceType): byte =
-  ## ServiceType = Byte ; 0 = BN, 1 = DA
+  ## ServiceType = Byte ; 0 = BN
   encodeByte(byte(ord(value)))
 
 func encodeLocatorCount*(value: byte): byte =

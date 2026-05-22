@@ -13,6 +13,7 @@
 
 import libp2p/crypto/ed25519/ed25519
 import stew/endians2
+import poseidon2/[types, io]
 
 
 func encodeLe*[T: SomeUnsignedInt](value: T): array[sizeof(T), byte] =
@@ -41,9 +42,9 @@ func encodeGroth16*(proof: array[128, byte]): array[128, byte] =
   ## Groth16 = 128BYTE (pi_a:32 || pi_b:64 || pi_c:32) — compressed on-wire layout.
   proof
 
-func encodeFieldElement*(value: array[32, byte]): array[32, byte] =
-  ## FieldElement = 32BYTE (BN254 field element, little-endian).
-  value
+func encodeFieldElement*(value: F): array[32, byte] =
+  ## FieldElement = 32BYTE (BN254 scalar, little-endian).
+  value.toBytes()
 
 func encodeHash32*(value: array[32, byte]): array[32, byte] =
   ## Hash32 = 32BYTE.
@@ -67,7 +68,7 @@ func encodeZkSignature*(value: array[128, byte]): array[128, byte] =
   ## ZkSignature = Groth16 (128-byte wire).
   encodeGroth16(value)
 
-func encodeZkPublicKey*(value: array[32, byte]): array[32, byte] =
+func encodeZkPublicKey*(value: F): array[32, byte] =
   ## ZkPublicKey = FieldElement (32-byte).
   encodeFieldElement(value)
 

@@ -9,11 +9,13 @@
 
 import
   std/[options, strutils],
+  chronos,
   results,
   stew/byteutils,
   yaml/[dom, loading],
   libp2p/crypto/ed25519/ed25519,
-  "../core/block/genesis"
+  "../core/block/genesis",
+  poseidon2/types
 
 
 func yamlGetPathNode*(root: YamlNode, keys: openArray[string]): Option[YamlNode] =
@@ -81,6 +83,14 @@ func reqInt*(root: YamlNode, path: openArray[string]): Result[int, string] =
 func reqFloat*(root: YamlNode, path: openArray[string]): Result[float, string] =
   reqParsed(root, path, parseFloat, "float")
 
+proc parseSlotDurationSeconds*(s: string): Duration {.raises: [ValueError].} =
+  ## ``time.slot_duration`` YAML scalar: seconds as a float (e.g. ``'1.0'``).
+  let secs = parseFloat(s)
+  nanoseconds(int64(secs * float(nanoseconds(seconds(1)))))
+
+func reqSlotDuration*(root: YamlNode, path: openArray[string]): Result[Duration, string] =
+  reqParsed(root, path, parseSlotDurationSeconds, "slot duration in seconds")
+
 
 func parseByteSeqNode(node: YamlNode, path: string): Result[seq[byte], string] =
   if node.kind != ySequence:
@@ -109,6 +119,13 @@ func parseHex32Node(node: YamlNode, path: string): Result[array[32, byte], strin
   except ValueError:
     return err("deployment-settings: invalid 32-byte hex at " & path)
   ok(parsedBytes)
+
+func parseFieldElementNode(node: YamlNode, path: string): Result[FieldElement, string] =
+  let bytes = ? parseHex32Node(node, path)
+  let parsed = F.fromBytes(bytes)
+  if parsed.isNone:
+    return err("deployment-settings: field element exceeds BN254 scalar modulus at " & path)
+  ok(parsed.get())
 
 func parseUIntNode(node: YamlNode, path: string): Result[uint64, string] =
   if node.kind != yScalar:
@@ -178,7 +195,7 @@ func parseGenesisOpPayload(opNode: YamlNode, idx: int, opcode: Opcode): Result[O
       if inputsNode.get.kind != ySequence:
         return err("deployment-settings: transfer inputs must be a sequence at " & path & ".inputs")
       for i in 0 ..< inputsNode.get.len:
-        noteIds.add(? parseHex32Node(inputsNode.get[i], path & ".inputs[" & $i & "]"))
+        noteIds.add(? parseFieldElementNode(inputsNode.get[i], path & ".inputs[" & $i & "]"))
     var notes: seq[Note] = @[]
     let outputsNode = yamlGetPathNode(payload, ["outputs"])
     if outputsNode.isNone or outputsNode.get.kind != ySequence:
@@ -194,7 +211,7 @@ func parseGenesisOpPayload(opNode: YamlNode, idx: int, opcode: Opcode): Result[O
       let value = ? parseUIntNode(valueNode.get, path & ".outputs[" & $i & "].value")
       notes.add(Note(
         value: Value(value),
-        zkPublicKey: ? parseHex32Node(pkNode.get, path & ".outputs[" & $i & "].pk"),
+        zkPublicKey: ? parseFieldElementNode(pkNode.get, path & ".outputs[" & $i & "].pk"),
       ))
     ok(createTransferOp(TransferPayload(
       inputs: Inputs(noteIds: noteIds),
@@ -226,7 +243,6 @@ func parseGenesisOpPayload(opNode: YamlNode, idx: int, opcode: Opcode): Result[O
     let serviceType =
       case toLowerAscii(serviceTypeNode.get.content)
       of "bn": bn
-      of "da": da
       else:
         return err("deployment-settings: unsupported service_type at " & path & ".service_type")
     if locatorsNode.get.kind != ySequence:
@@ -244,8 +260,8 @@ func parseGenesisOpPayload(opNode: YamlNode, idx: int, opcode: Opcode): Result[O
       serviceType: serviceType,
       locators: locators,
       providerId: ? parseEd25519PublicKeyNode(providerIdNode.get, path & ".provider_id"),
-      zkId: ? parseHex32Node(zkIdNode.get, path & ".zk_id"),
-      lockedNoteId: ? parseHex32Node(lockedNode.get, path & ".locked_note_id"),
+      zkId: ? parseFieldElementNode(zkIdNode.get, path & ".zk_id"),
+      lockedNoteId: ? parseFieldElementNode(lockedNode.get, path & ".locked_note_id"),
     )))
   else:
     ## For currently-unused opcodes in deployment YAML, keep structural parsing strict
