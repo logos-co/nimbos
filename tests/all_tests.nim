@@ -16,6 +16,7 @@ import # Unit test
   ./test_logos_p2p,
   ./test_api_handlers,
   ./test_deployment_settings,
+  ./test_user_config,
   ./test_poseidon_hasher
 
 summarizeLongTests("AllTests")

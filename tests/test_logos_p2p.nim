@@ -12,6 +12,7 @@ import
   std/[net, strutils],
   chronos,
   chronos/unittest2/asynctests,
+  confutils,
   ./testutil
 
 import
@@ -37,6 +38,7 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
       conf: LBNodeConf
       conf2: LBNodeConf
 
+    conf.userConfigFile = InputFile(emptyUserConfigFixture)
     conf.listenAddress = some(listenIp)
     conf.nat = natCfg
     conf.quicPort = 5001.Port
@@ -45,6 +47,7 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
     conf.hardMaxPeers = some(4)
     conf.agentString = "p2p-test-node1"
 
+    conf2.userConfigFile = InputFile(emptyUserConfigFixture)
     conf2.listenAddress = some(listenIp)
     conf2.nat = natCfg
     # `conf2` is only used for non-listen settings (agent/maxPeers) in this test;
@@ -120,6 +123,7 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
       rng = HmacDrbgContext.new()
       conf: LBNodeConf
 
+    conf.userConfigFile = InputFile(emptyUserConfigFixture)
     conf.listenAddress = some(listenIp)
     conf.nat = natCfg
     conf.quicPort = 5001.Port
@@ -166,6 +170,7 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
       rng = HmacDrbgContext.new()
       conf: LBNodeConf
 
+    conf.userConfigFile = InputFile(emptyUserConfigFixture)
     conf.listenAddress = some(listenIp)
     conf.nat = natCfg
     conf.quicPort = 5001.Port
@@ -206,7 +211,7 @@ suite "P2P stack — bootstrap and discovery":
       "/quic-v1/p2p/" & $listenerPeerId
 
     var confDial = confD
-    confDial.bootstrapNodes = @[bootstrapAddr]
+    confDial.userConfigFile = writeTestUserConfig(@[bootstrapAddr])
 
     let dialerRes = createLBNode(rngD, confDial, rngD[].getRandomNetKeys())
     check dialerRes.isOk
@@ -261,7 +266,7 @@ suite "P2P stack — bootstrap and discovery":
       "/quic-v1/p2p/" & $listenerPeerId
 
     var confDial = confD
-    confDial.bootstrapNodes = @[bootstrapAddr]
+    confDial.userConfigFile = writeTestUserConfig(@[bootstrapAddr])
 
     let dialerRes = createLBNode(rngD, confDial, rngD[].getRandomNetKeys())
     check dialerRes.isOk

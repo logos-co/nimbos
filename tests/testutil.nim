@@ -9,8 +9,9 @@
 
 import testutils/markdown_reports, unittest2
 import
-  std/[net, times],
-  chronos
+  std/[net, os, strutils, times],
+  chronos,
+  confutils
 import
   ../logos_chain/conf,
   ../logos_chain/networking/network,
@@ -67,7 +68,22 @@ proc summarizeLongTests*(name: string) =
   except CatchableError as exc:
     raiseAssert exc.msg
 
+const testsDir = currentSourcePath.rsplit({DirSep, AltSep}, 1)[0]
+
+const emptyUserConfigFixture* =
+  testsDir / "fixtures/user_config-empty-peers.yaml"
+
 const TestLoopbackIp* = parseIpAddress("127.0.0.1")
+
+proc writeTestUserConfig*(initialPeers: openArray[string]): InputFile {.raises: [IOError].} =
+  var yaml = "network:\n  backend:\n    initial_peers:\n"
+  for peer in initialPeers:
+    yaml &= "    - " & peer & "\n"
+  let path = getTempDir() / ("nimbos-user-config-" & $getTime().toUnix() & ".yaml")
+  writeFile(path, yaml)
+  InputFile(path)
+
+export emptyUserConfigFixture, writeTestUserConfig
 
 proc waitLibp2pConnected*(sw: Switch, remote: PeerId): Future[bool] {.async.} =
   for i in 0 ..< 150:
@@ -87,6 +103,7 @@ proc makeBootstrapConfs*(listenerPort, dialerPort: Port): tuple[
   (
     confL: LBNodeConf(
       cmd: BNStartUpCmd.lbNode,
+      userConfigFile: InputFile(emptyUserConfigFixture),
       listenAddress: some(TestLoopbackIp),
       nat: natCfg,
       quicPort: listenerPort,
@@ -97,6 +114,7 @@ proc makeBootstrapConfs*(listenerPort, dialerPort: Port): tuple[
     ),
     confD: LBNodeConf(
       cmd: BNStartUpCmd.lbNode,
+      userConfigFile: InputFile(emptyUserConfigFixture),
       listenAddress: some(TestLoopbackIp),
       nat: natCfg,
       quicPort: dialerPort,
