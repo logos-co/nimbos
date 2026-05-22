@@ -14,20 +14,13 @@
 import libp2p/crypto/ed25519/ed25519
 import stew/endians2
 
-# -----------------------------------------------------------------------------
-# Scalars
-# -----------------------------------------------------------------------------
 
 func encodeLe*[T: SomeUnsignedInt](value: T): array[sizeof(T), byte] =
   value.toBytesLE()
 
 func encodeByte*(value: byte): byte =
-  ## Byte = OCTET (identity encoding).
   value
 
-# -----------------------------------------------------------------------------
-# Length-prefixed blobs (wire: length LE, then bytes)
-# -----------------------------------------------------------------------------
 
 func encodeU32LeLenPrefixed*(data: openArray[byte]): seq[byte] =
   ## ``UINT32`` length (LE) then payload (Inscription, Metadata, …).
@@ -43,9 +36,6 @@ func encodeU16LeLenPrefixed*(data: openArray[byte]): seq[byte] =
   result = @(encodeLe(uint16(data.len)))
   result.add(data)
 
-# -----------------------------------------------------------------------------
-# Fixed 32- / 128-byte wire (BN254, hashes, Groth16 transport bytes)
-# -----------------------------------------------------------------------------
 
 func encodeGroth16*(proof: array[128, byte]): array[128, byte] =
   ## Groth16 = 128BYTE (pi_a:32 || pi_b:64 || pi_c:32) — compressed on-wire layout.

@@ -19,9 +19,6 @@ export
   encodeLe, encodeZkPublicKey,
   encodeZkSignature
 
-# -----------------------------------------------------------------------------
-# Alias encoders
-# -----------------------------------------------------------------------------
 
 func encodeDeclarationId*(value: DeclarationId): array[32, byte] =
   ## DeclarationId = Hash32
@@ -71,9 +68,6 @@ func encodeProofOfClaimProof*(value: ProofOfClaimProof): array[128, byte] =
   ## ProofOfClaimProof = Groth16
   encodeGroth16(value)
 
-# -----------------------------------------------------------------------------
-# Numeric value aliases
-# -----------------------------------------------------------------------------
 
 func encodeOpcode*(value: Opcode): byte =
   ## Opcode = Byte
@@ -123,9 +117,6 @@ func encodeChannelKeyIndex*(value: ChannelKeyIndex): array[2, byte] =
   ## ChannelKeyIndex = UINT16
   encodeLe(uint16(value))
 
-# -----------------------------------------------------------------------------
-# Transfer payload family
-# -----------------------------------------------------------------------------
 
 func encodeNote*(value: Note): array[40, byte] =
   ## Note = Value || ZkPublicKey
@@ -174,9 +165,6 @@ func encodeTransfer*(value: TransferPayload): seq[byte] =
   result = encodeInputs(value.inputs)
   result.add(encodeOutputs(value.outputs))
 
-# -----------------------------------------------------------------------------
-# Operation payload family
-# -----------------------------------------------------------------------------
 
 func encodeInscription*(value: Inscription): seq[byte] =
   ## Inscription = UINT32 * BYTE
@@ -251,9 +239,6 @@ func encodeChannelInscribe*(value: ChannelInscribePayload): seq[byte] =
   result.add(encodeParent(value.parent))
   result.add(encodeSigner(value.signer))
 
-# -----------------------------------------------------------------------------
-# Proof family
-# -----------------------------------------------------------------------------
 
 func encodeIndexedEd25519Signature*(
   signature: Ed25519Signature, index: ChannelKeyIndex
@@ -351,9 +336,6 @@ func encodeOpsProofs*(ops: openArray[Op], proofs: openArray[OpProof]): seq[byte]
     let encoded = encodeOpProof(proofs[i])
     result.add(encoded)
 
-# -----------------------------------------------------------------------------
-# Operation aggregate encoders
-# -----------------------------------------------------------------------------
 
 func encodeOpPayload*(payload: OpPayload): seq[byte] =
   ## OpPayload = Transfer /
@@ -398,9 +380,6 @@ func encodeOps*(ops: openArray[Op]): seq[byte] =
   for op in ops:
     result.add(encodeOp(op))
 
-# -----------------------------------------------------------------------------
-# Transaction encoders
-# -----------------------------------------------------------------------------
 
 func encodeMantleTx*(tx: MantleTx): seq[byte] =
   ## MantleTx = Ops || ExecutionGasPrice || StorageGasPrice

@@ -14,16 +14,8 @@ import ./types
 import ../crypto/hashing
 export types, hashing
 
-# ---------------------------------------------------------------------------
-# Genesis constants
-# ---------------------------------------------------------------------------
-
 const
   GenesisBedrockVersion* = 1'u8
-
-# ---------------------------------------------------------------------------
-# Genesis constructors
-# ---------------------------------------------------------------------------
 
 func createGenesisHeader(genesisMantleTx: SignedMantleTx): Header =
   ## Genesis header constructor using spec defaults:

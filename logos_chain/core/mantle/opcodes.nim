@@ -11,8 +11,6 @@
 {.push raises: [], gcsafe.}
 
 const
-  ## Mantle **Op** opcodes. Unassigned codepoints: spec tables
-  ## (gaps in channel/SDP bands, after ``OpLeaderClaim``).
   OpTransfer* = 0x00'u8
   OpChannelConfig* = 0x10'u8
   OpChannelInscribe* = 0x11'u8

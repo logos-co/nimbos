@@ -25,7 +25,6 @@ type
     opfLeaderClaim
     opfChannelConfig
 
-  ## Canonical proof families used by Mantle operations.
   ProofType* = enum
     ptEd25519Sig
     ptZkSig
@@ -46,7 +45,6 @@ type
 
   ProofOfClaimProof* = CompressedGroth16Proof
 
-  ## Public inputs for proof-of-claim verification.
   ProofOfClaimPublic* = object
     voucherRoot*: ZkHash
     voucherNullifier*: ZkHash

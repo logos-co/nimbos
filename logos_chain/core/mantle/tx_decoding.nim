@@ -19,9 +19,6 @@ export
   decodeGroth16, decodeHash32, decodeU16LeLenPrefixed, decodeU32LeLenPrefixed,
   decodeZkPublicKey, decodeZkSignature
 
-# -----------------------------------------------------------------------------
-# Alias decoders
-# -----------------------------------------------------------------------------
 
 func decodeDeclarationId*(data: openArray[byte]): DeclarationId {.raises: [DecodingError].} =
   decodeHash32(data)
@@ -59,9 +56,6 @@ func decodePublicKey*(data: openArray[byte]): PublicKey {.raises: [DecodingError
 func decodeProofOfClaimProof*(data: openArray[byte]): ProofOfClaimProof {.raises: [DecodingError].} =
   decodeGroth16(data)
 
-# -----------------------------------------------------------------------------
-# Numeric value aliases
-# -----------------------------------------------------------------------------
 
 func decodeOpcode*(data: openArray[byte]): Opcode {.raises: [DecodingError].} =
   Opcode(decodeByte(data))
@@ -106,9 +100,6 @@ func decodeChannelKeyIndex*(data: openArray[byte]): ChannelKeyIndex {.raises: [D
   result = ChannelKeyIndex(readLe[uint16](data, pos))
   finishDecode(data, pos)
 
-# -----------------------------------------------------------------------------
-# Transfer payload family
-# -----------------------------------------------------------------------------
 
 proc readNote(data: openArray[byte], pos: var int): Note {.raises: [DecodingError].} =
   let value = Value(readLe[uint64](data, pos))
@@ -160,9 +151,6 @@ func decodeTransfer*(data: openArray[byte]): TransferPayload {.raises: [Decoding
   finishDecode(data, pos)
   TransferPayload(inputs: inputs, outputs: outputs)
 
-# -----------------------------------------------------------------------------
-# Operation payload family
-# -----------------------------------------------------------------------------
 
 func decodeInscription*(data: openArray[byte]): Inscription {.raises: [DecodingError].} =
   decodeU32LeLenPrefixed(data)
@@ -294,9 +282,6 @@ func decodeChannelInscribe*(data: openArray[byte]): ChannelInscribePayload {.rai
     signer: signerKey,
   )
 
-# -----------------------------------------------------------------------------
-# Proof family
-# -----------------------------------------------------------------------------
 
 proc readEd25519Signature(data: openArray[byte], pos: var int): Ed25519Signature {.raises: [DecodingError].} =
   var sig: Ed25519Signature
@@ -380,9 +365,6 @@ func decodeOpProof*(data: openArray[byte], kind: OpProofKind): OpProof {.raises:
   result = readOpProof(data, pos, kind)
   finishDecode(data, pos)
 
-# -----------------------------------------------------------------------------
-# Operation aggregate decoders
-# -----------------------------------------------------------------------------
 
 proc readOpPayload(data: openArray[byte], pos: var int, opcode: Opcode): OpPayload {.raises: [DecodingError].} =
   case opcode
@@ -524,9 +506,6 @@ func decodeOpPayload*(data: openArray[byte], opcode: Opcode): OpPayload {.raises
   result = readOpPayload(data, pos, opcode)
   finishDecode(data, pos)
 
-# -----------------------------------------------------------------------------
-# Transaction decoders
-# -----------------------------------------------------------------------------
 
 func decodeMantleTx*(data: openArray[byte]): MantleTx {.raises: [DecodingError].} =
   var pos = 0

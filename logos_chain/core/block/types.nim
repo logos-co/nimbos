@@ -15,12 +15,8 @@ import ../mantle/[tx_types, tx_encoding, tx_hashing]
 import libp2p/crypto/ed25519/ed25519
 export hashing, tx_types
 
-# ---------------------------------------------------------------------------
-# Core block types
-# ---------------------------------------------------------------------------
 
 type
-  ## Proof-of-leadership proof wire representation (compressed Groth16, 128 bytes).
   ProofOfLeadershipProof* = CompressedGroth16Proof
 
   ProofOfLeadership* = object
@@ -41,15 +37,10 @@ type
     txs*: seq[SignedMantleTx]
 
   Proposal* = object
-    ## Approximate serialized size:
-    ## header (297) + references (32768) + signature (64) = 33129 bytes.
     header*: Header
     references*: References
     signature*: Ed25519Signature
 
-# ---------------------------------------------------------------------------
-# Hashing helpers
-# ---------------------------------------------------------------------------
 
 func hashPair(left, right: Hash32): Hash32 =
   var pairBytes: array[64, byte]
@@ -118,9 +109,6 @@ func blockId*(header: Header): Hash32 =
 
   blake2b256Hash(preimage)
 
-# ---------------------------------------------------------------------------
-# Constructors
-# ---------------------------------------------------------------------------
 
 func initBlock*(header: Header, txs: openArray[SignedMantleTx]): Block =
   ## Canonical constructor that enforces block tx count limit.

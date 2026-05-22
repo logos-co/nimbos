@@ -12,18 +12,12 @@
 import ./[primitives, proofs, opcodes]
 export primitives, proofs, opcodes
 
-# ---------------------------------------------------------------------------
-# Transfer (``OpTransfer``)
-# ---------------------------------------------------------------------------
 
 type
   TransferPayload* = object
     inputs*: Inputs
     outputs*: Outputs
 
-# ---------------------------------------------------------------------------
-# Channel inscribe (``OpChannelInscribe``)
-# ---------------------------------------------------------------------------
 
 type
   ChannelInscribePayload* = object
@@ -32,38 +26,21 @@ type
     parent*: Parent
     signer*: Signer
 
-# ---------------------------------------------------------------------------
-# Channel deposit / withdraw (``OpChannelDeposit``, ``OpChannelWithdraw``)
-# ---------------------------------------------------------------------------
-# Channel deposit (``OpChannelDeposit``)
-# ---------------------------------------------------------------------------
-
 type
-  ## ``ChannelId`` * ``Inputs`` * ``Metadata``.
-  ## ``Inputs`` is the list of consumed ``NoteId`` values.
   ChannelDepositPayload* = object
     channel*: ChannelId
     inputs*: seq[NoteId]
     metadata*: Metadata
 
-# ---------------------------------------------------------------------------
-# Channel withdraw (``OpChannelWithdraw``)
-# ---------------------------------------------------------------------------
 
 type
-  ## ``ChannelId`` * ``Outputs`` * ``OpIdNonce``.
   ChannelWithdrawPayload* = object
     channel*: ChannelId
     outputs*: seq[Note]
     opIdNonce*: uint32
 
-# ---------------------------------------------------------------------------
-# SDP (``OpSdpDeclare``, ``OpSdpWithdraw``, ``OpSdpActive``)
-# ---------------------------------------------------------------------------
 
 type
-  ## ``ServiceType`` * ``Locator`` list * ``ProviderId`` * ``ZkId`` * ``LockedNoteId`` (``OpSdpDeclare``).
-  ## Well-formed: ``locators.len <= MaxSdpLocators`` and each ``Locator`` <= **``MaxLocatorMultiaddrBytes``** bytes.
   SdpDeclarePayload* = object
     serviceType*: ServiceType
     locators*: seq[Locator]
@@ -71,33 +48,23 @@ type
     zkId*: ZkId
     lockedNoteId*: NoteId
 
-  ## ``DeclarationId`` * ``Nonce`` * ``LockedNoteId`` (``OpSdpWithdraw``).
   SdpWithdrawPayload* = object
     declarationId*: DeclarationId
     lockedNoteId*: NoteId
     nonce*: Nonce
 
-  ## ``DeclarationId`` * ``Nonce`` * ``Metadata`` (``OpSdpActive``).
   SdpActivePayload* = object
     declarationId*: DeclarationId
     nonce*: Nonce
     metadata*: Metadata
 
-# ---------------------------------------------------------------------------
-# Leader claim (``OpLeaderClaim``)
-# ---------------------------------------------------------------------------
 
 type
-  ## ``RewardsRoot`` * ``VoucherNullifier`` * ``PublicKey`` (``OpLeaderClaim``).
-  ## ``PublicKey`` = ``ZkPublicKey``.
   LeaderClaimPayload* = object
     rewardsRoot*: RewardsRoot
     voucherNullifier*: VoucherNullifier
     publicKey*: PublicKey
 
-# ---------------------------------------------------------------------------
-# Channel config (``OpChannelConfig``)
-# ---------------------------------------------------------------------------
 
 type
   ChannelConfigPayload* = object
@@ -108,9 +75,6 @@ type
     configurationThreshold*: ConfigurationThreshold
     withdrawThreshold*: WithdrawThreshold
 
-# ---------------------------------------------------------------------------
-# Wire sum **``OpPayload``**
-# ---------------------------------------------------------------------------
 
 type
   OpPayloadTag* = enum
@@ -136,14 +100,10 @@ type
     of LeaderClaim: leaderClaim*: LeaderClaimPayload
     of ChannelConfig: channelConfig*: ChannelConfigPayload
 
-  ## In-memory operation envelope.
   Op* = object
     opcode*: Opcode
     payload*: OpPayload
 
-# ---------------------------------------------------------------------------
-# Op constructors
-# ---------------------------------------------------------------------------
 
 func createTransferOp*(payload: TransferPayload): Op =
   Op(opcode: OpTransfer, payload: OpPayload(kind: Transfer, transfer: payload))
@@ -187,9 +147,6 @@ func createChannelConfigOp*(payload: ChannelConfigPayload): Op =
     payload: OpPayload(kind: ChannelConfig, channelConfig: payload),
   )
 
-# ---------------------------------------------------------------------------
-# Opcode mapping
-# ---------------------------------------------------------------------------
 
 func opPayloadToOpcode*(p: OpPayload): Opcode =
   case p.kind

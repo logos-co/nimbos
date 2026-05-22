@@ -15,9 +15,6 @@
 import ./[primitives, operations, proofs]
 export primitives, operations, proofs
 
-# ---------------------------------------------------------------------------
-# Types
-# ---------------------------------------------------------------------------
 
 type
   MantleTx* = object
@@ -25,7 +22,6 @@ type
     permanentStorageGasPrice*: TokenValue
     executionGasPrice*: TokenValue
 
-  ## ``MantleTx`` plus one **``OpProof``** per op: ``opProofs[i]`` lines up with ``tx.ops[i]``.
   SignedMantleTx* = object
     tx*: MantleTx
     opProofs*: seq[OpProof]

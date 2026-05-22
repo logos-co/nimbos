@@ -15,9 +15,6 @@ import
   libp2p/crypto/ed25519/ed25519,
   "../core/block/genesis"
 
-# ---------------------------------------------------------------------------
-# YAML navigation helpers
-# ---------------------------------------------------------------------------
 
 func yamlGetPathNode*(root: YamlNode, keys: openArray[string]): Option[YamlNode] =
   var cur = root
@@ -38,9 +35,6 @@ func yamlGetPathScalar*(root: YamlNode, keys: openArray[string]): Option[string]
     return none(string)
   some(node.get.content)
 
-# ---------------------------------------------------------------------------
-# YAML parsing entrypoint
-# ---------------------------------------------------------------------------
 
 proc parseDeploymentSettingsYaml*(text: string): Result[YamlNode, string] =
   try:
@@ -50,9 +44,6 @@ proc parseDeploymentSettingsYaml*(text: string): Result[YamlNode, string] =
   except YamlConstructionError, YamlParserError, IOError, OSError:
     err("deployment-settings: " & getCurrentExceptionMsg())
 
-# ---------------------------------------------------------------------------
-# Required structure validation
-# ---------------------------------------------------------------------------
 
 func requireTopLevelMapping*(root: YamlNode, name: string): Result[void, string] =
   if root.kind != yMapping:
@@ -65,9 +56,6 @@ func requireTopLevelMapping*(root: YamlNode, name: string): Result[void, string]
     return err("deployment-settings: missing top-level section: " & name)
   ok()
 
-# ---------------------------------------------------------------------------
-# Typed scalar extraction
-# ---------------------------------------------------------------------------
 
 func reqScalar*(root: YamlNode, path: openArray[string]): Result[string, string] =
   let s = yamlGetPathScalar(root, path)
@@ -93,9 +81,6 @@ func reqInt*(root: YamlNode, path: openArray[string]): Result[int, string] =
 func reqFloat*(root: YamlNode, path: openArray[string]): Result[float, string] =
   reqParsed(root, path, parseFloat, "float")
 
-# ---------------------------------------------------------------------------
-# Genesis state YAML parsing
-# ---------------------------------------------------------------------------
 
 func parseByteSeqNode(node: YamlNode, path: string): Result[seq[byte], string] =
   if node.kind != ySequence:

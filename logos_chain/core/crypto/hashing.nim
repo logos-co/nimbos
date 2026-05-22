@@ -13,9 +13,6 @@ import nimcrypto/blake2
 import poseidon2/[types, io, sponge]
 import ./encoding
 
-# ---------------------------------------------------------------------------
-# Core hashing and proof types
-# ---------------------------------------------------------------------------
 
 type
   Hash32* = array[32, byte]
@@ -62,9 +59,6 @@ func poseidon2Hash*(data: openArray[byte]): ZkHash =
   ## TODO(zk): replace this direct sponge call with `Poseidon2Hasher` when ready.
   Sponge.digest(data).toBytes()
 
-# ---------------------------------------------------------------------------
-# Public hashing / PRNG utilities
-# ---------------------------------------------------------------------------
 
 func prngBlock*(seed: Blake2bPrngSeed, index: uint64): Blake2bPrngBlock =
   ## Spec reference (BLAKE2b-based PRNG):

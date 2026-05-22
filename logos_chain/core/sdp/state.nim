@@ -14,13 +14,9 @@ import std/sets
 import libp2p/multiaddress
 import ../mantle/primitives
 
-# ---------------------------------------------------------------------------
-# SDP state/domain types
-# ---------------------------------------------------------------------------
 
 type
   LockedNote* = object
-    ## Nim `set[T]` only works for ordinal `T`; `DeclarationId` is an array, so use `HashSet`.
     declarations*: HashSet[DeclarationId]
     lockedUntil*: BlockNumber
 
@@ -43,12 +39,8 @@ type
     created*: BlockNumber
     active*: BlockNumber
     withdrawn*: BlockNumber
-    ## SDP ops updating a declaration use monotonically increasing nonces.
     nonce*: Nonce
 
-# ---------------------------------------------------------------------------
-# Locator validation helpers
-# ---------------------------------------------------------------------------
 
 func validate*(locator: Locator) =
   doAssert locator.len <= MaxLocatorMultiaddrBytes
