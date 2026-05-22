@@ -192,7 +192,7 @@ proc installNodeApiHandlers*(router: var RestRouter, node: LBNode) =
     RestApiResponse.response("{}", Http200, $jsonMediaType)
 
   # POST /leader/claim
-  router.api2(MethodPost, paths.LEADER_CLAIM) do () -> RestApiResponse:
+  router.api2(MethodPost, LEADER_CLAIM_PATH) do () -> RestApiResponse:
     RestApiResponse.response("{}", Http200, $jsonMediaType)
 
   # GET /mantle/metrics

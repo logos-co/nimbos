@@ -33,7 +33,7 @@ const
   SDP_POST_ACTIVITY* = "/sdp/activity"
   SDP_POST_WITHDRAWAL* = "/sdp/withdrawal"
 
-  LEADER_CLAIM* = "/leader/claim"
+  LEADER_CLAIM_PATH* = "/leader/claim"
 
   BLOCKS* = "/cryptarchia/blocks"
   BLOCKS_STREAM* = "/cryptarchia/events/blocks/stream"
