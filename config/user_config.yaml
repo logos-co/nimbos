@@ -1,0 +1,197 @@
+network:
+  backend:
+    swarm:
+      host: 0.0.0.0
+      port: 3000
+      node_key: e23ddddb2e2e0ff2cf27517cc2241f6bd8a7bb03c4083ab5271ffe400ceba51e
+      gossipsub:
+        history_length: 5
+        history_gossip: 3
+        mesh_n: 6
+        mesh_n_low: 5
+        mesh_n_high: 12
+        retain_scores: 4
+        gossip_lazy: 6
+        gossip_factor: 0.25
+        heartbeat_initial_delay:
+          secs: 5
+          nanos: 0
+        heartbeat_interval:
+          secs: 1
+          nanos: 0
+        fanout_ttl:
+          secs: 60
+          nanos: 0
+        check_explicit_peers_ticks: 300
+        duplicate_cache_time:
+          secs: 60
+          nanos: 0
+        validate_messages: false
+        allow_self_origin: false
+        do_px: false
+        prune_peers: 0
+        prune_backoff:
+          secs: 60
+          nanos: 0
+        unsubscribe_backoff:
+          secs: 10
+          nanos: 0
+        backoff_slack: 1
+        flood_publish: true
+        graft_flood_threshold:
+          secs: 10
+          nanos: 0
+        mesh_outbound_min: 2
+        opportunistic_graft_ticks: 60
+        opportunistic_graft_peers: 2
+        gossip_retransimission: 3
+        max_messages_per_rpc: null
+        max_ihave_length: 5000
+        max_ihave_messages: 10
+        iwant_followup_time:
+          secs: 3
+          nanos: 0
+        published_message_ids_cache_time:
+          secs: 10
+          nanos: 0
+      kademlia:
+        query_timeout_secs: null
+        replication_factor: null
+        parallelism: null
+        disjoint_query_paths: null
+        max_packet_size: null
+        kbucket_inserts: null
+        caching: null
+        periodic_bootstrap_interval_secs: null
+      identify:
+        agent_version: null
+        interval_secs: null
+        push_listen_addr_updates: null
+        cache_size: null
+        hide_listen_addrs: true
+      chain_sync:
+        peer_response_timeout: 5000
+      nat:
+        type: traversal
+        autonat:
+          max_candidates: null
+          probe_interval_millisecs: null
+          retest_successful_external_addresses_interval:
+            secs: 60
+            nanos: 0
+        mapping:
+          timeout: '1.000000000'
+          lease_duration:
+            secs: 7200
+            nanos: 0
+          max_retries: 3
+          renewal_delay_fraction: 0.8
+          retry_interval:
+            secs: 30
+            nanos: 0
+        gateway_monitor:
+          check_interval:
+            secs: 300
+            nanos: 0
+    initial_peers:
+    - /ip4/209.38.241.182/udp/3000/quic-v1/p2p/12D3KooW9wycYQTk8HPKHHyVzF2tUEpVSu4WHu8ySAbTmXGreuV5
+    - /ip4/65.109.51.37/udp/3000/quic-v1/p2p/12D3KooWFrouXfmrR4nsLMtE7wu15DoMJ6VtoUtHinREZCvbWHar
+    - /ip4/65.109.51.37/udp/3001/quic-v1/p2p/12D3KooWJRGau8M1rjT7R5e4YYsgdFhsMX35nRDtMwCDjxQkXAHz
+    - /ip4/65.109.51.37/udp/3002/quic-v1/p2p/12D3KooWQXJavMDTRscjauFSgVAB1VLB6Rzpy2uY5SU9Tk7927tb
+    - /ip4/65.109.51.37/udp/3003/quic-v1/p2p/12D3KooWSQc7CcGtvWDPF1yCbBthFnQjprfCVHmfmNDUrSmqQsU1
+blend:
+  non_ephemeral_signing_key_id: 741d3c4be7d2c0d4f87ce582a2da38368739a621987b6cd003a807768b34115d
+  core:
+    backend:
+      listening_address: /ip4/0.0.0.0/udp/3400/quic-v1
+      core_peering_degree:
+        start: 2
+        end: 3
+      edge_node_connection_timeout: '1.000000000'
+      max_edge_node_incoming_connections: 300
+      max_dial_attempts_per_peer: 3
+    zk:
+      secret_key_kms_id: 8a81da6155a8c2af8d6589f343f309a29b93eec45d2ecbf9236e55eb0a6d7205
+  edge:
+    backend:
+      max_dial_attempts_per_peer_per_message: 1
+      replication_factor: 1
+cryptarchia:
+  service:
+    bootstrap:
+      prolonged_bootstrap_period: '300.000000000'
+      force_bootstrap: false
+      offline_grace_period:
+        grace_period: '1200.000000000'
+        state_recording_interval: '60.000000000'
+  network:
+    bootstrap:
+      ibd:
+        peers:
+        - 12D3KooW9wycYQTk8HPKHHyVzF2tUEpVSu4WHu8ySAbTmXGreuV5
+        delay_before_new_download:
+          secs: 10
+          nanos: 0
+    sync:
+      orphan:
+        max_orphan_cache_size: 1000
+    network:
+      max_connected_peers_to_try_download: 16
+      max_discovered_peers_to_try_download: 16
+  leader:
+    wallet:
+      max_tx_fee: 18446744073709551615
+      funding_pk: 479bc98b3494dade3d50b2110e96ca46ac5d6db32e98371ca8c399d2cbf2d805
+time:
+  backend:
+    server: pool.ntp.org:123
+    client:
+      timeout: '5.000000000'
+      listening_interface: 0.0.0.0
+    update_interval: '15.000000000'
+sdp:
+  declaration_id: null
+  wallet:
+    max_tx_fee: 18446744073709551615
+    funding_pk: 479bc98b3494dade3d50b2110e96ca46ac5d6db32e98371ca8c399d2cbf2d805
+api:
+  backend:
+    listen_address: 0.0.0.0:8080
+    cors_origins: []
+    timeout: 30
+    max_body_size: 10485760
+    max_concurrent_requests: 500
+storage:
+  backend:
+    folder_name: ./db
+    read_only: false
+    column_family: blocks
+kms:
+  backend:
+    keys:
+      3c0999d8b5c32c36d2d49918cb09e69429a50de71776ade8ffdeeebcf9c4312a: !Zk f84adcef2416d7f414af14163f81ebe9290d146a7a0afbe7214a67220e399c09
+      479bc98b3494dade3d50b2110e96ca46ac5d6db32e98371ca8c399d2cbf2d805: !Zk bd6b46f655db596f7c5aa52a5c8129bf03c8f9b9d498a222f544ecd1aae01b1c
+      8a81da6155a8c2af8d6589f343f309a29b93eec45d2ecbf9236e55eb0a6d7205: !Zk 731d3c5b53ddde90670c2c095af2040e2ae124a0e1351c18da07d69418e6ac2c
+      741d3c4be7d2c0d4f87ce582a2da38368739a621987b6cd003a807768b34115d: !Ed25519 611760acd0ddc6cbe68f7759132699c8dc478faec43e167e281cc5a1b2a7dd50
+wallet:
+  known_keys:
+    479bc98b3494dade3d50b2110e96ca46ac5d6db32e98371ca8c399d2cbf2d805: 479bc98b3494dade3d50b2110e96ca46ac5d6db32e98371ca8c399d2cbf2d805
+    3c0999d8b5c32c36d2d49918cb09e69429a50de71776ade8ffdeeebcf9c4312a: 3c0999d8b5c32c36d2d49918cb09e69429a50de71776ade8ffdeeebcf9c4312a
+  voucher_master_key_id: 3c0999d8b5c32c36d2d49918cb09e69429a50de71776ade8ffdeeebcf9c4312a
+tracing:
+  logger:
+    file:
+      directory: .
+      prefix: '1776126665'
+    loki: null
+    gelf: null
+    otlp: null
+    stdout: true
+    stderr: false
+  tracing: None
+  filter: None
+  metrics: None
+  console: None
+  level: DEBUG
+state:
+  base_folder: ./state

@@ -13,11 +13,12 @@ import
   libp2p/[peerinfo, multiaddress, multicodec],
   eth/common/keys,
   eth/p2p/discoveryv5/[protocol, node, random2],
+  results,
   ssz_serialization,
-  ../conf
+  ../conf,
+  ../deployment/user_config
 
-from std/os import splitFile
-from std/strutils import cmpIgnoreCase, split, startsWith, strip
+from std/strutils import split, startsWith, strip
 
 export protocol, node
 
@@ -53,19 +54,8 @@ func parseBootstrapAddress*(address: string):
 
   ok((peerId, baseAddr))
 
-iterator strippedLines(filename: string): string {.raises: [ref IOError].} =
-  ## Yields non-empty, trimmed, non-comment lines from ``filename``.
-  for line in lines(filename):
-    let stripped = strip(line)
-    if stripped.startsWith('#'):
-      continue
-    
-    if stripped.len > 0:
-      yield stripped
-
-proc addBootstrapNode*(bootstrapAddr: string,
+proc addBootstrapPeer*(bootstrapAddr: string,
                        bootstrapPeers: var seq[(PeerId, MultiAddress)]) =
-  # Ignore empty lines or lines starting with #
   if bootstrapAddr.len == 0 or bootstrapAddr[0] == '#':
     return
 
@@ -76,27 +66,15 @@ proc addBootstrapNode*(bootstrapAddr: string,
     warn "Ignoring invalid bootstrap address",
           bootstrapAddr, reason = addrRes.error
 
-proc loadBootstrapFile*(bootstrapFile: string,
-                        bootstrapPeers: var seq[(PeerId, MultiAddress)]) =
-  if bootstrapFile.len == 0: return
-  let ext = splitFile(bootstrapFile).ext
-  if cmpIgnoreCase(ext, ".txt") == 0:
-    try:
-      for ln in strippedLines(bootstrapFile):
-        addBootstrapNode(ln, bootstrapPeers)
-    except IOError as e:
-      error "Could not read bootstrap file", msg = e.msg
-      quit 1
-  else:
-    error "Unknown bootstrap file format", ext
-    quit 1
-
-proc loadBootstrapNodes*(config: LBNodeConf): seq[(PeerId, MultiAddress)] =
+proc loadBootstrapNodes*(config: LBNodeConf): Result[seq[(PeerId, MultiAddress)], string] =
+  ## YAML load is not statically GC-safe; safe here (sync init, no shared refs).
+  var initialPeers: seq[string]
+  {.cast(gcsafe).}:
+    initialPeers = ? loadUserConfigInitialPeers(string config.userConfigFile)
   var bootstrapPeers: seq[(PeerId, MultiAddress)]
-  for node in config.bootstrapNodes:
-    addBootstrapNode(node, bootstrapPeers)
-  loadBootstrapFile(string config.bootstrapNodesFile, bootstrapPeers)
-  bootstrapPeers
+  for peerAddr in initialPeers:
+    addBootstrapPeer(peerAddr, bootstrapPeers)
+  ok(bootstrapPeers)
 
 proc new*(T: type Eth2DiscoveryProtocol,
           config: LBNodeConf,

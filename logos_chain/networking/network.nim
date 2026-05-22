@@ -2030,9 +2030,11 @@ func quicEndPoint(address: IpAddress, port: Port): Result[MultiAddress, string] 
   except MaError as exc:
     err(exc.msg)
 
-proc loadBootstrapPeers(config: LBNodeConf): seq[PeerAddr] =
-  for (peerId, maddr) in loadBootstrapNodes(config):
-    result.add(PeerAddr(peerId: peerId, addrs: @[maddr]))
+proc loadBootstrapPeers(config: LBNodeConf): Result[seq[PeerAddr], string] =
+  var peers: seq[PeerAddr]
+  for (peerId, maddr) in ? loadBootstrapNodes(config):
+    peers.add(PeerAddr(peerId: peerId, addrs: @[maddr]))
+  ok(peers)
 
 func initNetKeys(privKey: PrivateKey): NetKeyPair =
   let pubKey = privKey.getPublicKey().expect("working public key from random")
@@ -2128,7 +2130,7 @@ proc createLBNode*(
       err(ValidationResult.Reject)
 
   let
-    bootstrapPeers = loadBootstrapPeers(config)
+    bootstrapPeers = ? loadBootstrapPeers(config)
     params = GossipSubParams.init(
       pruneBackoff = chronos.minutes(1),
       unsubscribeBackoff = chronos.seconds(10),

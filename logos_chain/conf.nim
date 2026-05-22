@@ -45,6 +45,8 @@ const
   defaultAdminListenAddressDesc* = $defaultAdminListenAddress
   ## Default ``--deployment-settings`` path (canonical cfgsync layout; run from repo root or override).
   defaultDeploymentSettingsPath* = "config/deployment-settings.yaml"
+  ## Default ``--user-config`` path (cfgsync user config; bootstrap peers from ``initial_peers``).
+  defaultUserConfigPath* = "config/user_config.yaml"
 
 when defined(windows):
   {.pragma: windowsOnly.}
@@ -194,15 +196,10 @@ type
         desc: "Run as a Windows service"
         name: "run-as-service" .}: bool
 
-      bootstrapNodes* {.
-        desc: "Specifies one or more bootstrap nodes to use when connecting to the network"
-        abbr: "b"
-        name: "bootstrap-node" .}: seq[string]
-
-      bootstrapNodesFile* {.
-        desc: "Specifies a line-delimited file of bootstrap Ethereum network addresses"
-        defaultValue: ""
-        name: "bootstrap-file" .}: InputFile
+      userConfigFile* {.
+        desc: "cfgsync user-config YAML (bootstrap peers from network.backend.initial_peers)"
+        defaultValue: InputFile(defaultUserConfigPath)
+        name: "user-config" .}: InputFile
 
       listenAddress* {.
         desc: "Listening address for Logos Chain libp2p and Discovery v5 traffic"
