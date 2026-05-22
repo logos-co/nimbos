@@ -214,6 +214,16 @@ type
         defaultValue: 5001
         name: "quic-port" .}: Port
 
+      udpPort* {.
+        desc: "UDP port for discv5 peer discovery"
+        defaultValue: 5000
+        name: "udp-port" .}: Port
+
+      restPort* {.
+        desc: "Listening HTTP port of the REST API server"
+        defaultValue: 5050
+        name: "rest-port" .}: Port
+
       discv5Enabled* {.
         desc: "Enable discv5 peer discovery (disable for isolated libp2p tests)"
         defaultValue: true

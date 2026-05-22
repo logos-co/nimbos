@@ -54,10 +54,9 @@ proc doRunLBNode(
     return
 
   let
-    restPort = 5050.Port
     restAllowedOrigin = none(string)
     restServer = RestServerRef.init(
-      defaultAdminListenAddress, restPort, restAllowedOrigin,
+      defaultAdminListenAddress, config.restPort, restAllowedOrigin,
       validateBeaconApiQueries, nimbusAgentStr, config)
 
   restServer.router.installNodeApiHandlers(node)
