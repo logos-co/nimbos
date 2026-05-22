@@ -1,0 +1,5 @@
+network:
+  backend:
+    initial_peers:
+    - /ip4/209.38.241.182/udp/3000/quic-v1/p2p/12D3KooW9wycYQTk8HPKHHyVzF2tUEpVSu4WHu8ySAbTmXGreuV5
+    - /ip4/65.109.51.37/udp/3000/quic-v1/p2p/12D3KooWFrouXfmrR4nsLMtE7wu15DoMJ6VtoUtHinREZCvbWHar
