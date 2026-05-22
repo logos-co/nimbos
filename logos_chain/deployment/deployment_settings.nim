@@ -22,12 +22,12 @@ import
   results,
   stew/io2,
   yaml/dom,
-  "../core/block/genesis",
+  "../core/block/types",
   ./deployment_settings_helpers
 
 export
   dom,
-  genesis,
+  parseDeploymentGenesisState,
   parseDeploymentSettingsYaml,
   yamlGetPathNode,
   yamlGetPathScalar

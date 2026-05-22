@@ -15,7 +15,8 @@ import
   stew/byteutils,
   ./node,
   ./api/server,
-  "./core/block/genesis",
+  ./chain,
+  ./deployment/deployment_settings,
   ./[buildinfo, binary_common, process_state]
 
 from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
@@ -33,22 +34,26 @@ proc doRunLBNode(
     fatal "Invalid deployment-settings file", err = error
     quit QuitFailure
 
-  let genesisBlock = createGenesisBlock(deploymentSettings.cryptarchia.genesisState)
-  let genesisBlockId = blockId(genesisBlock.header)
+  let chain = init(deploymentSettings).valueOr:
+    fatal "Failed to initialize chain", err = error
+    quit QuitFailure
+
+  let genesisBlock = chain.genesisBlock
+  let genesisState = genesisBlock.txs[0]
   var leaderKeyBytes: array[EdPublicKeySize, byte]
   let leaderKeyWritten = toBytes(genesisBlock.header.proofOfLeadership.leaderKey, leaderKeyBytes)
   doAssert leaderKeyWritten == EdPublicKeySize, "failed to encode genesis PoL leader key"
-  info "Constructed genesis block from deployment settings",
-    genesisBlockId = byteutils.toHex(genesisBlockId),
+  info "Initialized chain from deployment settings",
+    genesisBlockId = byteutils.toHex(blockId(genesisBlock.header)),
     bedrockVersion = genesisBlock.header.bedrockVersion,
     slot = genesisBlock.header.slot,
     parentBlock = byteutils.toHex(genesisBlock.header.parentBlock),
     blockRoot = byteutils.toHex(genesisBlock.header.blockRoot),
     txCount = genesisBlock.txs.len,
-    opCount = deploymentSettings.cryptarchia.genesisState.tx.ops.len,
-    proofCount = deploymentSettings.cryptarchia.genesisState.opProofs.len,
-    executionGasPrice = deploymentSettings.cryptarchia.genesisState.tx.executionGasPrice,
-    storageGasPrice = deploymentSettings.cryptarchia.genesisState.tx.permanentStorageGasPrice,
+    opCount = genesisState.tx.ops.len,
+    proofCount = genesisState.opProofs.len,
+    executionGasPrice = genesisState.tx.executionGasPrice,
+    storageGasPrice = genesisState.tx.permanentStorageGasPrice,
     polLeaderVoucher = byteutils.toHex(genesisBlock.header.proofOfLeadership.leaderVoucher),
     polEntropyContribution = byteutils.toHex(genesisBlock.header.proofOfLeadership.entropyContribution),
     polProof = byteutils.toHex(genesisBlock.header.proofOfLeadership.proof),

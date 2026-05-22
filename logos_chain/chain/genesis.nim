@@ -5,13 +5,15 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-## Genesis-specific aliases/constants layered on top of generic block types.
+## Genesis block construction from a signed genesis mantle transaction.
 ## Spec: [1.1.0 Bedrock Genesis Block](https://nomos-tech.notion.site/1-1-0-Bedrock-Genesis-Block-330261aa09df809ab143f87766b8d053)
 
 {.push raises: [], gcsafe.}
 
-import ./types
-import ../crypto/hashing
+import
+  "../core/block/types",
+  ../core/crypto/hashing
+
 export types, hashing
 
 const

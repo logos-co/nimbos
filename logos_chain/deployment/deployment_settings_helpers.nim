@@ -14,7 +14,8 @@ import
   stew/byteutils,
   yaml/[dom, loading],
   libp2p/crypto/ed25519/ed25519,
-  "../core/block/genesis",
+  "../core/block/types",
+  "../core/mantle/tx_types",
   poseidon2/types
 
 
