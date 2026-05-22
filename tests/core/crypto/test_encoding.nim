@@ -9,7 +9,7 @@
 {.used.}
 
 import unittest2
-import ../../../logos_chain/core/crypto/encoding
+import ../../../logos_chain/core/crypto/[decoding, encoding]
 
 suite "core/crypto/encoding":
   test "encodeLe infers output width from unsigned input type":
@@ -49,10 +49,10 @@ suite "core/crypto/encoding":
     check s[0] == 2'u8
     check s[2] == 0xAB'u8
 
-  test "encodeFieldElement and encodeHash32 are identity on bytes":
-    var a: array[32, byte]
-    a[0] = 0x11'u8
-    check encodeFieldElement(a) == a
-    check encodeHash32(a) == a
+  test "encodeFieldElement round-trips canonical LE bytes":
+    var bytes: array[32, byte]
+    bytes[0] = 0x11'u8
+    check encodeFieldElement(decodeFieldElement(bytes)) == bytes
+    check encodeHash32(bytes) == bytes
 
 {.pop.}
