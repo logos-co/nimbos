@@ -21,13 +21,13 @@ type
     lockedUntil*: BlockNumber
 
   MinStake* = object
-    stakeThreshold*: int
+    stakeThreshold*: uint64
     timestamp*: BlockNumber
 
   ServiceParameters* = object
-    lockPeriod*: int
-    inactivityPeriod*: int
-    retentionPeriod*: int
+    lockPeriod*: uint64
+    inactivityPeriod*: uint64
+    retentionPeriod*: uint64
     timestamp*: BlockNumber
 
   DeclarationInfo* = object
