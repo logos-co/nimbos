@@ -112,10 +112,8 @@ func encodeChannelKeyIndex*(value: ChannelKeyIndex): array[2, byte] =
 
 func encodeNote*(value: Note): array[40, byte] =
   ## Note = Value || ZkPublicKey
-  let valueBytes = encodeValue(value.value)
-  let pubkeyBytes = encodeZkPublicKey(value.zkPublicKey)
-  copyMem(addr result[0], unsafeAddr valueBytes[0], 8)
-  copyMem(addr result[8], unsafeAddr pubkeyBytes[0], 32)
+  result[0 ..< 8] = encodeValue(value.value)
+  result[8 ..< 40] = encodeZkPublicKey(value.zkPublicKey)
 
 func encodeInputCount*(value: byte): byte =
   ## InputCount = Byte
@@ -190,12 +188,9 @@ func encodeSdpDeclare*(value: SdpDeclarePayload): seq[byte] =
 
 func encodeSdpWithdraw*(value: SdpWithdrawPayload): array[72, byte] =
   ## SDPWithdraw = DeclarationId || Nonce || LockedNoteId
-  let declarationIdBytes = encodeDeclarationId(value.declarationId)
-  let nonceBytes = encodeNonce(value.nonce)
-  let lockedNoteIdBytes = encodeLockedNoteId(value.lockedNoteId)
-  copyMem(addr result[0], unsafeAddr declarationIdBytes[0], 32)
-  copyMem(addr result[32], unsafeAddr nonceBytes[0], 8)
-  copyMem(addr result[40], unsafeAddr lockedNoteIdBytes[0], 32)
+  result[0 ..< 32] = encodeDeclarationId(value.declarationId)
+  result[32 ..< 40] = encodeNonce(value.nonce)
+  result[40 ..< 72] = encodeLockedNoteId(value.lockedNoteId)
 
 func encodeSdpActive*(value: SdpActivePayload): seq[byte] =
   ## SDPActive = DeclarationId || Nonce || Metadata
@@ -205,12 +200,9 @@ func encodeSdpActive*(value: SdpActivePayload): seq[byte] =
 
 func encodeLeaderClaim*(value: LeaderClaimPayload): array[96, byte] =
   ## LeaderClaim = RewardsRoot || VoucherNullifier || PublicKey
-  let rootBytes = encodeRewardsRoot(value.rewardsRoot)
-  let nullifierBytes = encodeVoucherNullifier(value.voucherNullifier)
-  let publicKeyBytes = encodePublicKey(value.publicKey)
-  copyMem(addr result[0], unsafeAddr rootBytes[0], 32)
-  copyMem(addr result[32], unsafeAddr nullifierBytes[0], 32)
-  copyMem(addr result[64], unsafeAddr publicKeyBytes[0], 32)
+  result[0 ..< 32] = encodeRewardsRoot(value.rewardsRoot)
+  result[32 ..< 64] = encodeVoucherNullifier(value.voucherNullifier)
+  result[64 ..< 96] = encodePublicKey(value.publicKey)
 
 func encodeChannelWithdraw*(value: ChannelWithdrawPayload): seq[byte] =
   ## ChannelWithdraw = ChannelId || Outputs || OpIdNonce
@@ -233,13 +225,11 @@ func encodeChannelInscribe*(value: ChannelInscribePayload): seq[byte] =
 
 
 func encodeIndexedEd25519Signature*(
-  signature: Ed25519Signature, index: ChannelKeyIndex
+    signature: Ed25519Signature, index: ChannelKeyIndex
 ): array[66, byte] =
   ## IndexedEd25519Signature = Ed25519Signature || ChannelKeyIndex
-  let sigBytes = encodeEd25519Signature(signature)
-  let idxBytes = encodeChannelKeyIndex(index)
-  copyMem(addr result[0], unsafeAddr sigBytes[0], 64)
-  copyMem(addr result[64], unsafeAddr idxBytes[0], 2)
+  result[0 ..< 64] = encodeEd25519Signature(signature)
+  result[64 ..< 66] = encodeChannelKeyIndex(index)
 
 func encodeEd25519SigProof*(value: Ed25519Signature): array[64, byte] =
   ## Ed25519SigProof = Ed25519Signature
@@ -250,13 +240,11 @@ func encodeZkSigProof*(value: ZkSignature): array[128, byte] =
   encodeZkSignature(value)
 
 func encodeZkAndEd25519SigsProof*(
-  zkSig: ZkSignature, ed25519Sig: Ed25519Signature
+    zkSig: ZkSignature, ed25519Sig: Ed25519Signature
 ): array[192, byte] =
   ## ZkAndEd25519SigsProof = ZkSignature || Ed25519Signature
-  let zkBytes = encodeZkSignature(zkSig)
-  let edBytes = encodeEd25519Signature(ed25519Sig)
-  copyMem(addr result[0], unsafeAddr zkBytes[0], 128)
-  copyMem(addr result[128], unsafeAddr edBytes[0], 64)
+  result[0 ..< 128] = encodeZkSignature(zkSig)
+  result[128 ..< 192] = encodeEd25519Signature(ed25519Sig)
 
 func encodeChannelWithdrawOpProof*(
   signatures: openArray[Ed25519Signature], indexes: openArray[ChannelKeyIndex]
