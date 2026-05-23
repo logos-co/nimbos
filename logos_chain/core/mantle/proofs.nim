@@ -12,7 +12,7 @@
 
 {.push raises: [], gcsafe.}
 
-import ./[primitives, opcodes]
+import ./[primitives, opcodes, operations]
 import ../crypto/types
 import libp2p/crypto/ed25519/ed25519
 
@@ -124,6 +124,21 @@ func defaultOpProofForOpcode*(opcode: Opcode): OpProof =
 func proofType*(proof: OpProof): ProofType =
   ## Proof family for a concrete proof value.
   proofTypeForKind(proof.kind)
+
+func expectedOpProofKindForOpcode*(opcode: Opcode): OpProofKind =
+  case opcode
+  of OpTransfer: opfTransfer
+  of OpChannelInscribe: opfChannelInscribe
+  of OpChannelDeposit: opfChannelDeposit
+  of OpChannelWithdraw: opfChannelWithdraw
+  of OpSdpDeclare: opfSdpDeclare
+  of OpSdpWithdraw: opfSdpWithdraw
+  of OpSdpActive: opfSdpActive
+  of OpLeaderClaim: opfLeaderClaim
+  of OpChannelConfig: opfChannelConfig
+  else:
+    doAssert false, "unknown opcode for OpProof expectation: " & $opcode
+    default(OpProofKind)
 
 func encodeProofOfClaimProof*(value: ProofOfClaimProof): array[128, byte] =
   ## ProofOfClaimProof = Groth16
@@ -292,6 +307,33 @@ proc readOpProof*(data: openArray[byte], pos: var int, kind: OpProofKind): OpPro
 func decodeOpProof*(data: openArray[byte], kind: OpProofKind): OpProof {.raises: [DecodingError].} =
   var pos = 0
   result = readOpProof(data, pos, kind)
+  finishDecode(data, pos)
+
+func encodeOpsProofs*(ops: openArray[Op], proofs: openArray[OpProof]): seq[byte] =
+  ## OpsProofs = *OpProof
+  ## 1. Length must be <= OpCount.
+  ## 2. type(OpProofs[i]) == ProofFor(Op[i]) for provided proofs.
+  doAssert proofs.len <= ops.len,
+    "OpsProofs length must be <= OpCount"
+  result = @[]
+  for i in 0 ..< proofs.len:
+    doAssert proofs[i].kind == expectedOpProofKindForOpcode(ops[i].opcode),
+      "OpProof variant does not match corresponding Op"
+    let encoded = encodeOpProof(proofs[i])
+    result.add(encoded)
+
+func decodeOpsProofs*(ops: openArray[Op], data: openArray[byte]): seq[OpProof] {.raises: [DecodingError].} =
+  var pos = 0
+  result = newSeqOfCap[OpProof](ops.len)
+  var i = 0
+  while pos < data.len:
+    if i >= ops.len:
+      raise newException(DecodingError, "OpsProofs length exceeds OpCount")
+    let kind = expectedOpProofKindForOpcode(ops[i].opcode)
+    result.add readOpProof(data, pos, kind)
+    inc i
+  if result.len > ops.len:
+    raise newException(DecodingError, "OpsProofs length exceeds OpCount")
   finishDecode(data, pos)
 
 {.pop.}

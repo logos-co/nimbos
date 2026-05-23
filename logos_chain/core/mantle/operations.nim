@@ -11,10 +11,10 @@
 
 {.push raises: [], gcsafe.}
 
-import ./[primitives, proofs, opcodes]
+import ./[primitives, opcodes]
 import ../crypto/types
 import libp2p/crypto/ed25519/ed25519
-export primitives, proofs, opcodes
+export primitives, opcodes
 
 
 type
@@ -163,21 +163,6 @@ func opPayloadToOpcode*(p: OpPayload): Opcode =
   of SdpActive: OpSdpActive
   of LeaderClaim: OpLeaderClaim
   of ChannelConfig: OpChannelConfig
-
-func expectedOpProofKindForOpcode*(opcode: Opcode): OpProofKind =
-  case opcode
-  of OpTransfer: opfTransfer
-  of OpChannelInscribe: opfChannelInscribe
-  of OpChannelDeposit: opfChannelDeposit
-  of OpChannelWithdraw: opfChannelWithdraw
-  of OpSdpDeclare: opfSdpDeclare
-  of OpSdpWithdraw: opfSdpWithdraw
-  of OpSdpActive: opfSdpActive
-  of OpLeaderClaim: opfLeaderClaim
-  of OpChannelConfig: opfChannelConfig
-  else:
-    doAssert false, "unknown opcode for OpProof expectation: " & $opcode
-    default(OpProofKind)
 
 func isSupportedOpcode*(opcode: Opcode): bool =
   ## True when opcode is part of the currently supported Mantle operation set.
