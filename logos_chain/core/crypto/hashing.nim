@@ -5,34 +5,16 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
+## Hashing and PRNG over common cryptographic types (see ``encoding``).
 ## Spec: [1.0.1 Common Cryptographic Components](https://nomos-tech.notion.site/1-0-1-Common-Cryptographic-Components-1fd261aa09df81ac8ebbe0111e2c2d84)
 
 {.push raises: [], gcsafe.}
 
 import nimcrypto/blake2
-import poseidon2/[types, io, sponge]
-import ./encoding
+import poseidon2/sponge
+import ./types
+export types
 
-
-type
-  Hash32* = array[32, byte]
-  ## BN254 32-byte field element as returned by Poseidon2 sponge (LE); Mantle **``ZkHash``** wire.
-  ZkHash* = Hash32
-  BlockId* = Hash32
-  Blake2bPrngSeed* = array[64, byte]
-  Blake2bPrngBlock* = array[64, byte]
-
-  ## Spec wire-sized Groth16 proof encoding:
-  ## pi_a (32 bytes) || pi_b (64 bytes) || pi_c (32 bytes).
-  ## This keeps only x-coordinates and is intended for transport/storage.
-  ## TODO: implement/verify the exact compressed BN254 proof codec
-  ## (point sign bits, infinity representation, and canonical byte order).
-  CompressedGroth16Proof* = array[128, byte]
-  ## Placeholder alias until zk proof encoding is finalized.
-  ZkSignature* = CompressedGroth16Proof
-
-const
-  CompressedGroth16ProofBytes* = 128
 
 func blake2b256Hash*(data: openArray[byte]): Hash32 =
   ## Spec reference (common cryptographic components):

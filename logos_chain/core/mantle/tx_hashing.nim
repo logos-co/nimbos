@@ -10,7 +10,7 @@
 
 {.push raises: [], gcsafe.}
 
-import ./[tx_types, tx_encoding]
+import ./tx_types
 import ../crypto/hashing
 
 const

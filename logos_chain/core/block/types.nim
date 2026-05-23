@@ -11,8 +11,8 @@
 {.push raises: [], gcsafe.}
 
 import stew/bitops2
-import ../crypto/[hashing, encoding]
-import ../mantle/[tx_types, tx_encoding, tx_hashing]
+import ../crypto/hashing
+import ../mantle/[tx_types, tx_hashing]
 import libp2p/crypto/ed25519/ed25519
 export hashing, tx_types
 
