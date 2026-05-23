@@ -9,9 +9,9 @@
 {.used.}
 
 import unittest2
-import ../../../logos_chain/core/crypto/[decoding, encoding]
+import ../../../logos_chain/core/crypto/types
 
-suite "core/crypto/encoding":
+suite "core/crypto/types":
   test "encodeLe infers output width from unsigned input type":
     let le16 = encodeLe(0x0123'u16)
     let le32 = encodeLe(0x0123_4567'u32)
