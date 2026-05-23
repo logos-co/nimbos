@@ -59,6 +59,8 @@ suite "core/mantle/tx_types":
     let wire = encodeMantleTx(tx)
     let back = decodeMantleTx(wire)
     check back.ops.len == tx.ops.len
+    check back.executionGasPrice == tx.executionGasPrice
+    check back.permanentStorageGasPrice == tx.permanentStorageGasPrice
 
   test "decodeSignedMantleTx roundtrips encodeSignedMantleTx":
     let signed = SignedMantleTx(
@@ -79,6 +81,8 @@ suite "core/mantle/tx_types":
     let wire = encodeSignedMantleTx(signed)
     let back = decodeSignedMantleTx(wire)
     check back.tx.ops.len == signed.tx.ops.len
+    check back.tx.executionGasPrice == signed.tx.executionGasPrice
+    check back.tx.permanentStorageGasPrice == signed.tx.permanentStorageGasPrice
     check back.opProofs.len == signed.opProofs.len
     check back.opProofs[0].kind == signed.opProofs[0].kind
 

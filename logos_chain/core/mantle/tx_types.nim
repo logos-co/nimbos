@@ -43,8 +43,10 @@ func encodeOpsProofs*(ops: openArray[Op], proofs: openArray[OpProof]): seq[byte]
     result.add(encoded)
 
 func encodeMantleTx*(tx: MantleTx): seq[byte] =
-  ## MantleTx = Ops
-  encodeOps(tx.ops)
+  ## MantleTx = Ops || ExecutionGasPrice || StorageGasPrice
+  result = encodeOps(tx.ops)
+  result.add(encodeLe(uint64(tx.executionGasPrice)))
+  result.add(encodeLe(uint64(tx.permanentStorageGasPrice)))
 
 func encodeSignedMantleTx*(signedTx: SignedMantleTx): seq[byte] =
   ## SignedMantleTx = MantleTx || OpsProofs
@@ -71,8 +73,14 @@ func decodeMantleTx*(data: openArray[byte]): MantleTx {.raises: [DecodingError].
   var ops = newSeqOfCap[Op](count)
   for _ in 0 ..< int(count):
     ops.add readOp(data, pos)
+  let executionGasPrice = TokenValue(readLe[uint64](data, pos))
+  let permanentStorageGasPrice = TokenValue(readLe[uint64](data, pos))
   finishDecode(data, pos)
-  MantleTx(ops: ops)
+  MantleTx(
+    ops: ops,
+    executionGasPrice: executionGasPrice,
+    permanentStorageGasPrice: permanentStorageGasPrice,
+  )
 
 func decodeSignedMantleTx*(data: openArray[byte]): SignedMantleTx {.raises: [DecodingError].} =
   var pos = 0
@@ -80,7 +88,13 @@ func decodeSignedMantleTx*(data: openArray[byte]): SignedMantleTx {.raises: [Dec
   var ops = newSeqOfCap[Op](count)
   for _ in 0 ..< int(count):
     ops.add readOp(data, pos)
-  let tx = MantleTx(ops: ops)
+  let executionGasPrice = TokenValue(readLe[uint64](data, pos))
+  let permanentStorageGasPrice = TokenValue(readLe[uint64](data, pos))
+  let tx = MantleTx(
+    ops: ops,
+    executionGasPrice: executionGasPrice,
+    permanentStorageGasPrice: permanentStorageGasPrice,
+  )
   var proofs = newSeqOfCap[OpProof](ops.len)
   var i = 0
   while pos < data.len:
