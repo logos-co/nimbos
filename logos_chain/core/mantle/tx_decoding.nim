@@ -64,14 +64,6 @@ func decodeOpcode*(data: openArray[byte]): Opcode {.raises: [DecodingError].} =
 func decodeOpCount*(data: openArray[byte]): OpCount {.raises: [DecodingError].} =
   OpCount(decodeByte(data))
 
-func decodeExecutionGasPrice*(data: openArray[byte]): TokenValue {.raises: [DecodingError].} =
-  var pos = 0
-  result = TokenValue(readLe[uint64](data, pos))
-  finishDecode(data, pos)
-
-func decodeStorageGasPrice*(data: openArray[byte]): TokenValue {.raises: [DecodingError].} =
-  decodeExecutionGasPrice(data)
-
 func decodeValue*(data: openArray[byte]): Value {.raises: [DecodingError].} =
   var pos = 0
   result = readLe[uint64](data, pos)
@@ -512,14 +504,8 @@ func decodeMantleTx*(data: openArray[byte]): MantleTx {.raises: [DecodingError].
   var ops = newSeqOfCap[Op](count)
   for _ in 0 ..< int(count):
     ops.add readOp(data, pos)
-  let executionGasPrice = TokenValue(readLe[uint64](data, pos))
-  let permanentStorageGasPrice = TokenValue(readLe[uint64](data, pos))
   finishDecode(data, pos)
-  MantleTx(
-    ops: ops,
-    executionGasPrice: executionGasPrice,
-    permanentStorageGasPrice: permanentStorageGasPrice,
-  )
+  MantleTx(ops: ops)
 
 func decodeSignedMantleTx*(data: openArray[byte]): SignedMantleTx {.raises: [DecodingError].} =
   var pos = 0
@@ -527,13 +513,7 @@ func decodeSignedMantleTx*(data: openArray[byte]): SignedMantleTx {.raises: [Dec
   var ops = newSeqOfCap[Op](count)
   for _ in 0 ..< int(count):
     ops.add readOp(data, pos)
-  let executionGasPrice = TokenValue(readLe[uint64](data, pos))
-  let permanentStorageGasPrice = TokenValue(readLe[uint64](data, pos))
-  let tx = MantleTx(
-    ops: ops,
-    executionGasPrice: executionGasPrice,
-    permanentStorageGasPrice: permanentStorageGasPrice,
-  )
+  let tx = MantleTx(ops: ops)
   var proofs = newSeqOfCap[OpProof](ops.len)
   var i = 0
   while pos < data.len:

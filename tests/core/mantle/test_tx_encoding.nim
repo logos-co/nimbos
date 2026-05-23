@@ -82,15 +82,16 @@ suite "core/mantle/tx_encoding":
 
   test "mantleTxHash is sensitive to tx bytes":
     let txA = MantleTx(
-      ops: @[],
-      executionGasPrice: 1'u64,
-      permanentStorageGasPrice: 2'u64,
+      ops: @[
+        createTransferOp(TransferPayload(
+          inputs: Inputs(noteIds: @[]),
+          outputs: Outputs(notes: @[]),
+        )),
+      ],
+      executionGasPrice: 0'u64,
+      permanentStorageGasPrice: 0'u64,
     )
-    let txB = MantleTx(
-      ops: @[],
-      executionGasPrice: 1'u64,
-      permanentStorageGasPrice: 3'u64,
-    )
+    let txB = MantleTx(ops: @[])
     check mantleTxHash(txA) != mantleTxHash(txB)
 
   test "mantleTxHash is deterministic":

@@ -77,14 +77,6 @@ func encodeOpCount*(value: OpCount): byte =
   ## OpCount = Byte
   encodeByte(byte(value))
 
-func encodeExecutionGasPrice*(value: TokenValue): array[8, byte] =
-  ## ExecutionGasPrice = UINT64
-  encodeLe(uint64(value))
-
-func encodeStorageGasPrice*(value: TokenValue): array[8, byte] =
-  ## StorageGasPrice = UINT64
-  encodeLe(uint64(value))
-
 func encodeValue*(value: Value): array[8, byte] =
   ## Value = UINT64
   encodeLe(value)
@@ -382,10 +374,8 @@ func encodeOps*(ops: openArray[Op]): seq[byte] =
 
 
 func encodeMantleTx*(tx: MantleTx): seq[byte] =
-  ## MantleTx = Ops || ExecutionGasPrice || StorageGasPrice
-  result = encodeOps(tx.ops)
-  result.add(encodeExecutionGasPrice(tx.executionGasPrice))
-  result.add(encodeStorageGasPrice(tx.permanentStorageGasPrice))
+  ## MantleTx = Ops
+  encodeOps(tx.ops)
 
 func encodeSignedMantleTx*(signedTx: SignedMantleTx): seq[byte] =
   ## SignedMantleTx = MantleTx || OpsProofs
