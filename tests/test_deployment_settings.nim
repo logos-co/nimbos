@@ -9,6 +9,7 @@
 {.used.}
 
 import std/[os, strutils]
+import chronos
 import unittest2
 import stew/io2
 import ../logos_chain/conf
@@ -71,10 +72,16 @@ cryptarchia:
   gossipsub_protocol: /a/cryp
   genesis_state:
     mantle_tx:
-      ops: []
+      ops:
+        - opcode: 0
+          payload: {}
+        - opcode: 17
+          payload: {}
       execution_gas_price: 0
       storage_gas_price: 0
-    ops_proofs: []
+    ops_proofs:
+      - NoProof
+      - NoProof
 """
 
 const deploymentSettingsTimeBlock = """
@@ -189,7 +196,7 @@ suite "deployment-settings":
     check ds.network.kademliaProtocolName.len > 0
     check ds.mempool.pubsubTopic.startsWith("/")
     check ds.blend.common.numBlendLayers > 0
-    check ds.cryptarchia.genesisState.kind == yMapping
+    check ds.cryptarchia.genesisState.tx.ops.len > 0
 
   test "deployment-settings: mantle_tx ops and ops_proofs are block sequences":
     let text = readAllChars(deploymentSettingsPath).valueOr:
@@ -283,27 +290,27 @@ suite "deployment-settings":
   test "parseDeploymentSettings: non-scalar leaf network.kademlia_protocol_name":
     let r = parseDeploymentSettings(nonScalarLeafYaml[0])
     check r.isErr
-    check "missing" in r.error
+    check "missing or non-scalar" in r.error
 
   test "parseDeploymentSettings: non-scalar leaf network.identify_protocol_name":
     let r = parseDeploymentSettings(nonScalarLeafYaml[1])
     check r.isErr
-    check "missing" in r.error
+    check "missing or non-scalar" in r.error
 
   test "parseDeploymentSettings: non-scalar leaf network.chain_sync_protocol_name":
     let r = parseDeploymentSettings(nonScalarLeafYaml[2])
     check r.isErr
-    check "missing" in r.error
+    check "missing or non-scalar" in r.error
 
   test "parseDeploymentSettings: non-scalar leaf mempool.pubsub_topic":
     let r = parseDeploymentSettings(nonScalarLeafYaml[3])
     check r.isErr
-    check "missing" in r.error
+    check "missing or non-scalar" in r.error
 
   test "parseDeploymentSettings: non-scalar leaf cryptarchia.gossipsub_protocol":
     let r = parseDeploymentSettings(nonScalarLeafYaml[4])
     check r.isErr
-    check "missing" in r.error
+    check "missing or non-scalar" in r.error
 
   test "validateDeploymentSettings: empty kademlia string":
     check fileExists(emptyScalarsFixturePath)
@@ -340,10 +347,10 @@ suite "deployment-settings":
       check false
       return
     check ds.blend.common.protocolName == "/stub/blend"
-    check ds.time.slotDuration == "1.0"
+    check ds.time.slotDuration == 1.seconds
     check ds.cryptarchia.securityParam == 1
-    check not ds.cryptarchia.genesisState.isNil
-    check yamlGetPathNode(ds.cryptarchia.genesisState, ["mantle_tx"]).isSome
+    check ds.cryptarchia.genesisState.tx.ops.len == 2
+    check ds.cryptarchia.genesisState.tx.ops.len == 2
 
   test "validateDeploymentSettings: empty blend.common.protocol_name":
     let badYaml = deploymentSettingsBlendBlock.replace(
@@ -381,7 +388,7 @@ mempool:
     check v.isErr
     check "cryptarchia.slot_activation_coeff.denominator must be > 0" in v.error
 
-  test "validateDeploymentSettings: empty time.slot_duration":
+  test "parseDeploymentSettings: empty time.slot_duration":
     let badYaml = deploymentSettingsBlendBlock & """
 network:
   kademlia_protocol_name: /a/kad
@@ -394,12 +401,9 @@ time:
 mempool:
   pubsub_topic: /a/mem
 """
-    let ds = parseDeploymentSettings(badYaml).valueOr:
-      check false
-      return
-    let v = validateDeploymentSettings(ds)
-    check v.isErr
-    check "empty time.slot_duration" in v.error
+    let p = parseDeploymentSettings(badYaml)
+    check p.isErr
+    check "time.slot_duration" in p.error
 
   test "yamlGetMap: missing key returns none":
     let root = parseDeploymentSettingsYaml(minimalValidYaml).valueOr:

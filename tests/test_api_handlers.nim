@@ -50,7 +50,7 @@ suite "Logos REST node API stub endpoints":
     check res.headers.getString("content-type") == "application/json"
 
   asyncTest "POST /leader/claim returns empty object":
-    let res = await httpClient(address, MethodPost, LEADER_CLAIM, "")
+    let res = await httpClient(address, MethodPost, LEADER_CLAIM_PATH, "")
     check res.status == 200
     check res.data == "{}"
     check res.headers.getString("content-type") == "application/json"

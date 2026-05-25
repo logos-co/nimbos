@@ -16,7 +16,16 @@ import # Unit test
   ./test_logos_p2p,
   ./test_api_handlers,
   ./test_deployment_settings,
-  ./test_poseidon_hasher
+  ./core/crypto/test_hashing,
+  ./core/crypto/test_types,
+  ./core/mantle/test_primitives,
+  ./core/mantle/test_operations,
+  ./core/mantle/test_proofs,
+  ./core/mantle/test_tx_types,
+  ./core/mantle/test_tx_hashing,
+  "./core/block/test_block_types",
+  "./core/block/test_genesis",
+  ./core/sdp/test_state
 
 summarizeLongTests("AllTests")
 
