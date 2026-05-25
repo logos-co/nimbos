@@ -15,8 +15,7 @@ import
   yaml/[dom, loading],
   libp2p/multiaddress,
   libp2p/crypto/ed25519/ed25519,
-  "../chain/genesis",
-  poseidon2/types
+  "../chain/genesis"
 
 export genesis, chronos
 
@@ -124,7 +123,7 @@ func parseHex32Node(node: YamlNode, path: string): Result[array[32, byte], strin
 
 func parseFieldElementNode(node: YamlNode, path: string): Result[FieldElement, string] =
   let bytes = ? parseHex32Node(node, path)
-  let parsed = F.fromBytes(bytes)
+  let parsed = FieldElement.fromBytes(bytes)
   if parsed.isNone:
     return err("deployment-settings: field element exceeds BN254 scalar modulus at " & path)
   ok(parsed.get())

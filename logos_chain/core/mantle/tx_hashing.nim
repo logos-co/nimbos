@@ -11,25 +11,25 @@
 {.push raises: [], gcsafe.}
 
 import ./tx_types
-import ../crypto/hashing
-import poseidon2/[types, io]
+import ../crypto/[hashing, types]
 import "../../zk/poseidon2/hasher"
 
 const
   MantleTxHashDomainTag = "MANTLE_TXHASH_V1"
   HalfBlakeDigestBytesSize = 16
 
-func frFromBytesUnchecked(bytes: openArray[byte]): F =
+func fieldElementFromBytesUnchecked(bytes: openArray[byte]): FieldElement =
   ## Mirrors `fr_from_bytes_unchecked`: interpret little-endian bytes as field input
   ## without canonical-range checks.
   var tmp: array[31, byte]
-  doAssert bytes.len <= tmp.len, "fr input chunk too large"
+  doAssert bytes.len <= tmp.len, "field element input chunk too large"
   for i in 0 ..< bytes.len:
     tmp[i] = bytes[i]
-  F.fromBytes(tmp)
+  FieldElement.fromBytes(tmp)
 
-func mantleTxHashDomainFr(): F =
-  frFromBytesUnchecked(MantleTxHashDomainTag.toOpenArrayByte(0, MantleTxHashDomainTag.high))
+func mantleTxHashDomainField(): FieldElement =
+  fieldElementFromBytesUnchecked(
+    MantleTxHashDomainTag.toOpenArrayByte(0, MantleTxHashDomainTag.high))
 
 func blake2bMantleTxDigest*(txBytes: openArray[byte]): Hash32 =
   ## Classic digest step: Blake2b-256 over canonical tx bytes.
@@ -40,10 +40,11 @@ func mantleTxHash*(tx: MantleTx): ZkHash =
   let txBytes = encodeMantleTx(tx)
   let classicDigest = blake2bMantleTxDigest(txBytes)
 
-  let frA = frFromBytesUnchecked(classicDigest.toOpenArray(0, HalfBlakeDigestBytesSize - 1))
-  let frB = frFromBytesUnchecked(classicDigest.toOpenArray(
+  let feA = fieldElementFromBytesUnchecked(
+    classicDigest.toOpenArray(0, HalfBlakeDigestBytesSize - 1))
+  let feB = fieldElementFromBytesUnchecked(classicDigest.toOpenArray(
     HalfBlakeDigestBytesSize, (2 * HalfBlakeDigestBytesSize) - 1))
-  let preimage = [mantleTxHashDomainFr(), frA, frB]
+  let preimage = [mantleTxHashDomainField(), feA, feB]
   Poseidon2Hasher.digest(preimage).toBytes()
 
 {.pop.}
