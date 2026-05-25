@@ -54,4 +54,24 @@ func frFromBytesLE*(bytes: openArray[byte]): Option[F] =
     padded[i] = b     # LE, zero-padded to 32
   F.fromBytes(padded)
 
+const TwoToThe248LEBytes: array[32, byte] =
+  [0u8, 0, 0, 0, 0, 0, 0, 0,
+   0, 0, 0, 0, 0, 0, 0, 0,
+   0, 0, 0, 0, 0, 0, 0, 0,
+   0, 0, 0, 0, 0, 0, 0, 1]
+
+func frFromBytesLEModOrder*(bytes: array[32, byte]): F =
+  ## Reduce a 32-byte LE value mod field order. Used to ingest classic
+  ## 32-byte digests (e.g. Blake2b output) that may exceed the BN254 modulus.
+  ## Splits the input as ``low(31 bytes) + high(byte 31) * 2^248`` — both pieces
+  ## are < modulus so the conversion can't fail; field arithmetic reduces.
+  var lowBytes: array[31, byte]
+  for i in 0 .. 30:
+    lowBytes[i] = bytes[i]
+  let
+    low = F.fromBytes(lowBytes)
+    high = frFromBytesLE([bytes[31]]).get
+    twoToThe248 = F.fromBytes(TwoToThe248LEBytes).get
+  low + high * twoToThe248
+
 {.pop.}

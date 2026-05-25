@@ -5,20 +5,22 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-## Mantle operation opcode constants.
-## Spec: [v1.4 Mantle](https://nomos-tech.notion.site/v1-4-Mantle-335261aa09df8065a38acff4b25aee82)
+## Chain initialization: load deployment settings, build genesis block, seed ledger state.
 
-{.push raises: [], gcsafe.}
+{.push raises: [].}
 
-const
-  OpTransfer* = 0x00'u8
-  OpChannelConfig* = 0x10'u8
-  OpChannelInscribe* = 0x11'u8
-  OpChannelDeposit* = 0x12'u8
-  OpChannelWithdraw* = 0x13'u8
-  OpSdpDeclare* = 0x20'u8
-  OpSdpWithdraw* = 0x21'u8
-  OpSdpActive* = 0x22'u8
-  OpLeaderClaim* = 0x30'u8
+import results
+import "./core/block/types"
+import ./deployment/deployment_settings
+import ./chain/genesis
+
+export genesis
+
+type
+  Chain* = object
+    genesisBlock*: Block
+
+proc init*(settings: DeploymentSettings): Result[Chain, string] =
+  ok(Chain(genesisBlock: createGenesisBlock(settings.cryptarchia.genesisState)))
 
 {.pop.}

@@ -9,7 +9,8 @@
 
 import std/macros,
        results, stew/byteutils, presto/route,
-       "."/[types, serialization, common, constants]
+       "."/[types, serialization, common, constants],
+       ../core/crypto/types as crypto_types
 
 ## NOTE: The `types` / `serialization` / `common` modules mirror the upstream
 ## Eth2 REST API type definitions, but the Logos-specific
@@ -22,7 +23,8 @@ import std/macros,
 
 export
   results, serialization, types,
-  constants, common, route, decodeString
+  constants, common, route, decodeString,
+  crypto_types.ZkHash, crypto_types.ZkPublicKey
 
 func disallowInterruptionsAux(body: NimNode) =
   for n in body:
@@ -55,8 +57,6 @@ const
 type
   LogosDigest* = array[32, byte]
   HeaderId* = LogosDigest
-  ZkPublicKey* = ZkHash
-  ZkHash* = array[32, byte] #TODO Replace with Fr type
 
 func decodeLogosDigest(value: string): Result[LogosDigest, cstring] =
   try:
@@ -68,3 +68,14 @@ func decodeLogosDigest(value: string): Result[LogosDigest, cstring] =
 
 func decodeString*(t: typedesc[LogosDigest], value: string): Result[LogosDigest, cstring] =
   decodeLogosDigest(value)
+
+func decodeString*(t: typedesc[ZkPublicKey], value: string): Result[ZkPublicKey, cstring] =
+  var raw: array[32, byte]
+  try:
+    hexToByteArrayStrict(value, raw)
+  except ValueError:
+    return err("Invalid hex string for ZkPublicKey")
+  try:
+    ok(Result[ZkPublicKey, cstring], decodeZkPublicKey(raw))
+  except DecodingError:
+    err("Invalid ZkPublicKey bytes")

@@ -10,19 +10,14 @@
 
 {.push raises: [], gcsafe.}
 
-import ../crypto/[hashing, encoding]
-import ../mantle/tx_types
-import ../mantle/tx_encoding
-import ../mantle/tx_hashing
+import stew/bitops2
+import ../crypto/hashing
+import ../mantle/[tx_types, tx_hashing]
 import libp2p/crypto/ed25519/ed25519
 export hashing, tx_types
 
-# ---------------------------------------------------------------------------
-# Core block types
-# ---------------------------------------------------------------------------
 
 type
-  ## Proof-of-leadership proof wire representation (compressed Groth16, 128 bytes).
   ProofOfLeadershipProof* = CompressedGroth16Proof
 
   ProofOfLeadership* = object
@@ -31,6 +26,8 @@ type
     proof*: ProofOfLeadershipProof
     leaderKey*: Ed25519PublicKey
 
+  BlockId* = Hash32
+  
   Header* = object
     bedrockVersion*: uint8
     parentBlock*: BlockId
@@ -43,15 +40,10 @@ type
     txs*: seq[SignedMantleTx]
 
   Proposal* = object
-    ## Approximate serialized size:
-    ## header (297) + references (32768) + signature (64) = 33129 bytes.
     header*: Header
     references*: References
     signature*: Ed25519Signature
 
-# ---------------------------------------------------------------------------
-# Hashing helpers
-# ---------------------------------------------------------------------------
 
 func hashPair(left, right: Hash32): Hash32 =
   var pairBytes: array[64, byte]
@@ -61,28 +53,25 @@ func hashPair(left, right: Hash32): Hash32 =
 
 func createBlockRoot*(txs: openArray[SignedMantleTx]): Hash32 =
   ## Computes Merkle root over tx hashes (in block order).
-  ## Uses duplicate-last padding for odd levels.
-  ## TODO: confirm this exact Merkle construction (empty root rule, odd-leaf
-  ## padding strategy, leaf hash source, pair hashing order `left || right`,
-  ## and whether domain separation is required for leaves/internal nodes)
-  ## against the canonical Nomos spec/reference implementation.
+  ## Pads the leaf layer to the next power of two with zero ``Hash32`` leaves
+  ## (SSZ-style), then pairs ``left || right`` with BLAKE2b-256.
+  ## TODO: confirm empty-root rule and domain separation against Nomos spec.
   doAssert txs.len <= MaxBlockTxs,
     "tx set exceeds MaxBlockTxs (" & $MaxBlockTxs & "): " & $txs.len
 
   if txs.len == 0:
     return default(Hash32)
 
-  var level = newSeq[Hash32](txs.len)
+  let paddedLen = nextPow2(txs.len.uint64).int
+  var level = newSeq[Hash32](paddedLen)
   for i, stx in txs:
     level[i] = mantleTxHash(stx.tx)
 
   while level.len > 1:
-    let parentLen = (level.len + 1) div 2
+    let parentLen = level.len div 2
     var parents = newSeq[Hash32](parentLen)
     for i in 0 ..< parentLen:
-      let left = level[2 * i]
-      let right = (if (2 * i + 1) < level.len: level[2 * i + 1] else: left)
-      parents[i] = hashPair(left, right)
+      parents[i] = hashPair(level[2 * i], level[2 * i + 1])
     level = parents
 
   level[0]
@@ -120,9 +109,6 @@ func blockId*(header: Header): Hash32 =
 
   blake2b256Hash(preimage)
 
-# ---------------------------------------------------------------------------
-# Constructors
-# ---------------------------------------------------------------------------
 
 func initBlock*(header: Header, txs: openArray[SignedMantleTx]): Block =
   ## Canonical constructor that enforces block tx count limit.

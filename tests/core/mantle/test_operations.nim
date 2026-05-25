@@ -167,4 +167,69 @@ suite "core/mantle/operations":
       let proof = defaultOpProofForOpcode(opcode)
       check proof.kind == expectedOpProofKindForOpcode(opcode)
 
+  test "encodeOps prefixes op count and includes opcode":
+    let ops = @[
+      createTransferOp(TransferPayload(
+        inputs: Inputs(noteIds: @[]),
+        outputs: Outputs(notes: @[]),
+      )),
+    ]
+    let encoded = encodeOps(ops)
+    check encoded.len >= 2
+    check encoded[0] == 1'u8
+    check encoded[1] == OpTransfer
+
+  test "encodeChannelDeposit and encodeChannelWithdraw include expected prefixes":
+    let dep = encodeChannelDeposit(ChannelDepositPayload(
+      channel: default(ChannelId),
+      inputs: @[default(NoteId)],
+      metadata: @[],
+    ))
+    check dep.len >= 32 + 1 + 32
+    check dep[32] == 1'u8 # InputCount
+
+    let wdr = encodeChannelWithdraw(ChannelWithdrawPayload(
+      channel: default(ChannelId),
+      outputs: @[],
+      opIdNonce: 1'u32,
+    ))
+    check wdr.len == 32 + 1 + 4
+    check wdr[^4] == 1'u8 # opIdNonce LE low byte
+
+  test "decodeOps roundtrips encodeOps":
+    let ops = @[
+      createTransferOp(TransferPayload(
+        inputs: Inputs(noteIds: @[]),
+        outputs: Outputs(notes: @[]),
+      )),
+    ]
+    let wire = encodeOps(ops)
+    let back = decodeOps(wire)
+    check back.len == 1
+    check back[0].opcode == OpTransfer
+    check back[0].payload.kind == Transfer
+
+  test "decodeChannelDeposit and decodeChannelWithdraw roundtrip encoders":
+    let depPayload = ChannelDepositPayload(
+      channel: default(ChannelId),
+      inputs: @[default(NoteId)],
+      metadata: @[],
+    )
+    let depWire = encodeChannelDeposit(depPayload)
+    let depBack = decodeChannelDeposit(depWire)
+    check depBack.channel == depPayload.channel
+    check depBack.inputs == depPayload.inputs
+    check depBack.metadata == depPayload.metadata
+
+    let wdrPayload = ChannelWithdrawPayload(
+      channel: default(ChannelId),
+      outputs: @[],
+      opIdNonce: 1'u32,
+    )
+    let wdrWire = encodeChannelWithdraw(wdrPayload)
+    let wdrBack = decodeChannelWithdraw(wdrWire)
+    check wdrBack.channel == wdrPayload.channel
+    check wdrBack.outputs == wdrPayload.outputs
+    check wdrBack.opIdNonce == wdrPayload.opIdNonce
+
 {.pop.}

@@ -10,58 +10,27 @@
 
 {.push raises: [], gcsafe.}
 
-import std/options
-
-import ./tx_types
-import ./tx_encoding
-import ../crypto/hashing
-import poseidon2/[types, io]
-import "../../zk/poseidon2/hasher"
+import ./tx_types, ./operations, ../crypto/hashing
 
 const
   MantleTxHashDomainTag = "MANTLE_TXHASH_V1"
-  TransferHashV1DomainTag = "TRANSFER_HASH_V1"
-  HalfBlakeDigestBytesSize = 16
+  OperationIdV1DomainTag = "OPERATION_ID_V1"
 
-func mantleTxHashDomainFr(): F =
-  frFromBytesLE(MantleTxHashDomainTag.toOpenArrayByte(0, MantleTxHashDomainTag.high)).get
-
-func transferHashV1DomainFr(): F =
-  frFromBytesLE(
-    TransferHashV1DomainTag.toOpenArrayByte(0, TransferHashV1DomainTag.high)
-  ).get
-
-func blake2bMantleTxDigest*(txBytes: openArray[byte]): Hash32 =
-  ## Classic digest step: Blake2b-256 over canonical tx bytes.
-  blake2b256Hash(txBytes)
+func blake2bWithDomain(domainTag: string, payload: openArray[byte]): Hash32 =
+  var preimage = newSeqOfCap[byte](domainTag.len + payload.len)
+  for c in domainTag:
+    preimage.add(byte(ord(c)))
+  preimage.add(payload)
+  blake2b256Hash(preimage)
 
 func mantleTxHash*(tx: MantleTx): ZkHash =
-  ## tx_hash = Poseidon2( MANTLE_TXHASH_V1_FR || fr(blake[0..15]) || fr(blake[16..31]) )
-  let
-    txBytes = encodeMantleTx(tx)
-    classicDigest = blake2bMantleTxDigest(txBytes)
-    frA = frFromBytesLE(classicDigest.toOpenArray(0, HalfBlakeDigestBytesSize - 1)).get
-    frB = frFromBytesLE(
-      classicDigest.toOpenArray(
-        HalfBlakeDigestBytesSize, (2 * HalfBlakeDigestBytesSize) - 1
-      )
-    ).get
-    preimage = [mantleTxHashDomainFr(), frA, frB]
-  Poseidon2Hasher.digest(preimage).toBytes()
+  ## tx_hash = Blake2b-256("MANTLE_TXHASH_V1" || encode(tx))
+  ## TODO: once zk/poseidon2/hasher exists in this target, derive ZkHash by
+  ## feeding two little-endian field chunks from classic_digest into ZkHasher.
+  blake2bWithDomain(MantleTxHashDomainTag, encodeMantleTx(tx))
 
-func transferOpHash*(op: TransferPayload): ZkHash =
-  ## transfer_hash = Poseidon2( TRANSFER_HASH_V1_FR || fr(blake[0..15]) || fr(blake[16..31]) )
-  ## where blake = Blake2b-256(encodeTransfer(op)). Used as `Utxo.transferHash`
-  let
-    bytes = encodeTransfer(op)
-    classicDigest = blake2b256Hash(bytes)
-    frA = frFromBytesLE(classicDigest.toOpenArray(0, HalfBlakeDigestBytesSize - 1)).get
-    frB = frFromBytesLE(
-      classicDigest.toOpenArray(
-        HalfBlakeDigestBytesSize, (2 * HalfBlakeDigestBytesSize) - 1
-      )
-    ).get
-    preimage = [transferHashV1DomainFr(), frA, frB]
-  Poseidon2Hasher.digest(preimage).toBytes()
+func opId*(op: TransferPayload): Hash32 =
+  ## op_id = Blake2b-256("OPERATION_ID_V1" || encode_op_bytes(op))
+  blake2bWithDomain(OperationIdV1DomainTag, encodeTransfer(op))
 
 {.pop.}

@@ -16,24 +16,23 @@ import # Unit test
   ./test_logos_p2p,
   ./test_api_handlers,
   ./test_deployment_settings,
-  ./test_poseidon_hasher,
   ./core/crypto/test_hashing,
-  ./core/crypto/test_encoding,
+  ./core/crypto/test_types,
   ./core/mantle/test_primitives,
   ./core/mantle/test_operations,
   ./core/mantle/test_proofs,
   ./core/mantle/test_tx_types,
-  ./core/mantle/test_tx_encoding,
+  ./core/mantle/test_tx_hashing,
   ./core/mantle/test_utxo,
   "./core/block/test_block_types",
-  # ./core/block/test_genesis,                   # ported from a transitional API shape; unbuildable
-  # ./core/block/test_devnet_genesis_mantle_tx,  # depends on upstream-only deployment_settings_helpers
+  "./core/block/test_genesis",
   ./core/sdp/test_state,
   ./utils/test_hash_trie_map,
   ./utils/test_dynamic_merkle_tree,
   ./ledger/test_utxo_store,
   ./ledger/test_cryptarchia,
-  ./ledger/test_ledger
+  ./ledger/test_ledger,
+  ./test_poseidon_hasher
 
 summarizeLongTests("AllTests")
 

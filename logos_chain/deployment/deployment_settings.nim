@@ -5,25 +5,29 @@
 #   * Apache v2 license (license terms in the root directory or at https://opensource.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-## **Genesis state:** ``cryptarchia.genesis_state`` is currently kept as a ``YamlNode``
-## subtree (plus ``yamlRoot`` for document lifetime). A follow-up change should replace
-## this with Nim types and deterministic genesis / block construction without changing
+## **Genesis state:** ``cryptarchia.genesis_state`` is parsed into typed
+## ``SignedMantleTx`` data.
+## TODO(genesis-from-deployment): replace placeholder byte payload/proof content
+## with canonical typed payload/proof decoding and validation.
+## A follow-up change should parse YAML into those typed fields without changing
 ## the public load path: ``loadDeploymentSettings`` → ``parseDeploymentSettings`` →
-## ``deploymentSettingsFromYaml``. New genesis parsing should plug in where
-## ``genesis_state`` is attached below (see ``deploymentSettingsFromYaml``).
+## ``deploymentSettingsFromYaml``.
 
 {.push raises: [].}
 
 import
   std/[options, strutils],
+  chronos,
   confutils/defs,
   results,
   stew/io2,
   yaml/dom,
-  ./helpers
+  "../core/block/types",
+  ./deployment_settings_helpers
 
 export
   dom,
+  parseDeploymentGenesisState,
   parseDeploymentSettingsYaml,
   yamlGetPathNode,
   yamlGetPathScalar
@@ -91,19 +95,16 @@ type
     learningRate*: float
     sdpConfig*: SdpConfig
     gossipsubProtocol*: string
-    genesisState*: YamlNode ## Interim DOM for ``cryptarchia.genesis_state``; replace with typed genesis when building blocks from deployment config.
+    genesisState*: SignedMantleTx
 
   TimeDeploymentSettings* = object
-    slotDuration*: string
+    slotDuration*: Duration
     chainStartTime*: string
 
   MempoolDeploymentSettings* = object
     pubsubTopic*: string
 
   DeploymentSettings* = object
-    ## Parsed document root; keeps the full tree alive until ``genesis_state`` is modeled
-    ## in Nim (then this field may be removed if only typed data is retained).
-    yamlRoot*: YamlNode
     blend*: BlendSettings
     network*: NetworkDeploymentSettings
     cryptarchia*: CryptarchiaDeploymentSettings
@@ -111,7 +112,7 @@ type
     mempool*: MempoolDeploymentSettings
 
 func validateDeploymentSettingsStructure(root: YamlNode): Result[void, string] =
-  template need(path: openArray[string]) =
+  template needPath(path: openArray[string]) =
     if yamlGetPathNode(root, path).isNone:
       return err("deployment-settings: missing or invalid path: " & path.join("."))
   ? requireTopLevelMapping(root, "blend")
@@ -119,51 +120,46 @@ func validateDeploymentSettingsStructure(root: YamlNode): Result[void, string] =
   ? requireTopLevelMapping(root, "cryptarchia")
   ? requireTopLevelMapping(root, "time")
   ? requireTopLevelMapping(root, "mempool")
-  need(["blend", "common", "num_blend_layers"])
-  need(["blend", "common", "minimum_network_size"])
-  need(["blend", "common", "protocol_name"])
-  need(["blend", "common", "data_replication_factor"])
-  need(["blend", "core", "scheduler"])
-  need(["blend", "core", "minimum_messages_coefficient"])
-  need(["blend", "core", "normalization_constant"])
-  need(["blend", "core", "activity_threshold_sensitivity"])
-  need(["blend", "core", "scheduler", "cover", "message_frequency_per_round"])
-  need(["blend", "core", "scheduler", "cover", "intervals_for_safety_buffer"])
-  need(["blend", "core", "scheduler", "delayer", "maximum_release_delay_in_rounds"])
-  need(["network", "kademlia_protocol_name"])
-  need(["network", "identify_protocol_name"])
-  need(["network", "chain_sync_protocol_name"])
-  need(["cryptarchia", "epoch_config", "epoch_stake_distribution_stabilization"])
-  need(["cryptarchia", "epoch_config", "epoch_period_nonce_buffer"])
-  need(["cryptarchia", "epoch_config", "epoch_period_nonce_stabilization"])
-  need(["cryptarchia", "security_param"])
-  need(["cryptarchia", "slot_activation_coeff", "numerator"])
-  need(["cryptarchia", "slot_activation_coeff", "denominator"])
-  need(["cryptarchia", "learning_rate"])
-  need(["cryptarchia", "sdp_config", "service_params", "BN", "lock_period"])
-  need(["cryptarchia", "sdp_config", "service_params", "BN", "inactivity_period"])
-  need(["cryptarchia", "sdp_config", "service_params", "BN", "retention_period"])
-  need(["cryptarchia", "sdp_config", "service_params", "BN", "timestamp"])
-  need(["cryptarchia", "sdp_config", "min_stake", "threshold"])
-  need(["cryptarchia", "sdp_config", "min_stake", "timestamp"])
-  need(["cryptarchia", "gossipsub_protocol"])
-  need(["cryptarchia", "genesis_state", "mantle_tx", "ops"])
-  need(["cryptarchia", "genesis_state", "mantle_tx", "execution_gas_price"])
-  need(["cryptarchia", "genesis_state", "mantle_tx", "storage_gas_price"])
-  need(["cryptarchia", "genesis_state", "ops_proofs"])
-  need(["time", "slot_duration"])
-  need(["time", "chain_start_time"])
-  need(["mempool", "pubsub_topic"])
+  needPath(["blend", "common", "num_blend_layers"])
+  needPath(["blend", "common", "minimum_network_size"])
+  needPath(["blend", "common", "protocol_name"])
+  needPath(["blend", "common", "data_replication_factor"])
+  needPath(["blend", "core", "scheduler"])
+  needPath(["blend", "core", "minimum_messages_coefficient"])
+  needPath(["blend", "core", "normalization_constant"])
+  needPath(["blend", "core", "activity_threshold_sensitivity"])
+  needPath(["blend", "core", "scheduler", "cover", "message_frequency_per_round"])
+  needPath(["blend", "core", "scheduler", "cover", "intervals_for_safety_buffer"])
+  needPath(["blend", "core", "scheduler", "delayer", "maximum_release_delay_in_rounds"])
+  needPath(["network", "kademlia_protocol_name"])
+  needPath(["network", "identify_protocol_name"])
+  needPath(["network", "chain_sync_protocol_name"])
+  needPath(["cryptarchia", "epoch_config", "epoch_stake_distribution_stabilization"])
+  needPath(["cryptarchia", "epoch_config", "epoch_period_nonce_buffer"])
+  needPath(["cryptarchia", "epoch_config", "epoch_period_nonce_stabilization"])
+  needPath(["cryptarchia", "security_param"])
+  needPath(["cryptarchia", "slot_activation_coeff", "numerator"])
+  needPath(["cryptarchia", "slot_activation_coeff", "denominator"])
+  needPath(["cryptarchia", "learning_rate"])
+  needPath(["cryptarchia", "sdp_config", "service_params", "BN", "lock_period"])
+  needPath(["cryptarchia", "sdp_config", "service_params", "BN", "inactivity_period"])
+  needPath(["cryptarchia", "sdp_config", "service_params", "BN", "retention_period"])
+  needPath(["cryptarchia", "sdp_config", "service_params", "BN", "timestamp"])
+  needPath(["cryptarchia", "sdp_config", "min_stake", "threshold"])
+  needPath(["cryptarchia", "sdp_config", "min_stake", "timestamp"])
+  needPath(["cryptarchia", "gossipsub_protocol"])
+  needPath(["cryptarchia", "genesis_state", "mantle_tx", "ops"])
+  needPath(["cryptarchia", "genesis_state", "mantle_tx", "execution_gas_price"])
+  needPath(["cryptarchia", "genesis_state", "mantle_tx", "storage_gas_price"])
+  needPath(["cryptarchia", "genesis_state", "ops_proofs"])
+  needPath(["time", "slot_duration"])
+  needPath(["time", "chain_start_time"])
+  needPath(["mempool", "pubsub_topic"])
   ok()
 
 func deploymentSettingsFromYaml(root: YamlNode): Result[DeploymentSettings, string] =
-  # Genesis: attach DOM for now; follow-up PR should parse `gs` into Nim types here and
-  # then either drop YamlNode or keep both briefly during migration.
-  let gs = yamlGetPathNode(root, ["cryptarchia", "genesis_state"])
-  if gs.isNone:
-    return err("deployment-settings: missing cryptarchia.genesis_state")
+  let parsedGenesis = ? parseDeploymentGenesisState(root)
   ok(DeploymentSettings(
-    yamlRoot: root,
     blend: BlendSettings(
       common: BlendCommon(
         numBlendLayers: ? reqInt(root, ["blend", "common", "num_blend_layers"]),
@@ -222,10 +218,10 @@ func deploymentSettingsFromYaml(root: YamlNode): Result[DeploymentSettings, stri
         )
       ),
       gossipsubProtocol: ? reqScalar(root, ["cryptarchia", "gossipsub_protocol"]),
-      genesisState: gs.get
+      genesisState: parsedGenesis
     ),
     time: TimeDeploymentSettings(
-      slotDuration: ? reqScalar(root, ["time", "slot_duration"]),
+      slotDuration: ? reqSlotDuration(root, ["time", "slot_duration"]),
       chainStartTime: ? reqScalar(root, ["time", "chain_start_time"])
     ),
     mempool: MempoolDeploymentSettings(
@@ -281,13 +277,10 @@ func validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
     "cryptarchia.sdp_config.min_stake.threshold must be > 0")
   need(ds.cryptarchia.sdpConfig.minStake.timestamp >= 0,
     "cryptarchia.sdp_config.min_stake.timestamp must be >= 0")
-
-  need(not ds.cryptarchia.genesisState.isNil, "missing cryptarchia.genesis_state")
-  need(ds.cryptarchia.genesisState.kind == yMapping, "cryptarchia.genesis_state must be a mapping")
   need(ds.network.kademliaProtocolName.len > 0, "empty network.kademlia_protocol_name")
   need(ds.network.identifyProtocolName.len > 0, "empty network.identify_protocol_name")
   need(ds.network.chainSyncProtocolName.len > 0, "empty network.chain_sync_protocol_name")
-  need(ds.time.slotDuration.len > 0, "empty time.slot_duration")
+  need(ds.time.slotDuration > ZeroDuration, "time.slot_duration must be > 0")
   need(ds.time.chainStartTime.len > 0, "empty time.chain_start_time")
   need(ds.mempool.pubsubTopic.len > 0, "empty mempool.pubsub_topic")
   need(ds.cryptarchia.gossipsubProtocol.len > 0, "empty cryptarchia.gossipsub_protocol")
@@ -295,16 +288,55 @@ func validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
   need(ds.blend.common.protocolName.startsWith("/"), "blend.common.protocol_name must start with '/'")
   need(ds.network.kademliaProtocolName.startsWith("/"), "network.kademlia_protocol_name must start with '/'")
   need(ds.network.identifyProtocolName.startsWith("/"), "network.identify_protocol_name must start with '/'")
-  need(ds.network.chainSyncProtocolName.startsWith("/"),
-    "network.chain_sync_protocol_name must start with '/'")
+  need(
+    ds.network.chainSyncProtocolName.startsWith("/"),
+    "network.chain_sync_protocol_name must start with '/'"
+  )
   need(ds.mempool.pubsubTopic.startsWith("/"), "mempool.pubsub_topic must start with '/'")
   need(ds.cryptarchia.gossipsubProtocol.startsWith("/"), "cryptarchia.gossipsub_protocol must start with '/'")
+
+  let smt = ds.cryptarchia.genesisState
+  need(smt.tx.ops.len > 0,
+    "cryptarchia.genesis_state.mantle_tx.ops must be non-empty")
+  let genesisProofCount = smt.opProofs.len
+  let genesisOpCount = smt.tx.ops.len
+  need(
+    genesisProofCount <= genesisOpCount,
+    "cryptarchia.genesis_state: len(ops_proofs) must be <= len(ops)"
+  )
+  for i in 0 ..< smt.opProofs.len:
+    let expectedKind = expectedOpProofKindForOpcode(smt.tx.ops[i].opcode)
+    let proofOk = smt.opProofs[i].kind == expectedKind
+    need(
+      proofOk,
+      "cryptarchia.genesis_state: ops_proofs[" & $i & "] does not match ProofFor(mantle_tx.ops[" & $i & "])"
+    )
+  need(smt.tx.executionGasPrice == TokenValue(0'u64),
+    "cryptarchia.genesis_state.mantle_tx.execution_gas_price must be 0 for genesis")
+  need(smt.tx.permanentStorageGasPrice == TokenValue(0'u64),
+    "cryptarchia.genesis_state.mantle_tx.storage_gas_price must be 0 for genesis")
+  need(smt.tx.ops.len >= 2,
+    "cryptarchia.genesis_state.mantle_tx.ops must contain at least transfer and inscription")
+  need(
+    smt.tx.ops[0].opcode == OpTransfer,
+    "cryptarchia.genesis_state.mantle_tx.ops[0] must be transfer")
+  need(
+    smt.tx.ops[1].opcode == OpChannelInscribe,
+    "cryptarchia.genesis_state.mantle_tx.ops[1] must be channel_inscribe")
+  if smt.tx.ops.len > 2:
+    for i in 2 ..< smt.tx.ops.len:
+      need(
+        smt.tx.ops[i].opcode == OpSdpDeclare,
+        "cryptarchia.genesis_state.mantle_tx.ops[" & $i & "] must be sdp_declare")
+
   ok()
 
 proc loadDeploymentSettings*(deploymentSettingsFile: InputFile): Result[DeploymentSettings, string] =
   let path = string(deploymentSettingsFile)
-  let text = readAllChars(path).valueOr:
-    return err("deployment-settings: cannot read " & path & ": " & ioErrorMsg(error))
+  let textRes = readAllChars(path)
+  if textRes.isErr():
+    return err("deployment-settings: cannot read " & path & ": " & ioErrorMsg(textRes.error))
+  let text = textRes.get()
   let ds = ? parseDeploymentSettings(text)
   ? validateDeploymentSettings(ds)
   ok(ds)

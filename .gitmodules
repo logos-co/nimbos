@@ -154,6 +154,10 @@
 	url = https://github.com/flyx/NimYAML.git
 	ignore = untracked
 	branch = devel
+[submodule "vendor/nim-groth16"]
+	path = vendor/nim-groth16
+	url = https://github.com/logos-storage/nim-groth16.git
+	branch = master
 [submodule "vendor/nim-poseidon2"]
 	path = vendor/nim-poseidon2
 	url = https://github.com/codex-storage/nim-poseidon2.git

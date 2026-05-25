@@ -9,15 +9,13 @@
 
 {.push raises: [], gcsafe.}
 
-import std/options
-import stew/endians2
-
-import ./primitives
-import poseidon2/[types, io]
-import "../../zk/poseidon2/hasher"
+import
+  std/options,
+  stew/endians2, poseidon2/types,
+  ./primitives, "../../zk/poseidon2/hasher"
 
 type Utxo* = object
-  transferHash*: ZkHash
+  opId*: Hash32
   outputIndex*: int
   note*: Note
 
@@ -27,14 +25,19 @@ func noteIdV1DomainFr(): F =
   frFromBytesLE(NoteIdV1DomainTag.toOpenArrayByte(0, NoteIdV1DomainTag.high)).get
 
 func id*(u: Utxo): NoteId =
-  ## Poseidon2 commitment over (domain, transferHash, outputIndex, value, pk).
+  ## Poseidon2 commitment over (domain, opId, outputIndex, value, pk).
+  ## ``opId`` is a Blake2b digest that may exceed the field modulus, so it
+  ## is reduced mod order before being absorbed.
   let
-    transferFr = F.fromBytes(u.transferHash).get
+    opIdFr = frFromBytesLEModOrder(u.opId)
     outputIdxFr = frFromBytesLE(uint64(u.outputIndex).toBytesLE).get
     valueFr = frFromBytesLE(u.note.value.toBytesLE).get
-    pkFr = F.fromBytes(u.note.zkPublicKey).get
+    pkFr = u.note.zkPublicKey
   NoteId(
-    Poseidon2Hasher.digest([noteIdV1DomainFr(), transferFr, outputIdxFr, valueFr, pkFr])
+    Poseidon2Hasher.digest([noteIdV1DomainFr(), opIdFr, outputIdxFr, valueFr, pkFr])
   )
+
+func asField*(id: NoteId): F = id
+  ## `DynamicMerkleTree` Item view: NoteId is already a field element.
 
 {.pop.}

@@ -84,7 +84,7 @@ suite "tryApplyTransfer — happy paths":
   test "multi-input combine (2 inputs, 1 output)":
     let
       a = mkUtxo(value = 60, pkSeed = 1)
-      b = mkUtxo(value = 40, pkSeed = 1, transferSeed = 1)
+      b = mkUtxo(value = 40, pkSeed = 1, opIdSeed = 1)
       s0 = CryptarchiaState.init([a, b])
       op = TransferPayload(
         inputs: Inputs(noteIds: @[a.id, b.id]),
@@ -137,7 +137,7 @@ suite "tryApplyTransfer — error paths":
       s0 = CryptarchiaState.init([seeded])
 
       wrongIdx = mkUtxo(value = 100, pkSeed = 1, idx = 1)
-      wrongHash = mkUtxo(value = 100, pkSeed = 1, transferSeed = 9)
+      wrongHash = mkUtxo(value = 100, pkSeed = 1, opIdSeed = 9)
       wrongValue = mkUtxo(value = 99, pkSeed = 1)
 
     for missing in [wrongIdx, wrongHash, wrongValue]:
@@ -295,11 +295,11 @@ suite "tryApplyTransfer — balance + chain":
 
     let
       s1 = r1.get.state
-      tx1Hash = transferOpHash(tx1)
+      tx1OpId = opId(tx1)
       outUtxo0 =
-        Utxo(transferHash: tx1Hash, outputIndex: 0, note: mkNote(60, pkSeed = 2))
+        Utxo(opId: tx1OpId, outputIndex: 0, note: mkNote(60, pkSeed = 2))
       outUtxo1 =
-        Utxo(transferHash: tx1Hash, outputIndex: 1, note: mkNote(40, pkSeed = 3))
+        Utxo(opId: tx1OpId, outputIndex: 1, note: mkNote(40, pkSeed = 3))
     
     check s1.utxos.contains(outUtxo0.id)
     check s1.utxos.contains(outUtxo1.id)

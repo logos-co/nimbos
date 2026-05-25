@@ -9,17 +9,15 @@
 ## **``mantle/operations``**; **``Op``** (``Opcode`` + **``OpPayload``**),
 ## **``MantleTx``** / **``SignedMantleTx``**, and **``OpProof``**.
 ## Spec: [v1.4 Mantle](https://nomos-tech.notion.site/v1-4-Mantle-335261aa09df8065a38acff4b25aee82)
+##
+## Wire encoding/decoding: [v1.3 Mantle Transaction Encoding](https://nomos-tech.notion.site/v1-3-Mantle-Transaction-Encoding-335261aa09df8051a8a6f325aa41f6a7)
 
 {.push raises: [], gcsafe.}
 
-import ./primitives
-import ./operations
-import ./proofs
+import ./[primitives, operations, proofs]
+import ../crypto/types
 export primitives, operations, proofs
 
-# ---------------------------------------------------------------------------
-# Types
-# ---------------------------------------------------------------------------
 
 type
   MantleTx* = object
@@ -27,9 +25,53 @@ type
     permanentStorageGasPrice*: TokenValue
     executionGasPrice*: TokenValue
 
-  ## ``MantleTx`` plus one **``OpProof``** per op: ``opProofs[i]`` lines up with ``tx.ops[i]``.
   SignedMantleTx* = object
     tx*: MantleTx
     opProofs*: seq[OpProof]
 
+func encodeMantleTx*(tx: MantleTx): seq[byte] =
+  ## MantleTx = Ops || ExecutionGasPrice || StorageGasPrice
+  result = encodeOps(tx.ops)
+  result.add(encodeLe(uint64(tx.executionGasPrice)))
+  result.add(encodeLe(uint64(tx.permanentStorageGasPrice)))
+
+func encodeSignedMantleTx*(signedTx: SignedMantleTx): seq[byte] =
+  ## SignedMantleTx = MantleTx || OpsProofs
+  result = encodeMantleTx(signedTx.tx)
+  result.add(encodeOpsProofs(signedTx.tx.ops, signedTx.opProofs))
+
+func decodeMantleTx*(data: openArray[byte]): MantleTx {.raises: [DecodingError].} =
+  var pos = 0
+  let count = readByte(data, pos)
+  var ops = newSeqOfCap[Op](count)
+  for _ in 0 ..< int(count):
+    ops.add readOp(data, pos)
+  let executionGasPrice = TokenValue(readLe[uint64](data, pos))
+  let permanentStorageGasPrice = TokenValue(readLe[uint64](data, pos))
+  finishDecode(data, pos)
+  MantleTx(
+    ops: ops,
+    executionGasPrice: executionGasPrice,
+    permanentStorageGasPrice: permanentStorageGasPrice,
+  )
+
+func decodeSignedMantleTx*(data: openArray[byte]): SignedMantleTx {.raises: [DecodingError].} =
+  var pos = 0
+  let count = readByte(data, pos)
+  var ops = newSeqOfCap[Op](count)
+  for _ in 0 ..< int(count):
+    ops.add readOp(data, pos)
+  let executionGasPrice = TokenValue(readLe[uint64](data, pos))
+  let permanentStorageGasPrice = TokenValue(readLe[uint64](data, pos))
+  let tx = MantleTx(
+    ops: ops,
+    executionGasPrice: executionGasPrice,
+    permanentStorageGasPrice: permanentStorageGasPrice,
+  )
+  let opProofs =
+    if pos < data.len:
+      decodeOpsProofs(ops, data[pos .. data.high])
+    else:
+      @[]
+  SignedMantleTx(tx: tx, opProofs: opProofs)
 {.pop.}

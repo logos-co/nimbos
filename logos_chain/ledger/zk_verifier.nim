@@ -11,11 +11,10 @@
 
 {.push raises: [], gcsafe.}
 
-import poseidon2/types # F
-
-import ../core/mantle/[primitives, proofs]
-import ../core/crypto/hashing # ZkHash
-import "../core/block/block_types" # ProofOfLeadership
+import
+  ../core/mantle/[primitives, proofs],
+  ../core/crypto/hashing,
+  "../core/block/types"
 
 type
   ZkSigVerifier* = proc(pks: seq[ZkPublicKey], msg: ZkHash, sig: ZkSigProof): bool {.
@@ -27,11 +26,11 @@ type
     ## layer from `(epochState.nonce, lottery_*, agedUtxos.root, slot)` plus
     ## the current `latestUtxos.root`.
     slot*: SlotNumber
-    epochNonce*: F
-    lottery0*: F
-    lottery1*: F
-    agedRoot*: F
-    latestRoot*: F
+    epochNonce*: FieldElement
+    lottery0*: FieldElement
+    lottery1*: FieldElement
+    agedRoot*: FieldElement
+    latestRoot*: FieldElement
 
   LeaderProofVerifier* = proc(proof: ProofOfLeadership, public: LeaderPublic): bool {.
     gcsafe, raises: [], noSideEffect

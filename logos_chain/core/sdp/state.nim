@@ -14,24 +14,20 @@ import std/sets
 import libp2p/multiaddress
 import ../mantle/primitives
 
-# ---------------------------------------------------------------------------
-# SDP state/domain types
-# ---------------------------------------------------------------------------
 
 type
   LockedNote* = object
-    ## Nim `set[T]` only works for ordinal `T`; `DeclarationId` is an array, so use `HashSet`.
     declarations*: HashSet[DeclarationId]
     lockedUntil*: BlockNumber
 
   MinStake* = object
-    stakeThreshold*: int
+    stakeThreshold*: uint64
     timestamp*: BlockNumber
 
   ServiceParameters* = object
-    lockPeriod*: int
-    inactivityPeriod*: int
-    retentionPeriod*: int
+    lockPeriod*: uint64
+    inactivityPeriod*: uint64
+    retentionPeriod*: uint64
     timestamp*: BlockNumber
 
   DeclarationInfo* = object
@@ -43,14 +39,14 @@ type
     created*: BlockNumber
     active*: BlockNumber
     withdrawn*: BlockNumber
-    ## SDP ops updating a declaration use monotonically increasing nonces.
     nonce*: Nonce
 
-# ---------------------------------------------------------------------------
-# Locator validation helpers
-# ---------------------------------------------------------------------------
 
 func validate*(locator: Locator) =
-  doAssert locator.data().buffer.len <= MaxLocatorMultiaddrBytes
+  doAssert locator.len <= MaxLocatorMultiaddrBytes
+  var locatorStr = newString(locator.len)
+  for i, b in locator:
+    locatorStr[i] = char(b)
+  doAssert MultiAddress.init(locatorStr).isOk
 
 {.pop.}

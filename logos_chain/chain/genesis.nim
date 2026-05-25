@@ -5,38 +5,19 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-## Genesis-specific aliases/constants layered on top of generic block types.
+## Genesis block construction from a signed genesis mantle transaction.
 ## Spec: [1.1.0 Bedrock Genesis Block](https://nomos-tech.notion.site/1-1-0-Bedrock-Genesis-Block-330261aa09df809ab143f87766b8d053)
 
 {.push raises: [], gcsafe.}
 
-import ./block_types
-import ../crypto/hashing
-export block_types, hashing
+import
+  "../core/block/types",
+  ../core/crypto/hashing
 
-# ---------------------------------------------------------------------------
-# Genesis constants
-# ---------------------------------------------------------------------------
+export types, hashing
 
 const
   GenesisBedrockVersion* = 1'u8
-
-# ---------------------------------------------------------------------------
-# Deployment genesis bundle (mantle tx + chain metadata from cfgsync YAML)
-# ---------------------------------------------------------------------------
-
-type
-  GenesisState* = object
-    signedMantleTx*: SignedMantleTx
-    faucetZkPublicKey*: ZkPublicKey
-    ## From ``cryptarchia.genesis_block.header`` (Bedrock wire fields).
-    header*: Header
-    ## From ``cryptarchia.genesis_block.signature`` (block-level Ed25519).
-    blockSignature*: Ed25519Signature
-
-# ---------------------------------------------------------------------------
-# Genesis constructors
-# ---------------------------------------------------------------------------
 
 func createGenesisHeader(genesisMantleTx: SignedMantleTx): Header =
   ## Genesis header constructor using spec defaults:

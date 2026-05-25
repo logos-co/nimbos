@@ -2085,10 +2085,8 @@ proc createLBNode*(
     # Keep discovery's UDP port stable (see `discovery.nim`),
     # while moving the QUIC listener to a separate UDP port.
     #
-    # Naming note:
-    # - `udpPort` (imported from `discovery.nim`) is the discovery UDP port
-    # - `quicPort` is the QUIC listener UDP port
     quicPort = config.quicPort
+    discoveryPort = config.udpPort
 
     listenAddress =
       if config.listenAddress.isSome():
@@ -2097,7 +2095,7 @@ proc createLBNode*(
         getAutoAddress(Port(0)).toIpAddress()
 
     (extIp, extQuicPort, extUdpPort) =
-      setupAddress(config.nat, listenAddress, quicPort, udpPort, clientId)
+      setupAddress(config.nat, listenAddress, quicPort, discoveryPort, clientId)
 
     hostAddress =
       ?quicEndPoint(listenAddress, quicPort)

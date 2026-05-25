@@ -6,145 +6,365 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## Spec: [v1.4 Mantle](https://nomos-tech.notion.site/v1-4-Mantle-335261aa09df8065a38acff4b25aee82)
+##
+## Wire encoding/decoding: [v1.3 Mantle Transaction Encoding](https://nomos-tech.notion.site/v1-3-Mantle-Transaction-Encoding-335261aa09df8051a8a6f325aa41f6a7)
 
 {.push raises: [], gcsafe.}
 
-import std/[hashes, options]
-import results
+import ../crypto/[hashing, types]
+import poseidon2/[types, io]
+export hashing, types, io
+export
+  encodeByte, encodeEd25519PublicKey, encodeEd25519Signature, encodeFieldElement,
+  encodeGroth16, encodeHash32, encodeU16LeLenPrefixed, encodeU32LeLenPrefixed,
+  encodeLe, encodeZkPublicKey, encodeZkSignature,
+  decodeByte, decodeEd25519PublicKey, decodeEd25519Signature, decodeFieldElement,
+  decodeFieldElementAt, decodeGroth16, decodeHash32, decodeU16LeLenPrefixed,
+  decodeU32LeLenPrefixed, decodeZkPublicKey, decodeZkSignature
 
-import poseidon2/types # F, zero
-import poseidon2/io # F.fromBytes, F.toBytes
-
-import ../crypto/hashing
-import libp2p/crypto/ed25519/ed25519
-import libp2p/multiaddress
-export hashing
-
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
 const
   MaxBlockTxs* = 1024
-  ## `Ops = OpCount * Op` (wire): one-byte count, then that many ops.
   MantleMaxOps* = 255
-
-  ## SDP locator list limits.
   MaxSdpLocators* = 8
   MaxLocatorMultiaddrBytes* = 329
 
-# ---------------------------------------------------------------------------
-# Types
-# ---------------------------------------------------------------------------
 
 type
-  # --- Hash-shaped identifiers (`BYTE32`) ---
-  ## `Hash32`/`ZkHash` are defined in `crypto/hashing`.
   MessageId* = Hash32
   ChannelId* = Hash32
   DeclarationId* = Hash32
   Parent* = Hash32
-  ## Up to `MaxBlockTxs` tx-hash references.
   References* = array[MaxBlockTxs, Hash32]
 
-  # --- Length-prefixed byte payloads (`UINT32 * BYTE`) ---
   Inscription* = seq[byte]
   Metadata* = seq[byte]
 
-  # --- Block-level scalars ---
-  ## Wire `UINT64`.
   SlotNumber* = uint64
   BlockNumber* = uint64
   RewardVoucher* = array[32, byte]
 
-  # --- Wire scalars ---
-  ## `UINT64`.
   TokenValue* = uint64
   Value* = uint64
   Amount* = uint64
   Nonce* = uint64
 
-  ## `UINT32`.
   PostingTimeframe* = uint32
   PostingTimeout* = uint32
 
-  ## `UINT16`.
   ConfigurationThreshold* = uint16
   WithdrawThreshold* = uint16
 
-  # --- SDP declare / locators ---
-  ## Wire byte: `0 = bn`, `1 = da`.
   ServiceType* = enum
     bn = 0
-    da = 1
+  Locator* = seq[byte]
 
-  ## Wire `UINT16` + payload (multiaddr bytes).
-  Locator* = MultiAddress
-
-  # --- Op layout helpers ---
   Opcode* = uint8
   OpCount* = uint8
   HexBytes* = string
 
-  # --- BN254 32-byte field values (LE) ---
-  ## FieldElement = 32-byte BN254 field element.
-  FieldElement* = array[32, byte]
-  NoteId* = distinct F
-  ZkPublicKey* = FieldElement
-  ## Transfer note payload.
+  NoteId* = FieldElement
   Note* = object
     value*: Value
     zkPublicKey*: ZkPublicKey
-
-  ## Transfer input list wrapper.
   Inputs* = object
     noteIds*: seq[NoteId]
-
-  ## Transfer output list wrapper.
   Outputs* = object
     notes*: seq[Note]
-
   PublicKey* = ZkPublicKey
   RewardsRoot* = FieldElement
   VoucherNullifier* = FieldElement
 
-  # --- Ed25519 identities/signatures ---
-  Ed25519PublicKey* = EdPublicKey
-  Ed25519Signature* = EdSignature
   ProviderId* = Ed25519PublicKey
   ZkId* = ZkPublicKey
   LockedNoteId* = NoteId
   Signer* = Ed25519PublicKey
 
-  # --- Channel withdraw proof path ---
-  ## Signature list metadata (`SignatureCount * ...` wire shape).
   SignatureCount* = uint16
   ChannelKeyIndex* = uint16
 
-# ---------------------------------------------------------------------------
-# NoteId helpers
-# ---------------------------------------------------------------------------
+func encodeDeclarationId*(value: DeclarationId): array[32, byte] =
+  ## DeclarationId = Hash32
+  encodeHash32(value)
 
-func asField*(n: NoteId): F =
-  ## Field-element view; mixin contract for ``DynamicMerkleTree[NoteId, _]``.
-  F(n)
+func encodeChannelId*(value: ChannelId): array[32, byte] =
+  ## ChannelId = Hash32
+  encodeHash32(value)
 
-func toBytes*(n: NoteId): array[32, byte] =
-  ## Canonical 32-byte little-endian serialisation.
-  F(n).toBytes()
+func encodeParent*(value: Parent): array[32, byte] =
+  ## Parent = Hash32
+  encodeHash32(value)
 
-func fromBytes*(_: typedesc[NoteId], bytes: array[32, byte]): Opt[NoteId] =
-  ## ``Opt.none`` if ``bytes`` overflow the BN254 field modulus.
-  let f = F.fromBytes(bytes)
-  if f.isSome:
-    Opt.some(NoteId(f.get))
+func encodeProviderId*(value: ProviderId): array[32, byte] =
+  ## ProviderId = Ed25519PublicKey
+  encodeEd25519PublicKey(value)
+
+func encodeZkId*(value: ZkId): array[32, byte] =
+  ## ZkId = ZkPublicKey
+  encodeZkPublicKey(value)
+
+func encodeSigner*(value: Signer): array[32, byte] =
+  ## Signer = Ed25519PublicKey
+  encodeEd25519PublicKey(value)
+
+func encodeNoteId*(value: NoteId): array[32, byte] =
+  ## NoteId = FieldElement
+  encodeFieldElement(value)
+
+func encodeLockedNoteId*(value: LockedNoteId): array[32, byte] =
+  ## LockedNoteId = NoteId
+  encodeNoteId(value)
+
+func encodeRewardsRoot*(value: RewardsRoot): array[32, byte] =
+  ## RewardsRoot = FieldElement
+  encodeFieldElement(value)
+
+func encodeVoucherNullifier*(value: VoucherNullifier): array[32, byte] =
+  ## VoucherNullifier = FieldElement
+  encodeFieldElement(value)
+
+func encodePublicKey*(value: PublicKey): array[32, byte] =
+  ## PublicKey = ZkPublicKey
+  encodeZkPublicKey(value)
+
+func encodeOpcode*(value: Opcode): byte =
+  ## Opcode = Byte
+  encodeByte(byte(value))
+
+func encodeOpCount*(value: OpCount): byte =
+  ## OpCount = Byte
+  encodeByte(byte(value))
+
+func encodeValue*(value: Value): array[8, byte] =
+  ## Value = UINT64
+  encodeLe(value)
+
+func encodeAmount*(value: Amount): array[8, byte] =
+  ## Amount = UINT64
+  encodeLe(value)
+
+func encodeNonce*(value: Nonce): array[8, byte] =
+  ## Nonce = UINT64
+  encodeLe(value)
+
+func encodeOpIdNonce*(value: uint32): array[4, byte] =
+  ## OpIdNonce = UINT32
+  encodeLe(value)
+
+func encodeMetadata*(value: Metadata): seq[byte] =
+  ## Metadata = UINT32 * BYTE
+  ## Service-specific node activeness metadata.
+  doAssert value.len <= int(high(uint32)),
+    "Metadata length exceeds UINT32 range"
+  result = @(encodeLe(uint32(value.len)))
+  result.add(value)
+
+func encodeSignatureCount*(value: SignatureCount): array[2, byte] =
+  ## SignatureCount = UINT16
+  encodeLe(uint16(value))
+
+func encodeChannelKeyIndex*(value: ChannelKeyIndex): array[2, byte] =
+  ## ChannelKeyIndex = UINT16
+  encodeLe(uint16(value))
+
+
+func encodeNote*(value: Note): array[40, byte] =
+  ## Note = Value || ZkPublicKey
+  result[0 ..< 8] = encodeValue(value.value)
+  result[8 ..< 40] = encodeZkPublicKey(value.zkPublicKey)
+
+func encodeInputCount*(value: byte): byte =
+  ## InputCount = Byte
+  encodeByte(value)
+
+func encodeOutputCount*(value: byte): byte =
+  ## OutputCount = Byte
+  encodeByte(value)
+
+func encodeInputs*(value: Inputs): seq[byte] =
+  ## Inputs = InputCount * NoteId
+  doAssert value.noteIds.len <= int(high(byte)),
+    "Inputs: InputCount exceeds Byte range"
+  result = @[]
+  result.add(encodeInputCount(byte(value.noteIds.len)))
+  for noteId in value.noteIds:
+    result.add(encodeNoteId(noteId))
+
+func encodeInputs*(value: openArray[NoteId]): seq[byte] =
+  ## Inputs = InputCount * NoteId
+  doAssert value.len <= int(high(byte)),
+    "Inputs: InputCount exceeds Byte range"
+  result = @[]
+  result.add(encodeInputCount(byte(value.len)))
+  for noteId in value:
+    result.add(encodeNoteId(noteId))
+
+func encodeOutputs*(value: Outputs): seq[byte] =
+  ## Outputs = OutputCount * Note
+  doAssert value.notes.len <= int(high(byte)),
+    "Outputs: OutputCount exceeds Byte range"
+  result = @[]
+  result.add(encodeOutputCount(byte(value.notes.len)))
+  for note in value.notes:
+    result.add(encodeNote(note))
+
+func encodeInscription*(value: Inscription): seq[byte] =
+  ## Inscription = UINT32 * BYTE
+  encodeU32LeLenPrefixed(value)
+
+func encodeServiceType*(value: ServiceType): byte =
+  ## ServiceType = Byte ; 0 = BN
+  encodeByte(byte(ord(value)))
+
+func encodeLocatorCount*(value: byte): byte =
+  ## LocatorCount = Byte
+  encodeByte(value)
+
+func encodeLocator*(value: Locator): seq[byte] =
+  ## Locator = 2Byte * BYTE ; Max 329 bytes, multiaddr format
+  doAssert value.len <= MaxLocatorMultiaddrBytes,
+    "Locator exceeds max multiaddr byte length"
+  encodeU16LeLenPrefixed(value)
+
+func decodeDeclarationId*(data: openArray[byte]): DeclarationId {.raises: [DecodingError].} =
+  decodeHash32(data)
+
+func decodeChannelId*(data: openArray[byte]): ChannelId {.raises: [DecodingError].} =
+  decodeHash32(data)
+
+func decodeParent*(data: openArray[byte]): Parent {.raises: [DecodingError].} =
+  decodeHash32(data)
+
+func decodeProviderId*(data: openArray[byte]): ProviderId {.raises: [DecodingError].} =
+  decodeEd25519PublicKey(data)
+
+func decodeZkId*(data: openArray[byte]): ZkId {.raises: [DecodingError].} =
+  decodeZkPublicKey(data)
+
+func decodeSigner*(data: openArray[byte]): Signer {.raises: [DecodingError].} =
+  decodeEd25519PublicKey(data)
+
+func decodeNoteId*(data: openArray[byte]): NoteId {.raises: [DecodingError].} =
+  decodeFieldElement(data)
+
+func decodeLockedNoteId*(data: openArray[byte]): LockedNoteId {.raises: [DecodingError].} =
+  decodeNoteId(data)
+
+func decodeRewardsRoot*(data: openArray[byte]): RewardsRoot {.raises: [DecodingError].} =
+  decodeFieldElement(data)
+
+func decodeVoucherNullifier*(data: openArray[byte]): VoucherNullifier {.raises: [DecodingError].} =
+  decodeFieldElement(data)
+
+func decodePublicKey*(data: openArray[byte]): PublicKey {.raises: [DecodingError].} =
+  decodeZkPublicKey(data)
+
+func decodeOpcode*(data: openArray[byte]): Opcode {.raises: [DecodingError].} =
+  Opcode(decodeByte(data))
+
+func decodeOpCount*(data: openArray[byte]): OpCount {.raises: [DecodingError].} =
+  OpCount(decodeByte(data))
+
+func decodeValue*(data: openArray[byte]): Value {.raises: [DecodingError].} =
+  var pos = 0
+  result = readLe[uint64](data, pos)
+  finishDecode(data, pos)
+
+func decodeAmount*(data: openArray[byte]): Amount {.raises: [DecodingError].} =
+  decodeValue(data)
+
+func decodeNonce*(data: openArray[byte]): Nonce {.raises: [DecodingError].} =
+  decodeValue(data)
+
+func decodeOpIdNonce*(data: openArray[byte]): uint32 {.raises: [DecodingError].} =
+  var pos = 0
+  result = readLe[uint32](data, pos)
+  finishDecode(data, pos)
+
+func decodeMetadata*(data: openArray[byte]): Metadata {.raises: [DecodingError].} =
+  decodeU32LeLenPrefixed(data)
+
+func decodeInscription*(data: openArray[byte]): Inscription {.raises: [DecodingError].} =
+  decodeU32LeLenPrefixed(data)
+
+proc readServiceType*(data: openArray[byte], pos: var int): ServiceType {.raises: [DecodingError].} =
+  let b = readByte(data, pos)
+  case b
+  of byte(ord(bn)):
+    bn
   else:
-    Opt.none(NoteId)
+    raise newException(DecodingError, "invalid ServiceType byte: " & $b)
 
-func `==`*(a, b: NoteId): bool {.borrow.}
+func decodeServiceType*(data: openArray[byte]): ServiceType {.raises: [DecodingError].} =
+  var pos = 0
+  result = readServiceType(data, pos)
+  finishDecode(data, pos)
 
-func hash*(n: NoteId): Hash =
-  ## ``std/hashes`` contract for ``std/tables``-shaped containers
-  ## (HashTrieMap bucket selection). Not cryptographic.
-  hash(n.toBytes())
+func decodeLocatorCount*(data: openArray[byte]): byte {.raises: [DecodingError].} =
+  decodeByte(data)
+
+proc readLocator*(data: openArray[byte], pos: var int): Locator {.raises: [DecodingError].} =
+  let raw = readU16LeLenPrefixed(data, pos)
+  if raw.len > MaxLocatorMultiaddrBytes:
+    raise newException(DecodingError, "Locator exceeds max multiaddr byte length")
+  raw
+
+func decodeLocator*(data: openArray[byte]): Locator {.raises: [DecodingError].} =
+  var pos = 0
+  result = readLocator(data, pos)
+  finishDecode(data, pos)
+
+func decodeSignatureCount*(data: openArray[byte]): SignatureCount {.raises: [DecodingError].} =
+  var pos = 0
+  result = SignatureCount(readLe[uint16](data, pos))
+  finishDecode(data, pos)
+
+func decodeChannelKeyIndex*(data: openArray[byte]): ChannelKeyIndex {.raises: [DecodingError].} =
+  var pos = 0
+  result = ChannelKeyIndex(readLe[uint16](data, pos))
+  finishDecode(data, pos)
+
+
+proc readNote*(data: openArray[byte], pos: var int): Note {.raises: [DecodingError].} =
+  let value = Value(readLe[uint64](data, pos))
+  let zkPublicKey = decodeFieldElementAt(data, pos)
+  Note(value: value, zkPublicKey: zkPublicKey)
+
+proc readInputs*(data: openArray[byte], pos: var int): Inputs {.raises: [DecodingError].} =
+  let count = readByte(data, pos)
+  var noteIds = newSeqOfCap[NoteId](count)
+  for _ in 0 ..< int(count):
+    noteIds.add decodeFieldElementAt(data, pos)
+  Inputs(noteIds: noteIds)
+
+proc readOutputs*(data: openArray[byte], pos: var int): Outputs {.raises: [DecodingError].} =
+  let count = readByte(data, pos)
+  var notes = newSeqOfCap[Note](count)
+  for _ in 0 ..< int(count):
+    notes.add readNote(data, pos)
+  Outputs(notes: notes)
+
+func decodeNote*(data: openArray[byte]): Note {.raises: [DecodingError].} =
+  var pos = 0
+  result = readNote(data, pos)
+  finishDecode(data, pos)
+
+func decodeInputCount*(data: openArray[byte]): byte {.raises: [DecodingError].} =
+  decodeByte(data)
+
+func decodeOutputCount*(data: openArray[byte]): byte {.raises: [DecodingError].} =
+  decodeByte(data)
+
+func decodeInputs*(data: openArray[byte]): Inputs {.raises: [DecodingError].} =
+  var pos = 0
+  result = readInputs(data, pos)
+  finishDecode(data, pos)
+
+func decodeInputsNoteIds*(data: openArray[byte]): seq[NoteId] {.raises: [DecodingError].} =
+  decodeInputs(data).noteIds
+
+func decodeOutputs*(data: openArray[byte]): Outputs {.raises: [DecodingError].} =
+  var pos = 0
+  result = readOutputs(data, pos)
+  finishDecode(data, pos)
 
 {.pop.}

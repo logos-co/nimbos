@@ -19,7 +19,7 @@ import yaml/dom
 import "../../../logos_chain/deployment/deployment_settings"
 import "../../../logos_chain/deployment/deployment_settings_helpers"
 import "../../../logos_chain/core/block/genesis"
-import "../../../logos_chain/core/block/block_types"
+import "../../../logos_chain/core/block/types"
 import "../../../logos_chain/core/mantle/tx_encoding"
 import "../../../logos_chain/core/mantle/tx_hashing"
 

@@ -17,7 +17,7 @@ import ../../logos_chain/ledger/[cryptarchia, ledger, locked_notes, types, zk_ve
 import
   ../../logos_chain/core/mantle/
     [primitives, operations, proofs, tx_types, tx_hashing, utxo]
-import "../../logos_chain/core/block/block_types"
+import "../../logos_chain/core/block/types"
 import ./test_helpers
 
 suite "LedgerState constructors and reads":
@@ -381,16 +381,16 @@ suite "prepareUpdate":
     check r1.isOk
     l.commitUpdate(r1.get.id, r1.get.state)
 
-    # The new utxo's NoteId comes from the tx1 transferHash + outputIndex 0.
+    # The new utxo's NoteId comes from the tx1 opId + outputIndex 0.
     let
-      tx1TransferHash = transferOpHash(
+      tx1OpId = opId(
         TransferPayload(
           inputs: Inputs(noteIds: @[input1.id]),
           outputs: Outputs(notes: @[mkNote(100, pkSeed = 2)]),
         )
       )
       utxoAfter1 = Utxo(
-        transferHash: tx1TransferHash, outputIndex: 0, note: mkNote(100, pkSeed = 2)
+        opId: tx1OpId, outputIndex: 0, note: mkNote(100, pkSeed = 2)
       )
     check l.state(mkId(0x01)).get.latestUtxos.contains(utxoAfter1.id)
 
@@ -411,14 +411,14 @@ suite "prepareUpdate":
     l.commitUpdate(r2.get.id, r2.get.state)
 
     let
-      tx2TransferHash = transferOpHash(
+      tx2OpId = opId(
         TransferPayload(
           inputs: Inputs(noteIds: @[utxoAfter1.id]),
           outputs: Outputs(notes: @[mkNote(100, pkSeed = 3)]),
         )
       )
       utxoAfter2 = Utxo(
-        transferHash: tx2TransferHash, outputIndex: 0, note: mkNote(100, pkSeed = 3)
+        opId: tx2OpId, outputIndex: 0, note: mkNote(100, pkSeed = 3)
       )
 
     # Block 3: split utxoAfter2 into two outputs

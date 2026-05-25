@@ -58,4 +58,42 @@ suite "core/mantle/proofs":
       proofOfClaimProof: default(ProofOfClaimProof),
     )) == ptProofOfClaim
 
+  test "encodeOpsProofs accepts proofs length <= op count":
+    let ops = @[
+      createTransferOp(TransferPayload(
+        inputs: Inputs(noteIds: @[]),
+        outputs: Outputs(notes: @[]),
+      )),
+      createSdpActiveOp(SdpActivePayload(
+        declarationId: default(DeclarationId),
+        nonce: default(Nonce),
+        metadata: @[],
+      )),
+    ]
+    let proofs = @[
+      OpProof(kind: opfTransfer, transferProof: default(ZkSigProof)),
+    ]
+    let encoded = encodeOpsProofs(ops, proofs)
+    check encoded.len == 128
+
+  test "decodeOpsProofs roundtrips encodeOpsProofs":
+    let ops = @[
+      createTransferOp(TransferPayload(
+        inputs: Inputs(noteIds: @[]),
+        outputs: Outputs(notes: @[]),
+      )),
+      createSdpActiveOp(SdpActivePayload(
+        declarationId: default(DeclarationId),
+        nonce: default(Nonce),
+        metadata: @[],
+      )),
+    ]
+    let proofs = @[
+      OpProof(kind: opfTransfer, transferProof: default(ZkSigProof)),
+    ]
+    let wire = encodeOpsProofs(ops, proofs)
+    let back = decodeOpsProofs(ops, wire)
+    check back.len == proofs.len
+    check back[0].kind == proofs[0].kind
+
 {.pop.}

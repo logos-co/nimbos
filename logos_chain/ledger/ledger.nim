@@ -14,7 +14,7 @@ import std/tables
 
 import ./[types, cryptarchia, locked_notes, zk_verifier]
 import ../core/mantle/[tx_types, tx_hashing, operations, proofs]
-import "../core/block/block_types"
+import "../core/block/types"
 
 export types, cryptarchia
 
@@ -62,8 +62,7 @@ func tryApplyTx*(
   ## Applies one transaction; returns the new state and the tx's net balance
   ## (sum of per-op balances). Non-`Transfer` ops or `(op, proof)` kind
   ## mismatches return `UnsupportedOp`.
-  # Stricter than Rust: Rust's `ops_with_proof()` silently truncates via zip
-  # rather than rejecting. We reject so misbuilt txs surface immediately.
+
   if tx.tx.ops.len != tx.opProofs.len:
     return err(InvalidProof)
 

@@ -78,13 +78,13 @@ func tryApplyTransfer*(
   if not verifier(pks, txHash, sig):
     return err(InvalidProof)
 
-  let transferHash = transferOpHash(op)
+  let opId = opId(op)
 
   for i, outNote in op.outputs.notes:
     if outNote.value == 0:
       return err(ZeroValueNote)
     balance = ?balance.checkedSub(i128(outNote.value))
-    let u = Utxo(transferHash: transferHash, outputIndex: i, note: outNote)
+    let u = Utxo(opId: opId, outputIndex: i, note: outNote)
     s = CryptarchiaState(utxos: s.utxos.insert(u.id, u).store)
 
   ok((s, balance))

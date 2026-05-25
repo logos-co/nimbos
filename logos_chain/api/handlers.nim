@@ -192,7 +192,7 @@ proc installNodeApiHandlers*(router: var RestRouter, node: LBNode) =
     RestApiResponse.response("{}", Http200, $jsonMediaType)
 
   # POST /leader/claim
-  router.api2(MethodPost, LEADER_CLAIM) do () -> RestApiResponse:
+  router.api2(MethodPost, LEADER_CLAIM_PATH) do () -> RestApiResponse:
     RestApiResponse.response("{}", Http200, $jsonMediaType)
 
   # GET /mantle/metrics
@@ -245,7 +245,7 @@ proc installNodeApiHandlers*(router: var RestRouter, node: LBNode) =
 
   # GET /wallet/{public_key}/balance[?tip={headerId}]
   router.api2(MethodGet, WALLET_BALANCE_PATH) do (
-    `public_key`: ZkPublicKey,
+    `public_key`: utils.ZkPublicKey,
     tip: Option[HeaderId],
   ) -> RestApiResponse:
     RestApiResponse.response("{}", Http200, $jsonMediaType)

@@ -7,32 +7,34 @@
 
 {.push raises: [], gcsafe.}
 
-import "../../logos_chain/core/block/block_types"
+import std/options
+
 import
+  "../../logos_chain/core/block/types",
   ../../logos_chain/core/crypto/hashing,
   ../../logos_chain/core/mantle/
     [primitives, operations, proofs, tx_types, utxo]
 
 type TestId* = BlockId
 
+func mkZkPubKey(seed: byte): ZkPublicKey =
+  var bytes: array[32, byte]
+  bytes[0] = seed
+  F.fromBytes(bytes).get
+
 func mkUtxo*(
-    value: Value = 100, pkSeed: byte = 1, transferSeed: byte = 0, idx = 0
+    value: Value = 100, pkSeed: byte = 1, opIdSeed: byte = 0, idx = 0
 ): Utxo =
-  var
-    transferHash: ZkHash
-    pk: ZkPublicKey
-  transferHash[0] = transferSeed
-  pk[0] = pkSeed
+  var opId: Hash32
+  opId[0] = opIdSeed
   Utxo(
-    transferHash: transferHash,
+    opId: opId,
     outputIndex: idx,
-    note: Note(value: value, zkPublicKey: pk),
+    note: Note(value: value, zkPublicKey: mkZkPubKey(pkSeed)),
   )
 
 func mkNote*(value: Value, pkSeed: byte): Note =
-  var pk: ZkPublicKey
-  pk[0] = pkSeed
-  Note(value: value, zkPublicKey: pk)
+  Note(value: value, zkPublicKey: mkZkPubKey(pkSeed))
 
 func mkTxHash*(seed: byte = 0x42): ZkHash =
   var h: ZkHash

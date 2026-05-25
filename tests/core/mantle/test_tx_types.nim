@@ -10,15 +10,42 @@
 
 import unittest2
 import ../../../logos_chain/core/mantle/tx_types
-import ../../../logos_chain/core/mantle/tx_hashing
 
 suite "core/mantle/tx_types":
-  test "mantleTxHash is deterministic for same MantleTx":
+  test "decodeMantleTx roundtrips encodeMantleTx":
     let tx = MantleTx(
       ops: @[],
-      executionGasPrice: 0'u64,
-      permanentStorageGasPrice: 0'u64,
+      executionGasPrice: 7'u64,
+      permanentStorageGasPrice: 8'u64,
     )
-    check mantleTxHash(tx) == mantleTxHash(tx)
+    let wire = encodeMantleTx(tx)
+    let back = decodeMantleTx(wire)
+    check back.ops.len == tx.ops.len
+    check back.executionGasPrice == tx.executionGasPrice
+    check back.permanentStorageGasPrice == tx.permanentStorageGasPrice
+
+  test "decodeSignedMantleTx roundtrips encodeSignedMantleTx":
+    let signed = SignedMantleTx(
+      tx: MantleTx(
+        ops: @[
+          createTransferOp(TransferPayload(
+            inputs: Inputs(noteIds: @[]),
+            outputs: Outputs(notes: @[]),
+          )),
+        ],
+        executionGasPrice: 1'u64,
+        permanentStorageGasPrice: 2'u64,
+      ),
+      opProofs: @[
+        OpProof(kind: opfTransfer, transferProof: default(ZkSigProof)),
+      ],
+    )
+    let wire = encodeSignedMantleTx(signed)
+    let back = decodeSignedMantleTx(wire)
+    check back.tx.ops.len == signed.tx.ops.len
+    check back.tx.executionGasPrice == signed.tx.executionGasPrice
+    check back.tx.permanentStorageGasPrice == signed.tx.permanentStorageGasPrice
+    check back.opProofs.len == signed.opProofs.len
+    check back.opProofs[0].kind == signed.opProofs[0].kind
 
 {.pop.}
