@@ -16,7 +16,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")"/..
 REPO_DIR="${PWD}"
 
 ARCH="${1:-amd64}"
-DOCKER_TAG="nimbus-eth2-dist-${ARCH}"
+DOCKER_TAG="nimbos-dist-${ARCH}"
 
 docker rm ${DOCKER_TAG} &>/dev/null || true
 
@@ -36,7 +36,7 @@ DOCKER_BUILDKIT=1 \
   -f Dockerfile.${ARCH} .
 
 # seccomp can have some serious overhead, so we disable it with "--privileged" - https://pythonspeed.com/articles/docker-performance-overhead/
-docker run --privileged ${BUILD_TOOLS_ENV} --rm --name ${DOCKER_TAG} -v ${REPO_DIR}:/home/user/nimbus-eth2 ${DOCKER_TAG}
+docker run --privileged ${BUILD_TOOLS_ENV} --rm --name ${DOCKER_TAG} -v ${REPO_DIR}:/home/user/nimbos ${DOCKER_TAG}
 
 cd - &>/dev/null
 

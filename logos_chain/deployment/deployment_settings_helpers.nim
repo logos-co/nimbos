@@ -2,20 +2,97 @@
 # Copyright (c) 2026 Status Research & Development GmbH
 # Licensed and distributed under either of
 #   * MIT license (license terms in the root directory or at https://opensource.org/licenses/MIT).
-#   * Apache v2 license (license terms in the root directory or at https://opensource.org/licenses/LICENSE-2.0).
-# at your option, this file may not be copied, modified, or distributed except according to those terms.
+#   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
+# at your option. This file may not be copied, modified, or distributed except according to those terms.
 
 {.push raises: [].}
 
 import
   std/[options, strutils],
+  chronos,
   results,
   stew/byteutils,
-  yaml/dom,
+  yaml/[dom, loading],
   libp2p/multiaddress,
   libp2p/crypto/ed25519/ed25519,
-  "../bedrock/block/genesis",
-  ./helpers
+  "../chain/genesis",
+  poseidon2/types
+
+export genesis, chronos
+
+func yamlGetPathNode*(root: YamlNode, keys: openArray[string]): Option[YamlNode] =
+  var cur = root
+  for k in keys:
+    if cur.isNil or cur.kind != yMapping:
+      return none(YamlNode)
+    try:
+      cur = cur[k]
+    except KeyError:
+      return none(YamlNode)
+  some(cur)
+
+func yamlGetPathScalar*(root: YamlNode, keys: openArray[string]): Option[string] =
+  if keys.len == 0:
+    return none(string)
+  let node = yamlGetPathNode(root, keys)
+  if node.isNone or node.get.kind != yScalar:
+    return none(string)
+  some(node.get.content)
+
+
+proc parseDeploymentSettingsYaml*(text: string): Result[YamlNode, string] =
+  try:
+    var root: YamlNode
+    load(text, root)
+    ok(root)
+  except YamlConstructionError, YamlParserError, IOError, OSError:
+    err("deployment-settings: " & getCurrentExceptionMsg())
+
+
+func requireTopLevelMapping*(root: YamlNode, name: string): Result[void, string] =
+  if root.kind != yMapping:
+    return err("deployment-settings: expected top-level mapping")
+  try:
+    let n = root[name]
+    if n.kind != yMapping:
+      return err("deployment-settings: expected top-level section '" & name & "' to be a mapping")
+  except KeyError:
+    return err("deployment-settings: missing top-level section: " & name)
+  ok()
+
+
+func reqScalar*(root: YamlNode, path: openArray[string]): Result[string, string] =
+  let s = yamlGetPathScalar(root, path)
+  if s.isNone:
+    return err("deployment-settings: missing or non-scalar " & path.join("."))
+  ok(s.get)
+
+template reqParsed(
+    root: YamlNode,
+    path: openArray[string],
+    parse: untyped,
+    expectedType: string
+): untyped =
+  let s = ? reqScalar(root, path)
+  try:
+    ok(parse(s))
+  except ValueError:
+    err("deployment-settings: expected " & expectedType & " at " & path.join("."))
+
+func reqInt*(root: YamlNode, path: openArray[string]): Result[int, string] =
+  reqParsed(root, path, parseInt, "integer")
+
+func reqFloat*(root: YamlNode, path: openArray[string]): Result[float, string] =
+  reqParsed(root, path, parseFloat, "float")
+
+proc parseSlotDurationSeconds*(s: string): Duration {.raises: [ValueError].} =
+  ## ``time.slot_duration`` YAML scalar: seconds as a float (e.g. ``'1.0'``).
+  let secs = parseFloat(s)
+  nanoseconds(int64(secs * float(nanoseconds(seconds(1)))))
+
+func reqSlotDuration*(root: YamlNode, path: openArray[string]): Result[Duration, string] =
+  reqParsed(root, path, parseSlotDurationSeconds, "slot duration in seconds")
+
 
 func parseByteSeqNode(node: YamlNode, path: string): Result[seq[byte], string] =
   if node.kind != ySequence:
@@ -44,6 +121,13 @@ func parseHex32Node(node: YamlNode, path: string): Result[array[32, byte], strin
   except ValueError:
     return err("deployment-settings: invalid 32-byte hex at " & path)
   ok(parsedBytes)
+
+func parseFieldElementNode(node: YamlNode, path: string): Result[FieldElement, string] =
+  let bytes = ? parseHex32Node(node, path)
+  let parsed = F.fromBytes(bytes)
+  if parsed.isNone:
+    return err("deployment-settings: field element exceeds BN254 scalar modulus at " & path)
+  ok(parsed.get())
 
 func parseUIntNode(node: YamlNode, path: string): Result[uint64, string] =
   if node.kind != yScalar:
@@ -183,7 +267,7 @@ func parseGenesisOpPayload(
   if payload.kind != yMapping:
     return err("deployment-settings: payload must be a mapping at " & path)
   if payload.len == 0:
-    return err("deployment-settings: empty payload at " & path)
+    return ok(defaultOpForOpcode(opcode))
   case opcode
   of OpTransfer:
     var noteIds: seq[NoteId] = @[]
@@ -192,7 +276,7 @@ func parseGenesisOpPayload(
       if inputsNode.get.kind != ySequence:
         return err("deployment-settings: transfer inputs must be a sequence at " & path & ".inputs")
       for i in 0 ..< inputsNode.get.len:
-        noteIds.add(? parseHex32Node(inputsNode.get[i], path & ".inputs[" & $i & "]"))
+        noteIds.add(? parseFieldElementNode(inputsNode.get[i], path & ".inputs[" & $i & "]"))
     var notes: seq[Note] = @[]
     let outputsNode = yamlGetPathNode(payload, ["outputs"])
     if outputsNode.isNone or outputsNode.get.kind != ySequence:
@@ -208,7 +292,7 @@ func parseGenesisOpPayload(
       let value = ? parseUIntNode(valueNode.get, path & ".outputs[" & $i & "].value")
       notes.add(Note(
         value: Value(value),
-        zkPublicKey: ? parseHex32Node(pkNode.get, path & ".outputs[" & $i & "].pk"),
+        zkPublicKey: ? parseFieldElementNode(pkNode.get, path & ".outputs[" & $i & "].pk"),
       ))
     ok(createTransferOp(TransferPayload(
       inputs: Inputs(noteIds: noteIds),
@@ -249,7 +333,6 @@ func parseGenesisOpPayload(
     let serviceType =
       case toLowerAscii(serviceTypeNode.get.content)
       of "bn": bn
-      of "da": da
       else:
         return err("deployment-settings: unsupported service_type at " & path & ".service_type")
     if locatorsNode.get.kind != ySequence:
@@ -267,22 +350,23 @@ func parseGenesisOpPayload(
       serviceType: serviceType,
       locators: locators,
       providerId: ? parseEd25519PublicKeyNode(providerIdNode.get, path & ".provider_id"),
-      zkId: ? parseHex32Node(zkIdNode.get, path & ".zk_id"),
-      lockedNoteId: ? parseHex32Node(lockedNode.get, path & ".locked_note_id"),
+      zkId: ? parseFieldElementNode(zkIdNode.get, path & ".zk_id"),
+      lockedNoteId: ? parseFieldElementNode(lockedNode.get, path & ".locked_note_id"),
     )))
   else:
-    ## For currently-unused opcodes in deployment YAML, keep structural parsing strict
-    ## while preserving previous default construction behavior.
     ok(defaultOpForOpcode(opcode))
 
 func parseGenesisOpProof(
-  node: YamlNode, idx: int, forOp: Op, proofsPathPrefix: string
+    node: YamlNode, idx: int, forOp: Op, proofsPathPrefix: string
 ): Result[OpProof, string] =
-
   let path = proofsPathPrefix & "[" & $idx & "]"
   let expectedDefaultProof = defaultOpProofForOpcode(forOp.opcode)
   let expectedKind = expectedOpProofKindForOpcode(forOp.opcode)
   if node.kind == yScalar:
+    ## TODO(mantle): `NoProof` was removed in Mantle v1.4; drop this compatibility
+    ## branch once we receive the updated deployment file format.
+    if node.content == "NoProof":
+      return ok(expectedDefaultProof)
     if expectedKind == opfChannelInscribe:
       return ok(OpProof(
         kind: opfChannelInscribe,
@@ -322,8 +406,61 @@ func parseGenesisOpProof(
       ),
     ))
   of opfChannelWithdraw, opfChannelConfig:
-    # Keep compatibility fallback for older deployment fixtures lacking signatures/indexes.
     ok(expectedDefaultProof)
+
+func validateCryptarchiaGenesisYaml*(root: YamlNode): Result[void, string] =
+  let gbOpt = yamlGetPathNode(root, ["cryptarchia", "genesis_block"])
+  if gbOpt.isNone:
+    return err("deployment-settings: missing cryptarchia.genesis_block")
+  let blockNode = gbOpt.get
+  if blockNode.kind != yMapping:
+    return err("deployment-settings: cryptarchia.genesis_block must be a mapping")
+  template needUnder(node: YamlNode, keys: openArray[string], ctx: string) =
+    if yamlGetPathNode(node, keys).isNone:
+      return err("deployment-settings: missing " & ctx)
+  needUnder(blockNode, ["header"], "cryptarchia.genesis_block.header")
+  needUnder(blockNode, ["signature"], "cryptarchia.genesis_block.signature")
+  let hdr = yamlGetPathNode(blockNode, ["header"]).get
+  if hdr.kind != yMapping:
+    return err("deployment-settings: cryptarchia.genesis_block.header must be a mapping")
+  needUnder(hdr, ["version"], "cryptarchia.genesis_block.header.version")
+  needUnder(hdr, ["parent_block"], "cryptarchia.genesis_block.header.parent_block")
+  needUnder(hdr, ["slot"], "cryptarchia.genesis_block.header.slot")
+  needUnder(hdr, ["block_root"], "cryptarchia.genesis_block.header.block_root")
+  needUnder(hdr, ["proof_of_leadership"], "cryptarchia.genesis_block.header.proof_of_leadership")
+  let pol = yamlGetPathNode(hdr, ["proof_of_leadership"]).get
+  if pol.kind != yMapping:
+    return err("deployment-settings: cryptarchia.genesis_block.header.proof_of_leadership must be a mapping")
+  needUnder(pol, ["proof"], "cryptarchia.genesis_block.header.proof_of_leadership.proof")
+  needUnder(
+    pol, ["entropy_contribution"],
+    "cryptarchia.genesis_block.header.proof_of_leadership.entropy_contribution")
+  needUnder(pol, ["leader_key"], "cryptarchia.genesis_block.header.proof_of_leadership.leader_key")
+  needUnder(pol, ["voucher_cm"], "cryptarchia.genesis_block.header.proof_of_leadership.voucher_cm")
+  let txSeqOpt = yamlGetPathNode(blockNode, ["transactions"])
+  if txSeqOpt.isNone:
+    return err("deployment-settings: missing cryptarchia.genesis_block.transactions")
+  let txSeq = txSeqOpt.get
+  if txSeq.kind != ySequence or txSeq.len == 0:
+    return err(
+      "deployment-settings: cryptarchia.genesis_block.transactions must be a non-empty sequence")
+  let tx0 = txSeq[0]
+  if tx0.kind != yMapping:
+    return err(
+      "deployment-settings: cryptarchia.genesis_block.transactions[0] must be a mapping")
+  needUnder(tx0, ["mantle_tx"], "cryptarchia.genesis_block.transactions[0].mantle_tx")
+  needUnder(tx0, ["ops_proofs"], "cryptarchia.genesis_block.transactions[0].ops_proofs")
+  let mantle = yamlGetPathNode(tx0, ["mantle_tx"]).get
+  if mantle.kind != yMapping:
+    return err("deployment-settings: cryptarchia.genesis_block.transactions[0].mantle_tx must be a mapping")
+  needUnder(mantle, ["ops"], "cryptarchia.genesis_block.transactions[0].mantle_tx.ops")
+  needUnder(
+    mantle, ["execution_gas_price"],
+    "cryptarchia.genesis_block.transactions[0].mantle_tx.execution_gas_price")
+  needUnder(
+    mantle, ["storage_gas_price"],
+    "cryptarchia.genesis_block.transactions[0].mantle_tx.storage_gas_price")
+  ok()
 
 func parseSignedMantleTxFromOpsYaml*(
     opsNode: YamlNode,
@@ -380,7 +517,7 @@ func parseSignedMantleTxFromOpsYaml*(
   let mantleTx = MantleTx(
     ops: ops,
     permanentStorageGasPrice: TokenValue(uint64(storageGasPrice)),
-    executionGasPrice: TokenValue(uint64(executionGasPrice))
+    executionGasPrice: TokenValue(uint64(executionGasPrice)),
   )
   doAssert opProofs.len == mantleTx.ops.len,
     "signed mantle tx: len(ops_proofs) must be <= len(ops) before fill"
@@ -433,7 +570,7 @@ func parseDeploymentGenesisState*(root: YamlNode): Result[GenesisState, string] 
   let fpOpt = yamlGetPathNode(root, ["cryptarchia", "faucet_pk"])
   if fpOpt.isNone:
     return err("deployment-settings: missing cryptarchia.faucet_pk")
-  let faucetPk = ? parseHex32Node(fpOpt.get, "cryptarchia.faucet_pk")
+  let faucetPk = ? parseFieldElementNode(fpOpt.get, "cryptarchia.faucet_pk")
   ok(GenesisState(
     signedMantleTx: smt,
     faucetZkPublicKey: faucetPk,

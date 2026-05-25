@@ -14,20 +14,20 @@ import ./testutil
 import # Unit test
   ./test_peer_pool,
   ./test_logos_p2p,
-  ./test_rest_node_api,
+  ./test_api_handlers,
   ./test_deployment_settings,
-  ./bedrock/crypto/test_hashing,
-  ./bedrock/crypto/test_encoding,
-  ./bedrock/mantle/test_primitives,
-  ./bedrock/mantle/test_operations,
-  ./bedrock/mantle/test_proofs,
-  ./bedrock/mantle/test_tx_types,
-  ./bedrock/mantle/test_tx_encoding,
-  ./bedrock/mantle/test_tx_decoding,
-  "./bedrock/block/test_block_types",
-  "./bedrock/block/test_genesis",
-  "./bedrock/block/test_devnet_genesis_mantle_tx",
-  ./bedrock/sdp/test_state
+  ./test_poseidon_hasher,
+  ./core/crypto/test_hashing,
+  ./core/crypto/test_types,
+  ./core/mantle/test_primitives,
+  ./core/mantle/test_operations,
+  ./core/mantle/test_proofs,
+  ./core/mantle/test_tx_types,
+  ./core/mantle/test_tx_hashing,
+  "./core/block/test_block_types",
+  "./core/block/test_genesis",
+  "./core/block/test_devnet_genesis_mantle_tx",
+  ./core/sdp/test_state
 
 summarizeLongTests("AllTests")
 

@@ -14,20 +14,18 @@
 
 import
   std/[options, strutils],
+  chronos,
   confutils/defs,
   results,
   stew/io2,
   yaml/dom,
-  "../bedrock/block/genesis",
-  ./deployment_settings_helpers,
-  ./helpers
+  "../chain/genesis",
+  ./deployment_settings_helpers
 
 export
   dom,
   genesis,
-  parseDeploymentSettingsYaml,
-  yamlGetPathNode,
-  yamlGetPathScalar
+  deployment_settings_helpers
 
 type
   BlendSchedulerCover* = object
@@ -95,7 +93,7 @@ type
     genesisState*: GenesisState
 
   TimeDeploymentSettings* = object
-    slotDuration*: string
+    slotDuration*: Duration
 
   MempoolDeploymentSettings* = object
     pubsubTopic*: string
@@ -106,60 +104,6 @@ type
     cryptarchia*: CryptarchiaDeploymentSettings
     time*: TimeDeploymentSettings
     mempool*: MempoolDeploymentSettings
-
-func validateCryptarchiaGenesisYaml(root: YamlNode): Result[void, string] =
-  let gbOpt = yamlGetPathNode(root, ["cryptarchia", "genesis_block"])
-  if gbOpt.isNone:
-    return err("deployment-settings: missing cryptarchia.genesis_block")
-  let blockNode = gbOpt.get
-  if blockNode.kind != yMapping:
-    return err("deployment-settings: cryptarchia.genesis_block must be a mapping")
-  template needUnder(node: YamlNode, keys: openArray[string], ctx: string) =
-    if yamlGetPathNode(node, keys).isNone:
-      return err("deployment-settings: missing " & ctx)
-  needUnder(blockNode, ["header"], "cryptarchia.genesis_block.header")
-  needUnder(blockNode, ["signature"], "cryptarchia.genesis_block.signature")
-  let hdr = yamlGetPathNode(blockNode, ["header"]).get
-  if hdr.kind != yMapping:
-    return err("deployment-settings: cryptarchia.genesis_block.header must be a mapping")
-  needUnder(hdr, ["version"], "cryptarchia.genesis_block.header.version")
-  needUnder(hdr, ["parent_block"], "cryptarchia.genesis_block.header.parent_block")
-  needUnder(hdr, ["slot"], "cryptarchia.genesis_block.header.slot")
-  needUnder(hdr, ["block_root"], "cryptarchia.genesis_block.header.block_root")
-  needUnder(hdr, ["proof_of_leadership"], "cryptarchia.genesis_block.header.proof_of_leadership")
-  let pol = yamlGetPathNode(hdr, ["proof_of_leadership"]).get
-  if pol.kind != yMapping:
-    return err("deployment-settings: cryptarchia.genesis_block.header.proof_of_leadership must be a mapping")
-  needUnder(pol, ["proof"], "cryptarchia.genesis_block.header.proof_of_leadership.proof")
-  needUnder(
-    pol, ["entropy_contribution"],
-    "cryptarchia.genesis_block.header.proof_of_leadership.entropy_contribution")
-  needUnder(pol, ["leader_key"], "cryptarchia.genesis_block.header.proof_of_leadership.leader_key")
-  needUnder(pol, ["voucher_cm"], "cryptarchia.genesis_block.header.proof_of_leadership.voucher_cm")
-  let txSeqOpt = yamlGetPathNode(blockNode, ["transactions"])
-  if txSeqOpt.isNone:
-    return err("deployment-settings: missing cryptarchia.genesis_block.transactions")
-  let txSeq = txSeqOpt.get
-  if txSeq.kind != ySequence or txSeq.len == 0:
-    return err(
-      "deployment-settings: cryptarchia.genesis_block.transactions must be a non-empty sequence")
-  let tx0 = txSeq[0]
-  if tx0.kind != yMapping:
-    return err(
-      "deployment-settings: cryptarchia.genesis_block.transactions[0] must be a mapping")
-  needUnder(tx0, ["mantle_tx"], "cryptarchia.genesis_block.transactions[0].mantle_tx")
-  needUnder(tx0, ["ops_proofs"], "cryptarchia.genesis_block.transactions[0].ops_proofs")
-  let mantle = yamlGetPathNode(tx0, ["mantle_tx"]).get
-  if mantle.kind != yMapping:
-    return err("deployment-settings: cryptarchia.genesis_block.transactions[0].mantle_tx must be a mapping")
-  needUnder(mantle, ["ops"], "cryptarchia.genesis_block.transactions[0].mantle_tx.ops")
-  needUnder(
-    mantle, ["execution_gas_price"],
-    "cryptarchia.genesis_block.transactions[0].mantle_tx.execution_gas_price")
-  needUnder(
-    mantle, ["storage_gas_price"],
-    "cryptarchia.genesis_block.transactions[0].mantle_tx.storage_gas_price")
-  ok()
 
 func validateDeploymentSettingsStructure(root: YamlNode): Result[void, string] =
   template needPath(path: openArray[string]) =
@@ -268,7 +212,7 @@ func deploymentSettingsFromYaml(root: YamlNode): Result[DeploymentSettings, stri
       genesisState: parsedGenesis
     ),
     time: TimeDeploymentSettings(
-      slotDuration: ? reqScalar(root, ["time", "slot_duration"])
+      slotDuration: ? reqSlotDuration(root, ["time", "slot_duration"]),
     ),
     mempool: MempoolDeploymentSettings(
       pubsubTopic: ? reqScalar(root, ["mempool", "pubsub_topic"])
@@ -326,7 +270,7 @@ func validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
   need(ds.network.kademliaProtocolName.len > 0, "empty network.kademlia_protocol_name")
   need(ds.network.identifyProtocolName.len > 0, "empty network.identify_protocol_name")
   need(ds.network.chainSyncProtocolName.len > 0, "empty network.chain_sync_protocol_name")
-  need(ds.time.slotDuration.len > 0, "empty time.slot_duration")
+  need(ds.time.slotDuration > ZeroDuration, "time.slot_duration must be > 0")
   need(ds.mempool.pubsubTopic.len > 0, "empty mempool.pubsub_topic")
   need(ds.cryptarchia.gossipsubProtocol.len > 0, "empty cryptarchia.gossipsub_protocol")
   need(ds.blend.common.protocolName.len > 0, "empty blend.common.protocol_name")
@@ -385,5 +329,10 @@ proc loadDeploymentSettings*(deploymentSettingsFile: InputFile): Result[Deployme
   let ds = ? parseDeploymentSettings(text)
   ? validateDeploymentSettings(ds)
   ok(ds)
+
+export
+  parseDeploymentSettings,
+  validateDeploymentSettings,
+  loadDeploymentSettings
 
 {.pop.}

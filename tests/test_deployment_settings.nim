@@ -9,6 +9,7 @@
 {.used.}
 
 import std/[os, strutils]
+import chronos
 import unittest2
 import stew/io2
 import ../logos_chain/conf
@@ -371,9 +372,8 @@ suite "deployment-settings":
       check false
       return
     check ds.blend.common.protocolName == "/stub/blend"
-    check ds.time.slotDuration == "1.0"
+    check ds.time.slotDuration == 1.seconds
     check ds.cryptarchia.securityParam == 1
-    check ds.cryptarchia.genesisState.signedMantleTx.tx.ops.len == 2
     check ds.cryptarchia.genesisState.signedMantleTx.tx.ops.len == 2
 
   test "validateDeploymentSettings: empty blend.common.protocol_name":
@@ -412,7 +412,7 @@ mempool:
     check v.isErr
     check "cryptarchia.slot_activation_coeff.denominator must be > 0" in v.error
 
-  test "validateDeploymentSettings: empty time.slot_duration":
+  test "parseDeploymentSettings: empty time.slot_duration":
     let badYaml = deploymentSettingsBlendBlock & """
 network:
   kademlia_protocol_name: /a/kad
@@ -424,12 +424,9 @@ time:
 mempool:
   pubsub_topic: /a/mem
 """
-    let ds = parseDeploymentSettings(badYaml).valueOr:
-      check false
-      return
-    let v = validateDeploymentSettings(ds)
-    check v.isErr
-    check "empty time.slot_duration" in v.error
+    let p = parseDeploymentSettings(badYaml)
+    check p.isErr
+    check "time.slot_duration" in p.error
 
   test "yamlGetMap: missing key returns none":
     let root = parseDeploymentSettingsYaml(minimalValidYaml).valueOr:
