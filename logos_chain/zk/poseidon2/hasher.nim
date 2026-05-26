@@ -7,6 +7,7 @@
 
 {.push raises: [], gcsafe.}
 
+import std/options
 import results
 
 import
@@ -60,10 +61,10 @@ func frFromBytesLE*(bytes: openArray[byte]): Opt[FieldElement] =
   for i, b in bytes:
     padded[i] = b     # LE, zero-padded to 32
   let parsed = FieldElement.fromBytes(padded)
-  if parsed.isNone:
-    Opt.none(FieldElement)
-  else:
+  if isSome(parsed):
     Opt.some(parsed.get())
+  else:
+    Opt.none(FieldElement)
 
 const TwoToThe248LEBytes: array[32, byte] =
   [0u8, 0, 0, 0, 0, 0, 0, 0,
