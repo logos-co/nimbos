@@ -8,11 +8,12 @@
 {.push raises: [], gcsafe.}
 
 import std/options
-import results
 
-import poseidon2                            # F, zero, one, toBytes, fromBytes, +, *, == (re-exported)
-import poseidon2/permutation               # HorizenLabsNew, permInPlace
-import constantine/math/arithmetic
+import
+  results,
+  poseidon2,                # F, zero, one, toBytes, fromBytes, +, *, == (re-exported)
+  poseidon2/permutation,    # HorizenLabsNew, permInPlace
+  constantine/math/arithmetic
 
 export poseidon2
 
@@ -30,9 +31,9 @@ func updateOne(h: var Poseidon2Hasher, x: FieldElement) =
   h.s0 += x
   permInPlace(h.s0, h.s1, h.s2, which = HorizenLabsNew)
 
-# SAFE (Sponge API for Field Elements) padding: absorb a domain-separating
-# `one` after the input so distinct-length inputs cannot collide.
 func update*(h: var Poseidon2Hasher, xs: openArray[FieldElement]) =
+  ## SAFE (Sponge API for Field Elements) padding: absorb a domain-separating
+  ## `one` after the input so distinct-length inputs cannot collide.
   for x in xs:
     h.updateOne(x)
   h.updateOne(one)
@@ -45,8 +46,9 @@ func digest*(_: type Poseidon2Hasher, xs: openArray[FieldElement]): FieldElement
   h.update(xs)
   h.finalize()
 
-# Merkle compress — no SAFE padding
+
 func compress*(_: type Poseidon2Hasher, a, b: FieldElement): FieldElement =
+  # Merkle compress — no SAFE padding
   var h = Poseidon2Hasher.init()
   h.s0 += a
   h.s1 += b

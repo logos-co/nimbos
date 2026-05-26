@@ -8,16 +8,16 @@
 {.push raises: [], gcsafe.}
 {.used.}
 
-import unittest2
-import results
-
-import poseidon2/types # `==` for F
+import
+  unittest2,
+  results,
+  poseidon2/types          # `==` for F
 
 import
   ../../logos_chain/ledger/
-    [balance, cryptarchia_state, locked_notes, types, utxo_store, zk_verifier]
-import ../../logos_chain/core/mantle/[primitives, operations, proofs, utxo, tx_hashing]
-import ../core/mantle/test_helpers
+    [balance, cryptarchia_state, locked_notes, types, utxo_store, zk_verifier],
+  ../../logos_chain/core/mantle/[primitives, operations, proofs, utxo, tx_hashing],
+  ../core/mantle/test_helpers
 
 suite "CryptarchiaState init":
   test "empty init has no utxos":

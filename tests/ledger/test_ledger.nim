@@ -8,18 +8,18 @@
 {.push raises: [], gcsafe.}
 {.used.}
 
-import unittest2
-import results
-
-import poseidon2/types # `==` for F
-
-import ../../logos_chain/ledger/
-  [balance, cryptarchia_state, ledger, locked_notes, types, zk_verifier]
 import
+  unittest2,
+  results,
+  poseidon2/types          # `==` for F
+
+import
+  ../../logos_chain/ledger/
+    [balance, cryptarchia_state, ledger, locked_notes, types, zk_verifier],
   ../../logos_chain/core/mantle/
-    [primitives, operations, proofs, tx_types, tx_hashing, utxo]
-import "../../logos_chain/core/block/types"
-import ../core/mantle/test_helpers
+    [primitives, operations, proofs, tx_types, tx_hashing, utxo],
+  ../../logos_chain/core/types,
+  ../core/mantle/test_helpers
 
 suite "LedgerState constructors and reads":
   test "fromUtxos with empty seq → empty state":

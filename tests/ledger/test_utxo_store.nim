@@ -8,16 +8,17 @@
 {.push raises: [], gcsafe.}
 {.used.}
 
-import unittest2
-import results
+import
+  unittest2,
+  results,
+  poseidon2/types
 
-import poseidon2/types
-
-import ../../logos_chain/core/mantle/[primitives, utxo]
-import ../../logos_chain/ledger/utxo_store
-import ../../logos_chain/utils/[dynamic_merkle_tree, hash_trie_map]
-import ../../logos_chain/zk/poseidon2/hasher
-import ../core/mantle/test_helpers
+import
+  ../../logos_chain/core/mantle/[primitives, utxo],
+  ../../logos_chain/ledger/utxo_store,
+  ../../logos_chain/utils/[dynamic_merkle_tree, hash_trie_map],
+  ../../logos_chain/zk/poseidon2/hasher,
+  ../core/mantle/test_helpers
 
 suite "UtxoStore empty":
   test "fresh store is empty":
