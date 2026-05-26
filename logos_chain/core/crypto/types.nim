@@ -13,17 +13,16 @@
 
 {.push raises: [], gcsafe.}
 
+import std/options
 import libp2p/crypto/ed25519/ed25519
 import stew/endians2
-import poseidon2/[types, io]
-import ../../zk/poseidon2/hasher
-export types, io
+import ../../zk/poseidon2/hasher           # FieldElement (+ re-exported poseidon2 symbols)
+export hasher
 
 type
   Hash32* = array[32, byte]
   ## BN254 32-byte field element as returned by Poseidon2 sponge (LE); Mantle **``ZkHash``** wire.
   ZkHash* = Hash32
-  BlockId* = Hash32
   Blake2bPrngSeed* = array[64, byte]
   Blake2bPrngBlock* = array[64, byte]
 
@@ -36,8 +35,6 @@ type
   ## Placeholder alias until zk proof encoding is finalized.
   ZkSignature* = CompressedGroth16Proof
 
-  FieldElement* = F
-  ## BN254 scalar field element (Poseidon2 **``F``**).
   ZkPublicKey* = FieldElement
   ## ZK public key wire type (32-byte field element).
   Ed25519PublicKey* = EdPublicKey

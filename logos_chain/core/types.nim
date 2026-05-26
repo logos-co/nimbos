@@ -26,6 +26,8 @@ type
     proof*: ProofOfLeadershipProof
     leaderKey*: Ed25519PublicKey
 
+  BlockId* = Hash32
+  
   Header* = object
     bedrockVersion*: uint8
     parentBlock*: BlockId

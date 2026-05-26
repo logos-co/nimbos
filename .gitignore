@@ -83,3 +83,5 @@ nimble.paths
 nimbus-build-system.paths
 
 CLAUDE*
+
+plans/

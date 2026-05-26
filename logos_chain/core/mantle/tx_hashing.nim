@@ -10,29 +10,27 @@
 
 {.push raises: [], gcsafe.}
 
-import ./tx_types
-import ../crypto/hashing
+import ./[tx_types, operations], ../crypto/hashing
 
 const
   MantleTxHashDomainTag = "MANTLE_TXHASH_V1"
+  OperationIdV1DomainTag = "OPERATION_ID_V1"
 
-func blake2bWithMantleTxDomain*(txBytes: openArray[byte]): Hash32 =
-  var preimage: seq[byte]
-  for c in MantleTxHashDomainTag:
+func blake2bWithDomain(domainTag: string, payload: openArray[byte]): Hash32 =
+  var preimage = newSeqOfCap[byte](domainTag.len + payload.len)
+  for c in domainTag:
     preimage.add(byte(ord(c)))
-  preimage.add(txBytes)
+  preimage.add(payload)
   blake2b256Hash(preimage)
 
 func mantleTxHash*(tx: MantleTx): ZkHash =
-  ## Placeholder classic hash (Blake2b-256):
-  ## h.update("MANTLE_TXHASH_V1")
-  ## h.update(encode(tx))
-  ## classic_digest = h.digest()
-  ##
+  ## tx_hash = Blake2b-256("MANTLE_TXHASH_V1" || encode(tx))
   ## TODO: once zk/poseidon2/hasher exists in this target, derive ZkHash by
   ## feeding two little-endian field chunks from classic_digest into ZkHasher.
-  let txBytes = encodeMantleTx(tx)
-  let classicDigest = blake2bWithMantleTxDomain(txBytes)
-  classicDigest
+  blake2bWithDomain(MantleTxHashDomainTag, encodeMantleTx(tx))
+
+func opId*(op: TransferPayload): Hash32 =
+  ## op_id = Blake2b-256("OPERATION_ID_V1" || encode_op_bytes(op))
+  blake2bWithDomain(OperationIdV1DomainTag, encodeTransfer(op))
 
 {.pop.}
