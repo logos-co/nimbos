@@ -10,7 +10,6 @@
 import std/options
 
 import
-  results,
   poseidon2/[types, io, permutation],   # F, zero, one, +, *, ==, fromBytes, toBytes, permInPlace
   constantine/math/arithmetic
 
