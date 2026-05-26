@@ -11,11 +11,10 @@ import std/options
 
 import
   results,
-  poseidon2,                # F, zero, one, toBytes, fromBytes, +, *, == (re-exported)
-  poseidon2/permutation,    # HorizenLabsNew, permInPlace
+  poseidon2/[types, io, permutation],   # F, zero, one, +, *, ==, fromBytes, toBytes, permInPlace
   constantine/math/arithmetic
 
-export poseidon2
+export types, io
 
 type
   FieldElement* = F
