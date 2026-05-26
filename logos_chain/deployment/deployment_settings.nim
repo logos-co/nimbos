@@ -16,13 +16,13 @@
 {.push raises: [].}
 
 import
-  std/[options, strutils],
+  std/strutils,
   chronos,
   confutils/defs,
   results,
   stew/io2,
   yaml/dom,
-  "../core/block/types",
+  ../core/types,
   ./deployment_settings_helpers
 
 export

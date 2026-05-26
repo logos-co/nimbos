@@ -9,7 +9,7 @@
 
 import std/macros,
        results, stew/byteutils, presto/route,
-       "."/[types, serialization, common, constants]
+       ./[types, serialization, common, constants]
 
 ## NOTE: The `types` / `serialization` / `common` modules mirror the upstream
 ## Eth2 REST API type definitions, but the Logos-specific

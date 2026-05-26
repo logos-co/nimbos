@@ -8,6 +8,7 @@
 {.push raises: [], gcsafe.}
 
 import std/options
+import results
 
 import poseidon2
 import poseidon2/[types,permutation]       # F, zero, one, HorizenLabsNew 
@@ -47,11 +48,15 @@ func compress*(_: type Poseidon2Hasher, a, b: F): F =
   h.s0
 
 # bytes → single F, little-endian (caller must ensure input fits in 254 bits)
-func frFromBytesLE*(bytes: openArray[byte]): Option[F] =
+func frFromBytesLE*(bytes: openArray[byte]): Opt[F] =
   doAssert bytes.len <= 32, "input exceeds 32 bytes"
   var padded: array[32, byte]
   for i, b in bytes:
     padded[i] = b     # LE, zero-padded to 32
-  F.fromBytes(padded)
+  let parsed = F.fromBytes(padded)
+  if parsed.isNone:
+    Opt.none(F)
+  else:
+    Opt.some(parsed.get())
 
 {.pop.}

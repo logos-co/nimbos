@@ -8,7 +8,7 @@
 {.push raises: [], gcsafe.}
 
 import
-  "."/[
+  ./[
     utils,
     handlers]
 

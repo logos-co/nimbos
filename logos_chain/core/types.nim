@@ -11,8 +11,8 @@
 {.push raises: [], gcsafe.}
 
 import stew/bitops2
-import ../crypto/hashing
-import ../mantle/[tx_types, tx_hashing]
+import ./crypto/hashing
+import ./mantle/[tx_types, tx_hashing]
 import libp2p/crypto/ed25519/ed25519
 export hashing, tx_types
 
@@ -86,7 +86,7 @@ func blockId*(header: Header): Hash32 =
   ##   header.proof_of_leadership.proof.serialize(),
   ##   header.proof_of_leadership.leader_key.compressed(),
   ## )
-  var preimage: seq[byte] = @[]
+  var preimage: seq[byte]
   for c in "BLOCK_ID_V1":
     preimage.add(byte(ord(c)))
 
