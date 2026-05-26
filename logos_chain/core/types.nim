@@ -26,6 +26,8 @@ type
     proof*: ProofOfLeadershipProof
     leaderKey*: Ed25519PublicKey
 
+  BlockId* = Hash32
+  
   Header* = object
     bedrockVersion*: uint8
     parentBlock*: BlockId
@@ -86,7 +88,7 @@ func blockId*(header: Header): Hash32 =
   ##   header.proof_of_leadership.proof.serialize(),
   ##   header.proof_of_leadership.leader_key.compressed(),
   ## )
-  var preimage: seq[byte] = @[]
+  var preimage: seq[byte]
   for c in "BLOCK_ID_V1":
     preimage.add(byte(ord(c)))
 

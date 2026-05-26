@@ -19,6 +19,7 @@ import yaml/dom
 import ../../logos_chain/deployment/[deployment_settings, deployment_settings_helpers]
 import ../../logos_chain/chain/genesis
 import ../../logos_chain/core/types
+import ../../logos_chain/core/crypto/hashing
 import ../../logos_chain/core/mantle/[tx_types, tx_hashing]
 
 const testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
@@ -103,7 +104,7 @@ suite "devnet genesis mantle_tx block root":
     let txBytes = encodeMantleTx(smt.tx)
     check toHex(txBytes) == fixedGenesisTxBytesHex
     check txBytes == hexToSeqByte(fixedGenesisTxBytesHex)
-    check toHex(blake2bMantleTxDigest(txBytes)) == expectedDevnetBlake2bMantleDigest
+    check toHex(blake2b256Hash(txBytes)) == expectedDevnetBlake2bMantleDigest
     check toHex(mantleTxHash(smt.tx)) == expectedDevnetMantleTxHash
 
 {.pop.}

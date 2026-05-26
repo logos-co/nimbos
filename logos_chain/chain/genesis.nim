@@ -39,7 +39,7 @@ func createGenesisHeader(genesisMantleTx: SignedMantleTx): Header =
     proofOfLeadership = ProofOfLeadership(
       leaderVoucher: default(RewardVoucher),
       entropyContribution: default(ZkHash),
-      proof: default(ProofOfLeadershipProof),
+      proof: DefaultCompressedGroth16Proof,
       leaderKey: default(Ed25519PublicKey),
     ),
   )

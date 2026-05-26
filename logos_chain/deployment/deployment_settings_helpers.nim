@@ -8,35 +8,38 @@
 {.push raises: [].}
 
 import
-  std/[options, strutils],
+  std/strutils,
   chronos,
   results,
   stew/byteutils,
   yaml/[dom, loading],
   libp2p/multiaddress,
   libp2p/crypto/ed25519/ed25519,
-  ../chain/genesis
+  ../chain/genesis,
+  ../core/types,
+  ../core/mantle/tx_types,
+  ../zk/poseidon2/hasher
 
 export genesis, chronos
 
-func yamlGetPathNode*(root: YamlNode, keys: openArray[string]): Option[YamlNode] =
+func yamlGetPathNode*(root: YamlNode, keys: openArray[string]): Opt[YamlNode] =
   var cur = root
   for k in keys:
     if cur.isNil or cur.kind != yMapping:
-      return none(YamlNode)
+      return Opt.none(YamlNode)
     try:
       cur = cur[k]
     except KeyError:
-      return none(YamlNode)
-  some(cur)
+      return Opt.none(YamlNode)
+  Opt.some(cur)
 
-func yamlGetPathScalar*(root: YamlNode, keys: openArray[string]): Option[string] =
+func yamlGetPathScalar*(root: YamlNode, keys: openArray[string]): Opt[string] =
   if keys.len == 0:
-    return none(string)
+    return Opt.none(string)
   let node = yamlGetPathNode(root, keys)
-  if node.isNone or node.get.kind != yScalar:
-    return none(string)
-  some(node.get.content)
+  if node.isNone or node.get().kind != yScalar:
+    return Opt.none(string)
+  Opt.some(node.get().content)
 
 
 proc parseDeploymentSettingsYaml*(text: string): Result[YamlNode, string] =
@@ -64,7 +67,7 @@ func reqScalar*(root: YamlNode, path: openArray[string]): Result[string, string]
   let s = yamlGetPathScalar(root, path)
   if s.isNone:
     return err("deployment-settings: missing or non-scalar " & path.join("."))
-  ok(s.get)
+  ok(s.get())
 
 template reqParsed(
     root: YamlNode,
@@ -96,7 +99,7 @@ func reqSlotDuration*(root: YamlNode, path: openArray[string]): Result[Duration,
 func parseByteSeqNode(node: YamlNode, path: string): Result[seq[byte], string] =
   if node.kind != ySequence:
     return err("deployment-settings: expected byte sequence at " & path)
-  var bytes: seq[byte] = @[]
+  var bytes: seq[byte]
   for i in 0 ..< node.len:
     let bNode = node[i]
     if bNode.kind != yScalar:
@@ -123,7 +126,7 @@ func parseHex32Node(node: YamlNode, path: string): Result[array[32, byte], strin
 
 func parseFieldElementNode(node: YamlNode, path: string): Result[FieldElement, string] =
   let bytes = ? parseHex32Node(node, path)
-  let parsed = FieldElement.fromBytes(bytes)
+  let parsed = frFromBytesLE(bytes)
   if parsed.isNone:
     return err("deployment-settings: field element exceeds BN254 scalar modulus at " & path)
   ok(parsed.get())
@@ -269,14 +272,14 @@ func parseGenesisOpPayload(
     return ok(defaultOpForOpcode(opcode))
   case opcode
   of OpTransfer:
-    var noteIds: seq[NoteId] = @[]
+    var noteIds: seq[NoteId]
     let inputsNode = yamlGetPathNode(payload, ["inputs"])
     if inputsNode.isSome:
       if inputsNode.get.kind != ySequence:
         return err("deployment-settings: transfer inputs must be a sequence at " & path & ".inputs")
       for i in 0 ..< inputsNode.get.len:
         noteIds.add(? parseFieldElementNode(inputsNode.get[i], path & ".inputs[" & $i & "]"))
-    var notes: seq[Note] = @[]
+    var notes: seq[Note]
     let outputsNode = yamlGetPathNode(payload, ["outputs"])
     if outputsNode.isNone or outputsNode.get.kind != ySequence:
       return err("deployment-settings: transfer outputs must be a sequence at " & path & ".outputs")
@@ -336,7 +339,7 @@ func parseGenesisOpPayload(
         return err("deployment-settings: unsupported service_type at " & path & ".service_type")
     if locatorsNode.get.kind != ySequence:
       return err("deployment-settings: locators must be sequence at " & path & ".locators")
-    var locators: seq[Locator] = @[]
+    var locators: seq[Locator]
     for i in 0 ..< locatorsNode.get.len:
       let n = locatorsNode.get[i]
       if n.kind != yScalar:
@@ -473,7 +476,7 @@ func parseSignedMantleTxFromOpsYaml*(
   if proofsNode.kind != ySequence:
     return err("deployment-settings: " & proofsPathPrefix & " must be a sequence")
 
-  var ops: seq[Op] = @[]
+  var ops: seq[Op]
   for i in 0 ..< opsNode.len:
     let opNode = opsNode[i]
     if opNode.kind != yMapping:
