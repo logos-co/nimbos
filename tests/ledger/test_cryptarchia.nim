@@ -15,7 +15,7 @@ import poseidon2/types # `==` for F
 
 import
   ../../logos_chain/ledger/
-    [cryptarchia_state, locked_notes, types, utxo_store, zk_verifier]
+    [balance, cryptarchia_state, locked_notes, types, utxo_store, zk_verifier]
 import ../../logos_chain/core/mantle/[primitives, operations, proofs, utxo, tx_hashing]
 import ../core/mantle/test_helpers
 

@@ -13,15 +13,10 @@
 {.push raises: [], gcsafe.}
 
 import results
-import stint
 
-export results, stint
+export results
 
 type
-  Balance* = Int128
-    ## Tx-running ledger balance (signed, 128-bit). Intermediate sums may
-    ## go negative on rewards or exceed u64 on multi-input transfers.
-
   LedgerError* {.pure.} = enum
     ## Consensus rejection categories. New variants land with the modules
     ## that emit them.
@@ -38,34 +33,5 @@ type
   LedgerConfig* = object
     ## Chain configuration. Currently empty — fields land with the modules
     ## that need them (epoch, lottery, SDP, gas).
-
-func zero*(_: typedesc[Balance]): Balance =
-  # `i128(0)` instantiates a buggy `stint(SignedInt, bits)` path in
-  # `vendor/nim-stint/stint/io.nim:73` (`result.negate` parses as field
-  # lookup, not the proc). `default` sidesteps that path.
-  default(Balance)
-
-# Stint exposes no public checked arithmetic — only wrapping `+` / `-`. These
-# helpers do explicit MIN/MAX headroom checks for arbitrary signed operands.
-
-func checkedAdd*(a, b: Balance): Result[Balance, LedgerError] =
-  ## Saturates at `BalanceOverflow` when `a + b` falls outside
-  ## `[Balance.low, Balance.high]`.
-  if b > Balance.zero and a > (Balance.high - b):
-    err(BalanceOverflow)
-  elif b < Balance.zero and a < (Balance.low - b):
-    err(BalanceOverflow)
-  else:
-    ok(a + b)
-
-func checkedSub*(a, b: Balance): Result[Balance, LedgerError] =
-  ## Saturates at `BalanceOverflow` when `a - b` falls outside
-  ## `[Balance.low, Balance.high]`.
-  if b < Balance.zero and a > (Balance.high + b):
-    err(BalanceOverflow)
-  elif b > Balance.zero and a < (Balance.low + b):
-    err(BalanceOverflow)
-  else:
-    ok(a - b)
 
 {.pop.}

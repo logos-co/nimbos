@@ -13,7 +13,8 @@ import results
 
 import poseidon2/types # `==` for F
 
-import ../../logos_chain/ledger/[cryptarchia_state, ledger, locked_notes, types, zk_verifier]
+import ../../logos_chain/ledger/
+  [balance, cryptarchia_state, ledger, locked_notes, types, zk_verifier]
 import
   ../../logos_chain/core/mantle/
     [primitives, operations, proofs, tx_types, tx_hashing, utxo]

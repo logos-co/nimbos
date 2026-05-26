@@ -11,7 +11,7 @@
 
 import results
 
-import ./[types, locked_notes, zk_verifier, utxo_store]
+import ./[balance, types, locked_notes, zk_verifier, utxo_store]
 import ../core/mantle/[primitives, operations, proofs, utxo, tx_hashing]
 
 export types, utxo, primitives, utxo_store

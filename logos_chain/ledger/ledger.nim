@@ -12,7 +12,7 @@
 
 import std/tables
 
-import ./[types, cryptarchia_state, locked_notes, zk_verifier]
+import ./[balance, types, cryptarchia_state, locked_notes, zk_verifier]
 import ../core/mantle/[tx_types, tx_hashing, operations, proofs]
 import "../core/block/types"
 
@@ -60,8 +60,7 @@ func tryApplyTx*(
     verifier: ZkSigVerifier,
 ): Result[tuple[state: LedgerState, balance: Balance], LedgerError] =
   ## Applies one transaction; returns the new state and the tx's net balance
-  ## (sum of per-op balances). Non-`Transfer` ops or `(op, proof)` kind
-  ## mismatches return `UnsupportedOp`.
+  ## (sum of per-op balances).
 
   if tx.tx.ops.len != tx.opProofs.len:
     return err(InvalidProof)
