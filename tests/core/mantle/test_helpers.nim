@@ -10,9 +10,9 @@
 import std/options
 
 import
-  "../../logos_chain/core/block/types",
-  ../../logos_chain/core/crypto/hashing,
-  ../../logos_chain/core/mantle/
+  "../../../logos_chain/core/block/types",
+  ../../../logos_chain/core/crypto/hashing,
+  ../../../logos_chain/core/mantle/
     [primitives, operations, proofs, tx_types, utxo]
 
 type TestId* = BlockId
@@ -23,13 +23,14 @@ func mkZkPubKey(seed: byte): ZkPublicKey =
   F.fromBytes(bytes).get
 
 func mkUtxo*(
-    value: Value = 100, pkSeed: byte = 1, opIdSeed: byte = 0, idx = 0
+    value: Value = 100, pkSeed: byte = 1, opIdSeed: byte = 0,
+    outputIndex: uint64 = 0,
 ): Utxo =
   var opId: Hash32
   opId[0] = opIdSeed
   Utxo(
     opId: opId,
-    outputIndex: idx,
+    outputIndex: outputIndex,
     note: Note(value: value, zkPublicKey: mkZkPubKey(pkSeed)),
   )
 

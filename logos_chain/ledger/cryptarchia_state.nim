@@ -11,8 +11,6 @@
 
 import results
 
-import poseidon2/types # F
-
 import ./[types, locked_notes, zk_verifier, utxo_store]
 import ../core/mantle/[primitives, operations, proofs, utxo, tx_hashing]
 
@@ -40,7 +38,7 @@ func len*(s: CryptarchiaState): int =
 func isEmpty*(s: CryptarchiaState): bool =
   s.utxos.isEmpty
 
-func root*(s: CryptarchiaState): F =
+func root*(s: CryptarchiaState): FieldElement =
   s.utxos.root
 
 func latestUtxos*(s: CryptarchiaState): lent UtxoStore =
@@ -66,6 +64,9 @@ func tryApplyTransfer*(
     balance = Balance.zero
     pks = newSeqOfCap[ZkPublicKey](op.inputs.noteIds.len)
 
+  if not verifier(pks, txHash, sig):
+    return err(InvalidProof)
+
   for inputId in op.inputs.noteIds:
     if lockedNotes.contains(inputId):
       return err(LockedNote)
@@ -75,16 +76,14 @@ func tryApplyTransfer*(
     balance = ?balance.checkedAdd(i128(removedUtxo.note.value))
     pks.add(removedUtxo.note.zkPublicKey)
 
-  if not verifier(pks, txHash, sig):
-    return err(InvalidProof)
 
-  let opId = opId(op)
+  let transferOpId = opId(op)
 
   for i, outNote in op.outputs.notes:
     if outNote.value == 0:
       return err(ZeroValueNote)
     balance = ?balance.checkedSub(i128(outNote.value))
-    let u = Utxo(opId: opId, outputIndex: i, note: outNote)
+    let u = Utxo(opId: transferOpId, outputIndex: uint64(i), note: outNote)
     s = CryptarchiaState(utxos: s.utxos.insert(u.id, u).store)
 
   ok((s, balance))

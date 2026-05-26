@@ -14,9 +14,10 @@ import results
 import poseidon2/types # `==` for F
 
 import
-  ../../logos_chain/ledger/[cryptarchia, locked_notes, types, utxo_store, zk_verifier]
+  ../../logos_chain/ledger/
+    [cryptarchia_state, locked_notes, types, utxo_store, zk_verifier]
 import ../../logos_chain/core/mantle/[primitives, operations, proofs, utxo, tx_hashing]
-import ./test_helpers
+import ../core/mantle/test_helpers
 
 suite "CryptarchiaState init":
   test "empty init has no utxos":
@@ -136,7 +137,7 @@ suite "tryApplyTransfer — error paths":
       seeded = mkUtxo(value = 100, pkSeed = 1)
       s0 = CryptarchiaState.init([seeded])
 
-      wrongIdx = mkUtxo(value = 100, pkSeed = 1, idx = 1)
+      wrongIdx = mkUtxo(value = 100, pkSeed = 1, outputIndex = 1)
       wrongHash = mkUtxo(value = 100, pkSeed = 1, opIdSeed = 9)
       wrongValue = mkUtxo(value = 99, pkSeed = 1)
 

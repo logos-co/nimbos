@@ -15,10 +15,8 @@
 import std/[heapqueue, options, strutils]
 import results
 
-import poseidon2/types        # F = Fr[BN254_Snarks], zero
-import constantine/math/io/io_fields  # toHex on F
-
-export F  # transitive re-export for callers
+import constantine/math/io/io_fields  # toHex on FieldElement
+import ../core/crypto/types           # FieldElement, zero, +, *, ==
 
 const
   TreeDepth* = 32
@@ -31,7 +29,7 @@ type
 
   MerkleNode* = object
     side*: Side
-    sibling*: F
+    sibling*: FieldElement
 
   MerklePath* = array[TreeDepth, MerkleNode]
     ## Inclusion proof: 32 tagged siblings, leaf → root order, root excluded.
@@ -44,7 +42,7 @@ type
     case kind: NodeKind
     of Inner:
       left, right: Node[Item, Hash]
-      value: F
+      value: FieldElement
       leftSize, rightSize: int
       height: int           # 1..TreeDepth
     of Empty:
@@ -54,7 +52,7 @@ type
 
   DynamicMerkleTree*[Item, Hash] = object
     ## Persistent fixed-depth Merkle tree. Capacity = 2^TreeDepth.
-    ## ``Hash`` is a typedesc with a ``compress(_: type Hash, a, b: F): F`` proc
+    ## ``Hash`` is a typedesc with a ``compress(_: type Hash, a, b: FieldElement): FieldElement`` proc
     ## in scope (same idiom as nimcrypto's ``HMAC[HashType]``).
     root: Node[Item, Hash]
     holes: HeapQueue[int]   # min-heap; smallest-free-index returned first
@@ -63,11 +61,11 @@ type
 # Per-Hash lazy cache of empty subtree roots for heights 0..TreeDepth.
 # `const` doesn't work — constantine's Fr arithmetic isn't VM-evaluable.
 # Each `Hash` instantiation gets its own `{.global.}` cache, filled once.
-proc getEmptyRoots*(Hash: typedesc): array[TreeDepth + 1, F] {.gcsafe.} =
+proc getEmptyRoots*(Hash: typedesc): array[TreeDepth + 1, FieldElement] =
   mixin compress
   {.cast(gcsafe).}:
     var
-      cache {.global.}: array[TreeDepth + 1, F]
+      cache {.global.}: array[TreeDepth + 1, FieldElement]
       inited {.global.} = false
     if not inited:
       cache[0] = zero
@@ -76,7 +74,7 @@ proc getEmptyRoots*(Hash: typedesc): array[TreeDepth + 1, F] {.gcsafe.} =
       inited = true
     cache
 
-func emptySubtreeRoot(Hash: typedesc; height: int): F =
+func emptySubtreeRoot(Hash: typedesc; height: int): FieldElement =
   doAssert height in 0 .. TreeDepth, "height " & $height & " out of range"
   {.cast(noSideEffect).}:
     Hash.getEmptyRoots()[height]
@@ -96,7 +94,7 @@ func nodeSize[Item, Hash](n: Node[Item, Hash]): int =
 func nodeCapacity[Item, Hash](n: Node[Item, Hash]): int =
   1 shl nodeHeight(n)
 
-func value[Item, Hash](n: Node[Item, Hash]): F =
+func value[Item, Hash](n: Node[Item, Hash]): FieldElement =
   mixin asField
   case n.kind
   of Inner: n.value
@@ -135,7 +133,7 @@ func capacity*[Item, Hash](t: DynamicMerkleTree[Item, Hash]): int =
 func isEmpty*[Item, Hash](t: DynamicMerkleTree[Item, Hash]): bool =
   t.count == 0
 
-func root*[Item, Hash](t: DynamicMerkleTree[Item, Hash]): F =
+func root*[Item, Hash](t: DynamicMerkleTree[Item, Hash]): FieldElement =
   value(t.root)
 
 func modifyAt[Item, Hash](
@@ -251,7 +249,7 @@ func path*[Item, Hash](t: DynamicMerkleTree[Item, Hash]; leafIndex: int): Opt[Me
   else:
     Opt.none(MerklePath)
 
-func verifyPath*(Hash: typedesc; p: MerklePath; leafDigest: F; root: F): bool =
+func verifyPath*(Hash: typedesc; p: MerklePath; leafDigest: FieldElement; root: FieldElement): bool =
   ## Walks the path bottom-up using ``Hash.compress``; true iff the
   ## reconstructed root equals ``root``. Call as
   ## ``Poseidon2Hasher.verifyPath(p, leafDigest, root)``.

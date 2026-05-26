@@ -10,7 +10,7 @@
 
 {.push raises: [], gcsafe.}
 
-import ./tx_types, ./operations, ../crypto/hashing
+import ./[tx_types, operations], ../crypto/hashing
 
 const
   MantleTxHashDomainTag = "MANTLE_TXHASH_V1"

@@ -16,23 +16,14 @@ import constantine/math/[arithmetic, io/io_bigints]
 import poseidon2/types
 
 import ../../../logos_chain/core/mantle/[primitives, utxo]
-
-func mkUtxo(value: Value = 100, outputIndex = 0, pkSeed: byte = 1): Utxo =
-  var
-    opId: Hash32 # all zeros
-    pkBytes: array[32, byte]
-  pkBytes[0] = pkSeed
-  let pk = F.fromBytes(pkBytes).get
-  Utxo(
-    opId: opId,
-    outputIndex: outputIndex,
-    note: Note(value: value, zkPublicKey: pk),
-  )
+import ./test_helpers
 
 suite "Utxo.id":
-  test "deterministic: same Utxo → same NoteId":
-    let u = mkUtxo()
-    check u.id == u.id
+  test "deterministic: same Utxo data → same NoteId":
+    let
+      a = mkUtxo()
+      b = mkUtxo()
+    check a.id == b.id
 
   test "different value → different NoteId":
     let

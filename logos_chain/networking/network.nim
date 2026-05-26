@@ -27,10 +27,10 @@ import
   eth/[common/keys, async_utils],
   eth/net/nat, eth/p2p/discoveryv5/[node, random2],
   ssz_serialization,
-  ".."/[version, conf],
+  ../[version, conf],
   ../core/utils,
-  "."/[discovery, protocol_dsl,
-       libp2p_json_serialization, peer_pool, peer_scores]
+  ./[discovery, protocol_dsl,
+     libp2p_json_serialization, peer_pool, peer_scores]
 
 export
   tables, chronos, ratelimit, version, multiaddress, peerinfo, p2pProtocol,

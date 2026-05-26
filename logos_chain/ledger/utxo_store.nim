@@ -13,11 +13,9 @@
 
 import results
 
-import poseidon2/types # `==` for F
-
 import ../core/mantle/[primitives, utxo]
 import ../utils/[dynamic_merkle_tree, hash_trie_map]
-import "../zk/poseidon2/hasher"
+import ../zk/poseidon2/hasher
 
 type
   UtxoStoreError* = enum
@@ -74,7 +72,7 @@ func remove*(
     (UtxoStore(utxos: s.utxos.remove(id), tree: s.tree.remove(leafIndex)), removedUtxo)
   )
 
-func root*(s: UtxoStore): F =
+func root*(s: UtxoStore): FieldElement =
   ## Current Merkle root over the set of populated UTXO NoteIds.
   s.tree.root
 

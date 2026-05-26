@@ -9,7 +9,7 @@
 
 import std/macros,
        results, stew/byteutils, presto/route,
-       "."/[types, serialization, common, constants],
+       ./[types, serialization, common, constants],
        ../core/crypto/types as crypto_types
 
 ## NOTE: The `types` / `serialization` / `common` modules mirror the upstream

@@ -18,11 +18,11 @@ type LockedNotes* = object
   ids: HashSet[NoteId]
 
 func init*(_: typedesc[LockedNotes]): LockedNotes =
-  LockedNotes(ids: initHashSet[NoteId]())
+  LockedNotes()
 
 func init*(_: typedesc[LockedNotes], seed: openArray[NoteId]): LockedNotes =
   ## Test seam — lets tests construct a populated set without invoking SDP.
-  var ids = initHashSet[NoteId]()
+  var ids: HashSet[NoteId]
   for id in seed:
     ids.incl(id)
   LockedNotes(ids: ids)

@@ -9,7 +9,7 @@
 
 import
   chronos, presto/client,
-  "."/[types, serialization]
+  ./[types, serialization]
 
 from std/times import Time, DateTime, toTime, fromUnix, now, utc, `-`,
                       inNanoseconds

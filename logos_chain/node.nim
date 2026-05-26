@@ -16,7 +16,7 @@ import
   eth/p2p/discoveryv5/random2,
 
   # Local modules
-  "."/conf,
+  ./conf,
   ./deployment/deployment_settings,
   ./networking/network,
   ./core/utils,

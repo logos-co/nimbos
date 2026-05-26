@@ -9,7 +9,6 @@
 ##
 ## `LedgerError` is a flat `{.pure.}` enum: coarse rejection categories, no
 ## carried payload — per-rejection detail goes to logs at the rejection site.
-## Object-variant promotion is a v1.1 followup per `plans/LEDGER_PORT_PLAN.md` §11.
 
 {.push raises: [], gcsafe.}
 

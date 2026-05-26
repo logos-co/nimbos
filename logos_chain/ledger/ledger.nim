@@ -12,11 +12,11 @@
 
 import std/tables
 
-import ./[types, cryptarchia, locked_notes, zk_verifier]
+import ./[types, cryptarchia_state, locked_notes, zk_verifier]
 import ../core/mantle/[tx_types, tx_hashing, operations, proofs]
 import "../core/block/types"
 
-export types, cryptarchia
+export types, cryptarchia_state
 
 type
   LedgerState* = object
@@ -46,7 +46,7 @@ func tryApplyHeader*(
 ): Result[LedgerState, LedgerError] =
   ## Verifies the leader proof; returns `InvalidProof` on rejection.
   # Epoch-derived `LeaderPublic` fields (nonce, lottery, agedRoot) stay at
-  # `default(F)` until `EpochState` lands.
+  # `default(FieldElement)` until `EpochState` lands.
   let public =
     LeaderPublic(slot: slot, latestRoot: state.cryptarchiaLedger.latestUtxos.root)
   if not leaderVerifier(proof, public):
@@ -77,7 +77,7 @@ func tryApplyTx*(
     case op.payload.kind
     of Transfer:
       if proof.kind != opfTransfer:
-        return err(UnsupportedOp)
+        return err(InvalidProof)
       let r =
         ?s.cryptarchiaLedger.tryApplyTransfer(
           lockedNotes, op.payload.transfer, proof.transferProof, txHash, verifier
