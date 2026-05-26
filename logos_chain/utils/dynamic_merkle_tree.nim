@@ -12,7 +12,7 @@
 
 {.push raises: [], gcsafe.}
 
-import std/[heapqueue, options, strutils]
+import std/[heapqueue, strutils]
 
 import
   results,
@@ -50,7 +50,7 @@ type
     of Empty:
       eHeight: int          # valid only as right-of-Inner or as root
     of Leaf:
-      item: Option[Item]
+      item: Opt[Item]
 
   DynamicMerkleTree*[Item, Hash] = object
     ## Persistent fixed-depth Merkle tree. Capacity = 2^TreeDepth.

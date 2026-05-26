@@ -10,7 +10,6 @@
 {.push raises: [], gcsafe.}
 
 import
-  std/options,
   stew/endians2,
   ./primitives, ../../zk/poseidon2/hasher
 

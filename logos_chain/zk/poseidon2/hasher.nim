@@ -7,13 +7,13 @@
 
 {.push raises: [], gcsafe.}
 
-import std/options
+import results
 
 import
   poseidon2/[types, io, permutation],   # F, zero, one, +, *, ==, fromBytes, toBytes, permInPlace
   constantine/math/arithmetic
 
-export types, io
+export types, io, results
 
 type
   FieldElement* = F
@@ -54,12 +54,16 @@ func compress*(_: type Poseidon2Hasher, a, b: FieldElement): FieldElement =
   h.s0
 
 # bytes → single FieldElement, little-endian (caller must ensure input fits in 254 bits)
-func frFromBytesLE*(bytes: openArray[byte]): Option[FieldElement] =
+func frFromBytesLE*(bytes: openArray[byte]): Opt[FieldElement] =
   doAssert bytes.len <= 32, "input exceeds 32 bytes"
   var padded: array[32, byte]
   for i, b in bytes:
     padded[i] = b     # LE, zero-padded to 32
-  FieldElement.fromBytes(padded)
+  let parsed = FieldElement.fromBytes(padded)
+  if parsed.isNone:
+    Opt.none(FieldElement)
+  else:
+    Opt.some(parsed.get())
 
 const TwoToThe248LEBytes: array[32, byte] =
   [0u8, 0, 0, 0, 0, 0, 0, 0,

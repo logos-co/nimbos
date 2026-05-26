@@ -8,7 +8,6 @@
 {.push raises: [], gcsafe.}
 {.used.}
 
-import std/options
 import unittest2
 import results
 

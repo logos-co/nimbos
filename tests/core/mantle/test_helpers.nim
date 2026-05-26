@@ -7,8 +7,6 @@
 
 {.push raises: [], gcsafe.}
 
-import std/options
-
 import
   ../../../logos_chain/core/types,
   ../../../logos_chain/core/crypto/hashing,

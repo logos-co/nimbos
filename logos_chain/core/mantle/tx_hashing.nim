@@ -10,9 +10,7 @@
 
 {.push raises: [], gcsafe.}
 
-import
-  std/options,
-  ./[tx_types, operations]
+import ./[tx_types, operations]
 import ../crypto/hashing
 import ../../zk/poseidon2/hasher
 

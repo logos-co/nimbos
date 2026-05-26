@@ -13,7 +13,7 @@
 
 {.push raises: [], gcsafe.}
 
-import std/options
+import results
 import libp2p/crypto/ed25519/ed25519
 import stew/endians2
 import ../../zk/poseidon2/hasher           # FieldElement (+ re-exported poseidon2 symbols)
