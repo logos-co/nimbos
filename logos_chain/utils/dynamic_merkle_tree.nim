@@ -13,9 +13,11 @@
 {.push raises: [], gcsafe.}
 
 import std/[heapqueue, options, strutils]
-import results
 
-import constantine/math/io/io_fields  # toHex on FieldElement
+import
+  results,
+  constantine/math/io/io_fields       # toHex on FieldElement
+
 import ../core/crypto/types           # FieldElement, zero, +, *, ==
 
 const

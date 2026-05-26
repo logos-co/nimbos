@@ -20,7 +20,7 @@ import
   ./[buildinfo, binary_common, process_state]
 
 from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
-from "./core/block/types" import blockId
+from ./core/types import blockId
 
 when defined(windows):
   from ./winservice import establishWindowsService

@@ -10,7 +10,7 @@
 import std/options
 
 import
-  "../../../logos_chain/core/block/types",
+  ../../../logos_chain/core/types,
   ../../../logos_chain/core/crypto/hashing,
   ../../../logos_chain/core/mantle/
     [primitives, operations, proofs, tx_types, utxo]

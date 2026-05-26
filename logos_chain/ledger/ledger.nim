@@ -14,7 +14,7 @@ import std/tables
 
 import ./[balance, types, cryptarchia_state, locked_notes, zk_verifier]
 import ../core/mantle/[tx_types, tx_hashing, operations, proofs]
-import "../core/block/types"
+import ../core/types
 
 export types, cryptarchia_state
 

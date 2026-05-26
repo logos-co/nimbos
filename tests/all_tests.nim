@@ -1,4 +1,4 @@
-# beacon_chain
+# nimbos
 # Copyright (c) 2018-2026 Status Research & Development GmbH
 # Licensed and distributed under either of
 #   * MIT license (license terms in the root directory or at https://opensource.org/licenses/MIT).
@@ -24,8 +24,8 @@ import # Unit test
   ./core/mantle/test_tx_types,
   ./core/mantle/test_tx_hashing,
   ./core/mantle/test_utxo,
-  "./core/block/test_block_types",
-  "./core/block/test_genesis",
+  ./core/test_block_types,
+  ./core/test_genesis,
   ./core/sdp/test_state,
   ./utils/test_hash_trie_map,
   ./utils/test_dynamic_merkle_tree,

@@ -30,7 +30,7 @@ import
   ../[version, conf],
   ../core/utils,
   ./[discovery, protocol_dsl,
-     libp2p_json_serialization, peer_pool, peer_scores]
+       libp2p_json_serialization, peer_pool, peer_scores]
 
 export
   tables, chronos, ratelimit, version, multiaddress, peerinfo, p2pProtocol,

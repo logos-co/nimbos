@@ -14,7 +14,7 @@
 import
   ../core/mantle/[primitives, proofs],
   ../core/crypto/hashing,
-  "../core/block/types"
+  ../core/types
 
 type
   ZkSigVerifier* = proc(pks: seq[ZkPublicKey], msg: ZkHash, sig: ZkSigProof): bool {.

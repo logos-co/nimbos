@@ -9,6 +9,7 @@
 {.used.}
 
 import unittest2
+import ../../../logos_chain/core/crypto/types
 import ../../../logos_chain/core/mantle/tx_types
 
 suite "core/mantle/tx_types":
@@ -37,7 +38,7 @@ suite "core/mantle/tx_types":
         permanentStorageGasPrice: 2'u64,
       ),
       opProofs: @[
-        OpProof(kind: opfTransfer, transferProof: default(ZkSigProof)),
+        OpProof(kind: opfTransfer, transferProof: DefaultZkSignature),
       ],
     )
     let wire = encodeSignedMantleTx(signed)

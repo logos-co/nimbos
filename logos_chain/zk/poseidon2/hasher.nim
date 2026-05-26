@@ -8,15 +8,20 @@
 {.push raises: [], gcsafe.}
 
 import std/options
+import results
 
-import poseidon2
+import poseidon2                            # F, zero, one, toBytes, fromBytes, +, *, == (re-exported)
 import poseidon2/permutation               # HorizenLabsNew, permInPlace
 import constantine/math/arithmetic
 
-import ../../core/crypto/types             # FieldElement, zero, one, fromBytes
+export poseidon2
 
-type Poseidon2Hasher* = object
-  s0, s1, s2: FieldElement
+type
+  FieldElement* = F
+    ## BN254 scalar field element (Poseidon2 **``F``**).
+
+  Poseidon2Hasher* = object
+    s0, s1, s2: FieldElement
 
 func init*(_: type Poseidon2Hasher): Poseidon2Hasher =
   Poseidon2Hasher(s0: zero, s1: zero, s2: zero)

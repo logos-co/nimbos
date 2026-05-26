@@ -29,11 +29,11 @@ func blake2b256Hash*(data: openArray[byte]): Hash32 =
 func generateGroth16Proof*(): CompressedGroth16Proof =
   ## Placeholder: return zeroed compressed Groth16 bytes.
   static: doAssert CompressedGroth16ProofBytes == sizeof(CompressedGroth16Proof)
-  default(CompressedGroth16Proof)
+  DefaultCompressedGroth16Proof
 
 func generateZkSignature*(): ZkSignature =
   ## Placeholder: return opaque zeroed signature bytes.
-  default(ZkSignature)
+  DefaultZkSignature
 
 func poseidon2Hash*(data: openArray[byte]): ZkHash =
   ## Poseidon2 (BN254, t=3) sponge hash over input bytes.
@@ -64,9 +64,9 @@ func prngBytes*(seed: Blake2bPrngSeed, byteLen: Natural): seq[byte] =
   ## Spec reference (PRNG expansion by concatenation):
   ## https://nomos-tech.notion.site/1-0-0-Common-Cryptographic-Components-1fd261aa09df81ac8ebbe0111e2c2d84#1fd261aa09df81b3890fcc4f9606ee9e
   ## Expands PRNG output by concatenating 64-byte PRNG blocks.
-  result = newSeq[byte](byteLen)
+  var res = newSeq[byte](byteLen)
   if byteLen == 0:
-    return
+    return res
 
   var written = 0
   var index = 0'u64
@@ -75,8 +75,9 @@ func prngBytes*(seed: Blake2bPrngSeed, byteLen: Natural): seq[byte] =
     let remaining = byteLen - written
     let take = min(64, remaining)
     for j in 0 ..< take:
-      result[written + j] = blk[j]
+      res[written + j] = blk[j]
     written += take
     inc index
+  res
 
 {.pop.}

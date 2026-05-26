@@ -31,14 +31,16 @@ type
 
 func encodeMantleTx*(tx: MantleTx): seq[byte] =
   ## MantleTx = Ops || ExecutionGasPrice || StorageGasPrice
-  result = encodeOps(tx.ops)
-  result.add(encodeLe(uint64(tx.executionGasPrice)))
-  result.add(encodeLe(uint64(tx.permanentStorageGasPrice)))
+  var res = encodeOps(tx.ops)
+  res.add(encodeLe(uint64(tx.executionGasPrice)))
+  res.add(encodeLe(uint64(tx.permanentStorageGasPrice)))
+  res
 
 func encodeSignedMantleTx*(signedTx: SignedMantleTx): seq[byte] =
   ## SignedMantleTx = MantleTx || OpsProofs
-  result = encodeMantleTx(signedTx.tx)
-  result.add(encodeOpsProofs(signedTx.tx.ops, signedTx.opProofs))
+  var res = encodeMantleTx(signedTx.tx)
+  res.add(encodeOpsProofs(signedTx.tx.ops, signedTx.opProofs))
+  res
 
 func decodeMantleTx*(data: openArray[byte]): MantleTx {.raises: [DecodingError].} =
   var pos = 0
