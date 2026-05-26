@@ -16,16 +16,14 @@ import unittest2
 import results
 import stew/[byteutils, io2]
 import yaml/dom
-import "../../../logos_chain/deployment/deployment_settings"
-import "../../../logos_chain/deployment/deployment_settings_helpers"
-import "../../../logos_chain/chain/genesis"
-import "../../../logos_chain/core/block/types"
-import "../../../logos_chain/core/mantle/tx_types"
-import "../../../logos_chain/core/mantle/tx_hashing"
+import ../../logos_chain/deployment/[deployment_settings, deployment_settings_helpers]
+import ../../logos_chain/chain/genesis
+import ../../logos_chain/core/types
+import ../../logos_chain/core/mantle/[tx_types, tx_hashing]
 
 const testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
-const mantleTxFixturePath = testsDir / "../../fixtures/devnet-genesis-mantle-tx.yaml"
-const deploymentSettingsPath = testsDir / "../../../config/deployment-settings.yaml"
+const mantleTxFixturePath = testsDir / "../fixtures/devnet-genesis-mantle-tx.yaml"
+const deploymentSettingsPath = testsDir / "../../config/deployment-settings.yaml"
 const expectedDevnetGenesisBlockId =
   "10a1b21476019f28657e8237263e9ece28fdd4e60cc3a8048d4d8b265ec13a27"
 const fixedGenesisTxBytesHex =
@@ -59,7 +57,7 @@ proc signedMantleTxFromDevnetFixture(text: string): Result[SignedMantleTx, strin
     "ops_proofs",
   )
 
-suite "core/block devnet mantle_tx block root":
+suite "devnet genesis mantle_tx block root":
   test "genesis fixture single-tx block root matches deployment header.block_root":
     check fileExists(mantleTxFixturePath)
     let text = readAllChars(mantleTxFixturePath).valueOr:

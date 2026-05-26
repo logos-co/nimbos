@@ -24,9 +24,9 @@ import # Unit test
   ./core/mantle/test_proofs,
   ./core/mantle/test_tx_types,
   ./core/mantle/test_tx_hashing,
-  "./core/block/test_block_types",
-  "./core/block/test_genesis",
-  "./core/block/test_devnet_genesis_mantle_tx",
+  ./core/test_block_types,
+  ./core/test_genesis,
+  ./core/test_devnet_genesis_mantle_tx,
   ./core/sdp/test_state
 
 summarizeLongTests("AllTests")

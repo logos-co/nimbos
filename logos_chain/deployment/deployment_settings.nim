@@ -19,7 +19,7 @@ import
   results,
   stew/io2,
   yaml/dom,
-  "../chain/genesis",
+  ../chain/genesis,
   ./deployment_settings_helpers
 
 export

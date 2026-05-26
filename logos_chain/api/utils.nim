@@ -10,8 +10,8 @@
 import std/macros,
        results, stew/byteutils, presto/route,
        ../core/crypto/hashing,
-       "../core/crypto/types",
-       "."/[types, serialization, common, constants]
+       ../core/crypto/types,
+       ./[types, serialization, common, constants]
 
 ## NOTE: The `types` / `serialization` / `common` modules mirror the upstream
 ## Eth2 REST API type definitions, but the Logos-specific

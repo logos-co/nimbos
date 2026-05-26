@@ -10,7 +10,7 @@
 {.push raises: [].}
 
 import results
-import "./core/block/types"
+import ./core/types
 import ./deployment/deployment_settings
 import ./chain/genesis
 

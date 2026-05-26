@@ -15,7 +15,7 @@ import
   yaml/[dom, loading],
   libp2p/multiaddress,
   libp2p/crypto/ed25519/ed25519,
-  "../chain/genesis"
+  ../chain/genesis
 
 export genesis, chronos
 

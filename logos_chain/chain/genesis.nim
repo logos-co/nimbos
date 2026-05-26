@@ -11,7 +11,7 @@
 {.push raises: [], gcsafe.}
 
 import
-  "../core/block/types",
+  ../core/types,
   ../core/crypto/hashing
 
 export types, hashing

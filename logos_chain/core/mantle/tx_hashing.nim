@@ -12,7 +12,7 @@
 
 import ./tx_types
 import ../crypto/[hashing, types]
-import "../../zk/poseidon2/hasher"
+import ../../zk/poseidon2/hasher
 
 const
   MantleTxHashDomainTag = "MANTLE_TXHASH_V1"
