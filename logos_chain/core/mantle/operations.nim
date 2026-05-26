@@ -241,57 +241,67 @@ func defaultOpForOpcode*(opcode: Opcode): Op =
 
 func encodeTransfer*(value: TransferPayload): seq[byte] =
   ## Transfer = Inputs || Outputs
-  result = encodeInputs(value.inputs)
-  result.add(encodeOutputs(value.outputs))
+  var res = encodeInputs(value.inputs)
+  res.add(encodeOutputs(value.outputs))
+  res
 
 func encodeSdpDeclare*(value: SdpDeclarePayload): seq[byte] =
   ## SDPDeclare = ServiceType LocatorCount *Locator ProviderId ZkId LockedNoteId
   doAssert value.locators.len <= MaxSdpLocators,
     "SDPDeclare LocatorCount exceeds max supported locators"
-  result = @[encodeServiceType(value.serviceType)]
-  result.add(encodeLocatorCount(byte(value.locators.len)))
+  var res = @[encodeServiceType(value.serviceType)]
+  res.add(encodeLocatorCount(byte(value.locators.len)))
   for locator in value.locators:
-    result.add(encodeLocator(locator))
-  result.add(encodeProviderId(value.providerId))
-  result.add(encodeZkId(value.zkId))
-  result.add(encodeLockedNoteId(value.lockedNoteId))
+    res.add(encodeLocator(locator))
+  res.add(encodeProviderId(value.providerId))
+  res.add(encodeZkId(value.zkId))
+  res.add(encodeLockedNoteId(value.lockedNoteId))
+  res
 
 func encodeSdpWithdraw*(value: SdpWithdrawPayload): array[72, byte] =
   ## SDPWithdraw = DeclarationId || Nonce || LockedNoteId
-  result[0 ..< 32] = encodeDeclarationId(value.declarationId)
-  result[32 ..< 40] = encodeNonce(value.nonce)
-  result[40 ..< 72] = encodeLockedNoteId(value.lockedNoteId)
+  var res: array[72, byte]
+  res[0 ..< 32] = encodeDeclarationId(value.declarationId)
+  res[32 ..< 40] = encodeNonce(value.nonce)
+  res[40 ..< 72] = encodeLockedNoteId(value.lockedNoteId)
+  res
 
 func encodeSdpActive*(value: SdpActivePayload): seq[byte] =
   ## SDPActive = DeclarationId || Nonce || Metadata
-  result = @(encodeDeclarationId(value.declarationId))
-  result.add(encodeNonce(value.nonce))
-  result.add(encodeMetadata(value.metadata))
+  var res = @(encodeDeclarationId(value.declarationId))
+  res.add(encodeNonce(value.nonce))
+  res.add(encodeMetadata(value.metadata))
+  res
 
 func encodeLeaderClaim*(value: LeaderClaimPayload): array[96, byte] =
   ## LeaderClaim = RewardsRoot || VoucherNullifier || PublicKey
-  result[0 ..< 32] = encodeRewardsRoot(value.rewardsRoot)
-  result[32 ..< 64] = encodeVoucherNullifier(value.voucherNullifier)
-  result[64 ..< 96] = encodePublicKey(value.publicKey)
+  var res: array[96, byte]
+  res[0 ..< 32] = encodeRewardsRoot(value.rewardsRoot)
+  res[32 ..< 64] = encodeVoucherNullifier(value.voucherNullifier)
+  res[64 ..< 96] = encodePublicKey(value.publicKey)
+  res
 
 func encodeChannelWithdraw*(value: ChannelWithdrawPayload): seq[byte] =
   ## ChannelWithdraw = ChannelId || Outputs || OpIdNonce
-  result = @(encodeChannelId(value.channel))
-  result.add(encodeOutputs(Outputs(notes: value.outputs)))
-  result.add(@(encodeOpIdNonce(value.opIdNonce)))
+  var res = @(encodeChannelId(value.channel))
+  res.add(encodeOutputs(Outputs(notes: value.outputs)))
+  res.add(@(encodeOpIdNonce(value.opIdNonce)))
+  res
 
 func encodeChannelDeposit*(value: ChannelDepositPayload): seq[byte] =
   ## ChannelDeposit = ChannelId || Inputs || Metadata
-  result = @(encodeChannelId(value.channel))
-  result.add(encodeInputs(value.inputs))
-  result.add(encodeMetadata(value.metadata))
+  var res = @(encodeChannelId(value.channel))
+  res.add(encodeInputs(value.inputs))
+  res.add(encodeMetadata(value.metadata))
+  res
 
 func encodeChannelInscribe*(value: ChannelInscribePayload): seq[byte] =
   ## ChannelInscribe = ChannelId || Inscription || Parent || Signer
-  result = @(encodeChannelId(value.channelId))
-  result.add(encodeInscription(value.inscription))
-  result.add(encodeParent(value.parent))
-  result.add(encodeSigner(value.signer))
+  var res = @(encodeChannelId(value.channelId))
+  res.add(encodeInscription(value.inscription))
+  res.add(encodeParent(value.parent))
+  res.add(encodeSigner(value.signer))
+  res
 
 func encodeOpPayload*(payload: OpPayload): seq[byte] =
   ## OpPayload = Transfer /
@@ -325,16 +335,18 @@ func encodeOpPayload*(payload: OpPayload): seq[byte] =
 
 func encodeOp*(op: Op): seq[byte] =
   ## Op = Opcode || OpPayload
-  result = @[encodeOpcode(op.opcode)]
-  result.add(encodeOpPayload(op.payload))
+  var res = @[encodeOpcode(op.opcode)]
+  res.add(encodeOpPayload(op.payload))
+  res
 
 func encodeOps*(ops: openArray[Op]): seq[byte] =
   ## Ops = OpCount * Op
   doAssert ops.len <= int(high(uint8)),
     "Ops length exceeds OpCount byte range"
-  result = @[encodeOpCount(OpCount(uint8(ops.len)))]
+  var res = @[encodeOpCount(OpCount(uint8(ops.len)))]
   for op in ops:
-    result.add(encodeOp(op))
+    res.add(encodeOp(op))
+  res
 
 func decodeTransfer*(data: openArray[byte]): TransferPayload {.raises: [DecodingError].} =
   var pos = 0
@@ -552,20 +564,23 @@ proc readOp*(data: openArray[byte], pos: var int): Op {.raises: [DecodingError].
 
 func decodeOp*(data: openArray[byte]): Op {.raises: [DecodingError].} =
   var pos = 0
-  result = readOp(data, pos)
+  let res = readOp(data, pos)
   finishDecode(data, pos)
+  res
 
 func decodeOps*(data: openArray[byte]): seq[Op] {.raises: [DecodingError].} =
   var pos = 0
   let count = readByte(data, pos)
-  result = newSeqOfCap[Op](count)
+  var res = newSeqOfCap[Op](count)
   for _ in 0 ..< int(count):
-    result.add readOp(data, pos)
+    res.add readOp(data, pos)
   finishDecode(data, pos)
+  res
 
 func decodeOpPayload*(data: openArray[byte], opcode: Opcode): OpPayload {.raises: [DecodingError].} =
   var pos = 0
-  result = readOpPayload(data, pos, opcode)
+  let res = readOpPayload(data, pos, opcode)
   finishDecode(data, pos)
+  res
 
 {.pop.}

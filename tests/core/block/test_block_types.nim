@@ -11,9 +11,9 @@
 import unittest2
 import ../../../logos_chain/core/mantle/tx_types
 import ../../../logos_chain/core/mantle/tx_hashing
-import "../../../logos_chain/core/block/types"
+import ../../../logos_chain/core/types
 
-suite "core/block/block_types":
+suite "core/types":
   const testBedrockVersion = 1'u8
 
   proc sampleTx(
@@ -44,7 +44,7 @@ suite "core/block/block_types":
       proofOfLeadership = ProofOfLeadership(
         leaderVoucher: default(RewardVoucher),
         entropyContribution: default(ZkHash),
-        proof: default(ProofOfLeadershipProof),
+        proof: DefaultCompressedGroth16Proof,
         leaderKey: default(Ed25519PublicKey),
       ),
     )
@@ -66,7 +66,7 @@ suite "core/block/block_types":
       proofOfLeadership = ProofOfLeadership(
         leaderVoucher: default(RewardVoucher),
         entropyContribution: default(ZkHash),
-        proof: default(ProofOfLeadershipProof),
+        proof: DefaultCompressedGroth16Proof,
         leaderKey: default(Ed25519PublicKey),
       ),
     )
@@ -153,7 +153,7 @@ suite "core/block/block_types":
       proofOfLeadership = ProofOfLeadership(
         leaderVoucher: default(RewardVoucher),
         entropyContribution: default(ZkHash),
-        proof: default(ProofOfLeadershipProof),
+        proof: DefaultCompressedGroth16Proof,
         leaderKey: default(Ed25519PublicKey),
       ),
     )

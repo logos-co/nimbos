@@ -155,8 +155,9 @@ func encodeMetadata*(value: Metadata): seq[byte] =
   ## Service-specific node activeness metadata.
   doAssert value.len <= int(high(uint32)),
     "Metadata length exceeds UINT32 range"
-  result = @(encodeLe(uint32(value.len)))
-  result.add(value)
+  var res = @(encodeLe(uint32(value.len)))
+  res.add(value)
+  res
 
 func encodeSignatureCount*(value: SignatureCount): array[2, byte] =
   ## SignatureCount = UINT16
@@ -169,8 +170,10 @@ func encodeChannelKeyIndex*(value: ChannelKeyIndex): array[2, byte] =
 
 func encodeNote*(value: Note): array[40, byte] =
   ## Note = Value || ZkPublicKey
-  result[0 ..< 8] = encodeValue(value.value)
-  result[8 ..< 40] = encodeZkPublicKey(value.zkPublicKey)
+  var res: array[40, byte]
+  res[0 ..< 8] = encodeValue(value.value)
+  res[8 ..< 40] = encodeZkPublicKey(value.zkPublicKey)
+  res
 
 func encodeInputCount*(value: byte): byte =
   ## InputCount = Byte
@@ -184,28 +187,31 @@ func encodeInputs*(value: Inputs): seq[byte] =
   ## Inputs = InputCount * NoteId
   doAssert value.noteIds.len <= int(high(byte)),
     "Inputs: InputCount exceeds Byte range"
-  result = @[]
-  result.add(encodeInputCount(byte(value.noteIds.len)))
+  var res: seq[byte]
+  res.add(encodeInputCount(byte(value.noteIds.len)))
   for noteId in value.noteIds:
-    result.add(encodeNoteId(noteId))
+    res.add(encodeNoteId(noteId))
+  res
 
 func encodeInputs*(value: openArray[NoteId]): seq[byte] =
   ## Inputs = InputCount * NoteId
   doAssert value.len <= int(high(byte)),
     "Inputs: InputCount exceeds Byte range"
-  result = @[]
-  result.add(encodeInputCount(byte(value.len)))
+  var res: seq[byte]
+  res.add(encodeInputCount(byte(value.len)))
   for noteId in value:
-    result.add(encodeNoteId(noteId))
+    res.add(encodeNoteId(noteId))
+  res
 
 func encodeOutputs*(value: Outputs): seq[byte] =
   ## Outputs = OutputCount * Note
   doAssert value.notes.len <= int(high(byte)),
     "Outputs: OutputCount exceeds Byte range"
-  result = @[]
-  result.add(encodeOutputCount(byte(value.notes.len)))
+  var res: seq[byte]
+  res.add(encodeOutputCount(byte(value.notes.len)))
   for note in value.notes:
-    result.add(encodeNote(note))
+    res.add(encodeNote(note))
+  res
 
 func encodeInscription*(value: Inscription): seq[byte] =
   ## Inscription = UINT32 * BYTE
@@ -266,8 +272,9 @@ func decodeOpCount*(data: openArray[byte]): OpCount {.raises: [DecodingError].} 
 
 func decodeValue*(data: openArray[byte]): Value {.raises: [DecodingError].} =
   var pos = 0
-  result = readLe[uint64](data, pos)
+  let res = readLe[uint64](data, pos)
   finishDecode(data, pos)
+  res
 
 func decodeAmount*(data: openArray[byte]): Amount {.raises: [DecodingError].} =
   decodeValue(data)
@@ -277,8 +284,9 @@ func decodeNonce*(data: openArray[byte]): Nonce {.raises: [DecodingError].} =
 
 func decodeOpIdNonce*(data: openArray[byte]): uint32 {.raises: [DecodingError].} =
   var pos = 0
-  result = readLe[uint32](data, pos)
+  let res = readLe[uint32](data, pos)
   finishDecode(data, pos)
+  res
 
 func decodeMetadata*(data: openArray[byte]): Metadata {.raises: [DecodingError].} =
   decodeU32LeLenPrefixed(data)
@@ -296,8 +304,9 @@ proc readServiceType*(data: openArray[byte], pos: var int): ServiceType {.raises
 
 func decodeServiceType*(data: openArray[byte]): ServiceType {.raises: [DecodingError].} =
   var pos = 0
-  result = readServiceType(data, pos)
+  let res = readServiceType(data, pos)
   finishDecode(data, pos)
+  res
 
 func decodeLocatorCount*(data: openArray[byte]): byte {.raises: [DecodingError].} =
   decodeByte(data)
@@ -310,18 +319,21 @@ proc readLocator*(data: openArray[byte], pos: var int): Locator {.raises: [Decod
 
 func decodeLocator*(data: openArray[byte]): Locator {.raises: [DecodingError].} =
   var pos = 0
-  result = readLocator(data, pos)
+  let res = readLocator(data, pos)
   finishDecode(data, pos)
+  res
 
 func decodeSignatureCount*(data: openArray[byte]): SignatureCount {.raises: [DecodingError].} =
   var pos = 0
-  result = SignatureCount(readLe[uint16](data, pos))
+  let res = SignatureCount(readLe[uint16](data, pos))
   finishDecode(data, pos)
+  res
 
 func decodeChannelKeyIndex*(data: openArray[byte]): ChannelKeyIndex {.raises: [DecodingError].} =
   var pos = 0
-  result = ChannelKeyIndex(readLe[uint16](data, pos))
+  let res = ChannelKeyIndex(readLe[uint16](data, pos))
   finishDecode(data, pos)
+  res
 
 
 proc readNote*(data: openArray[byte], pos: var int): Note {.raises: [DecodingError].} =
@@ -345,8 +357,9 @@ proc readOutputs*(data: openArray[byte], pos: var int): Outputs {.raises: [Decod
 
 func decodeNote*(data: openArray[byte]): Note {.raises: [DecodingError].} =
   var pos = 0
-  result = readNote(data, pos)
+  let res = readNote(data, pos)
   finishDecode(data, pos)
+  res
 
 func decodeInputCount*(data: openArray[byte]): byte {.raises: [DecodingError].} =
   decodeByte(data)
@@ -356,15 +369,17 @@ func decodeOutputCount*(data: openArray[byte]): byte {.raises: [DecodingError].}
 
 func decodeInputs*(data: openArray[byte]): Inputs {.raises: [DecodingError].} =
   var pos = 0
-  result = readInputs(data, pos)
+  let res = readInputs(data, pos)
   finishDecode(data, pos)
+  res
 
 func decodeInputsNoteIds*(data: openArray[byte]): seq[NoteId] {.raises: [DecodingError].} =
   decodeInputs(data).noteIds
 
 func decodeOutputs*(data: openArray[byte]): Outputs {.raises: [DecodingError].} =
   var pos = 0
-  result = readOutputs(data, pos)
+  let res = readOutputs(data, pos)
   finishDecode(data, pos)
+  res
 
 {.pop.}

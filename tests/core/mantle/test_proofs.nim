@@ -9,6 +9,7 @@
 {.used.}
 
 import unittest2
+import ../../../logos_chain/core/crypto/types
 import ../../../logos_chain/core/mantle/proofs
 import ../../../logos_chain/core/mantle/operations
 
@@ -16,31 +17,31 @@ suite "core/mantle/proofs":
   test "proofType maps concrete proof variants to canonical families":
     check proofType(OpProof(
       kind: opfChannelInscribe,
-      ed25519SigProof: default(Ed25519SigProof),
+      ed25519SigProof: DefaultEd25519Signature,
     )) == ptEd25519Sig
 
     check proofType(OpProof(
       kind: opfTransfer,
-      transferProof: default(ZkSigProof),
+      transferProof: DefaultZkSignature,
     )) == ptZkSig
     check proofType(OpProof(
       kind: opfChannelDeposit,
-      channelDepositProof: default(ZkSigProof),
+      channelDepositProof: DefaultZkSignature,
     )) == ptZkSig
     check proofType(OpProof(
       kind: opfSdpWithdraw,
-      sdpWithdrawProof: default(ZkSigProof),
+      sdpWithdrawProof: DefaultZkSignature,
     )) == ptZkSig
     check proofType(OpProof(
       kind: opfSdpActive,
-      sdpActiveProof: default(ZkSigProof),
+      sdpActiveProof: DefaultZkSignature,
     )) == ptZkSig
 
     check proofType(OpProof(
       kind: opfSdpDeclare,
       declarationProof: ZkAndEd25519SigsProof(
-        zkSig: default(ZkSigProof),
-        ed25519Sig: default(Ed25519SigProof),
+        zkSig: DefaultZkSignature,
+        ed25519Sig: DefaultEd25519Signature,
       ),
     )) == ptZkAndEd25519Sigs
 
@@ -55,7 +56,7 @@ suite "core/mantle/proofs":
 
     check proofType(OpProof(
       kind: opfLeaderClaim,
-      proofOfClaimProof: default(ProofOfClaimProof),
+      proofOfClaimProof: DefaultCompressedGroth16Proof,
     )) == ptProofOfClaim
 
   test "encodeOpsProofs accepts proofs length <= op count":
@@ -71,7 +72,7 @@ suite "core/mantle/proofs":
       )),
     ]
     let proofs = @[
-      OpProof(kind: opfTransfer, transferProof: default(ZkSigProof)),
+      OpProof(kind: opfTransfer, transferProof: DefaultZkSignature),
     ]
     let encoded = encodeOpsProofs(ops, proofs)
     check encoded.len == 128
@@ -89,7 +90,7 @@ suite "core/mantle/proofs":
       )),
     ]
     let proofs = @[
-      OpProof(kind: opfTransfer, transferProof: default(ZkSigProof)),
+      OpProof(kind: opfTransfer, transferProof: DefaultZkSignature),
     ]
     let wire = encodeOpsProofs(ops, proofs)
     let back = decodeOpsProofs(ops, wire)

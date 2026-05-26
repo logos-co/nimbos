@@ -88,11 +88,11 @@ func defaultOpProofForOpcode*(opcode: Opcode): OpProof =
   ## Canonical default/empty proof value for a given opcode.
   case opcode
   of OpTransfer:
-    OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))
+    OpProof(kind: opfTransfer, transferProof: DefaultZkSignature)
   of OpChannelInscribe:
-    OpProof(kind: opfChannelInscribe, ed25519SigProof: default(Ed25519SigProof))
+    OpProof(kind: opfChannelInscribe, ed25519SigProof: DefaultEd25519Signature)
   of OpChannelDeposit:
-    OpProof(kind: opfChannelDeposit, channelDepositProof: default(ZkSigProof))
+    OpProof(kind: opfChannelDeposit, channelDepositProof: DefaultZkSignature)
   of OpChannelWithdraw:
     OpProof(
       kind: opfChannelWithdraw,
@@ -102,16 +102,16 @@ func defaultOpProofForOpcode*(opcode: Opcode): OpProof =
     OpProof(
       kind: opfSdpDeclare,
       declarationProof: ZkAndEd25519SigsProof(
-        zkSig: default(ZkSigProof),
-        ed25519Sig: default(Ed25519SigProof),
+        zkSig: DefaultZkSignature,
+        ed25519Sig: DefaultEd25519Signature,
       ),
     )
   of OpSdpWithdraw:
-    OpProof(kind: opfSdpWithdraw, sdpWithdrawProof: default(ZkSigProof))
+    OpProof(kind: opfSdpWithdraw, sdpWithdrawProof: DefaultZkSignature)
   of OpSdpActive:
-    OpProof(kind: opfSdpActive, sdpActiveProof: default(ZkSigProof))
+    OpProof(kind: opfSdpActive, sdpActiveProof: DefaultZkSignature)
   of OpLeaderClaim:
-    OpProof(kind: opfLeaderClaim, proofOfClaimProof: default(ProofOfClaimProof))
+    OpProof(kind: opfLeaderClaim, proofOfClaimProof: DefaultCompressedGroth16Proof)
   of OpChannelConfig:
     OpProof(
       kind: opfChannelConfig,
@@ -148,8 +148,10 @@ func encodeIndexedEd25519Signature*(
     signature: Ed25519Signature, index: ChannelKeyIndex
 ): array[66, byte] =
   ## IndexedEd25519Signature = Ed25519Signature || ChannelKeyIndex
-  result[0 ..< 64] = encodeEd25519Signature(signature)
-  result[64 ..< 66] = encodeChannelKeyIndex(index)
+  var res: array[66, byte]
+  res[0 ..< 64] = encodeEd25519Signature(signature)
+  res[64 ..< 66] = encodeChannelKeyIndex(index)
+  res
 
 func encodeEd25519SigProof*(value: Ed25519Signature): array[64, byte] =
   ## Ed25519SigProof = Ed25519Signature
@@ -163,8 +165,10 @@ func encodeZkAndEd25519SigsProof*(
     zkSig: ZkSignature, ed25519Sig: Ed25519Signature
 ): array[192, byte] =
   ## ZkAndEd25519SigsProof = ZkSignature || Ed25519Signature
-  result[0 ..< 128] = encodeZkSignature(zkSig)
-  result[128 ..< 192] = encodeEd25519Signature(ed25519Sig)
+  var res: array[192, byte]
+  res[0 ..< 128] = encodeZkSignature(zkSig)
+  res[128 ..< 192] = encodeEd25519Signature(ed25519Sig)
+  res
 
 func encodeChannelWithdrawOpProof*(
   signatures: openArray[Ed25519Signature], indexes: openArray[ChannelKeyIndex]
@@ -178,13 +182,14 @@ func encodeChannelWithdrawOpProof*(
     doAssert uint16(indexes[i - 1]) < uint16(indexes[i]),
       "ChannelWithdrawOpProof: indexes must be strictly increasing (ordered, no duplicates)"
 
-  result = @[]
+  var res: seq[byte]
   let countBytes = encodeSignatureCount(SignatureCount(uint16(signatures.len)))
-  result.add(countBytes[0])
-  result.add(countBytes[1])
+  res.add(countBytes[0])
+  res.add(countBytes[1])
   for i in 0 ..< signatures.len:
     let indexedSig = encodeIndexedEd25519Signature(signatures[i], indexes[i])
-    result.add(indexedSig)
+    res.add(indexedSig)
+  res
 
 func encodeOpProof*(proof: OpProof): seq[byte] =
   ## OpProof =
@@ -269,8 +274,9 @@ proc readChannelWithdrawOpProof(data: openArray[byte], pos: var int): ChannelWit
 
 func decodeChannelWithdrawOpProof*(data: openArray[byte]): ChannelWithdrawOpProof {.raises: [DecodingError].} =
   var pos = 0
-  result = readChannelWithdrawOpProof(data, pos)
+  let res = readChannelWithdrawOpProof(data, pos)
   finishDecode(data, pos)
+  res
 
 proc readOpProof*(data: openArray[byte], pos: var int, kind: OpProofKind): OpProof {.raises: [DecodingError].} =
   case kind
@@ -306,8 +312,9 @@ proc readOpProof*(data: openArray[byte], pos: var int, kind: OpProofKind): OpPro
 
 func decodeOpProof*(data: openArray[byte], kind: OpProofKind): OpProof {.raises: [DecodingError].} =
   var pos = 0
-  result = readOpProof(data, pos, kind)
+  let res = readOpProof(data, pos, kind)
   finishDecode(data, pos)
+  res
 
 func encodeOpsProofs*(ops: openArray[Op], proofs: openArray[OpProof]): seq[byte] =
   ## OpsProofs = *OpProof
@@ -315,25 +322,27 @@ func encodeOpsProofs*(ops: openArray[Op], proofs: openArray[OpProof]): seq[byte]
   ## 2. type(OpProofs[i]) == ProofFor(Op[i]) for provided proofs.
   doAssert proofs.len <= ops.len,
     "OpsProofs length must be <= OpCount"
-  result = @[]
+  var res: seq[byte]
   for i in 0 ..< proofs.len:
     doAssert proofs[i].kind == expectedOpProofKindForOpcode(ops[i].opcode),
       "OpProof variant does not match corresponding Op"
     let encoded = encodeOpProof(proofs[i])
-    result.add(encoded)
+    res.add(encoded)
+  res
 
 func decodeOpsProofs*(ops: openArray[Op], data: openArray[byte]): seq[OpProof] {.raises: [DecodingError].} =
   var pos = 0
-  result = newSeqOfCap[OpProof](ops.len)
+  var res = newSeqOfCap[OpProof](ops.len)
   var i = 0
   while pos < data.len:
     if i >= ops.len:
       raise newException(DecodingError, "OpsProofs length exceeds OpCount")
     let kind = expectedOpProofKindForOpcode(ops[i].opcode)
-    result.add readOpProof(data, pos, kind)
+    res.add readOpProof(data, pos, kind)
     inc i
-  if result.len > ops.len:
+  if res.len > ops.len:
     raise newException(DecodingError, "OpsProofs length exceeds OpCount")
   finishDecode(data, pos)
+  res
 
 {.pop.}

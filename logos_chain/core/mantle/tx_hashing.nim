@@ -17,7 +17,7 @@ const
   MantleTxHashDomainTag = "MANTLE_TXHASH_V1"
 
 func blake2bWithMantleTxDomain*(txBytes: openArray[byte]): Hash32 =
-  var preimage: seq[byte] = @[]
+  var preimage: seq[byte]
   for c in MantleTxHashDomainTag:
     preimage.add(byte(ord(c)))
   preimage.add(txBytes)
