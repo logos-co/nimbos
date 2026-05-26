@@ -23,8 +23,8 @@ import # Unit test
   ./core/mantle/test_proofs,
   ./core/mantle/test_tx_types,
   ./core/mantle/test_tx_hashing,
-  "./core/block/test_block_types",
-  "./core/block/test_genesis",
+  ./core/test_block_types,
+  ./core/test_genesis,
   ./core/sdp/test_state
 
 summarizeLongTests("AllTests")

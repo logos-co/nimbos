@@ -15,8 +15,8 @@ import
   yaml/[dom, loading],
   libp2p/crypto/ed25519/ed25519,
   ../core/types,
-  "../core/mantle/tx_types",
-  "../zk/poseidon2/hasher"
+  ../core/mantle/tx_types,
+  ../zk/poseidon2/hasher
 
 
 func yamlGetPathNode*(root: YamlNode, keys: openArray[string]): Opt[YamlNode] =

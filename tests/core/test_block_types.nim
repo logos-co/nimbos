@@ -9,9 +9,8 @@
 {.used.}
 
 import unittest2
-import ../../../logos_chain/core/mantle/tx_types
-import ../../../logos_chain/core/mantle/tx_hashing
-import ../../../logos_chain/core/types
+import ../../logos_chain/core/mantle/[tx_types, tx_hashing]
+import ../../logos_chain/core/types
 
 suite "core/types":
   const testBedrockVersion = 1'u8
