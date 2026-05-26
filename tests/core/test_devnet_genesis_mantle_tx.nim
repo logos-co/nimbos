@@ -11,7 +11,7 @@
 {.push raises: [].}
 {.used.}
 
-import std/[os, options, strutils]
+import std/[os, strutils]
 import unittest2
 import results
 import stew/[byteutils, io2]
