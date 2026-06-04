@@ -10,7 +10,7 @@
 
 import unittest2
 import bincode
-import "../../../logos_chain/core/mantle"/[operations, proofs, tx_bincode, tx_types]
+import ../../../logos_chain/core/mantle/[operations, proofs, tx_bincode, tx_types]
 
 const allOpcodes = [
   OpTransfer,

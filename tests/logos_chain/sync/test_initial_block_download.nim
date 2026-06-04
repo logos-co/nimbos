@@ -15,16 +15,16 @@ import unittest2
 
 import libp2p/builders
 
-import "../../../logos_chain/conf"
-import "../../../logos_chain/networking/network"
-import "../../../logos_chain/core/types"
-import "../../../logos_chain/chain/genesis"
-import "../../../logos_chain/core/local_tree"
-import "../../../logos_chain/sync"/[config, types, initial_block_download]
+import ../../../logos_chain/conf
+import ../../../logos_chain/networking/network
+import ../../../logos_chain/core/types
+import ../../../logos_chain/chain/genesis
+import ../../../logos_chain/core/local_tree
+import ../../../logos_chain/sync/[config, types, initial_block_download]
 import ./helpers
 import ../../testutil
 
-from "../../../logos_chain/core/mantle/primitives" import SlotNumber
+from ../../../logos_chain/core/mantle/primitives import SlotNumber
 
 proc extendChainAfterGenesis(
     tree: LocalTree, genesis: Block, extraBlocks: int,

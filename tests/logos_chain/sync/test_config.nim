@@ -11,7 +11,7 @@
 import std/options
 import unittest2
 
-import "../../../logos_chain/sync"/[config, types]
+import ../../../logos_chain/sync/[config, types]
 
 suite "sync/config":
   test "addPrefixLengthToPayload / removePrefixLengthFromPacket roundtrips inner for download LP bodies":
