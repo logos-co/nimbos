@@ -165,10 +165,8 @@ proc decodeGroth16*(data: openArray[byte]): CompressedGroth16Proof {.raises: [De
   res
 
 proc decodeFieldElementAt*(data: openArray[byte], pos: var int): FieldElement {.raises: [DecodingError].} =
-  let parsed = frFromBytesLE(readFixed[32](data, pos))
-  if parsed.isNone:
+  frFromBytesLE(readFixed[32](data, pos)).valueOr:
     raise newException(DecodingError, "field element exceeds BN254 scalar modulus")
-  parsed.get()
 
 func decodeFieldElement*(data: openArray[byte]): FieldElement {.raises: [DecodingError].} =
   var pos = 0

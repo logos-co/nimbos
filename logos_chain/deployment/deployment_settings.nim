@@ -13,7 +13,7 @@
 {.push raises: [].}
 
 import
-  std/[options, strutils],
+  std/strutils,
   chronos,
   confutils/defs,
   results,
@@ -107,7 +107,7 @@ type
 
 func validateDeploymentSettingsStructure(root: YamlNode): Result[void, string] =
   template needPath(path: openArray[string]) =
-    if yamlGetPathNode(root, path).isNone:
+    yamlGetPathNode(root, path).isOkOr:
       return err("deployment-settings: missing or invalid path: " & path.join("."))
   ? requireTopLevelMapping(root, "blend")
   ? requireTopLevelMapping(root, "network")

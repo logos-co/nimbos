@@ -40,19 +40,17 @@ proc signedMantleTxFromDevnetFixture(text: string): Result[SignedMantleTx, strin
   let yroot = ? parseDeploymentSettingsYaml(text)
   if yroot.kind != yMapping:
     return err("fixture: expected top-level mapping")
-  let mantleOpt = yamlGetPathNode(yroot, ["mantle_tx"])
-  let proofsOpt = yamlGetPathNode(yroot, ["ops_proofs"])
-  if isNone(mantleOpt) or isNone(proofsOpt):
+  let mantle = yamlGetPathNode(yroot, ["mantle_tx"]).valueOr:
     return err("fixture: missing mantle_tx or ops_proofs")
-  let mantle = get(mantleOpt)
+  let proofsNode = yamlGetPathNode(yroot, ["ops_proofs"]).valueOr:
+    return err("fixture: missing mantle_tx or ops_proofs")
   if mantle.kind != yMapping:
     return err("fixture: mantle_tx must be a mapping")
-  let opsOpt = yamlGetPathNode(mantle, ["ops"])
-  if isNone(opsOpt):
+  let opsNode = yamlGetPathNode(mantle, ["ops"]).valueOr:
     return err("fixture: missing mantle_tx.ops")
   parseSignedMantleTxFromOpsYaml(
-    get(opsOpt),
-    get(proofsOpt),
+    opsNode,
+    proofsNode,
     mantle,
     "mantle_tx.ops",
     "ops_proofs",

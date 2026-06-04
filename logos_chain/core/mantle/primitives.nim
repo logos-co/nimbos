@@ -11,6 +11,7 @@
 
 {.push raises: [], gcsafe.}
 
+import results
 import ../crypto/[hashing, types]
 import libp2p/multiaddress
 import poseidon2/[types, io]
@@ -317,10 +318,8 @@ proc readLocator*(data: openArray[byte], pos: var int): Locator {.raises: [Decod
   let raw = readU16LeLenPrefixed(data, pos)
   if raw.len > MaxLocatorMultiaddrBytes:
     raise newException(DecodingError, "Locator exceeds max multiaddr byte length")
-  let ma = MultiAddress.init(raw)
-  if ma.isErr:
-    raise newException(DecodingError, "invalid Locator multiaddr: " & ma.error)
-  ma.get()
+  MultiAddress.init(raw).valueOr:
+    raise newException(DecodingError, "invalid Locator multiaddr: " & error)
 
 func decodeLocator*(data: openArray[byte]): Locator {.raises: [DecodingError].} =
   var pos = 0
