@@ -116,8 +116,7 @@ proc sendGetTipRequest*(
   try:
     await writeCryptarchiaPrefixedInner(conn, wireReq)
     debug "IBD GetTip write ok", peer, requestBytes = wireReq.len
-    let payloadOpt = await readCryptarchiaPrefixedInner(conn)
-    let p = payloadOpt.valueOr:
+    let p = (await readCryptarchiaPrefixedInner(conn)).valueOr:
       debug "IBD GetTip response read failed", peer
       return Opt.none(GetTipResponse)
     debug "IBD GetTip read ok", peer, responseBytes = p.len
@@ -221,8 +220,7 @@ proc sendDownloadBlocksRequest*(
     debug "IBD download write ok", peer, requestBytes = wireReq.len
     var acc = newSeqOfCap[DownloadBlocksResponse](64)
     while true:
-      let innerOpt = await readCryptarchiaPrefixedInner(conn)
-      let inner = innerOpt.valueOr:
+      let inner = (await readCryptarchiaPrefixedInner(conn)).valueOr:
         debug "IBD download response read failed", peer, messages = acc.len
         return Opt.none(seq[DownloadBlocksResponse])
       debug "IBD download read ok",
@@ -283,8 +281,7 @@ func collectBlocksForDownloadRequest*(
   for kid in knownIds:
     if not localTree.hasBlock(kid):
       continue
-    let lcaOpt = lcaBlockId(localTree, kid, target)
-    let lca = lcaOpt.valueOr:
+    let lca = lcaBlockId(localTree, kid, target).valueOr:
       continue
     let h = localTree.blockHeight(lca).valueOr:
       continue
@@ -336,13 +333,11 @@ proc mountCryptarchiaSyncHandler*(
       except CatchableError:
         discard
     try:
-      let innerOpt = await readCryptarchiaPrefixedInner(conn)
-      let inner = innerOpt.valueOr:
+      let inner = (await readCryptarchiaPrefixedInner(conn)).valueOr:
         debug "IBD handler: request read failed"
         return
       debug "IBD handler: request read ok", requestBytes = inner.len
-      let kindOpt = parseRequestMessageKind(inner)
-      let kind = kindOpt.valueOr:
+      let kind = parseRequestMessageKind(inner).valueOr:
         debug "IBD handler: invalid request kind"
         return
       case kind
@@ -489,13 +484,12 @@ proc downloadBlocks*(
       targetBlock: effectiveTarget.get,
       knownBlocks: buildKnownBlocks(localTree, additionalKnown),
     )
-    let respOpt = await sendDownloadBlocksRequest(
+    let msgs = (await sendDownloadBlocksRequest(
       sw,
       peer,
       downloadReq,
       chainSyncProtocol,
-    )
-    let msgs = respOpt.valueOr:
+    )).valueOr:
       debug "IBD: download request failed", peer, targetBlock = sbyteutils.toHex(effectiveTarget.get)
       return false
 
@@ -507,8 +501,7 @@ proc downloadBlocks*(
           failureMessage = msg.failureMessage
         return false
     debug "IBD: download response ok", peer, messages = msgs.len, targetBlock = sbyteutils.toHex(downloadReq.targetBlock)
-    let blocksOpt = decodeBlocksFromDownloadResponses(msgs)
-    let blocks = blocksOpt.valueOr:
+    let blocks = decodeBlocksFromDownloadResponses(msgs).valueOr:
       debug "IBD: block decode failed", peer, messages = msgs.len
       return false
     debug "IBD: block decode ok", peer, blocks = blocks.len, targetBlock = sbyteutils.toHex(effectiveTarget.get)
