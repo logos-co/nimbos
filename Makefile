@@ -28,9 +28,6 @@ BASE_METRICS_PORT := 8008
 # WARNING: Use lazy assignment to allow CI to override.
 EXECUTOR_NUMBER ?= 0
 
-SEPOLIA_WEB3_URL := "--web3-url=https://rpc.sepolia.dev --web3-url=https://www.sepoliarpc.space"
-
-VALIDATORS := 1
 CPU_LIMIT := 0
 BUILD_END_MSG := "\\x1B[92mBuild completed successfully:\\x1B[39m"
 
@@ -53,16 +50,14 @@ endif
 TOOLS_CORE := \
 	version
 
-# The TOOLS/TOOLS_CORE decomposition is a workaround so nimbus_beacon_node can
+# The TOOLS/TOOLS_CORE decomposition is a workaround so logos_chain_node can
 # build on its own, and if/when that becomes a non-issue, it can be recombined
 # to a single TOOLS list.
-TOOLS := $(TOOLS_CORE) nimbus_beacon_node
+TOOLS := $(TOOLS_CORE) logos_chain_node
 .PHONY: $(TOOLS)
 
 TOOLS_DIRS := \
-	logos_chain \
-	ncli \
-	tools
+	logos_chain
 TOOLS_CSV := $(subst $(SPACE),$(COMMA),$(TOOLS))
 
 .PHONY: \
@@ -79,19 +74,13 @@ TOOLS_CSV := $(subst $(SPACE),$(COMMA),$(TOOLS))
 	dist-arm \
 	dist-win64 \
 	dist-macos-arm64 \
-	dist \
-	local-testnet-minimal \
-	local-testnet-mainnet
+	dist
 
 # TODO: Add the installer packages here
 PLATFORM_SPECIFIC_TARGETS :=
 
-# We don't need these `vendor/hoodi` files but
-# fetching them may trigger 'This repository is over its data quota' from GitHub
-#
 # MSYS_NO_PATHCONV=1: On Windows MSYS2, 1st path gets mangled without this flag!
 GIT_SUBMODULE_ENV := MSYS_NO_PATHCONV=1
-GIT_SUBMODULE_CONFIG := -c lfs.fetchexclude=/public-keys/all.txt,/metadata/genesis.ssz,/parsed/parsedConsensusGenesis.json
 
 ifeq ($(NIM_PARAMS),)
 # "variables.mk" was not included, so we update the submodules.
@@ -100,7 +89,7 @@ ifeq ($(NIM_PARAMS),)
 # with Ctrl+C after deleting the working copy and before getting a chance to
 # restore it in $(BUILD_SYSTEM_DIR).
 
-# `vendor/hoodi` requires Git LFS
+# Some vendor submodules use Git LFS; require it up front for clearer errors.
 ifeq (, $(shell which git-lfs))
 ifeq ($(shell uname), Darwin)
 $(error Git LFS not installed. Run 'brew install git-lfs' to set up)
@@ -109,11 +98,11 @@ $(error Git LFS not installed)
 endif
 endif
 
-GIT_SUBMODULE_UPDATE := $(GIT_SUBMODULE_ENV) git $(GIT_SUBMODULE_CONFIG) submodule update --init --recursive
+GIT_SUBMODULE_UPDATE := $(GIT_SUBMODULE_ENV) git submodule update --init --recursive
 .DEFAULT:
 	+@ echo -e "Git submodules not found. Running '$(GIT_SUBMODULE_UPDATE)'.\n"; \
 		$(GIT_SUBMODULE_UPDATE) && \
-		$(GIT_SUBMODULE_ENV) git submodule foreach --quiet 'git $(GIT_SUBMODULE_CONFIG) reset --quiet --hard' && \
+		$(GIT_SUBMODULE_ENV) git submodule foreach --quiet 'git reset --quiet --hard' && \
 		echo
 # Now that the included *.mk files appeared, and are newer than this file, Make will restart itself:
 # https://www.gnu.org/software/make/manual/make.html#Remaking-Makefiles
@@ -294,12 +283,12 @@ $(filter-out $(TOOLS_CORE_CUSTOMCOMPILE),$(TOOLS)): | build deps
 		echo -e $(BUILD_END_MSG) "build/$@"
 
 # Windows GitHub Actions CI runners, as of this writing, have around 8GB of RAM
-# and compiling nimbus_beacon_node requires more than 5GB. It can fail with OOM
+# and compiling logos_chain_node requires more than 5GB. It can fail with OOM
 # on the two cores available. Usefully, the part of the process requiring those
 # gigabytes of RAM is `nim c --compileOnly`, which intrinsically serializes. As
 # a result, only slightly increase build times by using fake dependencies, when
-# running `make`, to ensure `nimbus_beacon_node` builds alone, when being built
-# as part of `all`, while allowing one to also build `nimbus_beacon_node` alone
+# running `make`, to ensure `logos_chain_node` builds alone, when being built
+# as part of `all`, while allowing one to also build `logos_chain_node` alone
 # without pulling in the rest of `$(TOOLS)`.
 #
 # This works because `nim c --compileOnly` is fast but RAM-heavy, while the
@@ -310,22 +299,13 @@ $(filter-out $(TOOLS_CORE_CUSTOMCOMPILE),$(TOOLS)): | build deps
 # CI false negatives in a process lasting hours and requiring a restart, and
 # therefore even more wasted time, when it does.
 #
-# If one asks for, e.g., `make nimbus_beacon_node nimbus_validator_client`, it
-# intentionally allows those in parallel, as the CI systems don't do that.
-#
 # https://www.gnu.org/software/make/manual/html_node/Parallel-Disable.html
 # describes a special target .WAIT which would enable this more easily but
 # remains unusable for this Makefile due to requiring GNU Make 4.4.
 ifneq (,$(filter all,$(MAKECMDGOALS)))
 FORCE_BUILD_ALONE_TOOLS_DEPS := $(TOOLS_CORE)
-
-# If this isn't an included target (such as Windows), this is a no-op)
-gnosis-build: | nimbus_beacon_node
 else ifeq (,$(MAKECMDGOALS))
 FORCE_BUILD_ALONE_TOOLS_DEPS := $(TOOLS_CORE)
-
-# If this isn't an included target (such as Windows), this is a no-op)
-gnosis-build: | nimbus_beacon_node
 else
 FORCE_BUILD_ALONE_TOOLS_DEPS :=
 endif
@@ -334,82 +314,7 @@ force_build_alone_tools: | $(FORCE_BUILD_ALONE_TOOLS_DEPS)
 
 # https://www.gnu.org/software/make/manual/html_node/Multiple-Rules.html#Multiple-Rules
 # Already defined as a reult
-nimbus_beacon_node: force_build_alone_tools
-
-GOERLI_TESTNETS_PARAMS := \
-	--tcp-port=$$(( $(BASE_PORT) + $(NODE_ID) )) \
-	--udp-port=$$(( $(BASE_PORT) + $(NODE_ID) )) \
-	--metrics \
-	--metrics-port=$$(( $(BASE_METRICS_PORT) + $(NODE_ID) )) \
-	--rest \
-	--rest-port=$$(( $(BASE_REST_PORT) + $(NODE_ID) ))
-
-#- https://www.gnu.org/software/make/manual/html_node/Multi_002dLine.html
-#- macOS doesn't support "=" at the end of "define FOO": https://stackoverflow.com/questions/13260396/gnu-make-3-81-eval-function-not-working
-define CONNECT_TO_NETWORK
-	scripts/makedir.sh build/data/shared_$(1)_$(NODE_ID)
-
-	scripts/make_prometheus_config.sh \
-		--nodes 1 \
-		--base-metrics-port $$(($(BASE_METRICS_PORT) + $(NODE_ID))) \
-		--config-file "build/data/shared_$(1)_$(NODE_ID)/prometheus.yml"
-
-	$(CPU_LIMIT_CMD) build/$(2) \
-		--network=$(1) $(3) $(GOERLI_TESTNETS_PARAMS) \
-		--log-level="$(RUNTIME_LOG_LEVEL)" \
-		--log-file=build/data/shared_$(1)_$(NODE_ID)/nbc_bn_$$(date +"%Y%m%d%H%M%S").log \
-		--data-dir=build/data/shared_$(1)_$(NODE_ID) \
-		$(NODE_PARAMS)
-endef
-
-define CONNECT_TO_NETWORK_IN_DEV_MODE
-	scripts/makedir.sh build/data/shared_$(1)_$(NODE_ID)
-
-	scripts/make_prometheus_config.sh \
-		--nodes 1 \
-		--base-metrics-port $$(($(BASE_METRICS_PORT) + $(NODE_ID))) \
-		--config-file "build/data/shared_$(1)_$(NODE_ID)/prometheus.yml"
-
-	$(CPU_LIMIT_CMD) build/$(2) \
-		--network=$(1) $(3) $(GOERLI_TESTNETS_PARAMS) \
-		--log-level="DEBUG; TRACE:discv5,networking; REQUIRED:none; DISABLED:none" \
-		--data-dir=build/data/shared_$(1)_$(NODE_ID) \
-		--dump $(NODE_PARAMS)
-endef
-
-define CONNECT_TO_NETWORK_WITH_VALIDATOR_CLIENT
-	# if launching a VC as well - send the BN looking nowhere for validators/secrets
-	scripts/makedir.sh build/data/shared_$(1)_$(NODE_ID)
-	scripts/makedir.sh build/data/shared_$(1)_$(NODE_ID)/empty_dummy_folder
-
-	scripts/make_prometheus_config.sh \
-		--nodes 1 \
-		--base-metrics-port $$(($(BASE_METRICS_PORT) + $(NODE_ID))) \
-		--config-file "build/data/shared_$(1)_$(NODE_ID)/prometheus.yml"
-
-	$(CPU_LIMIT_CMD) build/$(2) \
-		--network=$(1) $(3) $(GOERLI_TESTNETS_PARAMS) \
-		--log-level="$(RUNTIME_LOG_LEVEL)" \
-		--log-file=build/data/shared_$(1)_$(NODE_ID)/nbc_bn_$$(date +"%Y%m%d%H%M%S").log \
-		--data-dir=build/data/shared_$(1)_$(NODE_ID) \
-		--validators-dir=build/data/shared_$(1)_$(NODE_ID)/empty_dummy_folder \
-		--secrets-dir=build/data/shared_$(1)_$(NODE_ID)/empty_dummy_folder \
-		$(NODE_PARAMS) &
-
-	sleep 4
-
-	build/nimbus_validator_client \
-		--log-level="$(RUNTIME_LOG_LEVEL)" \
-		--log-file=build/data/shared_$(1)_$(NODE_ID)/nbc_vc_$$(date +"%Y%m%d%H%M%S").log \
-		--data-dir=build/data/shared_$(1)_$(NODE_ID) \
-		--rest-port=$$(( $(BASE_REST_PORT) + $(NODE_ID) ))
-endef
-
-define CLEAN_NETWORK
-	rm -rf build/data/shared_$(1)*/db
-	rm -rf build/data/shared_$(1)*/dump
-	rm -rf build/data/shared_$(1)*/*.log
-endef
+logos_chain_node: force_build_alone_tools
 
 ###
 ### Other
@@ -417,28 +322,26 @@ endef
 
 .PHONY: logos-lib logos-headers logos-bindings
 
-# Build C static library from logos_c_bindings.nim into the bindings folder
+# Build C static library from logos_c_bindings.nim into the c_bindings folder
 logos-lib: | build deps
 	+ $(ENV_SCRIPT) $(NIMC) c $(NIM_PARAMS) \
 		--verbosity:2 \
 		--app:staticlib \
-		--out:logos_chain/bindings/liblogos_blockchain.a \
-		logos_chain/bindings/logos_c_bindings.nim
+		--out:logos_chain/c_bindings/liblogos_blockchain.a \
+		logos_chain/c_bindings/logos_c_bindings.nim
 
-# Generate C header for the bindings into the bindings folder
-logos-headers: | build deps
+# Generate C header for the bindings into the c_bindings folder
+# Depends on logos-lib so the two `nim c` invocations on logos_c_bindings.nim
+# don't race on the shared nimcache/<cfg>/logos_c_bindings/ directory under `make -j`.
+logos-headers: logos-lib | build deps
 	+ $(ENV_SCRIPT) $(NIMC) c $(NIM_PARAMS) \
 		--verbosity:2 \
 		--compileOnly \
-		--header:logos_chain/bindings/logos_c_bindings.h \
-		logos_chain/bindings/logos_c_bindings.nim
+		--header:logos_chain/c_bindings/logos_c_bindings.h \
+		logos_chain/c_bindings/logos_c_bindings.nim
 
 # Convenience target: build both the static lib and the C header
 logos-bindings: logos-lib logos-headers
-
-nimbus-pkg: | nimbus_beacon_node
-	xcodebuild -project installer/macos/nimbus-pkg.xcodeproj -scheme nimbus-pkg build
-	packagesbuild installer/macos/nimbus-pkg.pkgproj
 
 ntu: | build deps
 	mkdir -p vendor/.nimble/bin/

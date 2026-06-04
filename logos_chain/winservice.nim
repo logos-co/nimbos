@@ -12,7 +12,7 @@
 when defined(windows):
   import results, chronicles
   import chronos/[osdefs, osutils, oserrno]
-  import ./nimbus_binary_common
+  import ./binary_common
 
   type
     SERVICE_STATUS* {.final, pure.} = object

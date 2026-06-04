@@ -17,13 +17,13 @@ import
   stew/endians2,
   stew/byteutils as sbyteutils
 
-import ../bedrock/local_tree
-import "../bedrock/block/block_validation"
+import ../core/local_tree
+import "../core/block_validation"
 import ./config
 import ./types
 
-from "../bedrock/block/block_types" import Block, BlockId, blockId
-from ../bedrock/mantle/primitives import SlotNumber
+from "../core/types" import Block, BlockId, blockId
+from ../core/mantle/primitives import SlotNumber
 from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
 
 export types

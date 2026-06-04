@@ -230,8 +230,8 @@ jobs:
       - name: Check copyright year
         if: ${{ !cancelled() }} && github.event_name == 'pull_request'
         run: |
-          excluded_files="config.yaml|config.nims|beacon_chain.nimble|\\.gitmodules|config/deployment-settings\\.yaml|tests/fixtures/deployment-settings-empty-scalars\\.yaml|tests/fixtures/deployment-settings-incomplete\\.yaml|tests/fixtures/deployment-settings-malformed\\.yaml|tests/fixtures/deployment-settings-no-leading-slash\\.yaml|tests/fixtures/deployment-settings-wrong-types\\.yaml"
-          excluded_extensions="ans|bin|cfg|yml|json|json\\.template|md|png|service|ssz|tpl|txt|lock|nix|gitignore|envrc|sh"
+          excluded_files="config.nims|\\.gitmodules"
+          excluded_extensions="ans|bin|cfg|yml|yaml|json|json\\.template|md|png|service|ssz|tpl|txt|lock|nix|gitignore|envrc|sh"
 
           current_year=$(date +"%Y")
           problematic_files=()

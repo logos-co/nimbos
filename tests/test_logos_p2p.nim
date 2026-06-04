@@ -16,8 +16,8 @@ import
 
 import
   ../logos_chain/conf,
-  ../logos_chain/networking/eth2_network,
-  ../logos_chain/networking/eth2_discovery,
+  ../logos_chain/networking/network,
+  ../logos_chain/networking/discovery,
   libp2p/switch,
   libp2p/builders,
   libp2p/peerid,

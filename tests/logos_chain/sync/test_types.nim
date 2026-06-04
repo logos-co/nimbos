@@ -14,13 +14,14 @@ import unittest2
 import stew/byteutils as byteutils
 import results
 
-import "../../../logos_chain/bedrock/block"/[block_types, genesis]
-import "../../../logos_chain/bedrock/local_tree"
+import "../../../logos_chain/core/types"
+import "../../../logos_chain/chain/genesis"
+import "../../../logos_chain/core/local_tree"
 import ../../../logos_chain/deployment/deployment_settings
 import "../../../logos_chain/sync"/[config, types, initial_block_download]
 import ./helpers
 
-from "../../../logos_chain/bedrock/mantle/primitives" import SlotNumber
+from "../../../logos_chain/core/mantle/primitives" import SlotNumber
 
 const testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
 const deploymentSettingsPath = testsDir / "../../../config/deployment-settings.yaml"
@@ -280,7 +281,8 @@ suite "sync/types (cryptarchia LP-prefixed wire vs nimbus_beacon_node samples 1-
 
     let pr = parseDeploymentSettings(readFile(deploymentSettingsPath))
     require pr.isOk
-    let genesisFromDeployment = createGenesisBlock(pr.get.cryptarchia.genesisState)
+    let genesisFromDeployment =
+      createGenesisBlock(pr.get.cryptarchia.genesisState.signedMantleTx)
     let genesisWire = try:
       serializeBlockToSeq(genesisFromDeployment, cryptarchiaSyncBincodeConfig)
     except CatchableError:

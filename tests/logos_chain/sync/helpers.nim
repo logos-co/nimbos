@@ -11,13 +11,14 @@ import std/options
 import stew/byteutils as byteutils
 import unittest2
 
-import "../../../logos_chain/bedrock/block"/[block_types, genesis]
-import "../../../logos_chain/bedrock/mantle/tx_types"
-import "../../../logos_chain/bedrock/local_tree"
+import "../../../logos_chain/core/types"
+import "../../../logos_chain/chain/genesis"
+import "../../../logos_chain/core/mantle/tx_types"
+import "../../../logos_chain/core/local_tree"
 import "../../../logos_chain/sync"/[config, types, initial_block_download]
 
-from "../../../logos_chain/bedrock/mantle/primitives" import SlotNumber
-from "../../../logos_chain/bedrock/mantle/tx_encoding" import encodeSignedMantleTx
+from "../../../logos_chain/core/mantle/primitives" import SlotNumber
+from "../../../logos_chain/core/mantle/tx_types" import encodeSignedMantleTx
 
 const testChainSyncProtocol* = "/logos-blockchain-testnet-v0.1.2/chainsync/1.0.0"
   ## Matches ``network.chain_sync_protocol_name`` in ``config/deployment-settings.yaml``.

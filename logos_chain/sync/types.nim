@@ -7,13 +7,13 @@
 
 {.push raises: [], gcsafe, warning[UnusedImport]: off.}
 
-import ../bedrock/local_tree
+import ../core/local_tree
 import ./config
-import ../bedrock/mantle/tx_bincode
+import ../core/mantle/tx_bincode
 import bincode
 import libp2p/crypto/ed25519/ed25519
 
-from "../bedrock/block/block_types" import Block, BlockId, Header, ProofOfLeadership
+from "../core/types" import Block, BlockId, Header, ProofOfLeadership
 
 export local_tree.Tip
 export tx_bincode

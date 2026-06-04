@@ -18,7 +18,7 @@ import stew/endians2
 # IBD download request wire limits
 # ---------------------------------------------------------------------------
 
-from "../bedrock/block/block_types" import BlockId, ExpectedBedrockVersion, MaxBlockSize
+from "../core/types" import BlockId, ExpectedBedrockVersion, MaxBlockSize
 
 export ExpectedBedrockVersion, MaxBlockSize
 
