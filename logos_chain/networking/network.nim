@@ -318,8 +318,9 @@ declareCounter nbc_reqresp_messages_throttled,
 const
   libp2p_pki_schemes {.strdefine.} = ""
 
-when libp2p_pki_schemes != "secp256k1":
-  {.fatal: "Incorrect building process, please use -d:\"libp2p_pki_schemes=secp256k1\"".}
+when not (crypto.PKScheme.Ed25519 in crypto.SupportedSchemes):
+  {.fatal:
+    "Incorrect building process, please use -d:\"libp2p_pki_schemes=ed25519\"".}
 
 const
   NetworkInsecureKeyPassword = "INSECUREPASSWORD"
@@ -388,10 +389,13 @@ func peerId*(node: LBP2PNode): PeerId =
   node.switch.peerInfo.peerId
 
 func nodeId*(node: LBP2PNode): NodeId =
-  # `secp256k1` keys are always stored inside PeerId.
-  toNodeId(keys.PublicKey(node.switch.peerInfo.publicKey.skkey))
+  when crypto.supported(crypto.PKScheme.Secp256k1):
+    toNodeId(keys.PublicKey(node.switch.peerInfo.publicKey.skkey))
+  else:
+    raiseAssert "nodeId is unavailable without discv5 secp256k1 identity"
 
 func enrRecord*(node: LBP2PNode): Record =
+  doAssert node.discovery != nil, "discv5 is disabled"
   node.discovery.localNode.record
 
 proc getPeer(node: LBP2PNode, peerId: PeerId): Peer =
@@ -1279,59 +1283,64 @@ proc handleIncomingStream(network: LBP2PNode,
     await noCancel conn.closeWithEOF()
     releasePeer(peer)
 
-func toPeerAddr*(r: enr.TypedRecord,
-                 proto: IpTransportProtocol): Result[PeerAddr, cstring] =
-  if not r.secp256k1.isSome:
-    return err("enr: no secp256k1 key in record")
+when crypto.supported(crypto.PKScheme.Secp256k1):
+  func toPeerAddr*(r: enr.TypedRecord,
+                   proto: IpTransportProtocol): Result[PeerAddr, cstring] =
+    if not r.secp256k1.isSome:
+      return err("enr: no secp256k1 key in record")
 
-  let
-    pubKey = ? keys.PublicKey.fromRaw(r.secp256k1.get)
-    peerId = ? PeerId.init(crypto.PublicKey(
-      scheme: Secp256k1, skkey: secp.SkPublicKey(pubKey)))
+    let
+      pubKey = ? keys.PublicKey.fromRaw(r.secp256k1.get)
+      peerId = ? PeerId.init(crypto.PublicKey(
+        scheme: Secp256k1, skkey: secp.SkPublicKey(pubKey)))
 
-  var addrs = newSeq[MultiAddress]()
+    var addrs = newSeq[MultiAddress]()
 
-  case proto
-  of tcpProtocol:
-    if r.ip.isSome and r.tcp.isSome:
-      let ip = IpAddress(
-        family: IpAddressFamily.IPv4,
-        address_v4: r.ip.get)
-      addrs.add MultiAddress.init(ip, tcpProtocol, Port r.tcp.get)
-
-    if r.ip6.isSome:
-      let ip = IpAddress(
-        family: IpAddressFamily.IPv6,
-        address_v6: r.ip6.get)
-      if r.tcp6.isSome:
-        addrs.add MultiAddress.init(ip, tcpProtocol, Port r.tcp6.get)
-      elif r.tcp.isSome:
+    case proto
+    of tcpProtocol:
+      if r.ip.isSome and r.tcp.isSome:
+        let ip = IpAddress(
+          family: IpAddressFamily.IPv4,
+          address_v4: r.ip.get)
         addrs.add MultiAddress.init(ip, tcpProtocol, Port r.tcp.get)
-      else:
-        discard
 
-  of udpProtocol:
-    if r.ip.isSome and r.udp.isSome:
-      let ip = IpAddress(
-        family: IpAddressFamily.IPv4,
-        address_v4: r.ip.get)
-      addrs.add MultiAddress.init(ip, udpProtocol, Port r.udp.get)
+      if r.ip6.isSome:
+        let ip = IpAddress(
+          family: IpAddressFamily.IPv6,
+          address_v6: r.ip6.get)
+        if r.tcp6.isSome:
+          addrs.add MultiAddress.init(ip, tcpProtocol, Port r.tcp6.get)
+        elif r.tcp.isSome:
+          addrs.add MultiAddress.init(ip, tcpProtocol, Port r.tcp.get)
+        else:
+          discard
 
-    if r.ip6.isSome:
-      let ip = IpAddress(
-        family: IpAddressFamily.IPv6,
-        address_v6: r.ip6.get)
-      if r.udp6.isSome:
-        addrs.add MultiAddress.init(ip, udpProtocol, Port r.udp6.get)
-      elif r.udp.isSome:
+    of udpProtocol:
+      if r.ip.isSome and r.udp.isSome:
+        let ip = IpAddress(
+          family: IpAddressFamily.IPv4,
+          address_v4: r.ip.get)
         addrs.add MultiAddress.init(ip, udpProtocol, Port r.udp.get)
-      else:
-        discard
 
-  if addrs.len == 0:
-    return err("enr: no addresses in record")
+      if r.ip6.isSome:
+        let ip = IpAddress(
+          family: IpAddressFamily.IPv6,
+          address_v6: r.ip6.get)
+        if r.udp6.isSome:
+          addrs.add MultiAddress.init(ip, udpProtocol, Port r.udp6.get)
+        elif r.udp.isSome:
+          addrs.add MultiAddress.init(ip, udpProtocol, Port r.udp.get)
+        else:
+          discard
 
-  ok(PeerAddr(peerId: peerId, addrs: addrs))
+    if addrs.len == 0:
+      return err("enr: no addresses in record")
+
+    ok(PeerAddr(peerId: peerId, addrs: addrs))
+else:
+  func toPeerAddr*(r: enr.TypedRecord,
+                   proto: IpTransportProtocol): Result[PeerAddr, cstring] =
+    err("discv5 peer resolution is unavailable")
 
 proc checkPeer(node: LBP2PNode, peerAddr: PeerAddr): bool =
   logScope: peer = peerAddr.peerId
@@ -1491,36 +1500,35 @@ proc runDiscoveryLoop(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
     # Also, give some time to dial the discovered nodes and update stats etc
     await sleepAsync(5.seconds)
 
-proc fetchNodeIdFromPeerId*(peer: Peer): NodeId=
-  # Convert peer id to node id by extracting the peer's public key
-  var key: PublicKey
-  discard peer.peerId.extractPublicKey(key)
-  keys.PublicKey.fromRaw(key.skkey.getBytes()).get().toNodeId()
+when crypto.supported(crypto.PKScheme.Secp256k1):
+  proc fetchNodeIdFromPeerId*(peer: Peer): NodeId =
+    var key: PublicKey
+    discard peer.peerId.extractPublicKey(key)
+    keys.PublicKey.fromRaw(key.skkey.getBytes()).get().toNodeId()
 
-proc resolvePeer(peer: Peer) =
-  # Resolve task which performs searching of peer's public key and recovery of
-  # ENR using discovery5. We only resolve ENR for peers we know about to avoid
-  # querying the network - as of now, the ENR is not needed, except for
-  # debuggging
-  logScope: peer = peer.peerId
-  let startTime = now(chronos.Moment)
-  let nodeId =
-    block:
-      var key: PublicKey
-      # `secp256k1` keys are always stored inside PeerId.
-      discard peer.peerId.extractPublicKey(key)
-      keys.PublicKey.fromRaw(key.skkey.getBytes()).get().toNodeId()
+  proc resolvePeer(peer: Peer) =
+    logScope: peer = peer.peerId
+    let startTime = now(chronos.Moment)
+    let nodeId =
+      block:
+        var key: PublicKey
+        discard peer.peerId.extractPublicKey(key)
+        keys.PublicKey.fromRaw(key.skkey.getBytes()).get().toNodeId()
 
-  debug "Peer's ENR recovery task started", node_id = $nodeId
+    debug "Peer's ENR recovery task started", node_id = $nodeId
 
-  # This is "fast-path" for peers which was dialed. In this case discovery
-  # already has most recent ENR information about this peer.
-  let gnode = peer.network.discovery.getNode(nodeId)
-  if gnode.isSome():
-    peer.enr = Opt.some(gnode.get().record)
-    inc(nbc_successful_discoveries)
-    let delay = now(chronos.Moment) - startTime
-    debug "Peer's ENR recovered", delay
+    let gnode = peer.network.discovery.getNode(nodeId)
+    if gnode.isSome():
+      peer.enr = Opt.some(gnode.get().record)
+      inc(nbc_successful_discoveries)
+      let delay = now(chronos.Moment) - startTime
+      debug "Peer's ENR recovered", delay
+else:
+  proc fetchNodeIdFromPeerId*(peer: Peer): NodeId =
+    raiseAssert "fetchNodeIdFromPeerId requires discv5 secp256k1 support"
+
+  proc resolvePeer(peer: Peer) {.inline.} =
+    discard
 
 proc handlePeer*(peer: Peer) {.async: (raises: [CancelledError]).} =
   let res = peer.network.peerPool.addPeerNoWait(peer, peer.direction)
@@ -1549,8 +1557,8 @@ proc handlePeer*(peer: Peer) {.async: (raises: [CancelledError]).} =
     # Peer was added to PeerPool.
     peer.score = NewPeerScore
     peer.connectionState = Connected
-    # We spawn task which will obtain ENR for this peer.
-    resolvePeer(peer)
+    if peer.network.discoveryEnabled:
+      resolvePeer(peer)
     debug "Peer successfully connected", peer = peer,
                                          connections = peer.connections
 
@@ -1639,7 +1647,7 @@ proc new(T: type LBP2PNode,
          config: LBNodeConf,
          switch: Switch, pubsub: GossipSub,
          ip: Opt[IpAddress], tcpPort, udpPort: Opt[Port],
-         privKey: keys.PrivateKey, discovery: bool,
+         discovery: bool,
          announcedAddresses: openArray[MultiAddress],
          bootstrapPeers: openArray[PeerAddr],
          rng: ref HmacDrbgContext,
@@ -1663,9 +1671,12 @@ proc new(T: type LBP2PNode,
     # Its important here to create AsyncQueue with limited size, otherwise
     # it could produce HIGH cpu usage.
     connQueue: newAsyncQueue[PeerAddr](ConcurrentConnections),
-    discovery: Eth2DiscoveryProtocol.new(
-      config, ip, tcpPort, udpPort, privKey,
-    rng),
+    discovery:
+      if discovery:
+        Eth2DiscoveryProtocol.new(
+          config, ip, tcpPort, udpPort, keys.PrivateKey.random(rng[]), rng)
+      else:
+        nil,
     discoveryEnabled: discovery,
     rng: rng,
     connectTimeout: connectTimeout,
@@ -1760,6 +1771,9 @@ proc waitForBootstrapConnectivity(
 
 proc runCryptarchiaIbdAtStartup(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
   if node.localTree == nil or node.chainSyncProtocol.len == 0:
+    debug "Initial block download skipped: not configured",
+      hasLocalTree = node.localTree != nil,
+      chainSyncProtocolLen = node.chainSyncProtocol.len
     return
   if node.bootstrapPeers.len > 0:
     if not await waitForBootstrapConnectivity(node):
@@ -2050,11 +2064,6 @@ proc bootstrapHeartbeat(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
     # to avoid dial/log spam while existing attempts are still in progress/backoff.
     await sleepAsync(30.seconds)
 
-# TODO: Replace with an LBKey (or Logos-native key) wrapper; this only bridges
-# libp2p `PrivateKey` to `eth/common/keys` for discovery / ENR code paths.
-func asEthKey*(key: PrivateKey): keys.PrivateKey =
-  keys.PrivateKey(key.skkey)
-
 template udpEndpoint(address, port): auto =
   MultiAddress.init(address, udpProtocol, port)
 
@@ -2084,7 +2093,7 @@ func initNetKeys(privKey: PrivateKey): NetKeyPair =
   NetKeyPair(seckey: privKey, pubkey: pubKey)
 
 proc getRandomNetKeys*(rng: var HmacDrbgContext): NetKeyPair =
-  let privKey = PrivateKey.random(Secp256k1, rng).valueOr:
+  let privKey = PrivateKey.random(Ed25519, rng).valueOr:
     fatal "Could not generate random network key file"
     quit QuitFailure
   initNetKeys(privKey)
@@ -2226,8 +2235,7 @@ proc createLBP2PNode*(
 
   let node = LBP2PNode.new(
     config, switch, pubsub, extIp,
-    # TODO: replace `asEthKey` with LBKey once discovery/ENR uses Logos types.
-    extQuicPort, extUdpPort, netKeys.seckey.asEthKey,
+    extQuicPort, extUdpPort,
     discovery = config.discv5Enabled, announcedAddresses, bootstrapPeers,
     rng = rng,
     localTree = localTree,
@@ -2246,7 +2254,7 @@ proc createLBP2PNode*(
   ok node
 
 func announcedENR*(node: LBP2PNode): enr.Record =
-  doAssert node.discovery != nil, "The LBP2PNode must be initialized"
+  doAssert node.discovery != nil, "discv5 is disabled"
   node.discovery.localNode.record
 
 func shortForm*(id: NetKeyPair): string =

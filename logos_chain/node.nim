@@ -19,6 +19,8 @@ import
   ./conf,
   ./deployment/deployment_settings,
   ./networking/network,
+  ./core/local_tree,
+  ./core/types,
   ./core/utils,
   ./process_state
 
@@ -62,6 +64,7 @@ proc init*(
     rng: ref HmacDrbgContext,
     config: LBNodeConf,
     deploymentSettings: DeploymentSettings,
+    genesisBlock: Block,
 ): Future[Opt[LBNode]] {.async: (raises: [CancelledError]).} =
   var config = config
 
@@ -72,13 +75,21 @@ proc init*(
   randomize(rng[].rand(high(int)))
 
   let
+    localTree = newLocalTree(genesisBlock)
+    chainSyncProtocol = deploymentSettings.network.chainSyncProtocolName
     network = createLBP2PNode(
       rng,
       config,
       rng[].getRandomNetKeys(),
+      localTree,
+      chainSyncProtocol,
     ).valueOr:
       error "Failed to initialize node", err = error
       return Opt.none(LBNode)
+
+  debug "Cryptarchia IBD configured at node startup",
+    chainSyncProtocol = chainSyncProtocol,
+    genesisBlockId = blockId(genesisBlock.header)
 
   ok LBNode(
     network: network,
