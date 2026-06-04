@@ -11,7 +11,7 @@ import
   std/[options, sets],
   chronicles,
   chronos,
-  libp2p/[switch, peerid, errors],
+  libp2p/[switch, peerid, errors, utility],
   libp2p/protocols/protocol,
   libp2p/stream/connection,
   stew/endians2,
@@ -458,8 +458,9 @@ proc downloadBlocks*(
   discard forkChoice
   var latestDownloaded = none(Block)
   debug "IBD download loop start", peer,
-    targetBlock =
-      if targetBlock.isSome: sbyteutils.toHex(targetBlock.get) else "none"
+    targetBlock = targetBlock
+      .map(proc (id: BlockId): string = sbyteutils.toHex(id))
+      .valueOr("unset")
 
   while true:
     let effectiveTarget =
