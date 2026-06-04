@@ -7,8 +7,7 @@
 
 {.push raises: [], gcsafe.}
 
-import std/options
-import libp2p/utility
+import results
 
 import ./local_tree
 import ./types

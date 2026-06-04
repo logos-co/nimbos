@@ -7,7 +7,7 @@
 
 {.push raises: [].}
 
-import std/options
+import results
 import stew/byteutils as byteutils
 import unittest2
 
@@ -54,29 +54,29 @@ func exampleBlockId*(fill: byte): BlockId {.raises: [].} =
 func exampleGetTipTipFixture*(): Tip {.raises: [].} =
   Tip(tip: exampleBlockId(0xAB'u8), slot: SlotNumber(12_345'u64), height: 999'u64)
 
-proc exampleSerializedGetTipResponseTipWire*(): Option[seq[byte]] {.raises: [].} =
+proc exampleSerializedGetTipResponseTipWire*(): Opt[seq[byte]] {.raises: [].} =
   let resp = GetTipResponse(kind: gtrTip, tipData: exampleGetTipTipFixture())
   try:
     let wire = serializeGetTipResponseToSeq(resp, cryptarchiaSyncBincodeConfig)
     if wire.len == 0:
-      none(seq[byte])
+      Opt.none(seq[byte])
     else:
-      some(wire)
+      Opt.some(wire)
   except CatchableError:
-    none(seq[byte])
+    Opt.none(seq[byte])
 
 proc exampleSerializedGetTipResponseFailureWire*(
     failureUtf8: string = "example: tip unavailable",
-): Option[seq[byte]] {.raises: [].} =
+): Opt[seq[byte]] {.raises: [].} =
   let resp = GetTipResponse(kind: gtrFailure, failureMessage: failureUtf8)
   try:
     let wire = serializeGetTipResponseToSeq(resp, cryptarchiaSyncBincodeConfig)
     if wire.len == 0:
-      none(seq[byte])
+      Opt.none(seq[byte])
     else:
-      some(wire)
+      Opt.some(wire)
   except CatchableError:
-    none(seq[byte])
+    Opt.none(seq[byte])
 
 func downloadBlocksRequestEqual*(a, b: DownloadBlocksRequest): bool =
   a.targetBlock == b.targetBlock and

@@ -9,7 +9,7 @@
 {.used.}
 
 import unittest2
-import std/options
+import results
 
 import ../../logos_chain/core/types
 import ../../logos_chain/chain/genesis
@@ -44,7 +44,7 @@ suite "core/local_tree":
     let tree = newLocalTree(genesis)
     check tree.hasBlock(gid)
     check tree.localTipId == gid
-    check tree.blockHeight(gid) == some(0'u64)
+    check tree.blockHeight(gid) == Opt.some(0'u64)
     check tree.fetchParentHeader(gid).get == genesis.header
     check tree.latestImmutableBlockId == gid
 
@@ -57,7 +57,7 @@ suite "core/local_tree":
     let id1 = blockId(b1.header)
     check tree.addBlockToTree(b1)
     check tree.hasBlock(id1)
-    check tree.blockHeight(id1) == some(1'u64)
+    check tree.blockHeight(id1) == Opt.some(1'u64)
     check tree.localTipId == id1
     check tree.isAncestor(gid, id1)
     check not tree.isAncestor(id1, gid)
@@ -114,7 +114,7 @@ suite "core/local_tree (lcaBlockId)":
     let genesis = createGenesisBlock(sm)
     let gid = blockId(genesis.header)
     let tree = newLocalTree(genesis)
-    check lcaBlockId(tree, gid, gid) == some(gid)
+    check lcaBlockId(tree, gid, gid) == Opt.some(gid)
 
   test "lcaBlockId on a linear chain (depth and symmetry)":
     let sm = minimalSignedTx()
@@ -130,10 +130,10 @@ suite "core/local_tree (lcaBlockId)":
     let b3 = childBlock(b2.header, id2, 3'u64, [sm])
     let id3 = blockId(b3.header)
     check tree.addBlockToTree(b3)
-    check lcaBlockId(tree, gid, id3) == some(gid)
-    check lcaBlockId(tree, id1, id3) == some(id1)
-    check lcaBlockId(tree, id2, id3) == some(id2)
-    check lcaBlockId(tree, id3, id3) == some(id3)
+    check lcaBlockId(tree, gid, id3) == Opt.some(gid)
+    check lcaBlockId(tree, id1, id3) == Opt.some(id1)
+    check lcaBlockId(tree, id2, id3) == Opt.some(id2)
+    check lcaBlockId(tree, id3, id3) == Opt.some(id3)
     check lcaBlockId(tree, id3, id1) == lcaBlockId(tree, id1, id3)
 
   test "lcaBlockId across two children of genesis is genesis":
@@ -148,7 +148,7 @@ suite "core/local_tree (lcaBlockId)":
     let leftId = blockId(left.header)
     let rightId = blockId(right.header)
     check leftId != rightId
-    check lcaBlockId(tree, leftId, rightId) == some(gid)
+    check lcaBlockId(tree, leftId, rightId) == Opt.some(gid)
 
   test "lcaBlockId with tip branch and sibling branch meets at genesis":
     let sm = minimalSignedTx()
@@ -164,7 +164,7 @@ suite "core/local_tree (lcaBlockId)":
     let sibling = childBlock(genesis.header, gid, 3'u64, [sm])
     check tree.addBlockToTree(sibling)
     let siblingId = blockId(sibling.header)
-    check lcaBlockId(tree, tipChildId, siblingId) == some(gid)
+    check lcaBlockId(tree, tipChildId, siblingId) == Opt.some(gid)
 
   test "lcaBlockId returns none if either id is unknown":
     let sm = minimalSignedTx()

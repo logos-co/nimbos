@@ -9,7 +9,6 @@
 {.used.}
 
 import std/[os, strutils]
-import std/options
 import unittest2
 import stew/byteutils as byteutils
 import results
@@ -35,9 +34,9 @@ suite "sync/types (GetTip RequestMessage / response wire)":
     check body.len == 4
     check body == @[1'u8, 0'u8, 0'u8, 0'u8]
     let m = try:
-      some(deserializeRequestMessage(body, cryptarchiaSyncBincodeConfig))
+      Opt.some(deserializeRequestMessage(body, cryptarchiaSyncBincodeConfig))
     except CatchableError:
-      none(RequestMessage)
+      Opt.none(RequestMessage)
     check m.isSome and m.get.kind == rmGetTip
 
   test "GetTip request wire frame is u32 inner length then bincode":
@@ -88,9 +87,9 @@ suite "sync/types (GetTip RequestMessage / response wire)":
     except CatchableError:
       @[]
     let d = try:
-      some(deserializeGetTipResponse(wire, cryptarchiaSyncBincodeConfig))
+      Opt.some(deserializeGetTipResponse(wire, cryptarchiaSyncBincodeConfig))
     except CatchableError:
-      none(GetTipResponse)
+      Opt.none(GetTipResponse)
     check d.isSome and d.get.kind == gtrTip and d.get.tipData == tip
 
   test "GetTip failure response roundtrips":
@@ -100,9 +99,9 @@ suite "sync/types (GetTip RequestMessage / response wire)":
     except CatchableError:
       @[]
     let d = try:
-      some(deserializeGetTipResponse(wire, cryptarchiaSyncBincodeConfig))
+      Opt.some(deserializeGetTipResponse(wire, cryptarchiaSyncBincodeConfig))
     except CatchableError:
-      none(GetTipResponse)
+      Opt.none(GetTipResponse)
     check d.isSome and d.get.kind == gtrFailure and d.get.failureMessage == "no tip for you"
 
   test "Fixture GetTipResponse Tip wire roundtrips":
@@ -113,9 +112,9 @@ suite "sync/types (GetTip RequestMessage / response wire)":
     check wOpt.isSome
     let wire = wOpt.get
     let d = try:
-      some(deserializeGetTipResponse(wire, cryptarchiaSyncBincodeConfig))
+      Opt.some(deserializeGetTipResponse(wire, cryptarchiaSyncBincodeConfig))
     except CatchableError:
-      none(GetTipResponse)
+      Opt.none(GetTipResponse)
     check d.isSome and d.get.kind == gtrTip and d.get.tipData == tip
 
   test "Example GetTipResponse Failure wire roundtrips":
@@ -123,9 +122,9 @@ suite "sync/types (GetTip RequestMessage / response wire)":
     check wOpt.isSome
     let wire = wOpt.get
     let d = try:
-      some(deserializeGetTipResponse(wire, cryptarchiaSyncBincodeConfig))
+      Opt.some(deserializeGetTipResponse(wire, cryptarchiaSyncBincodeConfig))
     except CatchableError:
-      none(GetTipResponse)
+      Opt.none(GetTipResponse)
     check d.isSome and d.get.kind == gtrFailure and d.get.failureMessage == "example: tip unavailable"
 
 suite "sync/types (download RequestMessage / request & response payloads)":
@@ -141,9 +140,9 @@ suite "sync/types (download RequestMessage / request & response payloads)":
       @[]
     let dec =
       try:
-        some(deserializeDownloadBlocksRequest(inner, cryptarchiaSyncBincodeConfig))
+        Opt.some(deserializeDownloadBlocksRequest(inner, cryptarchiaSyncBincodeConfig))
       except CatchableError:
-        none(DownloadBlocksRequest)
+        Opt.none(DownloadBlocksRequest)
     check dec.isSome and downloadBlocksRequestEqual(dec.get, req)
 
   test "RequestMessage download discriminant roundtrips":
@@ -162,9 +161,9 @@ suite "sync/types (download RequestMessage / request & response payloads)":
     check wire.len >= 4
     let m =
       try:
-        some(deserializeRequestMessage(wire, cryptarchiaSyncBincodeConfig))
+        Opt.some(deserializeRequestMessage(wire, cryptarchiaSyncBincodeConfig))
       except CatchableError:
-        none(RequestMessage)
+        Opt.none(RequestMessage)
     check m.isSome and m.get.kind == rmDownloadBlocksRequest
     check downloadBlocksRequestEqual(m.get.downloadBlocksRequest, req)
 
@@ -176,9 +175,9 @@ suite "sync/types (download RequestMessage / request & response payloads)":
       @[]
     let dec =
       try:
-        some(deserializeDownloadBlocksResponse(inner, cryptarchiaSyncBincodeConfig))
+        Opt.some(deserializeDownloadBlocksResponse(inner, cryptarchiaSyncBincodeConfig))
       except CatchableError:
-        none(DownloadBlocksResponse)
+        Opt.none(DownloadBlocksResponse)
     check dec.isSome and downloadBlocksResponseEqual(dec.get, msg)
 
   test "serializeDownloadBlocksResponseToSeq / deserializeDownloadBlocksResponse roundtrip (one block)":
@@ -195,9 +194,9 @@ suite "sync/types (download RequestMessage / request & response payloads)":
       @[]
     let backOpt =
       try:
-        some(deserializeDownloadBlocksResponse(inner, cryptarchiaSyncBincodeConfig))
+        Opt.some(deserializeDownloadBlocksResponse(inner, cryptarchiaSyncBincodeConfig))
       except CatchableError:
-        none(DownloadBlocksResponse)
+        Opt.none(DownloadBlocksResponse)
     check backOpt.isSome
     let back = backOpt.get
     check back.kind == dbrBlock
@@ -219,9 +218,9 @@ suite "sync/types (download RequestMessage / request & response payloads)":
         @[]
       let dec =
         try:
-          some(deserializeDownloadBlocksResponse(inner, cryptarchiaSyncBincodeConfig))
+          Opt.some(deserializeDownloadBlocksResponse(inner, cryptarchiaSyncBincodeConfig))
         except CatchableError:
-          none(DownloadBlocksResponse)
+          Opt.none(DownloadBlocksResponse)
       check dec.isSome and downloadBlocksResponseEqual(dec.get, msg)
 
   test "deserialize Rust Failure(String) download response (StartBlockNotFound)":
@@ -230,9 +229,9 @@ suite "sync/types (download RequestMessage / request & response payloads)":
     let inner = byteutils.hexToSeqByte(rustInnerHex)
     let dec =
       try:
-        some(deserializeDownloadBlocksResponse(inner, cryptarchiaSyncBincodeConfig))
+        Opt.some(deserializeDownloadBlocksResponse(inner, cryptarchiaSyncBincodeConfig))
       except CatchableError:
-        none(DownloadBlocksResponse)
+        Opt.none(DownloadBlocksResponse)
     check dec.isSome
     check dec.get.kind == dbrFailure
     check dec.get.failureMessage ==

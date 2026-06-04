@@ -8,7 +8,7 @@
 {.push raises: [].}
 {.used.}
 
-import std/options
+import results
 import unittest2
 
 import ../../../logos_chain/sync/[config, types]
@@ -34,9 +34,9 @@ suite "sync/config":
     check inner == backInner
     let dec =
       try:
-        some(deserializeDownloadBlocksResponse(backInner, cryptarchiaSyncBincodeConfig))
+        Opt.some(deserializeDownloadBlocksResponse(backInner, cryptarchiaSyncBincodeConfig))
       except CatchableError:
-        none(DownloadBlocksResponse)
+        Opt.none(DownloadBlocksResponse)
     check dec.isSome and dec.get.kind == msg.kind
 
 {.pop.}

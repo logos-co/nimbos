@@ -7,7 +7,9 @@
 
 {.push raises: [], gcsafe.}
 
-import std/[options, tables]
+import std/tables
+
+import results
 
 import ./types
 from ./mantle/primitives import SlotNumber
@@ -53,29 +55,29 @@ proc newLocalTree*(genesisBlock: Block, latestImmutableHeight: uint64 = 0): Loca
     latestImmutableHeight: latestImmutableHeight,
   )
 
-proc blockHeight*(localTree: LocalTree, blockId: BlockId): Option[uint64] =
+proc blockHeight*(localTree: LocalTree, blockId: BlockId): Opt[uint64] =
   let n = localTree.blocks.getOrDefault(blockId, nil)
   if n == nil:
-    none(uint64)
+    Opt.none(uint64)
   else:
-    some(n.height)
+    Opt.some(n.height)
 
-proc fetchParentHeader*(localTree: LocalTree, parentBlock: BlockId): Option[Header] =
+proc fetchParentHeader*(localTree: LocalTree, parentBlock: BlockId): Opt[Header] =
   let n = localTree.blocks.getOrDefault(parentBlock, nil)
   if n == nil:
-    none(Header)
+    Opt.none(Header)
   else:
-    some(n.blk.header)
+    Opt.some(n.blk.header)
 
 proc hasBlock*(localTree: LocalTree, blockId: BlockId): bool =
   localTree.blocks.hasKey(blockId)
 
-proc getBlock*(localTree: LocalTree, id: BlockId): Option[Block] =
+proc getBlock*(localTree: LocalTree, id: BlockId): Opt[Block] =
   let n = localTree.blocks.getOrDefault(id, nil)
   if n == nil:
-    none(Block)
+    Opt.none(Block)
   else:
-    some(n.blk)
+    Opt.some(n.blk)
 
 proc localTipId*(localTree: LocalTree): BlockId =
   localTree.tipId
@@ -106,25 +108,25 @@ proc isAncestor*(localTree: LocalTree, ancestor: BlockId, descendant: BlockId): 
     n = n.parent
   false
 
-proc lcaBlockId*(localTree: LocalTree, idA, idB: BlockId): Option[BlockId] =
+proc lcaBlockId*(localTree: LocalTree, idA, idB: BlockId): Opt[BlockId] =
   var na = localTree.blocks.getOrDefault(idA, nil)
   var nb = localTree.blocks.getOrDefault(idB, nil)
   if na == nil or nb == nil:
-    return none(BlockId)
+    return Opt.none(BlockId)
   while na.height > nb.height:
     na = na.parent
     if na == nil:
-      return none(BlockId)
+      return Opt.none(BlockId)
   while nb.height > na.height:
     nb = nb.parent
     if nb == nil:
-      return none(BlockId)
+      return Opt.none(BlockId)
   while na.id != nb.id:
     na = na.parent
     nb = nb.parent
     if na == nil or nb == nil:
-      return none(BlockId)
-  some(na.id)
+      return Opt.none(BlockId)
+  Opt.some(na.id)
 
 proc addBlockToTree*(localTree: LocalTree, blk: Block): bool =
   let id = blockId(blk.header)
