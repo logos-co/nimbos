@@ -13,9 +13,7 @@
 
 import faststreams
 import bincode
-import ./tx_types
 from ../crypto/types import DecodingError
-
 from ./tx_types import SignedMantleTx, encodeSignedMantleTx, decodeSignedMantleTx
 
 proc serializeSignedMantleTx*(
