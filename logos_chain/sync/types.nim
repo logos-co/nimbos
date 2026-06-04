@@ -5,10 +5,9 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to these terms.
 
-{.push raises: [], gcsafe, warning[UnusedImport]: off.}
+{.push raises: [], gcsafe.}
 
 import ../core/local_tree
-import ./config
 import ../core/mantle/tx_bincode
 import bincode
 import libp2p/crypto/ed25519/ed25519
