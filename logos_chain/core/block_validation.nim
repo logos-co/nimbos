@@ -8,6 +8,7 @@
 {.push raises: [], gcsafe.}
 
 import std/options
+import libp2p/utility
 
 import ./local_tree
 import ./types
@@ -46,10 +47,9 @@ proc validateBlockHeader*(blk: Block, localTree: LocalTree): bool =
   if createBlockRoot(blk.txs) != header.blockRoot:
     return false
 
-  let parentHeader = fetchParentHeader(localTree, header.parentBlock)
-  if parentHeader.isNone:
+  let parentHeader = fetchParentHeader(localTree, header.parentBlock).valueOr:
     return false
-  if header.slot <= parentHeader.get.slot:
+  if header.slot <= parentHeader.slot:
     return false
 
   if currentWallclockSlot() < header.slot:
@@ -58,10 +58,9 @@ proc validateBlockHeader*(blk: Block, localTree: LocalTree): bool =
   if not hasBlock(localTree, header.parentBlock):
     return false
 
-  let parentHeightOpt = blockHeight(localTree, header.parentBlock)
-  if parentHeightOpt.isNone:
+  let parentHeight = blockHeight(localTree, header.parentBlock).valueOr:
     return false
-  let candidateHeight = parentHeightOpt.get + 1'u64
+  let candidateHeight = parentHeight + 1'u64
   if candidateHeight <= localTree.latestImmutableHeight:
     return false
 

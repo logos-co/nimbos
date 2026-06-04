@@ -116,10 +116,9 @@ proc sendGetTipRequest*(
     await writeCryptarchiaPrefixedInner(conn, wireReq)
     debug "IBD GetTip write ok", peer, requestBytes = wireReq.len
     let payloadOpt = await readCryptarchiaPrefixedInner(conn)
-    if payloadOpt.isNone:
+    let p = payloadOpt.valueOr:
       debug "IBD GetTip response read failed", peer
       return none(GetTipResponse)
-    let p = payloadOpt.get
     debug "IBD GetTip read ok", peer, responseBytes = p.len
     try:
       let resp = deserializeGetTipResponse(p, cryptarchiaSyncBincodeConfig)
@@ -178,9 +177,9 @@ func decodeBlocksFromDownloadResponses*(messages: seq[DownloadBlocksResponse]): 
         some(deserializeBlock(msg.downloadedBlock, cryptarchiaSyncBincodeConfig))
       except CatchableError:
         none(Block)
-      if blkOpt.isNone:
+      let blk = blkOpt.valueOr:
         return none(seq[Block])
-      blks.add blkOpt.get
+      blks.add blk
   some(blks)
 
 proc sendDownloadBlocksRequest*(
@@ -222,10 +221,9 @@ proc sendDownloadBlocksRequest*(
     var acc = newSeqOfCap[DownloadBlocksResponse](64)
     while true:
       let innerOpt = await readCryptarchiaPrefixedInner(conn)
-      if innerOpt.isNone:
+      let inner = innerOpt.valueOr:
         debug "IBD download response read failed", peer, messages = acc.len
         return none(seq[DownloadBlocksResponse])
-      let inner = innerOpt.get
       debug "IBD download read ok",
         peer,
         responseBytes = inner.len,
@@ -236,9 +234,8 @@ proc sendDownloadBlocksRequest*(
       except CatchableError as exc:
         debug "IBD download response deserialize failed", peer, exc = exc.msg
         none(DownloadBlocksResponse)
-      if msgOpt.isNone:
+      let msg = msgOpt.valueOr:
         return none(seq[DownloadBlocksResponse])
-      let msg = msgOpt.get
       acc.add msg
       case msg.kind
       of dbrFailure:
@@ -286,13 +283,10 @@ func collectBlocksForDownloadRequest*(
     if not localTree.hasBlock(kid):
       continue
     let lcaOpt = lcaBlockId(localTree, kid, target)
-    if lcaOpt.isNone:
+    let lca = lcaOpt.valueOr:
       continue
-    let lca = lcaOpt.get
-    let hOpt = localTree.blockHeight(lca)
-    if hOpt.isNone:
+    let h = localTree.blockHeight(lca).valueOr:
       continue
-    let h = hOpt.get
     if not haveBest or h > bestHeight:
       bestHeight = h
       bestLca = lca
@@ -304,10 +298,8 @@ func collectBlocksForDownloadRequest*(
   var rev = newSeqOfCap[Block](8)
   var curId = target
   while curId != bestLca:
-    let blkOpt = localTree.getBlock(curId)
-    if blkOpt.isNone:
+    let blk = localTree.getBlock(curId).valueOr:
       return @[]
-    let blk = blkOpt.get
     rev.add blk
     curId = blk.header.parentBlock
     if curId == default(BlockId):
@@ -344,16 +336,15 @@ proc mountCryptarchiaSyncHandler*(
         discard
     try:
       let innerOpt = await readCryptarchiaPrefixedInner(conn)
-      if innerOpt.isNone:
+      let inner = innerOpt.valueOr:
         debug "IBD handler: request read failed"
         return
-      let inner = innerOpt.get
       debug "IBD handler: request read ok", requestBytes = inner.len
       let kindOpt = parseRequestMessageKind(inner)
-      if kindOpt.isNone:
+      let kind = kindOpt.valueOr:
         debug "IBD handler: invalid request kind"
         return
-      case kindOpt.get
+      case kind
       of rmGetTip:
         debug "IBD handler: GetTip request"
         let tipResp = getTipResponseFromLocalTree(localTree)
@@ -374,12 +365,15 @@ proc mountCryptarchiaSyncHandler*(
           some(deserializeRequestMessage(inner, cryptarchiaSyncBincodeConfig))
         except CatchableError:
           none(RequestMessage)
-        if reqMsgOpt.isNone or reqMsgOpt.get.kind != rmDownloadBlocksRequest:
+        let reqMsg = reqMsgOpt.valueOr:
+          debug "IBD handler: download request decode failed"
+          return
+        if reqMsg.kind != rmDownloadBlocksRequest:
           debug "IBD handler: download request decode failed"
           return
         debug "IBD handler: download request decode ok",
-          targetBlock = sbyteutils.toHex(reqMsgOpt.get.downloadBlocksRequest.targetBlock)
-        let req = reqMsgOpt.get.downloadBlocksRequest
+          targetBlock = sbyteutils.toHex(reqMsg.downloadBlocksRequest.targetBlock)
+        let req = reqMsg.downloadBlocksRequest
         if not localTree.hasBlock(req.targetBlock):
           debug "IBD handler: target block not found", targetBlock = sbyteutils.toHex(req.targetBlock)
           awaitWriteDlRespLp(conn, DownloadBlocksResponse(
@@ -487,8 +481,9 @@ proc downloadBlocks*(
       debug "IBD: target already local", peer, targetBlock = sbyteutils.toHex(effectiveTarget.get)
       return true
 
-    let additionalKnown =
-      if latestDownloaded.isSome: @[blockId(latestDownloaded.get.header)] else: @[]
+    let additionalKnown = latestDownloaded
+      .map(proc (b: Block): seq[BlockId] = @[blockId(b.header)])
+      .valueOr(@[])
     let downloadReq = DownloadBlocksRequest(
       targetBlock: effectiveTarget.get,
       knownBlocks: buildKnownBlocks(localTree, additionalKnown),
@@ -499,11 +494,10 @@ proc downloadBlocks*(
       downloadReq,
       chainSyncProtocol,
     )
-    if respOpt.isNone:
+    let msgs = respOpt.valueOr:
       debug "IBD: download request failed", peer, targetBlock = sbyteutils.toHex(effectiveTarget.get)
       return false
 
-    let msgs = respOpt.get
     for msg in msgs:
       if msg.kind == dbrFailure:
         debug "IBD: download peer failure",
@@ -513,10 +507,9 @@ proc downloadBlocks*(
         return false
     debug "IBD: download response ok", peer, messages = msgs.len, targetBlock = sbyteutils.toHex(downloadReq.targetBlock)
     let blocksOpt = decodeBlocksFromDownloadResponses(msgs)
-    if blocksOpt.isNone:
+    let blocks = blocksOpt.valueOr:
       debug "IBD: block decode failed", peer, messages = msgs.len
       return false
-    let blocks = blocksOpt.get
     debug "IBD: block decode ok", peer, blocks = blocks.len, targetBlock = sbyteutils.toHex(effectiveTarget.get)
     if blocks.len == 0:
       debug "IBD: download returned no blocks", peer, targetBlock = sbyteutils.toHex(effectiveTarget.get)
