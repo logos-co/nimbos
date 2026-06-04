@@ -13,6 +13,9 @@ BUILD_SYSTEM_DIR := vendor/nimbus-build-system
 # we set its default value before LOG_LEVEL is used in "variables.mk"
 LOG_LEVEL := DEBUG
 
+# nim-bincode vendors nim-stew; use the top-level vendor/nim-stew instead.
+EXCLUDED_NIM_PACKAGES := vendor/nim-bincode/nim-stew
+
 # used by Make targets that launch a beacon node
 RUNTIME_LOG_LEVEL := INFO
 
