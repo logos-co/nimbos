@@ -8,7 +8,7 @@
 {.push raises: [], gcsafe.}
 
 import
-  std/[options, sequtils, sets],
+  std/[options, sets],
   chronicles,
   chronos,
   libp2p/[switch, peerid, errors],
@@ -32,35 +32,36 @@ logScope:
   topics = "cryptarchia_ibd"
 
 # ---------------------------------------------------------------------------
-# Wire framing (u32 inner length inside libp2p writeLp / readLp)
+# Wire framing (u32 inner length, raw stream write/read)
 # ---------------------------------------------------------------------------
 
 proc readCryptarchiaPrefixedInner*(conn: Connection): Future[Option[seq[byte]]] {.async.} =
-  ## One libp2p LP frame: read varint frame length, then LE ``uint32`` inner length, then
-  ## exactly ``innerLen`` bytes.
+  ## Read LE ``uint32`` inner length, then exactly ``innerLen`` bytes.
   try:
-    let lpBodyLen = await conn.readVarint()
-    if lpBodyLen < uint64(CryptarchiaSyncInnerLengthPrefixSize):
-      return none(seq[byte])
     var lenPrefix = newSeqUninit[byte](CryptarchiaSyncInnerLengthPrefixSize)
     await conn.readExactly(addr lenPrefix[0], CryptarchiaSyncInnerLengthPrefixSize)
     let innerLen = int(uint32.fromBytesLE(lenPrefix.toOpenArray(
         0, CryptarchiaSyncInnerLengthPrefixSize - 1)))
-    if uint64(CryptarchiaSyncInnerLengthPrefixSize + innerLen) != lpBodyLen:
-      return none(seq[byte])
     if innerLen == 0:
       return some(newSeq[byte]())
     var inner = newSeqUninit[byte](innerLen)
     await conn.readExactly(addr inner[0], innerLen)
+    debug "IBD wire read ok", innerBytes = inner.len
     some(inner)
   except CatchableError as exc:
     debug "IBD wire read failed", exc = exc.msg
     none(seq[byte])
 
 proc writeCryptarchiaPrefixedInner*(conn: Connection, inner: seq[byte]) {.async.} =
-  ## Prepend LE ``uint32`` inner length, then ``writeLp``.
+  ## Prepend LE ``uint32`` inner length, then ``write`` the frame raw on the stream.
   let framed = addPrefixLengthToPayload(inner)
-  await conn.writeLp(framed)
+  debug "IBD wire write",
+    innerBytes = inner.len,
+    framedBytes = framed.len,
+    innerHex = sbyteutils.toHex(inner),
+    framedHex = sbyteutils.toHex(framed)
+  await conn.write(framed)
+  debug "IBD wire write ok", framedBytes = framed.len
 
 func parseRequestMessageKind*(inner: openArray[byte]): Option[RequestMessageKind] {.raises: [].} =
   ## First 4 bytes of the inner bincode body are ``RequestMessageKind`` (u32 LE).
@@ -96,32 +97,43 @@ proc sendGetTipRequest*(
   try:
     wireReq = serializeRequestMessageToSeq(
       RequestMessage(kind: rmGetTip), cryptarchiaSyncBincodeConfig)
+    debug "IBD GetTip serialize ok", peer, requestBytes = wireReq.len
   except CatchableError as exc:
     debug "IBD GetTip serialize failed", peer, exc = exc.msg
     return none(GetTipResponse)
   var conn: Connection
   try:
+    debug "IBD GetTip dialing",
+      peer,
+      protocol = chainSyncProtocol,
+      peerConnected = sw.isConnected(peer)
     conn = await sw.dial(peer, chainSyncProtocol)
+    debug "IBD GetTip dial ok", peer, protocol = conn.protocol
   except CatchableError as exc:
-    debug "IBD GetTip dial failed", peer, exc = exc.msg
+    debug "IBD GetTip dial failed", peer, exc = exc.msg, peerConnected = sw.isConnected(peer)
     return none(GetTipResponse)
   try:
     await writeCryptarchiaPrefixedInner(conn, wireReq)
+    debug "IBD GetTip write ok", peer, requestBytes = wireReq.len
     let payloadOpt = await readCryptarchiaPrefixedInner(conn)
     if payloadOpt.isNone:
       debug "IBD GetTip response read failed", peer
       return none(GetTipResponse)
     let p = payloadOpt.get
+    debug "IBD GetTip read ok", peer, responseBytes = p.len
     try:
       let resp = deserializeGetTipResponse(p, cryptarchiaSyncBincodeConfig)
       case resp.kind
       of gtrTip:
-        debug "IBD GetTip response",
+        debug "IBD GetTip deserialize ok",
           peer,
-          tip = resp.tipData.tip,
+          tip = sbyteutils.toHex(resp.tipData.tip),
           height = resp.tipData.height
       of gtrFailure:
-        debug "IBD GetTip peer failure", peer, reason = resp.failureMessage
+        debug "IBD GetTip deserialize ok (peer failure)",
+          peer,
+          reason = resp.failureMessage
+      debug "IBD GetTip exchange complete", peer
       return some(resp)
     except CatchableError as exc:
       debug "IBD GetTip deserialize failed", peer, exc = exc.msg
@@ -180,34 +192,47 @@ proc sendDownloadBlocksRequest*(
   var wireReq: seq[byte]
   debug "IBD download blocks request",
     peer,
-    targetBlock = request.targetBlock,
-    localTip = request.knownBlocks.localTip,
-    latestImmutable = request.knownBlocks.latestImmutableBlock,
+    targetBlock = sbyteutils.toHex(request.targetBlock),
+    localTip = sbyteutils.toHex(request.knownBlocks.localTip),
+    latestImmutable = sbyteutils.toHex(request.knownBlocks.latestImmutableBlock),
     additionalKnown = request.knownBlocks.additionalBlocks.len
   try:
     wireReq = serializeRequestMessageToSeq(
       RequestMessage(kind: rmDownloadBlocksRequest, downloadBlocksRequest: request),
       cryptarchiaSyncBincodeConfig,
     )
+    debug "IBD download serialize ok", peer, requestBytes = wireReq.len
   except CatchableError as exc:
     debug "IBD download serialize failed", peer, exc = exc.msg
     return none(seq[DownloadBlocksResponse])
   var conn: Connection
   try:
+    debug "IBD download dialing",
+      peer,
+      protocol = chainSyncProtocol,
+      peerConnected = sw.isConnected(peer)
     conn = await sw.dial(peer, chainSyncProtocol)
+    debug "IBD download dial ok", peer, protocol = conn.protocol
   except CatchableError as exc:
-    debug "IBD download dial failed", peer, exc = exc.msg
+    debug "IBD download dial failed", peer, exc = exc.msg, peerConnected = sw.isConnected(peer)
     return none(seq[DownloadBlocksResponse])
   try:
     await writeCryptarchiaPrefixedInner(conn, wireReq)
+    debug "IBD download write ok", peer, requestBytes = wireReq.len
     var acc = newSeqOfCap[DownloadBlocksResponse](64)
     while true:
       let innerOpt = await readCryptarchiaPrefixedInner(conn)
       if innerOpt.isNone:
         debug "IBD download response read failed", peer, messages = acc.len
         return none(seq[DownloadBlocksResponse])
+      let inner = innerOpt.get
+      debug "IBD download read ok",
+        peer,
+        responseBytes = inner.len,
+        messageIndex = acc.len,
+        innerHex = sbyteutils.toHex(inner)
       let msgOpt = try:
-        some(deserializeDownloadBlocksResponse(innerOpt.get, cryptarchiaSyncBincodeConfig))
+        some(deserializeDownloadBlocksResponse(inner, cryptarchiaSyncBincodeConfig))
       except CatchableError as exc:
         debug "IBD download response deserialize failed", peer, exc = exc.msg
         none(DownloadBlocksResponse)
@@ -217,13 +242,16 @@ proc sendDownloadBlocksRequest*(
       acc.add msg
       case msg.kind
       of dbrFailure:
-        debug "IBD download response: failure", peer, reason = msg.failureReason
+        debug "IBD download deserialize ok (failure)",
+          peer, failureMessage = msg.failureMessage, messageIndex = acc.high
         break
       of dbrNoMoreBlocks:
-        debug "IBD download response: no more blocks", peer, messages = acc.len
+        debug "IBD download deserialize ok (no more blocks)",
+          peer, messages = acc.len
         break
       of dbrBlock:
-        debug "IBD download response: block", peer, blockBytes = msg.downloadedBlock.len
+        debug "IBD download deserialize ok (block)",
+          peer, blockBytes = msg.downloadedBlock.len, messageIndex = acc.high
     debug "IBD download exchange complete", peer, messages = acc.len
     some(acc)
   except CatchableError as exc:
@@ -290,7 +318,7 @@ func collectBlocksForDownloadRequest*(
   forward
 
 template awaitWriteDlRespLp(conn: Connection, msg: DownloadBlocksResponse) =
-  ## u32-prefixed inner + ``writeLp``; skips write when encoding yields empty.
+  ## u32-prefixed inner + raw ``write``; skips write when encoding yields empty.
   block:
     let innerBytes = try:
       serializeDownloadBlocksResponseToSeq(msg, cryptarchiaSyncBincodeConfig)
@@ -317,8 +345,10 @@ proc mountCryptarchiaSyncHandler*(
     try:
       let innerOpt = await readCryptarchiaPrefixedInner(conn)
       if innerOpt.isNone:
+        debug "IBD handler: request read failed"
         return
       let inner = innerOpt.get
+      debug "IBD handler: request read ok", requestBytes = inner.len
       let kindOpt = parseRequestMessageKind(inner)
       if kindOpt.isNone:
         debug "IBD handler: invalid request kind"
@@ -326,13 +356,18 @@ proc mountCryptarchiaSyncHandler*(
       case kindOpt.get
       of rmGetTip:
         debug "IBD handler: GetTip request"
+        let tipResp = getTipResponseFromLocalTree(localTree)
         let respInner = try:
-          serializeGetTipResponseToSeq(getTipResponseFromLocalTree(localTree), cryptarchiaSyncBincodeConfig)
+          serializeGetTipResponseToSeq(tipResp, cryptarchiaSyncBincodeConfig)
         except CatchableError as exc:
           debug "IBD handler: GetTip serialize failed", exc = exc.msg
           @[]
         if respInner.len > 0:
           await writeCryptarchiaPrefixedInner(conn, respInner)
+          debug "IBD handler: GetTip response ok",
+            responseBytes = respInner.len,
+            tip = sbyteutils.toHex(tipResp.tipData.tip),
+            height = tipResp.tipData.height
       of rmDownloadBlocksRequest:
         debug "IBD handler: download blocks request"
         let reqMsgOpt = try:
@@ -342,19 +377,23 @@ proc mountCryptarchiaSyncHandler*(
         if reqMsgOpt.isNone or reqMsgOpt.get.kind != rmDownloadBlocksRequest:
           debug "IBD handler: download request decode failed"
           return
+        debug "IBD handler: download request decode ok",
+          targetBlock = sbyteutils.toHex(reqMsgOpt.get.downloadBlocksRequest.targetBlock)
         let req = reqMsgOpt.get.downloadBlocksRequest
         if not localTree.hasBlock(req.targetBlock):
-          debug "IBD handler: target block not found", targetBlock = req.targetBlock
+          debug "IBD handler: target block not found", targetBlock = sbyteutils.toHex(req.targetBlock)
           awaitWriteDlRespLp(conn, DownloadBlocksResponse(
-            kind: dbrFailure,
-            failureReason: BlocksUnavailableReason(kind: burBlockNotFound, blockNotFoundId: req.targetBlock)))
+            kind: dbrFailure, failureMessage: "start block not found"))
+          debug "IBD handler: download failure response ok", targetBlock = sbyteutils.toHex(req.targetBlock)
         else:
           let blocks = collectBlocksForDownloadRequest(localTree, req)
           if blocks.len == 0:
-            debug "IBD handler: no blocks to send", targetBlock = req.targetBlock
+            debug "IBD handler: no blocks to send", targetBlock = sbyteutils.toHex(req.targetBlock)
             awaitWriteDlRespLp(conn, DownloadBlocksResponse(kind: dbrNoMoreBlocks))
+            debug "IBD handler: download no-more-blocks response ok", targetBlock = sbyteutils.toHex(req.targetBlock)
           else:
-            debug "IBD handler: sending blocks", targetBlock = req.targetBlock, count = blocks.len
+            debug "IBD handler: sending blocks", targetBlock = sbyteutils.toHex(req.targetBlock), count = blocks.len
+            var blocksSent = 0
             for blk in blocks:
               let innerWire = try:
                 serializeBlockToSeq(blk, cryptarchiaSyncBincodeConfig)
@@ -363,11 +402,14 @@ proc mountCryptarchiaSyncHandler*(
               if innerWire.len == 0 or innerWire.len > MaxBlockSize:
                 debug "IBD handler: block encode failed or too large", blockBytes = innerWire.len
                 awaitWriteDlRespLp(conn, DownloadBlocksResponse(
-                  kind: dbrFailure,
-                  failureReason: BlocksUnavailableReason(kind: burUnknown, unknownMessage: "")))
+                  kind: dbrFailure, failureMessage: "block encode failed"))
+                debug "IBD handler: download failure response ok", targetBlock = sbyteutils.toHex(req.targetBlock)
                 return
               awaitWriteDlRespLp(conn, DownloadBlocksResponse(kind: dbrBlock, downloadedBlock: innerWire))
+              inc blocksSent
             awaitWriteDlRespLp(conn, DownloadBlocksResponse(kind: dbrNoMoreBlocks))
+            debug "IBD handler: download blocks response ok",
+              targetBlock = sbyteutils.toHex(req.targetBlock), blocksSent = blocksSent
     except CatchableError as exc:
       debug "IBD handler error", exc = exc.msg
 
@@ -415,7 +457,9 @@ proc downloadBlocks*(
 ): Future[bool] {.async.} =
   discard forkChoice
   var latestDownloaded = none(Block)
-  debug "IBD download loop start", peer, targetBlock
+  debug "IBD download loop start", peer,
+    targetBlock =
+      if targetBlock.isSome: sbyteutils.toHex(targetBlock.get) else "none"
 
   while true:
     let effectiveTarget =
@@ -454,22 +498,25 @@ proc downloadBlocks*(
       downloadReq,
       chainSyncProtocol,
     )
-    info "IBD: download request sent",
-      peer,
-      targetBlock = sbyteutils.toHex(downloadReq.targetBlock),
-      localTip = sbyteutils.toHex(downloadReq.knownBlocks.localTip),
-      latestImmutableBlock = sbyteutils.toHex(downloadReq.knownBlocks.latestImmutableBlock),
-      additionalBlocks = downloadReq.knownBlocks.additionalBlocks.mapIt(sbyteutils.toHex(it))
     if respOpt.isNone:
       debug "IBD: download request failed", peer, targetBlock = sbyteutils.toHex(effectiveTarget.get)
       return false
 
     let msgs = respOpt.get
+    for msg in msgs:
+      if msg.kind == dbrFailure:
+        debug "IBD: download peer failure",
+          peer,
+          targetBlock = sbyteutils.toHex(downloadReq.targetBlock),
+          failureMessage = msg.failureMessage
+        return false
+    debug "IBD: download response ok", peer, messages = msgs.len, targetBlock = sbyteutils.toHex(downloadReq.targetBlock)
     let blocksOpt = decodeBlocksFromDownloadResponses(msgs)
     if blocksOpt.isNone:
-      debug "IBD: download decode failed", peer, messages = msgs.len
+      debug "IBD: block decode failed", peer, messages = msgs.len
       return false
     let blocks = blocksOpt.get
+    debug "IBD: block decode ok", peer, blocks = blocks.len, targetBlock = sbyteutils.toHex(effectiveTarget.get)
     if blocks.len == 0:
       debug "IBD: download returned no blocks", peer, targetBlock = sbyteutils.toHex(effectiveTarget.get)
       return false
@@ -480,6 +527,7 @@ proc downloadBlocks*(
       latestDownloaded = some(blk)
       try:
         onBlock(localTree, blk)
+        debug "IBD: block ingest ok", peer, blockId = sbyteutils.toHex(blockId(blk.header))
         if blockId(blk.header) == effectiveTarget.get:
           targetReached = true
           break
@@ -504,9 +552,12 @@ proc initialBlockDownload*(
   info "Starting initial block download", peerCount = peers.len, protocol = chainSyncProtocol
   var numSuccess = 0
   for peer in peers:
+    debug "IBD: syncing peer", peer
     if await downloadBlocks(sw, localTree, peer, Bootstrap, chainSyncProtocol, none(BlockId)):
       inc numSuccess
       info "IBD succeeded with peer", peer, successes = numSuccess
+    else:
+      debug "IBD: peer sync failed", peer
 
   if numSuccess == 0:
     warn "IBD failed: no peer synced successfully", peerCount = peers.len

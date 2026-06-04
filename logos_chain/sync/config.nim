@@ -23,7 +23,7 @@ from "../core/types" import BlockId, ExpectedBedrockVersion, MaxBlockSize
 export ExpectedBedrockVersion, MaxBlockSize
 
 const CryptarchiaSyncInnerLengthPrefixSize* = 4
-  ## LE ``uint32`` inner-length prefix on every cryptarchia sync ``writeLp`` body.
+  ## LE ``uint32`` inner-length prefix on every cryptarchia sync stream message.
 
 const
   MaxKnownAdditionalBlocks* = 5
@@ -41,11 +41,10 @@ const cryptarchiaSyncBincodeConfig* = BincodeConfig(
 )
 
 # ---------------------------------------------------------------------------
-# Plain u32 length-prefixed bodies inside libp2p ``writeLp`` / ``readLp``
+# Plain u32 length-prefixed bodies on the libp2p stream
 #
-# Each message is a libp2p ``writeLp`` / ``readLp`` frame whose body is
-# ``uint32`` LE inner length + bincode inner. ``readCryptarchiaPrefixedInner`` reads the
-# inner length (4 bytes) then exactly that many inner bytes (see ``initial_block_download``).
+# Each message is ``uint32`` LE inner length + bincode inner, written with raw
+# ``Connection.write`` / read via ``readExactly`` (see ``initial_block_download``).
 # ---------------------------------------------------------------------------
 
 proc addPrefixLengthToPayload*(inner: seq[byte]): seq[byte] {.raises: [BincodeError].} =

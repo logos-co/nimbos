@@ -101,17 +101,7 @@ func downloadBlocksResponseEqual*(a, b: DownloadBlocksResponse): bool =
   of dbrNoMoreBlocks:
     true
   of dbrFailure:
-    if a.failureReason.kind != b.failureReason.kind:
-      return false
-    case a.failureReason.kind
-    of burBlockNotFound:
-      b.failureReason.kind == burBlockNotFound and
-        a.failureReason.blockNotFoundId == b.failureReason.blockNotFoundId
-    of burStartBlockNotFound:
-      true
-    of burUnknown:
-      b.failureReason.kind == burUnknown and
-        a.failureReason.unknownMessage == b.failureReason.unknownMessage
+    a.failureMessage == b.failureMessage
 
 func downloadBlocksResponsesEqual*(a, b: seq[DownloadBlocksResponse]): bool =
   if a.len != b.len:
@@ -137,7 +127,7 @@ proc downloadBlocksResponsesForRequest*(
     result.add DownloadBlocksResponse(kind: dbrBlock, downloadedBlock: innerWire)
   result.add DownloadBlocksResponse(kind: dbrNoMoreBlocks)
 
-proc lpPrefixedHex*(inner: seq[byte]): string {.raises: [].} =
+proc u32LengthPrefixedHex*(inner: seq[byte]): string {.raises: [].} =
   try:
     byteutils.toHex(addPrefixLengthToPayload(inner))
   except CatchableError:

@@ -41,21 +41,6 @@ type
     ## Bincode-encoded ``Block`` bytes (``serializeBlockToSeq`` / ``deserializeBlock``).
 
 type
-  ## Mirrors Rust ``BlocksUnavailableReason`` (bincode variant order / payloads).
-  BlocksUnavailableReasonKind* = enum
-    burBlockNotFound = 0 ## ``BlockNotFound(HeaderId)``
-    burStartBlockNotFound = 1 ## ``StartBlockNotFound``
-    burUnknown = 2 ## ``Unknown(String)``
-
-  BlocksUnavailableReason* = object
-    case kind*: BlocksUnavailableReasonKind
-    of burBlockNotFound:
-      blockNotFoundId*: BlockId
-    of burStartBlockNotFound:
-      discard
-    of burUnknown:
-      unknownMessage*: string
-
   DownloadBlocksResponseKind* = enum
     dbrBlock = 0
     dbrNoMoreBlocks = 1
@@ -68,7 +53,7 @@ type
     of dbrNoMoreBlocks:
       discard
     of dbrFailure:
-      failureReason*: BlocksUnavailableReason
+      failureMessage*: string
 
 # ---------------------------------------------------------------------------
 # Chain-sync request envelope
@@ -127,7 +112,6 @@ deriveBincode(Block)
 deriveBincode(Tip)
 deriveBincode(KnownBlocks)
 deriveBincode(DownloadBlocksRequest)
-deriveBincode(BlocksUnavailableReason)
 deriveBincode(DownloadBlocksResponse)
 deriveBincode(RequestMessage)
 deriveBincode(GetTipResponse)
