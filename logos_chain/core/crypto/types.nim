@@ -13,7 +13,7 @@
 
 {.push raises: [], gcsafe.}
 
-import std/options
+import results
 import libp2p/crypto/ed25519/ed25519
 import stew/endians2
 import ../../zk/poseidon2/hasher           # FieldElement (+ re-exported poseidon2 symbols)
@@ -165,10 +165,8 @@ proc decodeGroth16*(data: openArray[byte]): CompressedGroth16Proof {.raises: [De
   res
 
 proc decodeFieldElementAt*(data: openArray[byte], pos: var int): FieldElement {.raises: [DecodingError].} =
-  let parsed = frFromBytesLE(readFixed[32](data, pos))
-  if parsed.isNone:
+  frFromBytesLE(readFixed[32](data, pos)).valueOr:
     raise newException(DecodingError, "field element exceeds BN254 scalar modulus")
-  parsed.get()
 
 func decodeFieldElement*(data: openArray[byte]): FieldElement {.raises: [DecodingError].} =
   var pos = 0

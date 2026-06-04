@@ -21,6 +21,6 @@ type
     genesisBlock*: Block
 
 proc init*(settings: DeploymentSettings): Result[Chain, string] =
-  ok(Chain(genesisBlock: createGenesisBlock(settings.cryptarchia.genesisState)))
+  ok(Chain(genesisBlock: createGenesisBlock(settings.cryptarchia.genesisState.signedMantleTx)))
 
 {.pop.}

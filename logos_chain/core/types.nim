@@ -45,7 +45,7 @@ type
     signature*: Ed25519Signature
 
 
-func hashPair(left, right: Hash32): Hash32 =
+func hashPair*(left, right: Hash32): Hash32 =
   var pairBytes: array[64, byte]
   copyMem(addr pairBytes[0], unsafeAddr left[0], 32)
   copyMem(addr pairBytes[32], unsafeAddr right[0], 32)

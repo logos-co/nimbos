@@ -12,7 +12,7 @@
 
 {.push raises: [], gcsafe.}
 
-import std/[heapqueue, options, strutils]
+import std/[heapqueue, strutils]
 
 import
   results,
@@ -50,7 +50,7 @@ type
     of Empty:
       eHeight: int          # valid only as right-of-Inner or as root
     of Leaf:
-      item: Option[Item]
+      item: Opt[Item]
 
   DynamicMerkleTree*[Item, Hash] = object
     ## Persistent fixed-depth Merkle tree. Capacity = 2^TreeDepth.
@@ -176,9 +176,9 @@ func insertAt[Item, Hash](n: Node[Item, Hash]; index: int; item: sink Item): Nod
     of Leaf:
       doAssert leaf.item.isNone,
         "cannot insert: leaf at this position is already populated"
-      Node[Item, Hash](kind: Leaf, item: some(item))
+      Node[Item, Hash](kind: Leaf, item: Opt.some(item))
     of Empty:
-      Node[Item, Hash](kind: Leaf, item: some(item))
+      Node[Item, Hash](kind: Leaf, item: Opt.some(item))
     of Inner:
       doAssert false, "modifyAt handed a non-terminal node to f"
       leaf)
@@ -187,7 +187,7 @@ func removeAt[Item, Hash](n: Node[Item, Hash]; index: int): Node[Item, Hash] =
   modifyAt(n, index, proc(leaf: Node[Item, Hash]): Node[Item, Hash] =
     doAssert leaf.kind == Leaf and leaf.item.isSome,
       "cannot remove: leaf is empty"
-    Node[Item, Hash](kind: Leaf, item: none(Item)))
+    Node[Item, Hash](kind: Leaf, item: Opt.none(Item)))
 
 func insert*[Item, Hash](t: DynamicMerkleTree[Item, Hash]; item: sink Item):
     tuple[tree: DynamicMerkleTree[Item, Hash], leafIndex: int] =

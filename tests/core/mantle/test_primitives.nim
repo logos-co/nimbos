@@ -9,6 +9,7 @@
 {.used.}
 
 import unittest2
+import libp2p/multiaddress
 import ../../../logos_chain/core/mantle/primitives
 
 suite "core/mantle/primitives":
@@ -50,5 +51,11 @@ suite "core/mantle/primitives":
   test "decodeOpcode roundtrips encodeOpcode":
     let wire = @[encodeOpcode(0x42'u8)]
     check decodeOpcode(wire) == 0x42'u8
+
+  test "decodeLocator roundtrips encodeLocator":
+    let locator = MultiAddress.init("/ip4/127.0.0.1/udp/30303/quic-v1").tryGet()
+    let wire = encodeLocator(locator)
+    let back = decodeLocator(wire)
+    check back.data() == locator.data()
 
 {.pop.}

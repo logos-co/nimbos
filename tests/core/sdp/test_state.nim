@@ -10,6 +10,7 @@
 
 import std/sets
 import unittest2
+import libp2p/multiaddress
 import ../../../logos_chain/core/mantle/primitives
 import ../../../logos_chain/core/sdp/state
 
@@ -24,21 +25,19 @@ suite "core/sdp/state":
     check d.nonce == 0'u64
     check d.service == ServiceType.bn
 
-  test "validate accepts valid locator and rejects malformed/oversized ones":
-    let good = Locator(cast[seq[byte]]("/ip4/127.0.0.1/tcp/30303"))
-    validate(good)
+  test "validateLocator accepts valid locator and rejects oversized ones":
+    let good = MultiAddress.init("/ip4/127.0.0.1/tcp/30303").tryGet()
+    validateLocator(good)
 
-    var malformedRaised = false
-    try:
-      validate(Locator(cast[seq[byte]]("not-a-multiaddr")))
-    except AssertionDefect:
-      malformedRaised = true
-    check malformedRaised
+    check MultiAddress.init("not-a-multiaddr").isErr
 
+    var longMaStr = "/ip4/127.0.0.1/tcp/30303"
+    while MultiAddress.init(longMaStr).tryGet().data().buffer.len <= MaxLocatorMultiaddrBytes:
+      longMaStr &= "/ip4/1.1.1.1"
+    let tooLong = MultiAddress.init(longMaStr).tryGet()
     var tooLongRaised = false
-    let tooLong = newSeq[byte](MaxLocatorMultiaddrBytes + 1)
     try:
-      validate(Locator(tooLong))
+      validateLocator(tooLong)
     except AssertionDefect:
       tooLongRaised = true
     check tooLongRaised

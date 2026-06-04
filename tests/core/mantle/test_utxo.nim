@@ -47,7 +47,7 @@ suite "Utxo.id":
     let
       id = mkUtxo().id
       bytes = id.toBytes
-      reconstructed = NoteId.fromBytes(bytes).get
+      reconstructed = NoteId.fromBytes(bytes).get()
     check id == reconstructed
 
   test "cross-language reference vector matches Rust `test_note_id`":

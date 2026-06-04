@@ -7,20 +7,19 @@
 
 {.push raises: [], gcsafe.}
 
-import std/options
-
 import
   ../../../logos_chain/core/types,
   ../../../logos_chain/core/crypto/hashing,
   ../../../logos_chain/core/mantle/
-    [primitives, operations, proofs, tx_types, utxo]
+    [primitives, operations, proofs, tx_types, utxo],
+  ../../../logos_chain/zk/poseidon2/hasher
 
 type TestId* = BlockId
 
 func mkZkPubKey(seed: byte): ZkPublicKey =
   var bytes: array[32, byte]
   bytes[0] = seed
-  F.fromBytes(bytes).get
+  frFromBytesLE(bytes).get
 
 func mkUtxo*(
     value: Value = 100, pkSeed: byte = 1, opIdSeed: byte = 0,

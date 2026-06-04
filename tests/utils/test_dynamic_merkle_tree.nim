@@ -8,11 +8,9 @@
 {.push raises: [], gcsafe.}
 {.used.}
 
-import std/options
-
 import unittest2
 import results
-import poseidon2/[types, io]
+import poseidon2/types
 
 import ../../logos_chain/utils/dynamic_merkle_tree
 import ../../logos_chain/zk/poseidon2/hasher # Poseidon2Hasher
@@ -30,7 +28,7 @@ func frFomInt(n: int): F =
   var bytes: array[32, byte]
   for i in 0 ..< 8:
     bytes[i] = byte((n shr (i * 8)) and 0xff)
-  F.fromBytes(bytes).get
+  frFromBytesLE(bytes).get
 
 suite "DynamicMerkleTree empty":
   test "fresh tree has empty root":

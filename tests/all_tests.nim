@@ -16,6 +16,7 @@ import # Unit test
   ./test_logos_p2p,
   ./test_api_handlers,
   ./test_deployment_settings,
+  ./test_poseidon_hasher,
   ./core/crypto/test_hashing,
   ./core/crypto/test_types,
   ./core/mantle/test_primitives,
@@ -26,13 +27,13 @@ import # Unit test
   ./core/mantle/test_utxo,
   ./core/test_block_types,
   ./core/test_genesis,
+  ./core/test_devnet_genesis_mantle_tx,
   ./core/sdp/test_state,
   ./utils/test_hash_trie_map,
   ./utils/test_dynamic_merkle_tree,
   ./ledger/test_utxo_store,
   ./ledger/test_cryptarchia,
-  ./ledger/test_ledger,
-  ./test_poseidon_hasher
+  ./ledger/test_ledger
 
 summarizeLongTests("AllTests")
 

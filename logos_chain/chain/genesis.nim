@@ -19,6 +19,13 @@ export types, hashing
 const
   GenesisBedrockVersion* = 1'u8
 
+type
+  GenesisState* = object
+    signedMantleTx*: SignedMantleTx
+    faucetZkPublicKey*: ZkPublicKey
+    header*: Header
+    blockSignature*: Ed25519Signature
+
 func createGenesisHeader(genesisMantleTx: SignedMantleTx): Header =
   ## Genesis header constructor using spec defaults:
   ## - parent block id = zero hash

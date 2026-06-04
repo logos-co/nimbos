@@ -133,6 +133,11 @@ suite "core/types":
       15'u64,
       16'u64,
     )
+    let hA = mantleTxHash(txA.tx)
+    let hB = mantleTxHash(txB.tx)
+    let hC = mantleTxHash(txC.tx)
+    let zero = default(Hash32)
+    check createBlockRoot([txA, txB, txC]) == hashPair(hashPair(hA, hB), hashPair(hC, zero))
     check createBlockRoot([txA, txB, txC]) != createBlockRoot([txA, txB, txC, txC])
 
   test "blockId is deterministic for same header":

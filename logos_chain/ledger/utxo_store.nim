@@ -64,10 +64,8 @@ func remove*(
     s: UtxoStore, id: NoteId
 ): Result[tuple[store: UtxoStore, utxo: Utxo], UtxoStoreError] =
   ## Removes the entry for ``id`` and returns the removed Utxo.
-  let entry = s.utxos.get(id)
-  if entry.isNone:
+  let (removedUtxo, leafIndex) = s.utxos.get(id).valueOr:
     return err(NotFound)
-  let (removedUtxo, leafIndex) = entry.get
   ok(
     (UtxoStore(utxos: s.utxos.remove(id), tree: s.tree.remove(leafIndex)), removedUtxo)
   )
@@ -78,10 +76,9 @@ func root*(s: UtxoStore): FieldElement =
 
 func path*(s: UtxoStore, id: NoteId): Opt[MerklePath] =
   ## Inclusion proof for ``id``, or ``Opt.none`` if the id isn't present.
-  let entry = s.utxos.get(id)
-  if entry.isNone:
+  let entry = s.utxos.get(id).valueOr:
     return Opt.none(MerklePath)
-  s.tree.path(entry.get.leafIndex)
+  s.tree.path(entry.leafIndex)
 
 func `==`*(a, b: UtxoStore): bool =
   ## Structural equality: same NoteId→Utxo map and same Merkle root.

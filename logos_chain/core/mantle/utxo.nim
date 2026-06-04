@@ -10,8 +10,7 @@
 {.push raises: [], gcsafe.}
 
 import
-  std/options,
-  stew/endians2, poseidon2/types,
+  stew/endians2,
   ./primitives, ../../zk/poseidon2/hasher
 
 type Utxo* = object

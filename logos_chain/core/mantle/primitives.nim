@@ -11,7 +11,9 @@
 
 {.push raises: [], gcsafe.}
 
+import results
 import ../crypto/[hashing, types]
+import libp2p/multiaddress
 import poseidon2/[types, io]
 export hashing, types, io
 export
@@ -56,7 +58,7 @@ type
 
   ServiceType* = enum
     bn = 0
-  Locator* = seq[byte]
+  Locator* = MultiAddress
 
   Opcode* = uint8
   OpCount* = uint8
@@ -227,9 +229,10 @@ func encodeLocatorCount*(value: byte): byte =
 
 func encodeLocator*(value: Locator): seq[byte] =
   ## Locator = 2Byte * BYTE ; Max 329 bytes, multiaddr format
-  doAssert value.len <= MaxLocatorMultiaddrBytes,
+  let locatorBytes = value.data().buffer
+  doAssert locatorBytes.len <= MaxLocatorMultiaddrBytes,
     "Locator exceeds max multiaddr byte length"
-  encodeU16LeLenPrefixed(value)
+  encodeU16LeLenPrefixed(locatorBytes)
 
 func decodeDeclarationId*(data: openArray[byte]): DeclarationId {.raises: [DecodingError].} =
   decodeHash32(data)
@@ -315,7 +318,8 @@ proc readLocator*(data: openArray[byte], pos: var int): Locator {.raises: [Decod
   let raw = readU16LeLenPrefixed(data, pos)
   if raw.len > MaxLocatorMultiaddrBytes:
     raise newException(DecodingError, "Locator exceeds max multiaddr byte length")
-  raw
+  MultiAddress.init(raw).valueOr:
+    raise newException(DecodingError, "invalid Locator multiaddr: " & error)
 
 func decodeLocator*(data: openArray[byte]): Locator {.raises: [DecodingError].} =
   var pos = 0

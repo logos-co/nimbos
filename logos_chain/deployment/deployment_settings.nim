@@ -5,13 +5,10 @@
 #   * Apache v2 license (license terms in the root directory or at https://opensource.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-## **Genesis state:** ``cryptarchia.genesis_state`` is parsed into typed
-## ``SignedMantleTx`` data.
-## TODO(genesis-from-deployment): replace placeholder byte payload/proof content
-## with canonical typed payload/proof decoding and validation.
-## A follow-up change should parse YAML into those typed fields without changing
-## the public load path: ``loadDeploymentSettings`` → ``parseDeploymentSettings`` →
-## ``deploymentSettingsFromYaml``.
+## **Genesis:** deployment YAML must define ``cryptarchia.genesis_block`` (Bedrock layout:
+## ``header``, ``signature``, ``transactions``; the first transaction carries ``mantle_tx`` and
+## ``ops_proofs``). Parsed into ``CryptarchiaDeploymentSettings.genesisState`` (``GenesisState``:
+## signed genesis mantle tx, ``faucet_pk``, ``genesis_block.header``, and ``genesis_block.signature``).
 
 {.push raises: [].}
 
@@ -22,15 +19,13 @@ import
   results,
   stew/io2,
   yaml/dom,
-  ../core/types,
+  ../chain/genesis,
   ./deployment_settings_helpers
 
 export
   dom,
-  parseDeploymentGenesisState,
-  parseDeploymentSettingsYaml,
-  yamlGetPathNode,
-  yamlGetPathScalar
+  genesis,
+  deployment_settings_helpers
 
 type
   BlendSchedulerCover* = object
@@ -95,11 +90,10 @@ type
     learningRate*: float
     sdpConfig*: SdpConfig
     gossipsubProtocol*: string
-    genesisState*: SignedMantleTx
+    genesisState*: GenesisState
 
   TimeDeploymentSettings* = object
     slotDuration*: Duration
-    chainStartTime*: string
 
   MempoolDeploymentSettings* = object
     pubsubTopic*: string
@@ -113,7 +107,7 @@ type
 
 func validateDeploymentSettingsStructure(root: YamlNode): Result[void, string] =
   template needPath(path: openArray[string]) =
-    if yamlGetPathNode(root, path).isNone:
+    yamlGetPathNode(root, path).isOkOr:
       return err("deployment-settings: missing or invalid path: " & path.join("."))
   ? requireTopLevelMapping(root, "blend")
   ? requireTopLevelMapping(root, "network")
@@ -148,12 +142,9 @@ func validateDeploymentSettingsStructure(root: YamlNode): Result[void, string] =
   needPath(["cryptarchia", "sdp_config", "min_stake", "threshold"])
   needPath(["cryptarchia", "sdp_config", "min_stake", "timestamp"])
   needPath(["cryptarchia", "gossipsub_protocol"])
-  needPath(["cryptarchia", "genesis_state", "mantle_tx", "ops"])
-  needPath(["cryptarchia", "genesis_state", "mantle_tx", "execution_gas_price"])
-  needPath(["cryptarchia", "genesis_state", "mantle_tx", "storage_gas_price"])
-  needPath(["cryptarchia", "genesis_state", "ops_proofs"])
+  needPath(["cryptarchia", "faucet_pk"])
+  ? validateCryptarchiaGenesisYaml(root)
   needPath(["time", "slot_duration"])
-  needPath(["time", "chain_start_time"])
   needPath(["mempool", "pubsub_topic"])
   ok()
 
@@ -222,7 +213,6 @@ func deploymentSettingsFromYaml(root: YamlNode): Result[DeploymentSettings, stri
     ),
     time: TimeDeploymentSettings(
       slotDuration: ? reqSlotDuration(root, ["time", "slot_duration"]),
-      chainStartTime: ? reqScalar(root, ["time", "chain_start_time"])
     ),
     mempool: MempoolDeploymentSettings(
       pubsubTopic: ? reqScalar(root, ["mempool", "pubsub_topic"])
@@ -281,7 +271,6 @@ func validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
   need(ds.network.identifyProtocolName.len > 0, "empty network.identify_protocol_name")
   need(ds.network.chainSyncProtocolName.len > 0, "empty network.chain_sync_protocol_name")
   need(ds.time.slotDuration > ZeroDuration, "time.slot_duration must be > 0")
-  need(ds.time.chainStartTime.len > 0, "empty time.chain_start_time")
   need(ds.mempool.pubsubTopic.len > 0, "empty mempool.pubsub_topic")
   need(ds.cryptarchia.gossipsubProtocol.len > 0, "empty cryptarchia.gossipsub_protocol")
   need(ds.blend.common.protocolName.len > 0, "empty blend.common.protocol_name")
@@ -295,39 +284,39 @@ func validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
   need(ds.mempool.pubsubTopic.startsWith("/"), "mempool.pubsub_topic must start with '/'")
   need(ds.cryptarchia.gossipsubProtocol.startsWith("/"), "cryptarchia.gossipsub_protocol must start with '/'")
 
-  let smt = ds.cryptarchia.genesisState
+  let smt = ds.cryptarchia.genesisState.signedMantleTx
   need(smt.tx.ops.len > 0,
-    "cryptarchia.genesis_state.mantle_tx.ops must be non-empty")
+    "cryptarchia.genesis_block.transactions[0].mantle_tx.ops must be non-empty")
   let genesisProofCount = smt.opProofs.len
   let genesisOpCount = smt.tx.ops.len
   need(
     genesisProofCount <= genesisOpCount,
-    "cryptarchia.genesis_state: len(ops_proofs) must be <= len(ops)"
+    "cryptarchia.genesis_block: len(ops_proofs) must be <= len(ops)"
   )
   for i in 0 ..< smt.opProofs.len:
     let expectedKind = expectedOpProofKindForOpcode(smt.tx.ops[i].opcode)
     let proofOk = smt.opProofs[i].kind == expectedKind
     need(
       proofOk,
-      "cryptarchia.genesis_state: ops_proofs[" & $i & "] does not match ProofFor(mantle_tx.ops[" & $i & "])"
+      "cryptarchia.genesis_block: ops_proofs[" & $i & "] does not match ProofFor(mantle_tx.ops[" & $i & "])"
     )
   need(smt.tx.executionGasPrice == TokenValue(0'u64),
-    "cryptarchia.genesis_state.mantle_tx.execution_gas_price must be 0 for genesis")
+    "cryptarchia.genesis_block first mantle_tx.execution_gas_price must be 0 for genesis")
   need(smt.tx.permanentStorageGasPrice == TokenValue(0'u64),
-    "cryptarchia.genesis_state.mantle_tx.storage_gas_price must be 0 for genesis")
+    "cryptarchia.genesis_block first mantle_tx.storage_gas_price must be 0 for genesis")
   need(smt.tx.ops.len >= 2,
-    "cryptarchia.genesis_state.mantle_tx.ops must contain at least transfer and inscription")
+    "cryptarchia.genesis_block first mantle_tx.ops must contain at least transfer and inscription")
   need(
     smt.tx.ops[0].opcode == OpTransfer,
-    "cryptarchia.genesis_state.mantle_tx.ops[0] must be transfer")
+    "cryptarchia.genesis_block first mantle_tx.ops[0] must be transfer")
   need(
     smt.tx.ops[1].opcode == OpChannelInscribe,
-    "cryptarchia.genesis_state.mantle_tx.ops[1] must be channel_inscribe")
+    "cryptarchia.genesis_block first mantle_tx.ops[1] must be channel_inscribe")
   if smt.tx.ops.len > 2:
     for i in 2 ..< smt.tx.ops.len:
       need(
         smt.tx.ops[i].opcode == OpSdpDeclare,
-        "cryptarchia.genesis_state.mantle_tx.ops[" & $i & "] must be sdp_declare")
+        "cryptarchia.genesis_block first mantle_tx.ops[" & $i & "] must be sdp_declare")
 
   ok()
 
@@ -340,5 +329,10 @@ proc loadDeploymentSettings*(deploymentSettingsFile: InputFile): Result[Deployme
   let ds = ? parseDeploymentSettings(text)
   ? validateDeploymentSettings(ds)
   ok(ds)
+
+export
+  parseDeploymentSettings,
+  validateDeploymentSettings,
+  loadDeploymentSettings
 
 {.pop.}
