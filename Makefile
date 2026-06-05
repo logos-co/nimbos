@@ -128,10 +128,24 @@ ifeq ($(USE_LIBBACKTRACE), 0)
 NIM_PARAMS += -d:disable_libbacktrace
 endif
 
-deps: | deps-common nat-libs build/generate_makefile
+deps: | deps-common nat-libs build/generate_makefile circuits-install
 ifneq ($(USE_LIBBACKTRACE), 0)
 deps: | libbacktrace
 endif
+
+# Install logos-blockchain-circuits release bundle (VK + zkey + witness binaries).
+# Keep LBC_VERSION in sync with `ExpectedCircuitsVersion` in logos_chain/zk/circuits.nim.
+LBC_VERSION := v0.4.2
+LBC_INSTALL_DIR := $(HOME)/.logos-blockchain-circuits
+
+.PHONY: circuits-install
+circuits-install:
+	@if [ -f "$(LBC_INSTALL_DIR)/VERSION" ] && \
+	    [ "$$(cat $(LBC_INSTALL_DIR)/VERSION)" = "$(LBC_VERSION)" ]; then \
+		echo "logos-blockchain-circuits $(LBC_VERSION) present at $(LBC_INSTALL_DIR)"; \
+	else \
+		./scripts/setup-logos-blockchain-circuits.sh $(LBC_VERSION); \
+	fi
 
 #- deletes binaries that might need to be rebuilt after a Git pull
 update: | update-common

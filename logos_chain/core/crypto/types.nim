@@ -19,6 +19,7 @@ import
   libp2p/crypto/ed25519/ed25519,
   stew/[assign2, endians2],
   ../../zk/poseidon2/hasher           # FieldElement (+ re-exported poseidon2 symbols)
+
 export hasher
 
 type

@@ -18,7 +18,11 @@ import
   ./core/[types, utils],
   ./deployment/deployment_settings,
   ./networking/network,
-  ./sync/syncer
+  ./sync/syncer,
+  ./core/utils,
+  ./process_state,
+  ./zk/[circuits, pol]
+
 from ./core/types as coreTypes import Block, blockId
 from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
 from libp2p/protocols/pubsub/gossipsub import
@@ -70,6 +74,19 @@ proc init*(
 
   # Doesn't use std/random directly, but dependencies might
   randomize(rng[].rand(high(int)))
+
+  let circuitsDir = string(config.circuitsDir)
+  verifyCircuitsVersion(circuitsDir).isOkOr:
+    fatal "logos-blockchain-circuits bundle check failed",
+      dir = circuitsDir,
+      expected = ExpectedCircuitsVersion,
+      err = $error,
+      hint = "Run scripts/setup-logos-blockchain-circuits.sh"
+    return Opt.none(LBNode)
+  pol.loadAndInitVk(circuitsDir).isOkOr:
+    fatal "PoL verification key install failed",
+      path = polVerificationKeyPath(circuitsDir), err = $error
+    return Opt.none(LBNode)
 
   let chain = Chain.init(deploymentSettings).valueOr:
     fatal "Failed to initialize chain", err = error

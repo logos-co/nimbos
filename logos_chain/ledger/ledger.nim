@@ -38,19 +38,25 @@ func latestUtxos*(s: LedgerState): lent UtxoStore =
   ## The live UTXO set.
   s.cryptarchiaLedger.latestUtxos
 
-func tryApplyHeader*(
+proc tryApplyHeader*(
     state: sink LedgerState,
     slot: SlotNumber,
     proof: ProofOfLeadership,
-    leaderVerifier: LeaderProofVerifier,
+    flags: LedgerFlags = {},
 ): Result[LedgerState, LedgerError] =
-  ## Verifies the leader proof; returns `InvalidProof` on rejection.
+  ## Verifies the leader proof against the singleton PoL VK installed at
+  ## startup. Returns `InvalidProof` on rejection, `VerifierNotInitialised`
+  ## if the singleton wasn't installed. `skipLeaderProofVerification` in
+  ## `flags` bypasses the verify call entirely (test escape hatch).
   # Epoch-derived `LeaderPublic` fields (nonce, lottery, agedRoot) stay at
   # `default(FieldElement)` until `EpochState` lands.
   let public =
     LeaderPublic(slot: slot, latestRoot: state.cryptarchiaLedger.latestUtxos.root)
-  if not leaderVerifier(proof, public):
-    return err(InvalidProof)
+  if skipLeaderProofVerification notin flags:
+    let verified = verifyLeaderProof(proof, public).valueOr:
+      return err(VerifierNotInitialised)
+    if not verified:
+      return err(InvalidProof)
   ok(state)
 
 func tryApplyTx*(
@@ -138,7 +144,7 @@ func pruneStateAt*[Id](l: var Ledger[Id], id: Id): bool =
   else:
     false
 
-func prepareUpdate*[Id](
+proc prepareUpdate*[Id](
     l: Ledger[Id],
     id, parentId: Id,
     slot: SlotNumber,
@@ -146,7 +152,7 @@ func prepareUpdate*[Id](
     txs: openArray[SignedMantleTx],
     lockedNotes: LockedNotes,
     verifier: ZkSigVerifier,
-    leaderVerifier: LeaderProofVerifier,
+    flags: LedgerFlags = {},
 ): Result[tuple[id: Id, state: LedgerState], LedgerError] =
   ## Validates a block's header + transactions against the parent state.
   ## Caller invokes `commitUpdate` to install the result, or drops it to reject.
@@ -154,7 +160,7 @@ func prepareUpdate*[Id](
     return err(ParentNotFound)
   let
     parent = l.states.getOrDefault(parentId)
-    afterHeader = ?parent.tryApplyHeader(slot, proof, leaderVerifier)
+    afterHeader = ?parent.tryApplyHeader(slot, proof, flags)
     afterTxs = ?afterHeader.tryApplyTxns(txs, lockedNotes, verifier)
   ok((id: id, state: afterTxs))
 

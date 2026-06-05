@@ -53,6 +53,10 @@ else:
   {.pragma: windowsOnly, hidden.}
   {.pragma: posixOnly.}
 
+proc defaultCircuitsDir*(): InputDir =
+  ## `~/.logos-blockchain-circuits/`. Override with `--circuits-dir`.
+  InputDir(getHomeDir() / ".logos-blockchain-circuits")
+
 type
   BNStartUpCmd* {.pure.} = enum
     lbNode ## default startup command (CLI name derived by confutils, e.g. `lb-node`)
@@ -313,6 +317,13 @@ type
         desc: "cfgsync deployment-settings YAML (network protocol IDs, mempool pubsub topic, cryptarchia gossipsub protocol)"
         defaultValue: InputFile(defaultDeploymentSettingsPath)
         name: "deployment-settings" .}: InputFile
+
+      circuitsDir* {.
+        desc: "Directory containing the logos-blockchain-circuits release bundle " &
+              "(install via scripts/setup-logos-blockchain-circuits.sh)"
+        defaultValue: defaultCircuitsDir()
+        defaultValueDesc: "~/.logos-blockchain-circuits/"
+        name: "circuits-dir" .}: InputDir
 
   AnyConf* = LBNodeConf
 

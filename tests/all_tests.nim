@@ -38,9 +38,14 @@ import # Unit test
   ./ledger/test_utxo_store,
   ./ledger/test_cryptarchia,
   ./ledger/test_ledger,
+  ./ledger/test_pol_verifier,
   ./logos_chain/sync/test_framing,
   ./logos_chain/sync/test_types,
   ./logos_chain/sync/test_ibd
+  ./zk/test_circuits,
+  ./zk/test_pol,
+  ./zk/groth16/test_vk_json,
+  ./zk/groth16/test_verifier
 
 summarizeLongTests("AllTests")
 
