@@ -133,9 +133,4 @@ suite "ledger/pol_verifier":
     let r = verifyLeaderProof(badPol, public)
     check r.isOk and not r.get
 
-  # Byte-level proof mutation covered at the verifier layer
-  # (`tests/zk/groth16/test_verifier.nim`); VkNotLoaded propagation covered at
-  # `tests/zk/test_pol.nim` where the singleton lives. Both are pass-through
-  # for this layer.
-
 {.pop.}

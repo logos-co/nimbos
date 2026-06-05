@@ -348,10 +348,6 @@ suite "prepareUpdate":
     check l.state(mkId(0x02)).get.latestUtxos.len == 1
     check not l.state(mkId(0x02)).get.latestUtxos.contains(input.id)
 
-  # "rejected leader proof → InvalidProof" — coverage moved to
-  # `tests/ledger/test_pol_verifier.nim` which exercises real Groth16 rejection
-  # paths (bit-flip, out-of-modulus entropy, mutated leader key, …).
-
   test "unbalanced tx → UnbalancedTransaction":
     let
       input = mkUtxo(value = 100, pkSeed = 1)

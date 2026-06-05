@@ -136,8 +136,4 @@ suite "zk/pol — verify":
     let r = verify(proofBytes, bad)
     check r.isOk and not r.get
 
-  # Byte-level proof mutation is covered by `tests/zk/groth16/test_verifier.nim`
-  # at the verifier layer; the happy-path test above already proves this layer
-  # passes `proofBytes` through unchanged.
-
 {.pop.}

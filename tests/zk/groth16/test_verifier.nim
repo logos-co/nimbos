@@ -68,7 +68,7 @@ suite "zk/groth16/verifier":
     check not verifyGroth16(vk, bytes, publicInputs)
 
   test "Q1 canary — verify result unchanged with non-zero beta1/delta1":
-    # Plan §7 Q1: vendor verifier doesn't read spec.beta1/spec.delta1. Bumping
+    # Vendor verifier doesn't read spec.beta1/spec.delta1. Bumping
     # them to a non-default G1 (we reuse alpha1) must not flip the verify result.
     # Catches future vendor changes that start consuming the G1 halves.
     var vkBumped = vk
