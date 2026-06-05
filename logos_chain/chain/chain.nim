@@ -10,9 +10,9 @@
 {.push raises: [].}
 
 import results
-import ./core/types
-import ./deployment/deployment_settings
-import ./chain/genesis
+import ../core/types
+import ../deployment/deployment_settings
+import ./genesis
 
 export genesis
 
