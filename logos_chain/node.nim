@@ -14,20 +14,25 @@ import
   chronos, chronicles, presto, presto/server, bearssl/rand,
   metrics, metrics/chronos_httpserver,
   eth/p2p/discoveryv5/random2,
+  stew/byteutils,
 
   # Local modules
+  ./chain/chain,
   ./conf,
+  ./core/types,
   ./deployment/deployment_settings,
   ./networking/network,
   ./core/utils,
   ./process_state
+
+from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
 
 from libp2p/protocols/pubsub/gossipsub import
   TopicParams, init
 
 export
   osproc, chronos, presto, server, conf,
-  deployment_settings, network, utils
+  deployment_settings, network, utils, chain
 
 logScope: topics = "logos_nd"
 
@@ -37,6 +42,7 @@ type
     netKeys*: NetKeyPair
     config*: LBNodeConf
     deploymentSettings*: DeploymentSettings
+    chain*: Chain
     metricsServer*: Opt[MetricsHttpServerRef]
     shutdownEvent*: AsyncEvent
 
@@ -71,6 +77,36 @@ proc init*(
   # Doesn't use std/random directly, but dependencies might
   randomize(rng[].rand(high(int)))
 
+  let chain = chain.init(deploymentSettings).valueOr:
+    fatal "Failed to initialize chain", err = error
+    return Opt.none(LBNode)
+
+  block:
+    let genesisBlock = chain.genesisBlock
+    let genesisState = genesisBlock.txs[0]
+    var leaderKeyBytes: array[EdPublicKeySize, byte]
+    let leaderKeyWritten = toBytes(
+      genesisBlock.header.proofOfLeadership.leaderKey, leaderKeyBytes)
+    doAssert leaderKeyWritten == EdPublicKeySize,
+      "failed to encode genesis PoL leader key"
+    info "Initialized chain from deployment settings",
+      genesisBlockId = byteutils.toHex(blockId(genesisBlock.header)),
+      bedrockVersion = genesisBlock.header.bedrockVersion,
+      slot = genesisBlock.header.slot,
+      parentBlock = byteutils.toHex(genesisBlock.header.parentBlock),
+      blockRoot = byteutils.toHex(genesisBlock.header.blockRoot),
+      txCount = genesisBlock.txs.len,
+      opCount = genesisState.tx.ops.len,
+      proofCount = genesisState.opProofs.len,
+      executionGasPrice = genesisState.tx.executionGasPrice,
+      storageGasPrice = genesisState.tx.permanentStorageGasPrice,
+      polLeaderVoucher =
+        byteutils.toHex(genesisBlock.header.proofOfLeadership.leaderVoucher),
+      polEntropyContribution =
+        byteutils.toHex(genesisBlock.header.proofOfLeadership.entropyContribution),
+      polProof = byteutils.toHex(genesisBlock.header.proofOfLeadership.proof),
+      polLeaderKey = byteutils.toHex(leaderKeyBytes)
+
   let
     network = createLBNode(
       rng,
@@ -84,6 +120,7 @@ proc init*(
     network: network,
     config: config,
     deploymentSettings: deploymentSettings,
+    chain: chain,
     shutdownEvent: newAsyncEvent())
 
 when defined(windows):
