@@ -415,7 +415,7 @@ proc onBlock*(
     localTree: LocalTree,
     blk: Block,
 ) {.raises: [InvalidBlock].} =
-  if not validateBlockHeader(blk, localTree) or not validateBlockBody(blk):
+  if not validateBlock(blk, localTree):
     raise newException(InvalidBlock, "invalid block")
   discard addBlockToTree(localTree, blk)
   let h = blk.header

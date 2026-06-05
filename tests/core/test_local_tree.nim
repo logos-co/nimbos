@@ -108,6 +108,27 @@ suite "core/local_tree":
     tree.latestImmutableHeight = 1'u64
     check tree.latestImmutableBlockId == id1
 
+  test "isFutureDescendantOfImmutable accepts child extending past immutable tip":
+    let sm = minimalSignedTx()
+    let genesis = createGenesisBlock(sm)
+    let gid = blockId(genesis.header)
+    let tree = newLocalTree(genesis, latestImmutableHeight = 0'u64)
+    let b1 = childBlock(genesis.header, gid, 1'u64, [sm])
+    check tree.isFutureDescendantOfImmutable(b1.header)
+
+  test "isFutureDescendantOfImmutable rejects block at or before immutable height":
+    let sm = minimalSignedTx()
+    let genesis = createGenesisBlock(sm)
+    let gid = blockId(genesis.header)
+    let tree = newLocalTree(genesis, latestImmutableHeight = 1'u64)
+    let b1 = childBlock(genesis.header, gid, 1'u64, [sm])
+    check tree.addBlockToTree(b1)
+    let id1 = blockId(b1.header)
+    let b2 = childBlock(b1.header, id1, 2'u64, [sm])
+    check tree.isFutureDescendantOfImmutable(b2.header)
+    let replay = childBlock(genesis.header, gid, 1'u64, [sm])
+    check not tree.isFutureDescendantOfImmutable(replay.header)
+
 suite "core/local_tree (lcaBlockId)":
   test "lcaBlockId of genesis with itself is genesis":
     let sm = minimalSignedTx()

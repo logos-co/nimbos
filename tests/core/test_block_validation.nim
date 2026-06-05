@@ -28,7 +28,12 @@ proc minimalSignedTx(): SignedMantleTx =
     opProofs: @[],
   )
 
-proc childBlock(parentHdr: Header, parentId: BlockId, slot: SlotNumber, txs: openArray[SignedMantleTx]): Block =
+proc childBlock(
+    parentHdr: Header,
+    parentId: BlockId,
+    slot: SlotNumber,
+    txs: openArray[SignedMantleTx],
+): Block =
   let h = initHeader(
     bedrockVersion = parentHdr.bedrockVersion,
     parentBlock = parentId,
@@ -45,8 +50,7 @@ suite "core/block_validation":
     let gid = blockId(genesis.header)
     let tree = newLocalTree(genesis)
     let b1 = childBlock(genesis.header, gid, SlotNumber(1), [sm])
-    check validateBlockHeader(b1, tree)
-    check validateBlockBody(b1)
+    check validateBlock(b1, tree)
 
   test "validateBlockHeader rejects wrong bedrock version":
     let sm = minimalSignedTx()

@@ -5,29 +5,32 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to these terms.
 
+## Bedrock `valid_header(B)` from block construction / validation spec.
+## Spec: [1.1.1 Block Construction, Validation and Execution](https://nomos-tech.notion.site/1-1-1-Block-Construction-Validation-and-Execution-269261aa09df807185a9e0764acffe22)
+
 {.push raises: [], gcsafe.}
 
 import results
-
 import ./local_tree
-from ./types import Block, Header, createBlockRoot, ExpectedBedrockVersion, MaxBlockSize
+
+from ./types import
+  Block, Header, createBlockRoot, ExpectedBedrockVersion, MaxBlockSize
 from ./mantle/primitives import MaxBlockTxs, SlotNumber
 from ./mantle/tx_types import SignedMantleTx, encodeSignedMantleTx
+
+func wallclockSlot(): SlotNumber =
+  ## TODO: implement `wallclock_time().to_slot()` from deployment genesis time
+  ## and slot duration.
+  high(SlotNumber)
 
 proc txBytesLen(txs: openArray[SignedMantleTx]): int =
   for stx in txs:
     result += encodeSignedMantleTx(stx).len
 
-proc currentWallclockSlot(): SlotNumber =
-  SlotNumber(1_000_000_000'u64) # TODO: map wall clock to protocol slot
-
 proc verifyPoL(localTree: LocalTree, header: Header): bool =
+  ## TODO: implement `verifyPoL()`.
   discard localTree
-  discard header # TODO: verify PoL
-  true
-
-proc verifyHeaderLeaderAuth(header: Header): bool =
-  discard header # TODO: leader auth / signatures
+  discard header
   true
 
 proc validateBlockHeader*(blk: Block, localTree: LocalTree): bool =
@@ -50,22 +53,16 @@ proc validateBlockHeader*(blk: Block, localTree: LocalTree): bool =
   if header.slot <= parentHeader.slot:
     return false
 
-  if currentWallclockSlot() < header.slot:
+  if wallclockSlot() < header.slot:
     return false
 
   if not hasBlock(localTree, header.parentBlock):
     return false
 
-  let parentHeight = blockHeight(localTree, header.parentBlock).valueOr:
-    return false
-  let candidateHeight = parentHeight + 1'u64
-  if candidateHeight <= localTree.latestImmutableHeight:
+  if not isFutureDescendantOfImmutable(localTree, header):
     return false
 
   if not verifyPoL(localTree, header):
-    return false
-
-  if not verifyHeaderLeaderAuth(header):
     return false
 
   true
@@ -73,5 +70,8 @@ proc validateBlockHeader*(blk: Block, localTree: LocalTree): bool =
 proc validateBlockBody*(blk: Block): bool =
   discard blk # TODO: body checks
   true
+
+proc validateBlock*(blk: Block, localTree: LocalTree): bool =
+  validateBlockHeader(blk, localTree) and validateBlockBody(blk)
 
 {.pop.}

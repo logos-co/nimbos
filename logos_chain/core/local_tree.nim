@@ -108,6 +108,26 @@ proc isAncestor*(localTree: LocalTree, ancestor: BlockId, descendant: BlockId): 
     n = n.parent
   false
 
+proc isFutureDescendantOfImmutable*(localTree: LocalTree, header: Header): bool =
+  ## `height(B) > height(B_imm)` and `is_ancestor(B_imm, B)` over the parent
+  ## chain (B is not yet in the tree).
+  let parentHeight = blockHeight(localTree, header.parentBlock).valueOr:
+    return false
+  let candidateHeight = parentHeight + 1'u64
+  if candidateHeight <= localTree.latestImmutableHeight:
+    return false
+  let immId = latestImmutableBlockId(localTree)
+  if immId == default(BlockId):
+    return true
+  var cur = header.parentBlock
+  while cur != default(BlockId):
+    if cur == immId:
+      return true
+    let parentHeader = fetchParentHeader(localTree, cur).valueOr:
+      return false
+    cur = parentHeader.parentBlock
+  false
+
 proc lcaBlockId*(localTree: LocalTree, idA, idB: BlockId): Opt[BlockId] =
   var na = localTree.blocks.getOrDefault(idA, nil)
   var nb = localTree.blocks.getOrDefault(idB, nil)
