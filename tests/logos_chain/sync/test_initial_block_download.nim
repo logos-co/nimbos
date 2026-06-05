@@ -8,14 +8,12 @@
 {.push raises: [].}
 {.used.}
 
-import std/options
 import chronos
 import chronos/unittest2/asynctests
 import unittest2
 
 import libp2p/builders
 
-import ../../../logos_chain/conf
 import ../../../logos_chain/networking/network
 import ../../../logos_chain/core/types
 import ../../../logos_chain/chain/genesis
