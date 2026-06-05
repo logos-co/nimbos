@@ -10,8 +10,7 @@
 import results
 
 import ./local_tree
-import ./types
-from ./types import createBlockRoot, ExpectedBedrockVersion, MaxBlockSize
+from ./types import Block, Header, createBlockRoot, ExpectedBedrockVersion, MaxBlockSize
 from ./mantle/primitives import MaxBlockTxs, SlotNumber
 from ./mantle/tx_types import SignedMantleTx, encodeSignedMantleTx
 
