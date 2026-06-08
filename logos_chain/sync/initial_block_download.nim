@@ -21,10 +21,10 @@ import
 
 import ../core/local_tree
 import ../core/block_validation
-import ./config
+import ./framing
 import ./types
 
-from ../core/types import Block, BlockId, blockId
+from ../core/types import Block, BlockId, blockId, MaxBlockSize
 from ../core/mantle/primitives import SlotNumber
 from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
 

@@ -19,7 +19,7 @@ import ../../../logos_chain/networking/network
 import ../../../logos_chain/core/types
 import ../../../logos_chain/chain/genesis
 import ../../../logos_chain/core/local_tree
-import ../../../logos_chain/sync/[config, types, initial_block_download]
+import ../../../logos_chain/sync/[types, initial_block_download]
 import ./helpers
 import ../../testutil
 

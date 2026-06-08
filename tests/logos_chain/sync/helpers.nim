@@ -16,7 +16,7 @@ import ../../testutil
 import ../../../logos_chain/core/types
 import ../../../logos_chain/chain/genesis
 import ../../../logos_chain/core/local_tree
-import ../../../logos_chain/sync/[config, types, initial_block_download]
+import ../../../logos_chain/sync/[framing, types, initial_block_download]
 
 from ../../../logos_chain/core/mantle/primitives import SlotNumber
 from ../../../logos_chain/core/mantle/tx_types import MantleTx, SignedMantleTx, encodeSignedMantleTx

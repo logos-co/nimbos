@@ -31,6 +31,8 @@ type
     targetBlock*: BlockId
     knownBlocks*: KnownBlocks
 
+const MaxKnownAdditionalBlocks* = 5
+
 # ---------------------------------------------------------------------------
 # IBD download response
 # ---------------------------------------------------------------------------
@@ -101,6 +103,12 @@ type
 # ---------------------------------------------------------------------------
 # Bincode derives (wire codecs)
 # ---------------------------------------------------------------------------
+
+const cryptarchiaSyncBincodeConfig* = BincodeConfig(
+  byteOrder: LittleEndian,
+  intSize: 8,
+  sizeLimit: high(uint64),
+)
 
 deriveBincode(EdPublicKey)
 deriveBincode(EdSignature)

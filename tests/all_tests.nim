@@ -37,7 +37,7 @@ import # Unit test
   ./ledger/test_utxo_store,
   ./ledger/test_cryptarchia,
   ./ledger/test_ledger,
-  ./logos_chain/sync/test_config,
+  ./logos_chain/sync/test_framing,
   ./logos_chain/sync/test_types,
   ./logos_chain/sync/test_initial_block_download
 
