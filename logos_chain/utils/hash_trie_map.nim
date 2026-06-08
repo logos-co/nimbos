@@ -450,9 +450,10 @@ func toHashTrieMap*[K, V](
     let m = toHashTrieMap({"a": 1, "b": 2, "c": 3})
     doAssert m.len == 3
     doAssert m["b"] == 2
-  result = HashTrieMap[K, V].init()
+  var m = HashTrieMap[K, V].init()
   for (k, v) in pairs:
-    result = result.insert(k, v)
+    m = m.insert(k, v)
+  m
 
 func `$`*[K, V](m: HashTrieMap[K, V]): string =
   ## Returns a ``{k: v, ...}`` string. Order is unspecified.
@@ -460,12 +461,13 @@ func `$`*[K, V](m: HashTrieMap[K, V]): string =
     var m = HashTrieMap[int, string].init()
     m = m.insert(1, "one")
     doAssert "1: one" in $m
-  result = "{"
+  var s = "{"
   var first = true
   for (k, v) in m.pairs:
-    if not first: result.add(", ")
+    if not first: s.add(", ")
     first = false
-    result.add($k & ": " & $v)
-  result.add("}")
+    s.add($k & ": " & $v)
+  s.add("}")
+  s
 
 {.pop.}

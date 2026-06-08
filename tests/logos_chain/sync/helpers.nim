@@ -111,15 +111,16 @@ proc downloadBlocksResponsesForRequest*(
   if blocks.len == 0:
     return @[DownloadBlocksResponse(kind: dbrNoMoreBlocks)]
   reverse(blocks)
-  result = newSeqOfCap[DownloadBlocksResponse](blocks.len + 1)
+  var responses = newSeqOfCap[DownloadBlocksResponse](blocks.len + 1)
   for blk in blocks:
     let innerWire = try:
       serializeBlockToSeq(blk, cryptarchiaSyncBincodeConfig)
     except BincodeError, IOError:
       fail getCurrentExceptionMsg()
     check innerWire.len > 0 and innerWire.len <= MaxBlockSize
-    result.add DownloadBlocksResponse(kind: dbrBlock, downloadedBlock: innerWire)
-  result.add DownloadBlocksResponse(kind: dbrNoMoreBlocks)
+    responses.add DownloadBlocksResponse(kind: dbrBlock, downloadedBlock: innerWire)
+  responses.add DownloadBlocksResponse(kind: dbrNoMoreBlocks)
+  responses
 
 proc u32LengthPrefixedHex*(inner: seq[byte]): string =
   try:

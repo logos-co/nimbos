@@ -53,10 +53,11 @@ proc addPrefixLengthToPayload*(inner: seq[byte]): seq[byte] {.raises: [BincodeEr
   if n > uint64(uint32.high):
     raise newException(BincodeError, "cryptarchia sync LP inner length exceeds uint32")
   let le = inner.len.uint32.toBytesLE
-  result.setLen(4 + inner.len)
-  copyMem(result[0].unsafeAddr, le[0].unsafeAddr, 4)
+  var framed = newSeq[byte](4 + inner.len)
+  copyMem(framed[0].unsafeAddr, le[0].unsafeAddr, 4)
   if inner.len > 0:
-    copyMem(result[4].unsafeAddr, inner[0].unsafeAddr, inner.len)
+    copyMem(framed[4].unsafeAddr, inner[0].unsafeAddr, inner.len)
+  framed
 
 proc removePrefixLengthFromPacket*(frame: seq[byte]): seq[byte] {.raises: [BincodeError].} =
   ## Inverse of ``addPrefixLengthToPayload``: reads the LE ``uint32`` length prefix from a packet
@@ -71,9 +72,10 @@ proc removePrefixLengthFromPacket*(frame: seq[byte]): seq[byte] {.raises: [Binco
     raise newException(BincodeError, "cryptarchia sync LP payload too large")
   let plen = int ln
   if plen > 0:
-    result.setLen(plen)
-    copyMem(result[0].unsafeAddr, frame[4].unsafeAddr, plen)
+    var payload = newSeq[byte](plen)
+    copyMem(payload[0].unsafeAddr, frame[4].unsafeAddr, plen)
+    payload
   else:
-    result = @[]
+    @[]
 
 {.pop.}

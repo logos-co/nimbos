@@ -29,10 +29,12 @@ const
   PrintableAsciiChars* = {' '..'~'}
 
 func toPrettyString*(bytes: openArray[byte]): string =
-  result = strip(string.fromBytes(bytes),
-                 leading = false,
-                 chars = Whitespace + {'\0'})
-  if not allCharsInSet(result, PrintableAsciiChars):
-    result = "0x" & toHex(bytes)
+  let pretty = strip(string.fromBytes(bytes),
+                     leading = false,
+                     chars = Whitespace + {'\0'})
+  if not allCharsInSet(pretty, PrintableAsciiChars):
+    "0x" & toHex(bytes)
+  else:
+    pretty
 
 {.pop.}

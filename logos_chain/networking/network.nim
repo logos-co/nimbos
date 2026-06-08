@@ -406,8 +406,9 @@ proc getPeer(node: LBP2PNode, peerId: PeerId): Peer =
     return node.peers.mgetOrPut(peerId, peer)
 
 proc peerFromStream(network: LBP2PNode, conn: Connection): Peer =
-  result = network.getPeer(conn.peerId)
-  result.peerId = conn.peerId
+  var peer = network.getPeer(conn.peerId)
+  peer.peerId = conn.peerId
+  peer
 
 func getKey*(peer: Peer): PeerId {.inline.} =
   peer.peerId
@@ -2071,8 +2072,10 @@ func quicEndPoint(address: IpAddress, port: Port): Result[MultiAddress, string] 
     err(exc.msg)
 
 proc loadBootstrapPeers(config: LBNodeConf): seq[PeerAddr] =
+  var peers: seq[PeerAddr]
   for (peerId, maddr) in loadBootstrapNodes(config):
-    result.add(PeerAddr(peerId: peerId, addrs: @[maddr]))
+    peers.add(PeerAddr(peerId: peerId, addrs: @[maddr]))
+  peers
 
 func initNetKeys(privKey: PrivateKey): NetKeyPair =
   let pubKey = privKey.getPublicKey().expect("working public key from random")

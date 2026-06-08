@@ -24,8 +24,10 @@ func wallclockSlot(): SlotNumber =
   high(SlotNumber)
 
 proc txBytesLen(txs: openArray[SignedMantleTx]): int =
+  var total = 0
   for stx in txs:
-    result += encodeSignedMantleTx(stx).len
+    total += encodeSignedMantleTx(stx).len
+  total
 
 proc verifyPoL(localTree: LocalTree, header: Header): bool =
   ## TODO: implement `verifyPoL()`.
