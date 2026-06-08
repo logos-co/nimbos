@@ -532,29 +532,21 @@ proc disconnect*(peer: Peer, reason: DisconnectionReason,
   # we currently don't - the fact that we're disconnecting is obvious and the
   # reason already known (wrong network is known from status message) or doesn't
   # greatly matter for the listening side (since it can't be trusted anyway)
-  try:
-    if peer.connectionState notin {Disconnecting, Disconnected}:
-      peer.connectionState = Disconnecting
-      # We adding peer in SeenTable before actual disconnect to avoid races.
-      let seenTime = case reason
-        of ClientShutDown:
-          SeenTableTimeClientShutDown
-        of IrrelevantNetwork:
-          SeenTableTimeIrrelevantNetwork
-        of FaultOrError:
-          SeenTableTimeFaultOrError
-        of PeerScoreLow:
-          SeenTablePenaltyError
-      peer.network.addSeen(peer.peerId, seenTime)
-      await peer.network.switch.disconnect(peer.peerId)
-  except CancelledError as exc:
-    raise exc
-  except CatchableError as exc:
-    # switch.disconnect shouldn't raise
-    warn "Unexpected error while disconnecting peer",
-      peer = peer.peerId,
-      reason = reason,
-      exc = exc.msg
+  # ``switch.disconnect`` only raises ``CancelledError``, which we let propagate.
+  if peer.connectionState notin {Disconnecting, Disconnected}:
+    peer.connectionState = Disconnecting
+    # We adding peer in SeenTable before actual disconnect to avoid races.
+    let seenTime = case reason
+      of ClientShutDown:
+        SeenTableTimeClientShutDown
+      of IrrelevantNetwork:
+        SeenTableTimeIrrelevantNetwork
+      of FaultOrError:
+        SeenTableTimeFaultOrError
+      of PeerScoreLow:
+        SeenTablePenaltyError
+    peer.network.addSeen(peer.peerId, seenTime)
+    await peer.network.switch.disconnect(peer.peerId)
 
 proc releasePeer(peer: Peer) =
   ## Checks for peer's score and disconnects peer if score is less than
@@ -1386,7 +1378,7 @@ proc dialPeer(node: LBP2PNode, peerAddr: PeerAddr, index = 0) {.async: (raises: 
       inc nbc_timeout_dials
       node.addSeen(peerAddr.peerId, SeenTableTimeTimeout)
       await cancelAndWait(workfut)
-  except CatchableError as exc:
+  except DialFailedError as exc:
     debug "Connection to remote peer failed", msg = exc.msg, addrs = peerAddr.addrs
     inc nbc_failed_dials
     node.addSeen(peerAddr.peerId, SeenTableTimeDeadPeer)
@@ -1589,12 +1581,8 @@ proc onConnEvent(
         # we might end up here
         debug "Got connection attempt from peer that we are disconnecting",
              peer = peerId
-        try:
-          await node.switch.disconnect(peerId)
-        except CancelledError as exc:
-          raise exc
-        except CatchableError as exc:
-          debug "Unexpected error while disconnecting peer", exc = exc.msg
+        # ``switch.disconnect`` only raises ``CancelledError``, which propagates.
+        await node.switch.disconnect(peerId)
         return
       of None:
         # We have established a connection with the new peer.
@@ -1724,7 +1712,7 @@ proc startListening*(node: LBP2PNode) {.async.} =
   if node.discoveryEnabled:
     try:
        node.discovery.open()
-    except CatchableError as exc:
+    except TransportOsError as exc:
       fatal "Failed to start discovery service. UDP port may be already in use",
             exc = exc.msg
       quit 1
@@ -1735,7 +1723,7 @@ proc startListening*(node: LBP2PNode) {.async.} =
 
   try:
     await node.switch.start()
-  except CatchableError as exc:
+  except LPError as exc:
     fatal "Failed to start LibP2P transport. Listen address/port may be already in use",
           exc = exc.msg
     quit 1
@@ -1788,8 +1776,6 @@ proc runCryptarchiaIbdAtStartup(node: LBP2PNode) {.async: (raises: [CancelledErr
     notice "Initial block download completed", peerCount = node.bootstrapPeers.len
   except IBDFailure as exc:
     warn "Initial block download failed", msg = exc.msg
-  except CatchableError as exc:
-    warn "Initial block download error", msg = exc.msg
 
 proc start*(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
   proc onPeerCountChanged() =
@@ -2173,13 +2159,10 @@ proc createLBP2PNode*(
   let switch = ?newBeaconSwitch(config, netKeys.seckey, hostAddress, rng)
 
   func msgIdProvider(m: messages.Message): Result[seq[byte], ValidationResult] =
-    try:
-      # This doesn't have to be a tight bound, just enough to avoid denial of
-      # service attacks.
-      let decoded = snappy.decode(m.data, static(MAX_PAYLOAD_SIZE.uint32))
-      ok(gossipId(decoded, m.topic))
-    except CatchableError:
-      err(ValidationResult.Reject)
+    # ``snappy.decode`` returns an empty seq (rather than raising) on failure,
+    # and ``gossipId`` doesn't raise, so no exception handling is needed here.
+    let decoded = snappy.decode(m.data, static(MAX_PAYLOAD_SIZE.uint32))
+    ok(gossipId(decoded, m.topic))
 
   let
     bootstrapPeers = loadBootstrapPeers(config)

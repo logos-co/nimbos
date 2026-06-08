@@ -8,8 +8,9 @@
 {.push raises: [].}
 
 import results
+import bincode
 import stew/byteutils as byteutils
-import unittest2
+import ../../testutil
 
 import ../../../logos_chain/core/types
 import ../../../logos_chain/chain/genesis
@@ -61,8 +62,8 @@ proc exampleSerializedGetTipResponseTipWire*(): Opt[seq[byte]] {.raises: [].} =
       Opt.none(seq[byte])
     else:
       Opt.some(wire)
-  except CatchableError:
-    Opt.none(seq[byte])
+  except BincodeError, IOError:
+    fail getCurrentExceptionMsg()
 
 proc exampleSerializedGetTipResponseFailureWire*(
     failureUtf8: string = "example: tip unavailable",
@@ -74,8 +75,8 @@ proc exampleSerializedGetTipResponseFailureWire*(
       Opt.none(seq[byte])
     else:
       Opt.some(wire)
-  except CatchableError:
-    Opt.none(seq[byte])
+  except BincodeError, IOError:
+    fail getCurrentExceptionMsg()
 
 func downloadBlocksRequestEqual*(a, b: DownloadBlocksRequest): bool =
   a.targetBlock == b.targetBlock and
@@ -120,8 +121,8 @@ proc downloadBlocksResponsesForRequest*(
   for blk in blocks:
     let innerWire = try:
       serializeBlockToSeq(blk, cryptarchiaSyncBincodeConfig)
-    except CatchableError:
-      @[]
+    except BincodeError, IOError:
+      fail getCurrentExceptionMsg()
     check innerWire.len > 0 and innerWire.len <= MaxBlockSize
     result.add DownloadBlocksResponse(kind: dbrBlock, downloadedBlock: innerWire)
   result.add DownloadBlocksResponse(kind: dbrNoMoreBlocks)
@@ -129,7 +130,7 @@ proc downloadBlocksResponsesForRequest*(
 proc u32LengthPrefixedHex*(inner: seq[byte]): string {.raises: [].} =
   try:
     byteutils.toHex(addPrefixLengthToPayload(inner))
-  except CatchableError:
-    ""
+  except BincodeError as exc:
+    fail exc.msg
 
 {.pop.}

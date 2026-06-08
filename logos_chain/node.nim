@@ -20,10 +20,10 @@ import
   ./deployment/deployment_settings,
   ./networking/network,
   ./core/local_tree,
-  ./core/types,
   ./core/utils,
   ./process_state
 
+from ./core/types as coreTypes import Block, blockId
 from libp2p/protocols/pubsub/gossipsub import
   TopicParams, init
 
@@ -150,7 +150,7 @@ proc installMessageValidators(node: LBNode) =
 proc stop(node: LBNode) =
   try:
     waitFor node.network.stop()
-  except CatchableError as exc:
+  except CancelledError as exc:
     warn "Couldn't stop network", msg = exc.msg
 
   waitFor node.metricsServer.stopMetricsServer()

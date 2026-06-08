@@ -23,6 +23,13 @@ from std/tables import OrderedTable, `[]=`, initOrderedTable, mgetOrPut, sort
 
 export unittest2
 
+## Record ``msg`` and mark the current test as failed (unittest2 ``fail()`` is no-arg).
+template fail*(msg: string) =
+  checkpoint(msg)
+  fail()
+  # ``unittest2.fail()`` may return when ``abortOnError`` is off; do not fall through.
+  raiseAssert msg
+
 type TestDuration = tuple[duration: float, label: string]
 
 var testTimes: seq[TestDuration]
@@ -64,8 +71,8 @@ proc summarizeLongTests*(name: string) =
       cmp(a[0], b[0])
 
     generateReport(name, status, width = 90, withTotals = false)
-  except CatchableError as exc:
-    raiseAssert exc.msg
+  except IOError, OSError, ValueError:
+    raiseAssert getCurrentExceptionMsg()
 
 const TestLoopbackIp* = parseIpAddress("127.0.0.1")
 

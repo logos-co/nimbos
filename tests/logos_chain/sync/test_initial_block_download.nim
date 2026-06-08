@@ -11,6 +11,7 @@
 import chronos
 import chronos/unittest2/asynctests
 import unittest2
+import bincode
 
 import libp2p/builders
 
@@ -111,11 +112,12 @@ suite "sync/initial_block_download (download blocks)":
   test "decodeBlocksFromDownloadResponses roundtrip (genesis wrapped in dbrBlock)":
     let sm = minimalSignedTx()
     let genesis = createGenesisBlock(sm)
+    let genesisWire = try:
+      serializeBlockToSeq(genesis, cryptarchiaSyncBincodeConfig)
+    except BincodeError, IOError:
+      fail getCurrentExceptionMsg()
     let blksOpt = decodeBlocksFromDownloadResponses(@[
-      DownloadBlocksResponse(kind: dbrBlock, downloadedBlock: try:
-        serializeBlockToSeq(genesis, cryptarchiaSyncBincodeConfig)
-      except CatchableError:
-        @[])
+      DownloadBlocksResponse(kind: dbrBlock, downloadedBlock: genesisWire),
     ])
     check blksOpt.isSome and blksOpt.unsafeGet.len == 1
     check blockId(blksOpt.unsafeGet[0].header) == blockId(genesis.header)

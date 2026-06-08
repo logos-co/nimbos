@@ -9,7 +9,8 @@
 {.used.}
 
 import results
-import unittest2
+import bincode
+import ../../testutil
 
 import ../../../logos_chain/sync/[config, types]
 
@@ -18,25 +19,25 @@ suite "sync/config":
     let msg = DownloadBlocksResponse(kind: dbrNoMoreBlocks)
     var inner = try:
       serializeDownloadBlocksResponseToSeq(msg, cryptarchiaSyncBincodeConfig)
-    except CatchableError:
-      @[]
+    except BincodeError, IOError:
+      fail getCurrentExceptionMsg()
     var lpWrap: seq[byte] = @[]
     try:
       lpWrap = addPrefixLengthToPayload(inner)
-    except CatchableError:
-      discard
+    except BincodeError as exc:
+      fail exc.msg
     check lpWrap.len > 4
     let backInner =
       try:
         removePrefixLengthFromPacket(lpWrap)
-      except CatchableError:
-        @[]
+      except BincodeError as exc:
+        fail exc.msg
     check inner == backInner
     let dec =
       try:
         Opt.some(deserializeDownloadBlocksResponse(backInner, cryptarchiaSyncBincodeConfig))
-      except CatchableError:
-        Opt.none(DownloadBlocksResponse)
+      except BincodeError as exc:
+        fail exc.msg
     check dec.isSome and dec.get.kind == msg.kind
 
 {.pop.}

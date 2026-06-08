@@ -8,7 +8,7 @@
 {.push raises: [], gcsafe.}
 {.used.}
 
-import unittest2
+import ../../testutil
 import bincode
 import ../../../logos_chain/core/mantle/[operations, proofs, tx_bincode, tx_types]
 
@@ -132,7 +132,7 @@ suite "core/mantle/tx_bincode":
       let (back, used) = deserializeSignedMantleTxAt(buf)
       check used == wire.len
       checkSignedMantleTxEqual(signed, back)
-    except CatchableError:
-      check false
+    except BincodeError, IOError:
+      fail getCurrentExceptionMsg()
 
 {.pop.}
