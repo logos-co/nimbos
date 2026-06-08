@@ -83,8 +83,16 @@ try {
 
     Write-Info "Extracting to $InstallDir"
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
-    # tar is available on Windows 10+ (1803+) and Windows Server 2019+.
-    tar -xzf $TempFile -C $InstallDir --strip-components=1
+    # Use the Windows built-in tar (bsdtar) by absolute path. If `tar` is
+    # resolved through $env:Path and Git Bash is installed, MSYS tar wins
+    # and treats Windows paths like `C:\...` as `host:path` rsh syntax
+    # ("Cannot connect to C: resolve failed"). Available on Windows 10
+    # 1803+ and Windows Server 2019+.
+    $WindowsTar = Join-Path -Path $env:SYSTEMROOT -ChildPath "System32\tar.exe"
+    if (-not (Test-Path -LiteralPath $WindowsTar)) {
+        throw "Windows tar not found at $WindowsTar (requires Windows 10 1803+ / Server 2019+)"
+    }
+    & $WindowsTar -xzf $TempFile -C $InstallDir --strip-components=1
     if ($LASTEXITCODE -ne 0) { throw "tar extraction failed" }
 
     Write-Success "Installation complete!"
