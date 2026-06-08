@@ -176,19 +176,12 @@ FORCE_BUILD_ALONE_ALL_TESTS_DEPS :=
 endif
 force_build_alone_all_tests: | $(FORCE_BUILD_ALONE_ALL_TESTS_DEPS)
 
-# LTO is disabled for `all_tests` only. The test build pulls constantine's
-# MSM scheduler (`ec_multi_scalar_mul_scheduler.nim:sparseVectorAddition`)
-# into the LTO graph; GCC's stack-usage analyzer can't bound the inlined
-# frame and `-Werror=stack-usage` (set under `-d:limitStackUsage` in CI)
-# rejects it. The runtime behaviour is fine — the production binary keeps
-# LTO. Revisit when the prover lands and `logos_chain_node` itself starts
-# pulling the scheduler into its LTO graph.
 all_tests: | build deps force_build_alone_all_tests
 	+ echo -e $(BUILD_MSG) "build/$@" && \
 		MAKE="$(MAKE)" V="$(V)" $(ENV_SCRIPT) scripts/compile_nim_program.sh \
 			$@ \
 			"tests/$@.nim" \
-			$(NIM_PARAMS) -d:disableLTO $(TEST_MODULES_FLAGS) && \
+			$(NIM_PARAMS) $(TEST_MODULES_FLAGS) && \
 		echo -e $(BUILD_END_MSG) "build/$@"
 
 # This parameter passing scheme is ugly, but short.

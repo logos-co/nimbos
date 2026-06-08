@@ -206,3 +206,8 @@ put("secp256k1.always", "-fno-lto -fomit-frame-pointer")
 put("aesctr_drbg.always", "-fno-lto")
 put("hmac_drbg.always", "-fno-lto")
 put("sysrng.always", "-fno-lto")
+
+# Constantine MSM scheduler does variable stack allocations that defeat GCC's
+# stack-usage analyzer after LTO inlining. Drop separately when the upstream
+# fix lands (in discussion with mratsim).
+put("ec_multi_scalar_mul_scheduler.always", "-fno-lto -Wno-stack-usage")
