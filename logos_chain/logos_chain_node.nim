@@ -44,7 +44,7 @@ proc doRunLBNode(
 
   let
     taskpool = setupTaskpool(config.numThreads)
-    node = waitFor(LBNode.init(rng, config, deploymentSettings, chain.genesisBlock)).valueOr:
+    node = waitFor(LBNode.init(rng, config, deploymentSettings)).valueOr:
       return
 
   # Nim GC metrics (for the main thread) will be collected in onSecond(), but

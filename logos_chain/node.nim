@@ -69,7 +69,6 @@ proc init*(
     rng: ref HmacDrbgContext,
     config: LBNodeConf,
     deploymentSettings: DeploymentSettings,
-    genesisBlock: Block,
 ): Future[Opt[LBNode]] {.async: (raises: [CancelledError]).} =
   var config = config
 
@@ -83,8 +82,8 @@ proc init*(
     fatal "Failed to initialize chain", err = error
     return Opt.none(LBNode)
 
+  let genesisBlock = chain.genesisBlock
   block:
-    let genesisBlock = chain.genesisBlock
     let genesisState = genesisBlock.txs[0]
     var leaderKeyBytes: array[EdPublicKeySize, byte]
     let leaderKeyWritten = toBytes(
