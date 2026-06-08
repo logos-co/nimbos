@@ -1752,9 +1752,8 @@ proc waitForBootstrapConnectivity(
   if node.bootstrapPeers.len == 0:
     return true
   for _ in 0 ..< attempts:
-    for peerAddr in node.bootstrapPeers:
-      if node.switch.isConnected(peerAddr.peerId):
-        return true
+    if node.bootstrapPeers.anyIt(node.switch.isConnected(it.peerId)):
+      return true
     await sleepAsync(100.milliseconds)
   false
 
