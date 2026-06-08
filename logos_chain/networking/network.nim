@@ -377,7 +377,7 @@ template protocolState*(node: LBP2PNode, Protocol: type): untyped =
   type S = Protocol.NetworkState
   S(getNetworkState(node, Protocol.protocolInfo))
 
-func initProtocolState*[T](state: T, x: Peer|LBP2PNode) {.raises: [].} =
+func initProtocolState*[T](state: T, x: Peer|LBP2PNode) =
   discard
 
 template networkState*(connection: Peer, Protocol: type): untyped =
@@ -1939,7 +1939,7 @@ proc p2pProtocolBackendImpl*(p: P2PProtocol): Backend =
                                  `msgVar`: `MsgRecName`): untyped =
         `userHandlerCall`
 
-      proc `protocolMounterName`(`networkVar`: `LBP2PNode`) {.raises: [].} =
+      proc `protocolMounterName`(`networkVar`: `LBP2PNode`) =
         proc snappyThunk(
             `streamVar`: `Connection`,
             `protocolVar`: string
@@ -2231,7 +2231,7 @@ proc createLBP2PNode*(
     notice "No libp2p bootstrap multiaddrs loaded"
 
   node.pubsub.subscriptionValidator =
-    proc(topic: string): bool {.gcsafe, raises: [].} =
+    proc(topic: string): bool {.gcsafe.} =
       topic in node.validTopics
 
   ok node
@@ -2270,7 +2270,7 @@ func addValidator*[MsgType](
   # or not - validation is `async` but implemented without the macro because
   # this is a performance hotspot.
   proc execValidator(topic: string, message: GossipMsg):
-      Future[ValidationResult] {.raises: [].} =
+      Future[ValidationResult] =
     inc nbc_gossip_messages_received
     trace "Validating incoming gossip message", len = message.data.len, topic
 

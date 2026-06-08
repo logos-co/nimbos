@@ -69,7 +69,7 @@ proc writeCryptarchiaPrefixedInner*(
   await conn.write(framed)
   debug "IBD wire write ok", framedBytes = framed.len
 
-func parseRequestMessageKind*(inner: openArray[byte]): Opt[RequestMessageKind] {.raises: [].} =
+func parseRequestMessageKind*(inner: openArray[byte]): Opt[RequestMessageKind] =
   ## First 4 bytes of the inner bincode body are ``RequestMessageKind`` (u32 LE).
   const kindWireSize = sizeof(uint32)
   if inner.len < kindWireSize:
@@ -83,7 +83,7 @@ func parseRequestMessageKind*(inner: openArray[byte]): Opt[RequestMessageKind] {
 # GetTip
 # ---------------------------------------------------------------------------
 
-proc getTipResponseFromLocalTree*(localTree: LocalTree): GetTipResponse {.raises: [].} =
+proc getTipResponseFromLocalTree*(localTree: LocalTree): GetTipResponse =
   GetTipResponse(
     kind: gtrTip,
     tipData: Tip(
@@ -169,7 +169,7 @@ proc buildKnownBlocks*(
     additionalBlocks: extras,
   )
 
-func decodeBlocksFromDownloadResponses*(messages: seq[DownloadBlocksResponse]): Opt[seq[Block]] {.raises: [].} =
+func decodeBlocksFromDownloadResponses*(messages: seq[DownloadBlocksResponse]): Opt[seq[Block]] =
   var blks = newSeqOfCap[Block](messages.len)
   for msg in messages:
     case msg.kind
@@ -271,7 +271,7 @@ proc sendDownloadBlocksRequest*(
 func collectBlocksForDownloadRequest*(
     localTree: LocalTree,
     req: DownloadBlocksRequest,
-): seq[Block] {.raises: [].} =
+): seq[Block] =
   let target = req.targetBlock
   if not localTree.hasBlock(target):
     return @[]

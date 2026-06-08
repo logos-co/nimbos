@@ -74,7 +74,7 @@ proc resort[A, B](
     unsorted: var openArray[PeerIndex]
 ) =
   mixin `cmp`
-  proc pcmp(a, b: PeerIndex): int {.closure, raises: [].} =
+  proc pcmp(a, b: PeerIndex): int {.closure.} =
     cmp(pool.storage[distinctBase(a)].data, pool.storage[distinctBase(b)].data)
   unsorted.sort(pcmp, order = SortOrder.Descending)
 
@@ -337,7 +337,7 @@ proc deletePeer*[A, B](pool: PeerPool[A, B], peer: A, force = false): bool =
 proc addPeerImpl[A, B](pool: PeerPool[A, B], peer: A, peerKey: B,
                        peerType: PeerType) =
   mixin getFuture
-  proc onPeerClosed(udata: pointer) {.gcsafe, raises: [].} =
+  proc onPeerClosed(udata: pointer) {.gcsafe.} =
     discard pool.deletePeer(peer)
 
   let

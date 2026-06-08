@@ -46,16 +46,16 @@ proc childBlock*(
   )
   initBlock(h, txs)
 
-func exampleBlockId*(fill: byte): BlockId {.raises: [].} =
+func exampleBlockId*(fill: byte): BlockId =
   var id: BlockId
   for i in 0 ..< id.len:
     id[i] = fill
   id
 
-func exampleGetTipTipFixture*(): Tip {.raises: [].} =
+func exampleGetTipTipFixture*(): Tip =
   Tip(tip: exampleBlockId(0xAB'u8), slot: SlotNumber(12_345'u64), height: 999'u64)
 
-proc exampleSerializedGetTipResponseTipWire*(): Opt[seq[byte]] {.raises: [].} =
+proc exampleSerializedGetTipResponseTipWire*(): Opt[seq[byte]] =
   let resp = GetTipResponse(kind: gtrTip, tipData: exampleGetTipTipFixture())
   try:
     let wire = serializeGetTipResponseToSeq(resp, cryptarchiaSyncBincodeConfig)
@@ -68,7 +68,7 @@ proc exampleSerializedGetTipResponseTipWire*(): Opt[seq[byte]] {.raises: [].} =
 
 proc exampleSerializedGetTipResponseFailureWire*(
     failureUtf8: string = "example: tip unavailable",
-): Opt[seq[byte]] {.raises: [].} =
+): Opt[seq[byte]] =
   let resp = GetTipResponse(kind: gtrFailure, failureMessage: failureUtf8)
   try:
     let wire = serializeGetTipResponseToSeq(resp, cryptarchiaSyncBincodeConfig)
@@ -120,7 +120,7 @@ proc downloadBlocksResponsesForRequest*(
     result.add DownloadBlocksResponse(kind: dbrBlock, downloadedBlock: innerWire)
   result.add DownloadBlocksResponse(kind: dbrNoMoreBlocks)
 
-proc u32LengthPrefixedHex*(inner: seq[byte]): string {.raises: [].} =
+proc u32LengthPrefixedHex*(inner: seq[byte]): string =
   try:
     byteutils.toHex(addPrefixLengthToPayload(inner))
   except BincodeError as exc:

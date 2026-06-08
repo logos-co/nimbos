@@ -119,7 +119,7 @@ func skipPrefixes(str: string,
 func strictParse*[bits: static[int]](input: string,
                                      T: typedesc[StUint[bits]],
                                      radix: static[uint8] = 10
-                                    ): Result[T, cstring] {.raises: [].} =
+                                    ): Result[T, cstring] =
   var res: T
   static: doAssert (radix >= 2) and (radix <= 16),
             "Only base from 2..16 are supported"
