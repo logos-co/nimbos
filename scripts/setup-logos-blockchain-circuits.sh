@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #
 # Setup script for logos-blockchain-circuits
 #
@@ -6,7 +6,13 @@
 #
 # Arguments:
 #   VERSION      - Optional. Version to install (default: v0.4.2)
-#   INSTALL_DIR  - Optional. Installation directory (default: $HOME/.logos-blockchain-circuits)
+#   INSTALL_DIR  - Optional. Installation directory.
+#                  Default follows the XDG Base Directory Spec:
+#                    Linux:  $XDG_CACHE_HOME/logos-blockchain-circuits/<VERSION>
+#                            ($HOME/.cache/... if XDG_CACHE_HOME is unset)
+#                    macOS:  $XDG_CACHE_HOME/logos-blockchain-circuits/<VERSION>
+#                            ($HOME/Library/Caches/... if XDG_CACHE_HOME is unset)
+#                  Windows operators should use setup-logos-blockchain-circuits.ps1.
 #
 # Examples:
 #   ./setup-logos-blockchain-circuits.sh                    # Install default version to default location
@@ -17,7 +23,12 @@ set -e
 
 # Default values
 VERSION="${1:-v0.4.2}"
-DEFAULT_INSTALL_DIR="$HOME/.logos-blockchain-circuits"
+
+case "$(uname -s)" in
+    Darwin*) DEFAULT_CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/Library/Caches}" ;;
+    *)       DEFAULT_CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}" ;;
+esac
+DEFAULT_INSTALL_DIR="$DEFAULT_CACHE_ROOT/logos-blockchain-circuits/$VERSION"
 INSTALL_DIR="${2:-$DEFAULT_INSTALL_DIR}"
 REPO="logos-blockchain/logos-blockchain-circuits"
 
@@ -75,7 +86,8 @@ check_existing_installation() {
 
         # Check if it has a VERSION file
         if [ -f "$INSTALL_DIR/VERSION" ]; then
-            local current_version=$(cat "$INSTALL_DIR/VERSION")
+            local current_version
+            current_version=$(cat "$INSTALL_DIR/VERSION")
             print_info "Currently installed version: $current_version"
         fi
 
@@ -103,13 +115,15 @@ download_release() {
     local platform="$1"
     local artifact="logos-blockchain-circuits-${VERSION}-${platform}.tar.gz"
     local url="https://github.com/${REPO}/releases/download/${VERSION}/${artifact}"
-    local temp_dir=$(mktemp -d)
+    local temp_dir
+    temp_dir=$(mktemp -d)
 
     print_info "Downloading logos-blockchain-circuits ${VERSION} for ${platform}..."
     print_info "URL: $url"
 
-    # Build curl command with optional authentication
-    local curl_cmd="curl -L"
+    # Build curl command with optional authentication.
+    # --retry 3 --retry-all-errors smooths over transient CI network blips.
+    local curl_cmd="curl -L --retry 3 --retry-all-errors"
     if [ -n "$GITHUB_TOKEN" ]; then
         curl_cmd="$curl_cmd --header 'authorization: Bearer ${GITHUB_TOKEN}'"
     fi
@@ -157,7 +171,8 @@ main() {
     echo
 
     # Detect platform
-    local platform=$(detect_platform)
+    local platform
+    platform=$(detect_platform)
     print_info "Detected platform: $platform"
 
     # Check existing installation
@@ -181,7 +196,8 @@ main() {
     # Discover circuits by finding directories that contain a witness_generator
     for dir in "$INSTALL_DIR"/*/; do
         if [ -d "$dir" ]; then
-            local circuit_name=$(basename "$dir")
+            local circuit_name
+            circuit_name=$(basename "$dir")
             if [ -f "$dir/witness_generator" ]; then
                 echo "  • $circuit_name"
             fi

@@ -23,9 +23,10 @@ import
   json_serialization, json_serialization/std/net as jsnet,
   chronos/transports/common,
   ./deployment/deployment_settings,
-  ./binary_common
+  ./binary_common,
+  ./zk/circuits
 
-from std/os import dirExists, getHomeDir, `/`
+from std/os import dirExists, getCacheDir, `/`
 from std/strutils import parseBiggestUInt, replace
 
 export
@@ -54,8 +55,10 @@ else:
   {.pragma: posixOnly.}
 
 proc defaultCircuitsDir*(): InputDir =
-  ## `~/.logos-blockchain-circuits/`. Override with `--circuits-dir`.
-  InputDir(getHomeDir() / ".logos-blockchain-circuits")
+  ## Platform-aware cache location (XDG on Linux, `~/Library/Caches` on
+  ## macOS, `%LOCALAPPDATA%\…\cache` on Windows), suffixed with the pinned
+  ## bundle version. Tests use a repo-local override.
+  InputDir(getCacheDir("logos-blockchain-circuits") / ExpectedCircuitsVersion)
 
 type
   BNStartUpCmd* {.pure.} = enum
@@ -322,7 +325,7 @@ type
         desc: "Directory containing the logos-blockchain-circuits release bundle " &
               "(install via scripts/setup-logos-blockchain-circuits.sh)"
         defaultValue: defaultCircuitsDir()
-        defaultValueDesc: "~/.logos-blockchain-circuits/"
+        defaultValueDesc: "<platform cache>/logos-blockchain-circuits/<version>"
         name: "circuits-dir" .}: InputDir
 
   AnyConf* = LBNodeConf
