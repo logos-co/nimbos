@@ -7,7 +7,7 @@
 
 {.push raises: [].}
 
-import std/sequtils
+import std/[sequtils, algorithm]
 import results
 import bincode
 import stew/byteutils as byteutils
@@ -107,9 +107,10 @@ func downloadBlocksResponsesEqual*(a, b: seq[DownloadBlocksResponse]): bool =
 proc downloadBlocksResponsesForRequest*(
     tree: LocalTree, req: DownloadBlocksRequest
 ): seq[DownloadBlocksResponse] =
-  let blocks = collectBlocksForDownloadRequest(tree, req)
+  var blocks = collectBlocksTargetToAncestor(tree, req)
   if blocks.len == 0:
     return @[DownloadBlocksResponse(kind: dbrNoMoreBlocks)]
+  reverse(blocks)
   result = newSeqOfCap[DownloadBlocksResponse](blocks.len + 1)
   for blk in blocks:
     let innerWire = try:

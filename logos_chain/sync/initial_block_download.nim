@@ -8,7 +8,7 @@
 {.push raises: [], gcsafe.}
 
 import
-  std/sets,
+  std/[sets, sequtils],
   bincode,
   chronicles,
   chronos,
@@ -160,13 +160,10 @@ proc buildKnownBlocks*(
     additionalBlocks: openArray[BlockId] = [],
 ): KnownBlocks =
   let takeCount = min(additionalBlocks.len, MaxKnownAdditionalBlocks)
-  var extras = newSeqOfCap[BlockId](takeCount)
-  for i in 0 ..< takeCount:
-    extras.add(additionalBlocks[i])
   KnownBlocks(
     localTip: localTipId(localTree),
     latestImmutableBlock: latestImmutableBlockId(localTree),
-    additionalBlocks: extras,
+    additionalBlocks: (0 ..< takeCount).mapIt(additionalBlocks[it]),
   )
 
 func decodeBlocksFromDownloadResponses*(messages: seq[DownloadBlocksResponse]): Opt[seq[Block]] =
@@ -268,7 +265,7 @@ proc sendDownloadBlocksRequest*(
 # IBD: path selection for download responses
 # ---------------------------------------------------------------------------
 
-func collectBlocksForDownloadRequest*(
+func collectBlocksTargetToAncestor*(
     localTree: LocalTree,
     req: DownloadBlocksRequest,
 ): seq[Block] =
@@ -298,21 +295,18 @@ func collectBlocksForDownloadRequest*(
     return @[]
   if bestLca == target:
     return @[]
-  var rev = newSeqOfCap[Block](8)
+  var blocks = newSeqOfCap[Block](8)
   var curId = target
   while curId != bestLca:
     let blk = localTree.getBlock(curId).valueOr:
       return @[]
-    rev.add blk
+    blocks.add blk
     curId = blk.header.parentBlock
     if curId == default(BlockId):
       return @[]
-  var forward = newSeqOfCap[Block](rev.len)
-  for i in countdown(rev.high, 0):
-    forward.add rev[i]
-  forward
+  blocks
 
-template awaitWriteDlRespLp(conn: Connection, msg: DownloadBlocksResponse) =
+template awaitWriteDbRespLp(conn: Connection, msg: DownloadBlocksResponse) =
   ## u32-prefixed inner + raw ``write``; skips write when encoding yields empty.
   block:
     let innerBytes = try:
@@ -374,32 +368,33 @@ proc mountCryptarchiaSyncHandler*(
         let req = reqMsg.downloadBlocksRequest
         if not localTree.hasBlock(req.targetBlock):
           debug "IBD handler: target block not found", targetBlock = sbyteutils.toHex(req.targetBlock)
-          awaitWriteDlRespLp(conn, DownloadBlocksResponse(
+          awaitWriteDbRespLp(conn, DownloadBlocksResponse(
             kind: dbrFailure, failureMessage: "start block not found"))
           debug "IBD handler: download failure response ok", targetBlock = sbyteutils.toHex(req.targetBlock)
         else:
-          let blocks = collectBlocksForDownloadRequest(localTree, req)
+          let blocks = collectBlocksTargetToAncestor(localTree, req)
           if blocks.len == 0:
             debug "IBD handler: no blocks to send", targetBlock = sbyteutils.toHex(req.targetBlock)
-            awaitWriteDlRespLp(conn, DownloadBlocksResponse(kind: dbrNoMoreBlocks))
+            awaitWriteDbRespLp(conn, DownloadBlocksResponse(kind: dbrNoMoreBlocks))
             debug "IBD handler: download no-more-blocks response ok", targetBlock = sbyteutils.toHex(req.targetBlock)
           else:
             debug "IBD handler: sending blocks", targetBlock = sbyteutils.toHex(req.targetBlock), count = blocks.len
             var blocksSent = 0
-            for blk in blocks:
+            for i in countdown(blocks.high, 0):
+              let blk = blocks[i]
               let innerWire = try:
                 serializeBlockToSeq(blk, cryptarchiaSyncBincodeConfig)
               except BincodeError, IOError:
                 @[]
               if innerWire.len == 0 or innerWire.len > MaxBlockSize:
                 debug "IBD handler: block encode failed or too large", blockBytes = innerWire.len
-                awaitWriteDlRespLp(conn, DownloadBlocksResponse(
+                awaitWriteDbRespLp(conn, DownloadBlocksResponse(
                   kind: dbrFailure, failureMessage: "block encode failed"))
                 debug "IBD handler: download failure response ok", targetBlock = sbyteutils.toHex(req.targetBlock)
                 return
-              awaitWriteDlRespLp(conn, DownloadBlocksResponse(kind: dbrBlock, downloadedBlock: innerWire))
+              awaitWriteDbRespLp(conn, DownloadBlocksResponse(kind: dbrBlock, downloadedBlock: innerWire))
               inc blocksSent
-            awaitWriteDlRespLp(conn, DownloadBlocksResponse(kind: dbrNoMoreBlocks))
+            awaitWriteDbRespLp(conn, DownloadBlocksResponse(kind: dbrNoMoreBlocks))
             debug "IBD handler: download blocks response ok",
               targetBlock = sbyteutils.toHex(req.targetBlock), blocksSent = blocksSent
     except BincodeError as exc:
@@ -445,11 +440,9 @@ proc downloadBlocks*(
     sw: Switch,
     localTree: LocalTree,
     peer: PeerId,
-    forkChoice: ForkChoice,
     chainSyncProtocol: string,
     targetBlock: Opt[BlockId] = Opt.none(BlockId),
 ): Future[bool] {.async: (raises: [CancelledError]).} =
-  discard forkChoice
   var latestDownloaded = Opt.none(Block)
   debug "IBD download loop start", peer,
     targetBlock = targetBlock
@@ -545,7 +538,7 @@ proc initialBlockDownload*(
   var numSuccess = 0
   for peer in peers:
     debug "IBD: syncing peer", peer
-    if await downloadBlocks(sw, localTree, peer, Bootstrap, chainSyncProtocol, Opt.none(BlockId)):
+    if await downloadBlocks(sw, localTree, peer, chainSyncProtocol, Opt.none(BlockId)):
       inc numSuccess
       info "IBD succeeded with peer", peer, successes = numSuccess
     else:

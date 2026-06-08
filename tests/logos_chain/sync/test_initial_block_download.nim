@@ -122,7 +122,7 @@ suite "sync/initial_block_download (download blocks)":
     check blksOpt.isSome and blksOpt.unsafeGet.len == 1
     check blockId(blksOpt.unsafeGet[0].header) == blockId(genesis.header)
 
-  test "collectBlocksForDownloadRequest returns blocks from known tip to target":
+  test "collectBlocksTargetToAncestor returns target block when path is one hop":
     let sm = minimalSignedTx()
     let genesis = createGenesisBlock(sm)
     let gid = blockId(genesis.header)
@@ -134,7 +134,7 @@ suite "sync/initial_block_download (download blocks)":
       targetBlock: b1id,
       knownBlocks: buildKnownBlocks(newLocalTree(genesis)),
     )
-    let blocks = collectBlocksForDownloadRequest(tree, req)
+    let blocks = collectBlocksTargetToAncestor(tree, req)
     check blocks.len == 1
     check blockId(blocks[0].header) == b1id
 
