@@ -13,7 +13,7 @@
 
 {.push raises: [], gcsafe.}
 
-import std/[bitops, hashes]
+import std/[bitops, hashes, sequtils]
 import results
 
 const
@@ -440,13 +440,8 @@ func `==`*[K, V](a, b: HashTrieMap[K, V]): bool =
     a = a.insert(1, 10).insert(2, 20)
     b = b.insert(2, 20).insert(1, 10)
     doAssert a == b
-  if a.count != b.count:
-    return false
-  for (k, v) in a.pairs:
-    let pb = findEntry(b.root, hash(k), k, depth = 0)
-    if pb == nil or pb[] != v:
-      return false
-  true
+  a.count == b.count and toSeq(a.pairs).allIt(
+    (let pb = findEntry(b.root, hash(it.key), it.key, depth = 0); pb != nil and pb[] == it.val))
 
 func toHashTrieMap*[K, V](
     pairs: openArray[tuple[key: K, val: V]]): HashTrieMap[K, V] =

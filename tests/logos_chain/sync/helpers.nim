@@ -7,6 +7,7 @@
 
 {.push raises: [].}
 
+import std/sequtils
 import results
 import bincode
 import stew/byteutils as byteutils
@@ -85,12 +86,8 @@ func downloadBlocksRequestEqual*(a, b: DownloadBlocksRequest): bool =
   a.knownBlocks.additionalBlocks == b.knownBlocks.additionalBlocks
 
 func blockDownloadWireEqual*(a, b: Block): bool =
-  if a.header != b.header or a.txs.len != b.txs.len:
-    return false
-  for i in 0 ..< a.txs.len:
-    if encodeSignedMantleTx(a.txs[i]) != encodeSignedMantleTx(b.txs[i]):
-      return false
-  true
+  a.header == b.header and a.txs.len == b.txs.len and
+  (0 ..< a.txs.len).allIt(encodeSignedMantleTx(a.txs[it]) == encodeSignedMantleTx(b.txs[it]))
 
 func downloadBlocksResponseEqual*(a, b: DownloadBlocksResponse): bool =
   if a.kind != b.kind:
@@ -104,12 +101,8 @@ func downloadBlocksResponseEqual*(a, b: DownloadBlocksResponse): bool =
     a.failureMessage == b.failureMessage
 
 func downloadBlocksResponsesEqual*(a, b: seq[DownloadBlocksResponse]): bool =
-  if a.len != b.len:
-    return false
-  for i in 0 ..< a.len:
-    if not downloadBlocksResponseEqual(a[i], b[i]):
-      return false
-  true
+  a.len == b.len and
+  (0 ..< a.len).allIt(downloadBlocksResponseEqual(a[it], b[it]))
 
 proc downloadBlocksResponsesForRequest*(
     tree: LocalTree, req: DownloadBlocksRequest
