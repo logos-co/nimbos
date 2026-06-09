@@ -105,7 +105,8 @@ proc init*(
       polEntropyContribution =
         byteutils.toHex(genesisBlock.header.proofOfLeadership.entropyContribution),
       polProof = byteutils.toHex(genesisBlock.header.proofOfLeadership.proof),
-      polLeaderKey = byteutils.toHex(leaderKeyBytes)
+      polLeaderKey = byteutils.toHex(leaderKeyBytes),
+      blockSignature = byteutils.toHex(genesisBlock.signature.data)
 
   let
     network = createLBNode(
