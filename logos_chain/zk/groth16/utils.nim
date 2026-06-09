@@ -45,7 +45,7 @@ func fpFromDecimal*(s: string): Result[Fp[BN254_Snarks], JsonLoadError] =
     var fp: Fp[BN254_Snarks]
     fp.fromBig(big)
     ok(fp)
-  except CatchableError:
+  except ValueError:
     err(BadFieldElement)
 
 func fp2FromDecimal*(c0, c1: string): Result[Fp2[BN254_Snarks], JsonLoadError] =
@@ -62,7 +62,7 @@ func frFromDecimal*(s: string): Result[FieldElement, JsonLoadError] =
     var fr: FieldElement
     fr.fromBig(big)
     ok(fr)
-  except CatchableError:
+  except ValueError:
     err(BadFieldElement)
 
 func decodeJsonG1*(j: JsonG1): Result[G1, JsonLoadError] =

@@ -44,9 +44,9 @@ func ed25519PkToFrPair(pk: Ed25519PublicKey): (FieldElement, FieldElement) =
 
 func isGenesisLeaderProof(p: ProofOfLeadership): bool =
   p.proof == DefaultCompressedGroth16Proof and
-    p.entropyContribution == default(ZkHash) and
+    p.entropyContribution == static(default(ZkHash)) and
     encodeEd25519PublicKey(p.leaderKey) == default(array[32, byte]) and
-    p.leaderVoucher == default(RewardVoucher)
+    p.leaderVoucher == static(default(RewardVoucher))
 
 proc verifyLeaderProof*(
     proof: ProofOfLeadership, public: LeaderPublic): Result[bool, PolLoadError] =
