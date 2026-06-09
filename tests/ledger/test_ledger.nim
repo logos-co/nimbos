@@ -43,13 +43,11 @@ suite "LedgerState constructors and reads":
     check s.latestUtxos.contains(u2.id)
 
 suite "tryApplyHeader":
-  test "skipLeaderProofVerification returns state unchanged":
+  test "genesis-sentinel proof returns state unchanged":
     let
       u = mkUtxo()
       s0 = LedgerState.fromUtxos([u])
-      r = s0.tryApplyHeader(
-        slot = 1'u64, proof = mkProof(), flags = {skipLeaderProofVerification}
-      )
+      r = s0.tryApplyHeader(slot = 1'u64, proof = mkProof())
     check r.isOk
     check r.get.latestUtxos == s0.latestUtxos
 
@@ -297,7 +295,6 @@ suite "prepareUpdate":
         txs = @[],
         lockedNotes = LockedNotes.init(),
         verifier = mockAcceptVerifier(),
-        flags = {skipLeaderProofVerification},
       )
     check r.isErr
     check r.error == ParentNotFound
@@ -316,7 +313,6 @@ suite "prepareUpdate":
         txs = @[],
         lockedNotes = LockedNotes.init(),
         verifier = mockAcceptVerifier(),
-        flags = {skipLeaderProofVerification},
       )
     check r.isOk
     let prepared = r.get
@@ -339,7 +335,6 @@ suite "prepareUpdate":
         txs = @[tx],
         lockedNotes = LockedNotes.init(),
         verifier = mockAcceptVerifier(),
-        flags = {skipLeaderProofVerification},
       )
     check r.isOk
     let prepared = r.get
@@ -361,7 +356,6 @@ suite "prepareUpdate":
         txs = @[tx],
         lockedNotes = LockedNotes.init(),
         verifier = mockAcceptVerifier(),
-        flags = {skipLeaderProofVerification},
       )
     check r.isErr
     check r.error == UnbalancedTransaction
@@ -385,7 +379,6 @@ suite "prepareUpdate":
         txs = @[tx1],
         lockedNotes = LockedNotes.init(),
         verifier = mockAcceptVerifier(),
-        flags = {skipLeaderProofVerification},
       )
     check r1.isOk
     l.commitUpdate(r1.get.id, r1.get.state)
@@ -414,7 +407,6 @@ suite "prepareUpdate":
         txs = @[tx2],
         lockedNotes = LockedNotes.init(),
         verifier = mockAcceptVerifier(),
-        flags = {skipLeaderProofVerification},
       )
     check r2.isOk
     l.commitUpdate(r2.get.id, r2.get.state)
@@ -442,7 +434,6 @@ suite "prepareUpdate":
         txs = @[tx3],
         lockedNotes = LockedNotes.init(),
         verifier = mockAcceptVerifier(),
-        flags = {skipLeaderProofVerification},
       )
     check r3.isOk
     l.commitUpdate(r3.get.id, r3.get.state)

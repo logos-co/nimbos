@@ -32,18 +32,6 @@ type
     VerifierNotInitialised ## per-circuit VK singleton wasn't installed at
       ## node startup — wiring bug, not adversarial input
 
-  LedgerFlag* {.pure.} = enum
-    ## Per-validation bypass knobs. Tests use these to skip verification when
-    ## exercising non-crypto ledger logic. Production passes `{}`.
-    skipLeaderProofVerification
-    # future as OpProof phase lands:
-    # skipZkSigVerification           # Transfer, SDP, ChannelDeposit
-    # skipPoCVerification             # LeaderClaim
-    # skipEd25519SigVerification      # ChannelInscribe
-    # skipChannelMultiSigVerification # ChannelWithdraw, ChannelConfig
-
-  LedgerFlags* = set[LedgerFlag]
-
   LedgerConfig* = object
     ## Chain configuration. Currently empty — fields land with the modules
     ## that need them (epoch, lottery, SDP, gas).
