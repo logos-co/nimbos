@@ -11,7 +11,7 @@
 {.push raises: [], gcsafe.}
 
 import
-  std/[options, os],
+  std/os,
   results,
   ./circuits,
   ./groth16/[vk_json, verifier]
@@ -45,7 +45,7 @@ type
 # while workers are alive. The `cast(gcsafe)` blocks in init/verify rely on
 # this contract: under refc the singleton's seq is never mutated and never
 # freed, so concurrent reads do no GC operations.
-var polVk: Option[VKey]
+var polVk: Opt[VKey]
 
 proc loadVk*(circuitsDir: string): Result[VKey, PolLoadError] =
   ## Read + parse `<circuitsDir>/pol/verification_key.json`.
@@ -67,7 +67,7 @@ proc initVk*(vk: VKey): Result[void, PolLoadError] =
   {.cast(gcsafe).}:
     if polVk.isSome:
       return err(VkAlreadyLoaded)
-    polVk = some(vk)
+    polVk = Opt.some(vk)
     ok()
 
 proc loadAndInitVk*(circuitsDir: string): Result[void, PolLoadError] =
@@ -77,7 +77,7 @@ proc loadAndInitVk*(circuitsDir: string): Result[void, PolLoadError] =
 proc resetVkForTesting*() =
   ## Test-only: clear the singleton between cases. Not for production paths.
   {.cast(gcsafe).}:
-    polVk = none(VKey)
+    polVk = Opt.none(VKey)
 
 proc verify*(
     proof: array[ProofBytesLen, byte],
@@ -85,10 +85,10 @@ proc verify*(
   ## Verify against the installed singleton VK. `err(VkNotLoaded)` indicates
   ## a missing startup call, not adversarial input.
   {.cast(gcsafe).}:
-    if polVk.isNone:
+    let vk = polVk.valueOr:
       return err(VkNotLoaded)
     ok(verifyGroth16(
-      polVk.get,
+      vk,
       proof,
       [
         input.entropyContribution,

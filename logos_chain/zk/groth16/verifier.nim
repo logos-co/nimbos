@@ -13,6 +13,7 @@
 
 import
   std/options,
+  chronicles,
   groth16/[bn128, zkey_types],
   ../poseidon2/hasher
 
@@ -55,8 +56,7 @@ proc verifyGroth16*(
   # Snarkjs convention: IC[0] is the constant-1 variable; prepend `one`.
   var publicIO = newSeqOfCap[FieldElement](publicInputs.len + 1)
   publicIO.add(one)
-  for fe in publicInputs:
-    publicIO.add(fe)
+  add(publicIO,publicInputs)
 
   let proof = Proof(
     pi_a: piAOpt.get,
@@ -66,12 +66,11 @@ proc verifyGroth16*(
     curve: "bn128",
   )
 
-  # `verifyProof` asserts on-curve and curve-string; our `uncompressG1`/`G2`
-  # already pre-validate, but trap defects defensively.
   try:
     {.cast(gcsafe).}:
       verifyProof(vk, proof)
-  except AssertionDefect:
+  except ValueError as exc:
+    error "failed to verify proof", msg = exc.msg
     false
 
 {.pop.}

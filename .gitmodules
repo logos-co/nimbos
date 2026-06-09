@@ -153,7 +153,8 @@
 [submodule "vendor/nim-groth16"]
 	path = vendor/nim-groth16
 	url = https://github.com/logos-storage/nim-groth16.git
-	branch = feat/refc-support
+	ignore = untracked
+	branch = master
 [submodule "vendor/nim-poseidon2"]
 	path = vendor/nim-poseidon2
 	url = https://github.com/codex-storage/nim-poseidon2.git
