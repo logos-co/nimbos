@@ -26,7 +26,7 @@ import
   ./binary_common,
   ./zk/circuits
 
-from std/os import dirExists, getCacheDir, `/`
+from std/os import dirExists, getDataDir, `/`
 from std/strutils import parseBiggestUInt, replace
 
 export
@@ -55,10 +55,11 @@ else:
   {.pragma: posixOnly.}
 
 proc defaultCircuitsDir*(): InputDir =
-  ## Platform-aware cache location (XDG on Linux, `~/Library/Caches` on
-  ## macOS, `%LOCALAPPDATA%\…\cache` on Windows), suffixed with the pinned
-  ## bundle version. Tests use a repo-local override.
-  InputDir(getCacheDir("logos-blockchain-circuits") / ExpectedCircuitsVersion)
+  ## Platform-aware data location (`$XDG_DATA_HOME` or `~/.local/share` on
+  ## Linux, `~/Library/Application Support` on macOS, `%APPDATA%` on Windows),
+  ## suffixed with the pinned bundle version. XDG `data` (not `cache`) because
+  ## the bundle is essential for the prover; losing it breaks the node.
+  InputDir(getDataDir() / "logos-blockchain-circuits" / ExpectedCircuitsVersion)
 
 type
   BNStartUpCmd* {.pure.} = enum

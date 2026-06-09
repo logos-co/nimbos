@@ -5,7 +5,7 @@
 #
 # Defaults:
 #   Version    : v0.4.2
-#   InstallDir : $env:LOCALAPPDATA\logos-blockchain-circuits\cache\<Version>
+#   InstallDir : $env:APPDATA\logos-blockchain-circuits\<Version>
 #
 # Examples:
 #   .\setup-logos-blockchain-circuits.ps1
@@ -24,11 +24,12 @@ $Repo = "logos-blockchain/logos-blockchain-circuits"
 
 function Get-DefaultInstallDir {
     param([string]$Version)
-    $cacheRoot = $env:LOCALAPPDATA
-    if (-not $cacheRoot) {
-        throw "LOCALAPPDATA environment variable is not set; supply -InstallDir explicitly."
+    # Matches std/os.getDataDir on Windows: %APPDATA% (Roaming).
+    $dataRoot = $env:APPDATA
+    if (-not $dataRoot) {
+        throw "APPDATA environment variable is not set; supply -InstallDir explicitly."
     }
-    return (Join-Path -Path $cacheRoot -ChildPath "logos-blockchain-circuits\cache\$Version")
+    return (Join-Path -Path $dataRoot -ChildPath "logos-blockchain-circuits\$Version")
 }
 
 function Get-Platform {
@@ -43,7 +44,6 @@ function Get-Platform {
 function Write-Info    ([string]$m) { Write-Host "i $m" -ForegroundColor Cyan }
 function Write-Success ([string]$m) { Write-Host "+ $m" -ForegroundColor Green }
 function Write-Warn    ([string]$m) { Write-Host "! $m" -ForegroundColor Yellow }
-function Write-Fail    ([string]$m) { Write-Host "x $m" -ForegroundColor Red }
 
 if (-not $InstallDir) {
     $InstallDir = Get-DefaultInstallDir -Version $Version
@@ -75,11 +75,19 @@ $TempFile = Join-Path -Path $TempDir.FullName -ChildPath $Artifact
 
 try {
     Write-Info "Downloading: $Url"
-    $headers = @{}
-    if ($env:GITHUB_TOKEN) {
-        $headers["Authorization"] = "Bearer $env:GITHUB_TOKEN"
+    # Use the Windows built-in curl by absolute path (`%SYSTEMROOT%\System32\curl.exe`,
+    # Windows 10 1803+ / Server 2019+). Resolving `curl` through PATH may pick
+    # up MSYS/Git Bash curl, whose flags or path handling differ.
+    $WindowsCurl = Join-Path -Path $env:SYSTEMROOT -ChildPath "System32\curl.exe"
+    if (-not (Test-Path -LiteralPath $WindowsCurl)) {
+        throw "Windows curl not found at $WindowsCurl (requires Windows 10 1803+ / Server 2019+)"
     }
-    Invoke-WebRequest -Uri $Url -OutFile $TempFile -Headers $headers -UseBasicParsing
+    $curlArgs = @('-L', '--retry', '3', '--retry-all-errors', '-fsS', '-o', $TempFile, $Url)
+    if ($env:GITHUB_TOKEN) {
+        $curlArgs += @('-H', "Authorization: Bearer $env:GITHUB_TOKEN")
+    }
+    & $WindowsCurl @curlArgs
+    if ($LASTEXITCODE -ne 0) { throw "curl download failed (exit $LASTEXITCODE)" }
 
     Write-Info "Extracting to $InstallDir"
     New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null

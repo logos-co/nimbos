@@ -8,10 +8,10 @@
 #   VERSION      - Optional. Version to install (default: v0.4.2)
 #   INSTALL_DIR  - Optional. Installation directory.
 #                  Default follows the XDG Base Directory Spec:
-#                    Linux:  $XDG_CACHE_HOME/logos-blockchain-circuits/<VERSION>
-#                            ($HOME/.cache/... if XDG_CACHE_HOME is unset)
-#                    macOS:  $XDG_CACHE_HOME/logos-blockchain-circuits/<VERSION>
-#                            ($HOME/Library/Caches/... if XDG_CACHE_HOME is unset)
+#                    Linux:  $XDG_DATA_HOME/logos-blockchain-circuits/<VERSION>
+#                            ($HOME/.local/share/... if XDG_DATA_HOME is unset)
+#                    macOS:  $XDG_DATA_HOME/logos-blockchain-circuits/<VERSION>
+#                            ($HOME/Library/Application Support/... if unset)
 #                  Windows operators should use setup-logos-blockchain-circuits.ps1.
 #
 # Examples:
@@ -24,11 +24,17 @@ set -e
 # Default values
 VERSION="${1:-v0.4.2}"
 
-case "$(uname -s)" in
-    Darwin*) DEFAULT_CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/Library/Caches}" ;;
-    *)       DEFAULT_CACHE_ROOT="${XDG_CACHE_HOME:-$HOME/.cache}" ;;
+# XDG Base Directory Spec: treat empty XDG_DATA_HOME as unset (covered by `:-`)
+# and treat non-absolute values as invalid.
+case "${XDG_DATA_HOME}" in
+    /*) ;;     # absolute, ok
+    *)  XDG_DATA_HOME="" ;;  # unset or relative — ignore
 esac
-DEFAULT_INSTALL_DIR="$DEFAULT_CACHE_ROOT/logos-blockchain-circuits/$VERSION"
+case "$(uname -s)" in
+    Darwin*) DEFAULT_DATA_ROOT="${XDG_DATA_HOME:-$HOME/Library/Application Support}" ;;
+    *)       DEFAULT_DATA_ROOT="${XDG_DATA_HOME:-$HOME/.local/share}" ;;
+esac
+DEFAULT_INSTALL_DIR="$DEFAULT_DATA_ROOT/logos-blockchain-circuits/$VERSION"
 INSTALL_DIR="${2:-$DEFAULT_INSTALL_DIR}"
 REPO="logos-blockchain/logos-blockchain-circuits"
 
@@ -140,7 +146,8 @@ download_release() {
     print_success "Download complete"
 
     print_info "Extracting to ${INSTALL_DIR}..."
-    mkdir -p "$INSTALL_DIR"
+    # XDG Base Directory Spec: newly created destination directory gets 0700.
+    mkdir -m 0700 -p "$INSTALL_DIR"
 
     if ! tar -xzf "${temp_dir}/${artifact}" -C "$INSTALL_DIR" --strip-components=1; then
         print_error "Failed to extract archive"
@@ -204,11 +211,11 @@ main() {
         fi
     done
 
-    # Only show export instructions if not using the default location
+    # Remind the operator how to point the node at a non-default location.
     if [ "$INSTALL_DIR" != "$DEFAULT_INSTALL_DIR" ]; then
         echo
-        print_info "Since you're using a custom installation directory, set the environment variable:"
-        print_info "  export LOGOS_BLOCKCHAIN_CIRCUITS=$INSTALL_DIR"
+        print_info "Since you're using a custom installation directory, pass it to the node via:"
+        print_info "  lb-node --circuits-dir=$INSTALL_DIR"
         echo
     fi
 }

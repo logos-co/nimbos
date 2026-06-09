@@ -128,8 +128,8 @@ ifeq ($(USE_LIBBACKTRACE), 0)
 NIM_PARAMS += -d:disable_libbacktrace
 endif
 
-# Route `deps` to the per-goal circuits install: repo-local for tests, user
-# cache otherwise. Tests stay self-contained; operator builds populate the cache.
+# Route `deps` to the per-goal circuits install: repo-local for tests,
+# user data dir otherwise. Tests stay self-contained.
 ifneq (,$(filter test all_tests,$(MAKECMDGOALS)))
 DEPS_CIRCUITS_INSTALL := circuits-install-test
 else
@@ -145,17 +145,24 @@ endif
 # Keep LBC_VERSION in sync with `ExpectedCircuitsVersion` (logos_chain/zk/circuits.nim).
 LBC_VERSION := v0.4.2
 
-# Platform-aware cache layout mirrors `std/os.getCacheDir`.
+# Platform-aware data layout mirrors `std/os.getDataDir`.
 ifeq ($(OS),Windows_NT)
-	LBC_INSTALL_DIR := $(LOCALAPPDATA)/logos-blockchain-circuits/cache/$(LBC_VERSION)
+	LBC_INSTALL_DIR := $(APPDATA)/logos-blockchain-circuits/$(LBC_VERSION)
 	LBC_INSTALL_CMD := powershell.exe -ExecutionPolicy Bypass -File scripts/setup-logos-blockchain-circuits.ps1 -Version $(LBC_VERSION) -InstallDir
 else
-ifeq ($(shell uname),Darwin)
-	XDG_CACHE_HOME ?= $(HOME)/Library/Caches
-else
-	XDG_CACHE_HOME ?= $(HOME)/.cache
+# XDG spec: reject empty or non-absolute XDG_DATA_HOME. Use bash `${X:0:1}` for
+# the first-char test so paths containing spaces stay recognised as absolute.
+ifneq ($(shell test "$${XDG_DATA_HOME:0:1}" = "/" && echo yes),yes)
+	XDG_DATA_HOME :=
 endif
-	LBC_INSTALL_DIR := $(XDG_CACHE_HOME)/logos-blockchain-circuits/$(LBC_VERSION)
+ifeq ($(XDG_DATA_HOME),)
+ifeq ($(shell uname),Darwin)
+	XDG_DATA_HOME := $(HOME)/Library/Application Support
+else
+	XDG_DATA_HOME := $(HOME)/.local/share
+endif
+endif
+	LBC_INSTALL_DIR := $(XDG_DATA_HOME)/logos-blockchain-circuits/$(LBC_VERSION)
 	LBC_INSTALL_CMD := ./scripts/setup-logos-blockchain-circuits.sh $(LBC_VERSION)
 endif
 LBC_TEST_INSTALL_DIR := $(CURDIR)/tests/circuits-bundle/$(LBC_VERSION)
