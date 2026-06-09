@@ -15,7 +15,7 @@ import
 export chronos, results
 
 type
-  MessageKind* = enum
+  MessageKind* {.pure.} = enum
     msgNotification
     msgRequest
     msgResponse

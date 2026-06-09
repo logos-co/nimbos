@@ -37,7 +37,7 @@ logScope:
 # Wire framing (u32 inner length, raw stream write/read)
 # ---------------------------------------------------------------------------
 
-proc readCryptarchiaPrefixedInner*(
+proc readCryptarchiaPrefixedInner(
     conn: Connection
 ): Future[Opt[seq[byte]]] {.async: (raises: [CancelledError]).} =
   ## Read LE ``uint32`` inner length, then exactly ``innerLen`` bytes.
@@ -56,7 +56,7 @@ proc readCryptarchiaPrefixedInner*(
     debug "IBD wire read failed", exc = exc.msg
     Opt.none(seq[byte])
 
-proc writeCryptarchiaPrefixedInner*(
+proc writeCryptarchiaPrefixedInner(
     conn: Connection, inner: seq[byte]
 ) {.async: (raises: [BincodeError, LPStreamError, CancelledError]).} =
   ## Prepend LE ``uint32`` inner length, then ``write`` the frame raw on the stream.
@@ -69,7 +69,7 @@ proc writeCryptarchiaPrefixedInner*(
   await conn.write(framed)
   debug "IBD wire write ok", framedBytes = framed.len
 
-func parseRequestMessageKind*(inner: openArray[byte]): Opt[RequestMessageKind] =
+func parseRequestMessageKind(inner: openArray[byte]): Opt[RequestMessageKind] =
   ## First 4 bytes of the inner bincode body are ``RequestMessageKind`` (u32 LE).
   const kindWireSize = sizeof(uint32)
   if inner.len < kindWireSize:
@@ -83,7 +83,7 @@ func parseRequestMessageKind*(inner: openArray[byte]): Opt[RequestMessageKind] =
 # GetTip
 # ---------------------------------------------------------------------------
 
-proc getTipResponseFromLocalTree*(localTree: LocalTree): GetTipResponse =
+proc getTipResponseFromLocalTree(localTree: LocalTree): GetTipResponse =
   GetTipResponse(
     kind: gtrTip,
     tipData: Tip(
@@ -154,6 +154,8 @@ proc sendGetTipRequest*(
 # ---------------------------------------------------------------------------
 # Download blocks
 # ---------------------------------------------------------------------------
+
+const MaxKnownAdditionalBlocks = 5
 
 proc buildKnownBlocks*(
     localTree: LocalTree,
@@ -410,7 +412,7 @@ proc mountCryptarchiaSyncHandler*(
 # Block ingest
 # ---------------------------------------------------------------------------
 
-proc onBlock*(
+proc onBlock(
     localTree: LocalTree,
     blk: Block,
 ) {.raises: [InvalidBlock].} =
@@ -436,7 +438,7 @@ proc onBlock*(
 # IBD: requester loop
 # ---------------------------------------------------------------------------
 
-proc downloadBlocks*(
+proc downloadBlocks(
     sw: Switch,
     localTree: LocalTree,
     peer: PeerId,

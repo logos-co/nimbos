@@ -7,7 +7,7 @@
 
 ## Chain initialization: load deployment settings, build genesis block, seed ledger state.
 
-{.push raises: [].}
+{.push raises: [], gcsafe.}
 
 import results
 import ../core/types

@@ -35,7 +35,7 @@ proc verifyPoL(localTree: LocalTree, header: Header): bool =
   discard header
   true
 
-proc validateBlockHeader*(blk: Block, localTree: LocalTree): bool =
+proc validateBlockHeader(blk: Block, localTree: LocalTree): bool =
   let header = blk.header
 
   if header.bedrockVersion != ExpectedBedrockVersion:
@@ -69,7 +69,7 @@ proc validateBlockHeader*(blk: Block, localTree: LocalTree): bool =
 
   true
 
-proc validateBlockBody*(blk: Block): bool =
+proc validateBlockBody(blk: Block): bool =
   discard blk # TODO: body checks
   true
 

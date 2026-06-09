@@ -56,7 +56,7 @@ type
   ConfigurationThreshold* = uint16
   WithdrawThreshold* = uint16
 
-  ServiceType* = enum
+  ServiceType* {.pure.} = enum
     bn = 0
   Locator* = MultiAddress
 

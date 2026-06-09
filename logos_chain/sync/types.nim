@@ -31,18 +31,16 @@ type
     targetBlock*: BlockId
     knownBlocks*: KnownBlocks
 
-const MaxKnownAdditionalBlocks* = 5
-
 # ---------------------------------------------------------------------------
 # IBD download response
 # ---------------------------------------------------------------------------
 
 type
-  SerializedBlock* = seq[byte]
+  SerializedBlock = seq[byte]
     ## Bincode-encoded ``Block`` bytes (``serializeBlockToSeq`` / ``deserializeBlock``).
 
 type
-  DownloadBlocksResponseKind* = enum
+  DownloadBlocksResponseKind* {.pure.} = enum
     dbrBlock = 0
     dbrNoMoreBlocks = 1
     dbrFailure = 2
@@ -61,7 +59,7 @@ type
 # ---------------------------------------------------------------------------
 
 type
-  RequestMessageKind* = enum
+  RequestMessageKind* {.pure.} = enum
     rmDownloadBlocksRequest = 0
     rmGetTip = 1
 
@@ -77,7 +75,7 @@ type
 # ---------------------------------------------------------------------------
 
 type
-  GetTipResponseKind* = enum
+  GetTipResponseKind* {.pure.} = enum
     gtrTip = 0
     gtrFailure = 1
 
@@ -93,10 +91,6 @@ type
 # ---------------------------------------------------------------------------
 
 type
-  ForkChoice* = enum
-    Online
-    Bootstrap
-
   IBDFailure* = object of CatchableError
   InvalidBlock* = object of CatchableError
 

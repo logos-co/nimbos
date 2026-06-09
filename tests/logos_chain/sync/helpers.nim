@@ -5,7 +5,7 @@
 #   * Apache v2 license (license terms in the root directory or at https://opensource.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to these terms.
 
-{.push raises: [].}
+{.push raises: [], gcsafe.}
 
 import std/[sequtils, algorithm]
 import results
@@ -22,7 +22,6 @@ from ../../../logos_chain/core/mantle/primitives import SlotNumber
 from ../../../logos_chain/core/mantle/tx_types import MantleTx, SignedMantleTx, encodeSignedMantleTx
 
 const testChainSyncProtocol* = "/logos-blockchain-testnet-v0.1.2/chainsync/1.0.0"
-  ## Matches ``network.chain_sync_protocol_name`` in ``config/deployment-settings.yaml``.
 
 proc minimalSignedTx*(): SignedMantleTx =
   SignedMantleTx(

@@ -81,7 +81,7 @@ type
 
 
 type
-  OpPayloadTag* = enum
+  OpPayloadTag* {.pure.} = enum
     Transfer
     ChannelInscribe
     ChannelDeposit

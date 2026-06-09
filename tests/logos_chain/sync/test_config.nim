@@ -2,8 +2,8 @@
 # Copyright (c) 2026 Status Research & Development GmbH
 # Licensed and distributed under either of
 #   * MIT license (license terms in the root directory or at https://opensource.org/licenses/MIT).
-#   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
-# at your option, this file may not be copied, modified, or distributed except according to those terms.
+#   * Apache v2 license (license terms in the root directory or at https://opensource.org/licenses/LICENSE-2.0).
+# at your option, this file may not be copied, modified, or distributed except according to these terms.
 
 {.push raises: [], gcsafe.}
 {.used.}
@@ -12,9 +12,9 @@ import results
 import bincode
 import ../../testutil
 
-import ../../../logos_chain/sync/[framing, types]
+import ../../../logos_chain/sync/[config, types]
 
-suite "sync/framing":
+suite "sync/config":
   test "addPrefixLengthToPayload / removePrefixLengthFromPacket roundtrips inner for download LP bodies":
     let msg = DownloadBlocksResponse(kind: dbrNoMoreBlocks)
     var inner = try:

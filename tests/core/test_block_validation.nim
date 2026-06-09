@@ -5,7 +5,7 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to these terms.
 
-{.push raises: [].}
+{.push raises: [], gcsafe.}
 {.used.}
 
 import unittest2
@@ -59,7 +59,7 @@ suite "core/block_validation":
     let tree = newLocalTree(genesis)
     var b1 = childBlock(genesis.header, gid, SlotNumber(1), [sm])
     b1.header.bedrockVersion = 99'u8
-    check not validateBlockHeader(b1, tree)
+    check not validateBlock(b1, tree)
 
   test "validateBlockHeader rejects missing parent":
     let sm = minimalSignedTx()
@@ -68,6 +68,6 @@ suite "core/block_validation":
     var miss: BlockId
     miss[0] = 1'u8
     let orphan = childBlock(genesis.header, miss, SlotNumber(1), [sm])
-    check not validateBlockHeader(orphan, tree)
+    check not validateBlock(orphan, tree)
 
 {.pop.}

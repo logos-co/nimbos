@@ -13,13 +13,13 @@ import chronos
 export tables
 
 type
-  PeerType* = enum
+  PeerType* {.pure.} = enum
     Incoming, Outgoing
 
-  PeerFlags = enum
+  PeerFlags {.pure.} = enum
     Acquired, DeleteOnRelease
 
-  PeerStatus* = enum
+  PeerStatus* {.pure.} = enum
     Success,        ## Peer was successfully added to PeerPool.
     DuplicateError, ## Peer is already present in PeerPool.
     NoSpaceError,   ## There no space for the peer in PeerPool.

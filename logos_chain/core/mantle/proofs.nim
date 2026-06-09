@@ -17,7 +17,7 @@ import ../crypto/types
 import libp2p/crypto/ed25519/ed25519
 
 type
-  OpProofKind* = enum
+  OpProofKind* {.pure.} = enum
     opfTransfer
     opfChannelInscribe
     opfChannelDeposit
@@ -28,7 +28,7 @@ type
     opfLeaderClaim
     opfChannelConfig
 
-  ProofType* = enum
+  ProofType* {.pure.} = enum
     ptEd25519Sig
     ptZkSig
     ptZkAndEd25519Sigs
