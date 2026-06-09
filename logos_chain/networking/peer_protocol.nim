@@ -28,9 +28,6 @@ type
     statusMsg: StatusMsg
     statusMsgV2: Opt[StatusMsgV2]
 
-declareCounter nbc_disconnects_count,
-  "Number disconnected peers", labels = ["agent", "reason"]
-
 func shortLog*(s: StatusMsg): auto =
   (
     e: $s.e
@@ -44,9 +41,6 @@ func shortLog*(s: StatusMsgV2): auto =
 proc getCurrentStatusV1(state: PeerSyncNetworkState): StatusMsg =
   StatusMsg()
 
-proc getCurrentStatusV2(state: PeerSyncNetworkState): StatusMsgV2 =
-  StatusMsgV2()
-
 proc checkStatusMsg(state: PeerSyncNetworkState, status: StatusMsg | StatusMsgV2):
     Result[void, cstring] =
   ok()
@@ -54,11 +48,6 @@ proc checkStatusMsg(state: PeerSyncNetworkState, status: StatusMsg | StatusMsgV2
 proc handleStatusV1(peer: Peer,
                     state: PeerSyncNetworkState,
                     theirStatus: StatusMsg): Future[bool] {.async: (raises: [CancelledError]).}
-
-proc setStatusV2Msg(state: PeerSyncPeerState,
-                    statusMsg: Opt[StatusMsgV2]) =
-  state.statusMsgV2 = statusMsg
-  state.statusLastTime = Moment.now()
 
 {.pop.} # TODO fix p2p macro for raises
 
