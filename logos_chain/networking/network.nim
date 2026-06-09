@@ -48,8 +48,6 @@ type
   ErrorMsg = List[byte, 256]
   SendResult* = Result[void, cstring]
 
-  DirectPeers = Table[PeerId, seq[MultiAddress]]
-
   # TODO: This is here only to eradicate a compiler
   # warning about unused import (rpc/messages).
   GossipMsg = messages.Message
@@ -282,22 +280,6 @@ declareGauge nbc_peers,
 
 declareCounter nbc_successful_discoveries,
   "Number of successful discoveries"
-
-declareCounter nbc_cycling_kicked_peers,
-  "Number of peers kicked for peer cycling"
-
-declareGauge nbc_gossipsub_low_fanout,
-  "numbers of topics with low fanout"
-
-declareGauge nbc_gossipsub_good_fanout,
-  "numbers of topics with good fanout"
-
-declareGauge nbc_gossipsub_healthy_fanout,
-  "numbers of topics with dHigh fanout"
-
-declareHistogram nbc_resolve_time,
-  "Time(s) used while resolving peer information",
-   buckets = [1.0, 5.0, 10.0, 20.0, 40.0, 60.0]
 
 declareCounter nbc_reqresp_messages_sent,
   "Number of Req/Resp messages sent", labels = ["protocol"]
@@ -1951,8 +1933,6 @@ import ./peer_protocol
 export peer_protocol
 
 const
-  # For Phase0, metadata change every +27 hours
-  MetadataRequestFrequency = 30.minutes
   MetadataRequestMaxFailures = 3
 
 proc peerPingerHeartbeat(node: LBP2PNode) {.async: (raises: [CancelledError]).} =

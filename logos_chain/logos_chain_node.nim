@@ -42,10 +42,8 @@ proc doRunLBNode(
   if ProcessState.stopIt(notice("Shutting down", reason = it)):
     return
 
-  let
-    taskpool = setupTaskpool(config.numThreads)
-    node = waitFor(LBNode.init(rng, config, deploymentSettings)).valueOr:
-      return
+  let node = waitFor(LBNode.init(rng, config, deploymentSettings)).valueOr:
+    return
 
   # Nim GC metrics (for the main thread) will be collected in onSecond(), but
   # we disable piggy-backing on other metrics here.
