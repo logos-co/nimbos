@@ -16,13 +16,6 @@ when defined(windows):
 type
   ByteChar = byte | char
 
-const
-  INCOMPLETE_ERROR =
-    when defined(windows):
-      IoErrorCode(996) # ERROR_IO_INCOMPLETE
-    else:
-      IoErrorCode(28) # ENOSPC
-
 proc secureCreatePath*(path: string): IoResult[void] =
   when defined(windows):
     let sres = createFoldersUserOnlySecurityDescriptor()

@@ -47,7 +47,7 @@ suite "core/types":
         leaderKey: default(Ed25519PublicKey),
       ),
     )
-    let b = initBlock(h, [])
+    let b = initBlock(h, txs = [])
     check b.txs.len == 0
     check b.header.slot == 0'u64
 

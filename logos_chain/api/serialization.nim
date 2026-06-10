@@ -25,9 +25,6 @@ func decodeMediaType*(
   ok contentType.get.mediaType
 
 const
-  DecimalSet = {'0' .. '9'}
-    # Base10 (decimal) set of chars
-
   ApplicationJsonMediaType* = MediaType.init("application/json")
   TextPlainMediaType* = MediaType.init("text/plain")
   OctetStreamMediaType* = MediaType.init("application/octet-stream")

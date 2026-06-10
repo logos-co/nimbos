@@ -11,12 +11,12 @@
 
 import
   # Standard library
-  std/[cpuinfo, exitprocs, os, tables, terminal, typetraits, strutils],
+  std/[exitprocs, os, tables, terminal, typetraits, strutils],
 
   # Nimble packages
   chronos, confutils, presto, toml_serialization, metrics,
   chronicles, chronicles/helpers as chroniclesHelpers, chronicles/topics_registry,
-  stew/[io2, byteutils], metrics/chronos_httpserver, taskpools,
+  stew/[io2, byteutils], metrics/chronos_httpserver,
 
   # Local modules
   ./buildinfo
@@ -27,9 +27,6 @@ when defaultChroniclesStream.outputs.type.arity == 2:
   from ./filepath import secureCreatePath
 
   import stew/staticfor
-
-when defined(posix):
-  import termios
 
 export
   confutils, toml_serialization
@@ -169,24 +166,6 @@ proc setupLogging*(
       echo "Invalid value for --log-level. " & err.msg
     quit 1
 
-proc setupTaskpool*(numThreads: int): Taskpool =
-  let taskpool =
-    try:
-      if numThreads < 0:
-        fatal "The number of threads --num-threads cannot be negative."
-        quit QuitFailure
-      elif numThreads == 0:
-        Taskpool.new(numThreads = min(countProcessors(), 16))
-      else:
-        Taskpool.new(numThreads = numThreads)
-    except CatchableError as e:
-      fatal "Cannot start taskpool", err = e.msg
-      quit QuitFailure
-
-  info "Taskpool started", numThreads = taskpool.numThreads
-
-  taskpool
-
 proc loadWithBanners*(
     ConfType: type,
     helpBanner, copyright: string,
@@ -241,15 +220,6 @@ proc loadWithBanners*(
       return err(msg)
   {.pop.}
   ok(config)
-
-proc resetStdin*() =
-  when defined(posix):
-    # restore echoing, in case it was disabled by a password prompt
-    let fd = stdin.getFileHandle()
-    var attrs: Termios
-    discard fd.tcGetAttr(attrs.addr)
-    attrs.c_lflag = attrs.c_lflag or Cflag(ECHO)
-    discard fd.tcSetAttr(TCSANOW, attrs.addr)
 
 proc init*(T: type RestServerRef,
            ip: IpAddress,

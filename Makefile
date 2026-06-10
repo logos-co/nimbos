@@ -67,8 +67,6 @@ TOOLS_CSV := $(subst $(SPACE),$(COMMA),$(TOOLS))
 	test \
 	clean \
 	libbacktrace \
-	book \
-	publish-book \
 	dist-amd64 \
 	dist-arm64 \
 	dist-arm \
@@ -144,38 +142,6 @@ update: | update-common
 libbacktrace:
 	+ "$(MAKE)" -C vendor/nim-libbacktrace --no-print-directory BUILD_CXX_LIB=0
 
-# Make sure ports don't overlap to support concurrent execution of tests
-# Avoid selecting ephemeral ports that may be used by others; safe = 5001-9999
-# - Port 8301 is used by Consul
-# - Port 9952 sometimes reports (48) Address already in use.
-#
-# EXECUTOR_NUMBER: [0, 2] (depends on max number of concurrent CI jobs)
-#
-# The following port ranges are allocated (entire continuous range):
-#
-# Unit tests:
-# - NIMBUS_TEST_KEYMANAGER_BASE_PORT + [0, 4)
-# - NIMBUS_TEST_SIGNING_NODE_BASE_PORT + [0, 2)
-#
-# REST tests:
-# - --base-port (REST_TEST_BASE_PORT + 0)
-# - --base-rest-port (REST_TEST_BASE_PORT + 1)
-# - --base-metrics-port (REST_TEST_BASE_PORT + 2)
-#
-# Local testnets (entire continuous range):
-# - --base-port + [0, --nodes + --light-clients)
-# - --base-rest-port + [0, --nodes)
-# - --base-metrics-port + [0, --nodes)
-# - --base-vc-keymanager-port + [0, --nodes)
-# - --base-vc-metrics-port + [0, --nodes]
-# - --base-remote-signer-port + [0, --signer-nodes)
-# - --base-remote-signer-metrics-port + [0, --signer-nodes)
-#
-# Local testnets with --run-geth or --run-nimbus (only these ports):
-# - --base-el-net-port + --el-port-offset * [0, --nodes + --light-clients)
-# - --base-el-rpc-port + --el-port-offset * [0, --nodes + --light-clients)
-# - --base-el-ws-port + --el-port-offset * [0, --nodes + --light-clients)
-# - --base-el-auth-rpc-port + --el-port-offset * [0, --nodes + --light-clients)
 UNIT_TEST_BASE_PORT := 29960
 REST_TEST_BASE_PORT := 30990
 MINIMAL_TESTNET_BASE_PORT := 25001
@@ -189,29 +155,6 @@ XML_TEST_BINARIES := \
 # test suite
 .PHONY: $(XML_TEST_BINARIES) force_build_alone_all_tests
 
-# Windows GitHub Actions CI runners, as of this writing, have around 8GB of RAM
-# and compiling all_tests requires around 5.5GB of that. It often fails via OOM
-# on the two cores available. Usefully, the part of the process requiring those
-# gigabytes of RAM is `nim c --compileOnly`, which intrinsically serializes. As
-# a result, only slightly increase build times by using fake dependencies, when
-# running `make test`, to ensure the `all_tests` target builds alone when being
-# built as part of `test`, while not also spuriously otherwise depending on the
-# not-actually-related Makefile goals.
-#
-# This works because `nim c --compileOnly` is fast but RAM-heavy, while the
-# rest of the build process, such as LTO, requires less RAM but is slow and
-# still is parallelized.
-#
-# On net, this saves CI and human time, because it reduces the likelihood of
-# CI false negatives in a process lasting hours and requiring a restart, and
-# therefore even more wasted time, when it does.
-#
-# If one asks for, e.g., `make all_tests block_sim`, it intentionally allows
-# those in parallel, because the CI system doesn't do that.
-#
-# https://www.gnu.org/software/make/manual/html_node/Parallel-Disable.html
-# describes a special target .WAIT which would enable this more easily but
-# remains unusable for this Makefile due to requiring GNU Make 4.4.
 ifneq (,$(filter test,$(MAKECMDGOALS)))
 FORCE_BUILD_ALONE_ALL_TESTS_DEPS := $(XML_TEST_BINARIES_CORE) $(TEST_BINARIES)
 else
@@ -282,26 +225,6 @@ $(filter-out $(TOOLS_CORE_CUSTOMCOMPILE),$(TOOLS)): | build deps
 		MAKE="$(MAKE)" V="$(V)" $(ENV_SCRIPT) scripts/compile_nim_program.sh $@ "$${TOOL_DIR}/$@.nim" $(NIM_PARAMS) && \
 		echo -e $(BUILD_END_MSG) "build/$@"
 
-# Windows GitHub Actions CI runners, as of this writing, have around 8GB of RAM
-# and compiling logos_chain_node requires more than 5GB. It can fail with OOM
-# on the two cores available. Usefully, the part of the process requiring those
-# gigabytes of RAM is `nim c --compileOnly`, which intrinsically serializes. As
-# a result, only slightly increase build times by using fake dependencies, when
-# running `make`, to ensure `logos_chain_node` builds alone, when being built
-# as part of `all`, while allowing one to also build `logos_chain_node` alone
-# without pulling in the rest of `$(TOOLS)`.
-#
-# This works because `nim c --compileOnly` is fast but RAM-heavy, while the
-# rest of the build process, such as LTO, requires less RAM but is slow and
-# still is parallelized.
-#
-# On net, this saves CI and human time, because it reduces the likelihood of
-# CI false negatives in a process lasting hours and requiring a restart, and
-# therefore even more wasted time, when it does.
-#
-# https://www.gnu.org/software/make/manual/html_node/Parallel-Disable.html
-# describes a special target .WAIT which would enable this more easily but
-# remains unusable for this Makefile due to requiring GNU Make 4.4.
 ifneq (,$(filter all,$(MAKECMDGOALS)))
 FORCE_BUILD_ALONE_TOOLS_DEPS := $(TOOLS_CORE)
 else ifeq (,$(MAKECMDGOALS))
@@ -355,36 +278,6 @@ endif
 
 book:
 	"$(MAKE)" -C docs book
-
-auditors-book:
-	[[ "$$(mdbook --version)" == "mdbook v0.4.36" ]] || { echo "'mdbook v0.4.35' not found in PATH. See 'docs/README.md'. Aborting."; exit 1; }
-	[[ "$$(mdbook-toc --version)" == "mdbook-toc 0.14.1" ]] || { echo "'mdbook-toc 0.14.1' not found in PATH. See 'docs/README.md'. Aborting."; exit 1; }
-	[[ "$$(mdbook-open-on-gh --version)" == "mdbook-open-on-gh 2.4.1" ]] || { echo "'mdbook-open-on-gh 2.4.1' not found in PATH. See 'docs/README.md'. Aborting."; exit 1; }
-	[[ "$$(mdbook-admonish --version)" == "mdbook-admonish 1.14.0" ]] || { echo "'mdbook-open-on-gh 1.13.1' not found in PATH. See 'docs/README.md'. Aborting."; exit 1; }
-	cd docs/the_auditors_handbook && \
-	mdbook build
-
-publish-book: | book auditors-book
-	CURRENT_BRANCH="$$(git rev-parse --abbrev-ref HEAD)"; \
-		if [[ "$${CURRENT_BRANCH}" != "stable" && "$${CURRENT_BRANCH}" != "unstable" ]]; then \
-			echo -e "\nWarning: you're publishing the books from a branch that is neither 'stable' nor 'unstable'!\n"; \
-		fi
-	CURRENT_COMMIT="$$(git rev-parse --short HEAD)" && \
-	git branch -D gh-pages && \
-	git branch --track gh-pages origin/gh-pages && \
-	git worktree add tmp-book gh-pages && \
-	rm -rf tmp-book/* && \
-	mkdir -p tmp-book/auditors-book && \
-	cp -a docs/the_nimbus_book/CNAME tmp-book/ && \
-	cp -a docs/the_nimbus_book/site/* tmp-book/ && \
-	cp -a docs/the_auditors_handbook/book/* tmp-book/auditors-book/ && \
-	cd tmp-book && \
-	git add . && { \
-		git commit -m "make publish-book $${CURRENT_COMMIT}" && \
-		git push origin gh-pages || true; } && \
-	cd .. && \
-	git worktree remove -f tmp-book && \
-	rm -rf tmp-book
 
 dist-amd64:
 	+ MAKE="$(MAKE)" \

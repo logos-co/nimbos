@@ -33,6 +33,7 @@ suite "chain/genesis":
     check b.header.bedrockVersion == GenesisBedrockVersion
     check b.txs[0].tx.executionGasPrice == sm.tx.executionGasPrice
     check b.txs[0].tx.ops.len == sm.tx.ops.len
+    check b.signature == DefaultEd25519Signature
 
   test "createGenesisBlock builds expected header/envelope from deployment settings":
     let text = readAllChars(deploymentSettingsPath).valueOr:
@@ -63,6 +64,7 @@ suite "chain/genesis":
     check gb.header.slot == 0'u64
     check gb.header.blockRoot == createBlockRoot([genesisTx])
     check gb.header == gstate.header
+    check gb.signature == gstate.blockSignature
 
   test "createGenesisBlock from genesisState matches createGenesisBlock from signedMantleTx":
     let text = readAllChars(deploymentSettingsPath).valueOr:

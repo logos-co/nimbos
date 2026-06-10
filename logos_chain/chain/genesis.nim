@@ -45,8 +45,8 @@ func createGenesisHeader(genesisMantleTx: SignedMantleTx): Header =
   )
 
 func createGenesisBlock*(genesisMantleTx: SignedMantleTx): Block =
-  ## GENESIS_BLOCK = (GENESIS_HEADER, [GENESIS_MANTLE_TX])
+  ## GENESIS_BLOCK = (GENESIS_HEADER, GENESIS_SIGNATURE, [GENESIS_MANTLE_TX])
   let genesisHeader = createGenesisHeader(genesisMantleTx)
-  initBlock(genesisHeader, [genesisMantleTx])
+  initBlock(genesisHeader, DefaultEd25519Signature, [genesisMantleTx])
 
 {.pop.}
