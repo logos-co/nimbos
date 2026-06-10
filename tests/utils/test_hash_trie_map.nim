@@ -120,7 +120,7 @@ suite "HashTrieMap withValue":
       missingHit = false
     m.withValue(1) do(v: int):
       seenVal = v
-    do:
+    do ():
       missingHit = true
     check seenVal == 100
     check not missingHit
@@ -129,7 +129,7 @@ suite "HashTrieMap withValue":
     missingHit = false
     m.withValue(99) do(v: int):
       seenVal = v
-    do:
+    do ():
       missingHit = true
     check seenVal == -1
     check missingHit
