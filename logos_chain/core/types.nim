@@ -37,6 +37,7 @@ type
 
   Block* = object
     header*: Header
+    signature*: Ed25519Signature
     txs*: seq[SignedMantleTx]
 
   Proposal* = object
@@ -110,11 +111,15 @@ func blockId*(header: Header): Hash32 =
   blake2b256Hash(preimage)
 
 
-func initBlock*(header: Header, txs: openArray[SignedMantleTx]): Block =
+func initBlock*(
+    header: Header,
+    signature: Ed25519Signature = DefaultEd25519Signature,
+    txs: openArray[SignedMantleTx],
+): Block =
   ## Canonical constructor that enforces block tx count limit.
   doAssert txs.len <= MaxBlockTxs,
     "block tx count exceeds MaxBlockTxs (" & $MaxBlockTxs & "): " & $txs.len
-  Block(header: header, txs: @txs)
+  Block(header: header, signature: signature, txs: @txs)
 
 func initHeader*(
     bedrockVersion: uint8,
