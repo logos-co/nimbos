@@ -41,7 +41,7 @@ proc childBlock(
     txs = txs,
     proofOfLeadership = parentHdr.proofOfLeadership,
   )
-  initBlock(h, txs)
+  initBlock(h, txs = txs)
 
 suite "core/block_validation":
   test "validateBlockHeader accepts child block with parent in tree":

@@ -432,7 +432,8 @@ proc onBlock(
     polLeaderVoucher = sbyteutils.toHex(h.proofOfLeadership.leaderVoucher),
     polEntropyContribution = sbyteutils.toHex(h.proofOfLeadership.entropyContribution),
     polProof = sbyteutils.toHex(h.proofOfLeadership.proof),
-    polLeaderKey = sbyteutils.toHex(leaderKeyBytes)
+    polLeaderKey = sbyteutils.toHex(leaderKeyBytes),
+    blockSignature = sbyteutils.toHex(blk.signature.data)
 
 # ---------------------------------------------------------------------------
 # IBD: requester loop

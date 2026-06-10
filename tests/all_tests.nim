@@ -27,6 +27,7 @@ import # Unit test
   ./core/mantle/test_tx_hashing,
   ./core/mantle/test_utxo,
   ./core/test_block_types,
+  ./core/test_block_bincode,
   ./core/test_block_validation,
   ./core/test_local_tree,
   ./core/test_genesis,

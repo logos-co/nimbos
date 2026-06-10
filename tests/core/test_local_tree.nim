@@ -34,7 +34,7 @@ proc childBlock(parentHdr: Header, parentId: BlockId, slot: SlotNumber, txs: ope
     txs = txs,
     proofOfLeadership = parentHdr.proofOfLeadership,
   )
-  initBlock(h, txs)
+  initBlock(h, txs = txs)
 
 suite "core/local_tree":
   test "newLocalTree stores genesis as tip at height 0":
@@ -87,7 +87,7 @@ suite "core/local_tree":
       [sm],
       genesis.header.proofOfLeadership,
     )
-    let bad = initBlock(zeroParentHdr, [sm])
+    let bad = initBlock(zeroParentHdr, txs = [sm])
     check not tree.addBlockToTree(bad)
 
   test "blockHeight returns none for unknown id":

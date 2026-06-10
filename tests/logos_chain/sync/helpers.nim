@@ -43,7 +43,7 @@ proc childBlock*(
     txs = txs,
     proofOfLeadership = parentHdr.proofOfLeadership,
   )
-  initBlock(h, txs)
+  initBlock(h, txs = txs)
 
 func exampleBlockId*(fill: byte): BlockId =
   var id: BlockId
@@ -85,7 +85,7 @@ func downloadBlocksRequestEqual*(a, b: DownloadBlocksRequest): bool =
   a.knownBlocks.additionalBlocks == b.knownBlocks.additionalBlocks
 
 func blockDownloadWireEqual*(a, b: Block): bool =
-  a.header == b.header and a.txs.len == b.txs.len and
+  a.header == b.header and a.signature == b.signature and a.txs.len == b.txs.len and
   (0 ..< a.txs.len).allIt(encodeSignedMantleTx(a.txs[it]) == encodeSignedMantleTx(b.txs[it]))
 
 func downloadBlocksResponseEqual*(a, b: DownloadBlocksResponse): bool =

@@ -12,6 +12,7 @@
 
 import results
 import ./local_tree
+import libp2p/crypto/ed25519/ed25519
 
 from ./types import
   Block, Header, createBlockRoot, ExpectedBedrockVersion, MaxBlockSize
@@ -29,6 +30,11 @@ proc txBytesLen(txs: openArray[SignedMantleTx]): int =
     total += encodeSignedMantleTx(stx).len
   total
 
+func blockPayloadBytesLen(blk: Block): int =
+  ## Mantle tx bytes plus the 64-byte Ed25519 block signature.
+  ## IBD additionally caps the full bincode wire blob (header framing + signature + txs).
+  txBytesLen(blk.txs) + EdSignatureSize
+
 proc verifyPoL(localTree: LocalTree, header: Header): bool =
   ## TODO: implement `verifyPoL()`.
   discard localTree
@@ -41,7 +47,7 @@ proc validateBlockHeader(blk: Block, localTree: LocalTree): bool =
   if header.bedrockVersion != ExpectedBedrockVersion:
     return false
 
-  if txBytesLen(blk.txs) >= MaxBlockSize:
+  if blockPayloadBytesLen(blk) >= MaxBlockSize:
     return false
 
   if blk.txs.len >= MaxBlockTxs:
