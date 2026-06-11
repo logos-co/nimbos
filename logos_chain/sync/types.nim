@@ -40,6 +40,20 @@ type
     ## Bincode-encoded ``Block`` bytes (``serializeBlockToSeq`` / ``deserializeBlock``).
 
 type
+  BlocksUnavailableReasonKind* {.pure.} = enum
+    burBlockNotFound = 0
+    burStartBlockNotFound = 1
+    burUnknown = 2
+
+  BlocksUnavailableReason* = object
+    case kind*: BlocksUnavailableReasonKind
+    of burBlockNotFound:
+      headerId*: BlockId
+    of burStartBlockNotFound:
+      discard
+    of burUnknown:
+      message*: string
+
   DownloadBlocksResponseKind* {.pure.} = enum
     dbrBlock = 0
     dbrNoMoreBlocks = 1
@@ -52,7 +66,7 @@ type
     of dbrNoMoreBlocks:
       discard
     of dbrFailure:
-      failureMessage*: string
+      blocksUnavailableReason*: BlocksUnavailableReason
 
 # ---------------------------------------------------------------------------
 # Chain-sync request envelope
@@ -113,6 +127,7 @@ deriveBincode(Block)
 deriveBincode(Tip)
 deriveBincode(KnownBlocks)
 deriveBincode(DownloadBlocksRequest)
+deriveBincode(BlocksUnavailableReason)
 deriveBincode(DownloadBlocksResponse)
 deriveBincode(RequestMessage)
 deriveBincode(GetTipResponse)

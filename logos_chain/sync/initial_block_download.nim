@@ -243,7 +243,9 @@ proc sendDownloadBlocksRequest*(
       case msg.kind
       of dbrFailure:
         debug "IBD download deserialize ok (failure)",
-          peer, failureMessage = msg.failureMessage, messageIndex = acc.high
+          peer,
+          blocksUnavailableReason = msg.blocksUnavailableReason,
+          messageIndex = acc.high
         break
       of dbrNoMoreBlocks:
         debug "IBD download deserialize ok (no more blocks)",
@@ -371,7 +373,9 @@ proc mountCryptarchiaSyncHandler*(
         if not localTree.hasBlock(req.targetBlock):
           debug "IBD handler: target block not found", targetBlock = sbyteutils.toHex(req.targetBlock)
           awaitWriteDbRespLp(conn, DownloadBlocksResponse(
-            kind: dbrFailure, failureMessage: "start block not found"))
+            kind: dbrFailure,
+            blocksUnavailableReason: BlocksUnavailableReason(
+              kind: burBlockNotFound, headerId: req.targetBlock)))
           debug "IBD handler: download failure response ok", targetBlock = sbyteutils.toHex(req.targetBlock)
         else:
           let blocks = collectBlocksTargetToAncestor(localTree, req)
@@ -391,7 +395,9 @@ proc mountCryptarchiaSyncHandler*(
               if innerWire.len == 0 or innerWire.len > MaxBlockSize:
                 debug "IBD handler: block encode failed or too large", blockBytes = innerWire.len
                 awaitWriteDbRespLp(conn, DownloadBlocksResponse(
-                  kind: dbrFailure, failureMessage: "block encode failed"))
+                  kind: dbrFailure,
+                  blocksUnavailableReason: BlocksUnavailableReason(
+                    kind: burUnknown, message: "block encode failed")))
                 debug "IBD handler: download failure response ok", targetBlock = sbyteutils.toHex(req.targetBlock)
                 return
               awaitWriteDbRespLp(conn, DownloadBlocksResponse(kind: dbrBlock, downloadedBlock: innerWire))
@@ -498,7 +504,7 @@ proc downloadBlocks(
         debug "IBD: download peer failure",
           peer,
           targetBlock = sbyteutils.toHex(downloadReq.targetBlock),
-          failureMessage = msg.failureMessage
+          blocksUnavailableReason = msg.blocksUnavailableReason
         return false
     debug "IBD: download response ok", peer, messages = msgs.len, targetBlock = sbyteutils.toHex(downloadReq.targetBlock)
     let blocks = decodeBlocksFromDownloadResponses(msgs).valueOr:

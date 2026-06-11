@@ -97,7 +97,17 @@ func downloadBlocksResponseEqual*(a, b: DownloadBlocksResponse): bool =
   of dbrNoMoreBlocks:
     true
   of dbrFailure:
-    a.failureMessage == b.failureMessage
+    let ra = a.blocksUnavailableReason
+    let rb = b.blocksUnavailableReason
+    if ra.kind != rb.kind:
+      return false
+    case ra.kind
+    of burBlockNotFound:
+      ra.headerId == rb.headerId
+    of burStartBlockNotFound:
+      true
+    of burUnknown:
+      ra.message == rb.message
 
 func downloadBlocksResponsesEqual*(a, b: seq[DownloadBlocksResponse]): bool =
   a.len == b.len and
