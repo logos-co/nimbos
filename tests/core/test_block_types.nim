@@ -15,26 +15,11 @@ import ../../logos_chain/core/types
 suite "core/types":
   const testBedrockVersion = 1'u8
 
-  proc sampleTx(
-      op: Op,
-      execGas: uint64,
-      storageGas: uint64,
-  ): SignedMantleTx =
-    SignedMantleTx(
-      tx: MantleTx(
-        ops: @[op],
-        executionGasPrice: execGas,
-        permanentStorageGasPrice: storageGas,
-      ),
-      opProofs: @[],
-    )
+  proc sampleTx(op: Op): SignedMantleTx =
+    SignedMantleTx(tx: MantleTx(ops: @[op]), opProofs: @[])
 
   test "initBlock accepts empty tx list":
-    let tx = MantleTx(
-      ops: @[],
-      executionGasPrice: 0'u64,
-      permanentStorageGasPrice: 0'u64,
-    )
+    let tx = MantleTx(ops: @[])
     let h = initHeader(
       bedrockVersion = testBedrockVersion,
       parentBlock = default(BlockId),
@@ -52,11 +37,7 @@ suite "core/types":
     check b.header.slot == 0'u64
 
   test "blockId returns 32-byte hash":
-    let tx = MantleTx(
-      ops: @[],
-      executionGasPrice: 0'u64,
-      permanentStorageGasPrice: 0'u64,
-    )
+    let tx = MantleTx(ops: @[])
     let h = initHeader(
       bedrockVersion = testBedrockVersion,
       parentBlock = default(BlockId),
@@ -78,8 +59,6 @@ suite "core/types":
         inputs: Inputs(noteIds: @[]),
         outputs: Outputs(notes: @[]),
       )),
-      1'u64,
-      2'u64,
     )
     let txB = sampleTx(
       createSdpActiveOp(SdpActivePayload(
@@ -87,8 +66,6 @@ suite "core/types":
         nonce: 1'u64,
         metadata: @[],
       )),
-      3'u64,
-      4'u64,
     )
     check createBlockRoot([txA, txB]) != createBlockRoot([txB, txA])
 
@@ -101,8 +78,6 @@ suite "core/types":
         inputs: Inputs(noteIds: @[]),
         outputs: Outputs(notes: @[]),
       )),
-      9'u64,
-      10'u64,
     )
     check createBlockRoot([tx]) == mantleTxHash(tx.tx)
 
@@ -112,8 +87,6 @@ suite "core/types":
         inputs: Inputs(noteIds: @[]),
         outputs: Outputs(notes: @[]),
       )),
-      11'u64,
-      12'u64,
     )
     let txB = sampleTx(
       createSdpActiveOp(SdpActivePayload(
@@ -121,8 +94,6 @@ suite "core/types":
         nonce: 2'u64,
         metadata: @[],
       )),
-      13'u64,
-      14'u64,
     )
     let txC = sampleTx(
       createSdpWithdrawOp(SdpWithdrawPayload(
@@ -130,8 +101,6 @@ suite "core/types":
         lockedNoteId: default(NoteId),
         nonce: 3'u64,
       )),
-      15'u64,
-      16'u64,
     )
     let hA = mantleTxHash(txA.tx)
     let hB = mantleTxHash(txB.tx)
@@ -146,8 +115,6 @@ suite "core/types":
         inputs: Inputs(noteIds: @[]),
         outputs: Outputs(notes: @[]),
       )),
-      5'u64,
-      6'u64,
     )
     let h = initHeader(
       bedrockVersion = testBedrockVersion,

@@ -5,9 +5,9 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-## Spec: [v1.4 Mantle](https://nomos-tech.notion.site/v1-4-Mantle-335261aa09df8065a38acff4b25aee82)
+## Spec: [v1.5.0 Mantle](https://nomos-tech.notion.site/1-5-0-Mantle-33d261aa09df8051b0d0cd4d5ddade85)
 ##
-## Wire encoding/decoding: [v1.3 Mantle Transaction Encoding](https://nomos-tech.notion.site/v1-3-Mantle-Transaction-Encoding-335261aa09df8051a8a6f325aa41f6a7)
+## Wire encoding/decoding: [v1.4.1 Mantle Transaction Encoding](https://nomos-tech.notion.site/1-4-1-Mantle-Transaction-Encoding-33e261aa09df8050beb6c9b72a042217)
 
 {.push raises: [], gcsafe.}
 
@@ -83,6 +83,7 @@ type
 
   SignatureCount* = uint16
   ChannelKeyIndex* = uint16
+  KeyCount* = uint16
 
 func encodeDeclarationId*(value: DeclarationId): array[32, byte] =
   ## DeclarationId = Hash32
@@ -168,6 +169,26 @@ func encodeSignatureCount*(value: SignatureCount): array[2, byte] =
 func encodeChannelKeyIndex*(value: ChannelKeyIndex): array[2, byte] =
   ## ChannelKeyIndex = UINT16
   encodeLe(uint16(value))
+
+func encodeKeyCount*(value: KeyCount): array[2, byte] =
+  ## KeyCount = UINT16
+  encodeLe(uint16(value))
+
+func encodePostingTimeframe*(value: PostingTimeframe): array[4, byte] =
+  ## PostingTimeframe = UINT32
+  encodeLe(value)
+
+func encodePostingTimeout*(value: PostingTimeout): array[4, byte] =
+  ## PostingTimeout = UINT32
+  encodeLe(value)
+
+func encodeConfigurationThreshold*(value: ConfigurationThreshold): array[2, byte] =
+  ## ConfigThreshold = UINT16
+  encodeLe(value)
+
+func encodeWithdrawThreshold*(value: WithdrawThreshold): array[2, byte] =
+  ## WithdrawThreshold = UINT16
+  encodeLe(value)
 
 
 func encodeNote*(value: Note): array[40, byte] =
@@ -336,6 +357,12 @@ func decodeSignatureCount*(data: openArray[byte]): SignatureCount {.raises: [Dec
 func decodeChannelKeyIndex*(data: openArray[byte]): ChannelKeyIndex {.raises: [DecodingError].} =
   var pos = 0
   let res = ChannelKeyIndex(readLe[uint16](data, pos))
+  finishDecode(data, pos)
+  res
+
+func decodeKeyCount*(data: openArray[byte]): KeyCount {.raises: [DecodingError].} =
+  var pos = 0
+  let res = KeyCount(readLe[uint16](data, pos))
   finishDecode(data, pos)
   res
 

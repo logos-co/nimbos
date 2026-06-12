@@ -20,18 +20,13 @@ const deploymentSettingsPath = testsDir / "../../config/deployment-settings.yaml
 
 suite "chain/genesis":
   test "createGenesisBlock wraps a minimal signed mantle tx":
-    let tx = MantleTx(
-      ops: @[],
-      executionGasPrice: 0'u64,
-      permanentStorageGasPrice: 0'u64,
-    )
+    let tx = MantleTx(ops: @[])
     let sm = SignedMantleTx(tx: tx, opProofs: @[])
     let h = createGenesisBlock(sm).header
     let b = createGenesisBlock(sm)
     check h.blockRoot == createBlockRoot([sm])
     check b.txs.len == 1
     check b.header.bedrockVersion == GenesisBedrockVersion
-    check b.txs[0].tx.executionGasPrice == sm.tx.executionGasPrice
     check b.txs[0].tx.ops.len == sm.tx.ops.len
     check b.signature == DefaultEd25519Signature
 
@@ -52,8 +47,6 @@ suite "chain/genesis":
     let gb = chain.genesisBlock
 
     check gb.txs.len == 1
-    check gb.txs[0].tx.executionGasPrice == genesisTx.tx.executionGasPrice
-    check gb.txs[0].tx.permanentStorageGasPrice == genesisTx.tx.permanentStorageGasPrice
     check gb.txs[0].opProofs.len == genesisTx.opProofs.len
     for i in 0 ..< genesisTx.opProofs.len:
       check gb.txs[0].opProofs[i].kind == genesisTx.opProofs[i].kind

@@ -53,7 +53,7 @@ func mkTransferTx*(
     TransferPayload(inputs: Inputs(noteIds: @inputs), outputs: Outputs(notes: @outputs))
   )
   SignedMantleTx(
-    tx: MantleTx(ops: @[op], permanentStorageGasPrice: 0, executionGasPrice: 0),
+    tx: MantleTx(ops: @[op]),
     opProofs: @[OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))],
   )
 

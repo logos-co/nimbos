@@ -9,7 +9,8 @@
 ## **byte** encoders and decoders shared across Bedrock (block ids, PRNG, Ed25519
 ## wire, Groth16 bytes, Mantle wire, etc.).
 ## Spec: [1.0.1 Common Cryptographic Components](https://nomos-tech.notion.site/1-0-1-Common-Cryptographic-Components-1fd261aa09df81ac8ebbe0111e2c2d84)
-## Spec: [v1.3 Mantle Transaction Encoding](https://nomos-tech.notion.site/v1-3-Mantle-Transaction-Encoding-335261aa09df8051a8a6f325aa41f6a7)
+## Spec: [v1.5.0 Mantle](https://nomos-tech.notion.site/1-5-0-Mantle-33d261aa09df8051b0d0cd4d5ddade85)
+## Wire encoding/decoding: [v1.4.1 Mantle Transaction Encoding](https://nomos-tech.notion.site/1-4-1-Mantle-Transaction-Encoding-33e261aa09df8050beb6c9b72a042217)
 
 {.push raises: [], gcsafe.}
 

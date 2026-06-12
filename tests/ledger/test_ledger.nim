@@ -87,7 +87,7 @@ suite "tryApplyTx — multi-op":
       )
       tx = SignedMantleTx(
         tx:
-          MantleTx(ops: @[op1, op2], permanentStorageGasPrice: 0, executionGasPrice: 0),
+          MantleTx(ops: @[op1, op2]),
         opProofs:
           @[
             OpProof(kind: opfTransfer, transferProof: default(ZkSigProof)),
@@ -121,7 +121,7 @@ suite "tryApplyTx — multi-op":
       )
       tx = SignedMantleTx(
         tx:
-          MantleTx(ops: @[op1, op2], permanentStorageGasPrice: 0, executionGasPrice: 0),
+          MantleTx(ops: @[op1, op2]),
         opProofs:
           @[
             OpProof(kind: opfTransfer, transferProof: default(ZkSigProof)),
@@ -148,8 +148,6 @@ suite "tryApplyTx — error paths":
                 )
               )
             ],
-          permanentStorageGasPrice: 0,
-          executionGasPrice: 0,
         ),
         opProofs: @[],
       ) # zero proofs vs one op
@@ -169,7 +167,7 @@ suite "tryApplyTx — error paths":
         )
       )
       tx = SignedMantleTx(
-        tx: MantleTx(ops: @[op], permanentStorageGasPrice: 0, executionGasPrice: 0),
+        tx: MantleTx(ops: @[op]),
         opProofs:
           @[
             OpProof(kind: opfChannelInscribe, ed25519SigProof: default(Ed25519SigProof))
@@ -194,8 +192,6 @@ suite "tryApplyTx — error paths":
                 )
               )
             ],
-          permanentStorageGasPrice: 0,
-          executionGasPrice: 0,
         ),
         opProofs:
           @[

@@ -5,9 +5,9 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-## Spec: [v1.4 Mantle](https://nomos-tech.notion.site/v1-4-Mantle-335261aa09df8065a38acff4b25aee82)
+## Spec: [v1.5.0 Mantle](https://nomos-tech.notion.site/1-5-0-Mantle-33d261aa09df8051b0d0cd4d5ddade85)
 ##
-## Wire encoding/decoding: [v1.3 Mantle Transaction Encoding](https://nomos-tech.notion.site/v1-3-Mantle-Transaction-Encoding-335261aa09df8051a8a6f325aa41f6a7)
+## Wire encoding/decoding: [v1.4.1 Mantle Transaction Encoding](https://nomos-tech.notion.site/1-4-1-Mantle-Transaction-Encoding-33e261aa09df8050beb6c9b72a042217)
 
 {.push raises: [], gcsafe.}
 
@@ -62,13 +62,11 @@ type
     nonce*: Nonce
     metadata*: Metadata
 
-
 type
   LeaderClaimPayload* = object
     rewardsRoot*: RewardsRoot
     voucherNullifier*: VoucherNullifier
     publicKey*: PublicKey
-
 
 type
   ChannelConfigPayload* = object
@@ -295,6 +293,21 @@ func encodeChannelDeposit*(value: ChannelDepositPayload): seq[byte] =
   res.add(encodeMetadata(value.metadata))
   res
 
+func encodeChannelConfig*(value: ChannelConfigPayload): seq[byte] =
+  ## ChannelConfig = ChannelId || KeyCount || *Signer || PostingTimeframe ||
+  ##                 PostingTimeout || ConfigThreshold || WithdrawThreshold
+  doAssert value.keys.len <= int(high(uint16)),
+    "ChannelConfig: KeyCount exceeds UINT16 range"
+  var res = @(encodeChannelId(value.channel))
+  res.add(encodeKeyCount(KeyCount(value.keys.len)))
+  for key in value.keys:
+    res.add(encodeSigner(key))
+  res.add(encodePostingTimeframe(value.postingTimeframe))
+  res.add(encodePostingTimeout(value.postingTimeout))
+  res.add(encodeConfigurationThreshold(value.configurationThreshold))
+  res.add(encodeWithdrawThreshold(value.withdrawThreshold))
+  res
+
 func encodeChannelInscribe*(value: ChannelInscribePayload): seq[byte] =
   ## ChannelInscribe = ChannelId || Inscription || Parent || Signer
   var res = @(encodeChannelId(value.channelId))
@@ -311,7 +324,8 @@ func encodeOpPayload*(payload: OpPayload): seq[byte] =
   ##             SDPDeclare /
   ##             SDPWithdraw /
   ##             SDPActive /
-  ##             LeaderClaim
+  ##             LeaderClaim /
+  ##             ChannelConfig
   case payload.kind
   of Transfer:
     encodeTransfer(payload.transfer)
@@ -330,8 +344,7 @@ func encodeOpPayload*(payload: OpPayload): seq[byte] =
   of LeaderClaim:
     @(encodeLeaderClaim(payload.leaderClaim))
   of ChannelConfig:
-    ## Not part of the provided OpPayload encoding variant list.
-    @[]
+    encodeChannelConfig(payload.channelConfig)
 
 func encodeOp*(op: Op): seq[byte] =
   ## Op = Opcode || OpPayload
@@ -436,6 +449,30 @@ func decodeChannelDeposit*(data: openArray[byte]): ChannelDepositPayload {.raise
   let metadata = readU32LeLenPrefixed(data, pos)
   finishDecode(data, pos)
   ChannelDepositPayload(channel: channel, inputs: inputs, metadata: metadata)
+
+func decodeChannelConfig*(data: openArray[byte]): ChannelConfigPayload {.raises: [DecodingError].} =
+  var pos = 0
+  let channel = readFixed[32](data, pos)
+  let keyCount = readLe[uint16](data, pos)
+  var keys = newSeqOfCap[Ed25519PublicKey](keyCount)
+  for _ in 0 ..< int(keyCount):
+    var key: Ed25519PublicKey
+    if not key.init(readFixed[EdPublicKeySize](data, pos)):
+      raise newException(DecodingError, "invalid ChannelConfig Signer bytes")
+    keys.add(key)
+  let postingTimeframe = PostingTimeframe(readLe[uint32](data, pos))
+  let postingTimeout = PostingTimeout(readLe[uint32](data, pos))
+  let configurationThreshold = ConfigurationThreshold(readLe[uint16](data, pos))
+  let withdrawThreshold = WithdrawThreshold(readLe[uint16](data, pos))
+  finishDecode(data, pos)
+  ChannelConfigPayload(
+    channel: channel,
+    keys: keys,
+    postingTimeframe: postingTimeframe,
+    postingTimeout: postingTimeout,
+    configurationThreshold: configurationThreshold,
+    withdrawThreshold: withdrawThreshold,
+  )
 
 func decodeChannelInscribe*(data: openArray[byte]): ChannelInscribePayload {.raises: [DecodingError].} =
   var pos = 0
@@ -553,7 +590,29 @@ proc readOpPayload*(data: openArray[byte], pos: var int, opcode: Opcode): OpPayl
       ),
     )
   of OpChannelConfig:
-    OpPayload(kind: ChannelConfig, channelConfig: default(ChannelConfigPayload))
+    let channel = readFixed[32](data, pos)
+    let keyCount = readLe[uint16](data, pos)
+    var keys = newSeqOfCap[Ed25519PublicKey](keyCount)
+    for _ in 0 ..< int(keyCount):
+      var key: Ed25519PublicKey
+      if not key.init(readFixed[EdPublicKeySize](data, pos)):
+        raise newException(DecodingError, "invalid ChannelConfig Signer bytes")
+      keys.add(key)
+    let postingTimeframe = PostingTimeframe(readLe[uint32](data, pos))
+    let postingTimeout = PostingTimeout(readLe[uint32](data, pos))
+    let configurationThreshold = ConfigurationThreshold(readLe[uint16](data, pos))
+    let withdrawThreshold = WithdrawThreshold(readLe[uint16](data, pos))
+    OpPayload(
+      kind: ChannelConfig,
+      channelConfig: ChannelConfigPayload(
+        channel: channel,
+        keys: keys,
+        postingTimeframe: postingTimeframe,
+        postingTimeout: postingTimeout,
+        configurationThreshold: configurationThreshold,
+        withdrawThreshold: withdrawThreshold,
+      ),
+    )
   else:
     raise newException(DecodingError, "unsupported opcode for OpPayload decode: " & $opcode)
 

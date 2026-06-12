@@ -59,7 +59,7 @@ suite "core/mantle/proofs":
       proofOfClaimProof: DefaultCompressedGroth16Proof,
     )) == ptProofOfClaim
 
-  test "encodeOpsProofs accepts proofs length <= op count":
+  test "encodeOpsProofs requires proofs length == op count":
     let ops = @[
       createTransferOp(TransferPayload(
         inputs: Inputs(noteIds: @[]),
@@ -73,9 +73,10 @@ suite "core/mantle/proofs":
     ]
     let proofs = @[
       OpProof(kind: opfTransfer, transferProof: DefaultZkSignature),
+      OpProof(kind: opfSdpActive, sdpActiveProof: DefaultZkSignature),
     ]
     let encoded = encodeOpsProofs(ops, proofs)
-    check encoded.len == 128
+    check encoded.len == 128 + 128
 
   test "decodeOpsProofs roundtrips encodeOpsProofs":
     let ops = @[
@@ -91,10 +92,12 @@ suite "core/mantle/proofs":
     ]
     let proofs = @[
       OpProof(kind: opfTransfer, transferProof: DefaultZkSignature),
+      OpProof(kind: opfSdpActive, sdpActiveProof: DefaultZkSignature),
     ]
     let wire = encodeOpsProofs(ops, proofs)
     let back = decodeOpsProofs(ops, wire)
     check back.len == proofs.len
     check back[0].kind == proofs[0].kind
+    check back[1].kind == proofs[1].kind
 
 {.pop.}

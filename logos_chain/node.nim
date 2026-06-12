@@ -98,8 +98,6 @@ proc init*(
       txCount = genesisBlock.txs.len,
       opCount = genesisState.tx.ops.len,
       proofCount = genesisState.opProofs.len,
-      executionGasPrice = genesisState.tx.executionGasPrice,
-      storageGasPrice = genesisState.tx.permanentStorageGasPrice,
       polLeaderVoucher =
         byteutils.toHex(genesisBlock.header.proofOfLeadership.leaderVoucher),
       polEntropyContribution =

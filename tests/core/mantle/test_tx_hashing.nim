@@ -21,18 +21,12 @@ suite "core/mantle/tx_hashing":
           outputs: Outputs(notes: @[]),
         )),
       ],
-      executionGasPrice: 0'u64,
-      permanentStorageGasPrice: 0'u64,
     )
     let txB = MantleTx(ops: @[])
     check mantleTxHash(txA) != mantleTxHash(txB)
 
   test "mantleTxHash is deterministic":
-    let tx = MantleTx(
-      ops: @[],
-      executionGasPrice: 7'u64,
-      permanentStorageGasPrice: 8'u64,
-    )
+    let tx = MantleTx(ops: @[])
     check mantleTxHash(tx) == mantleTxHash(tx)
 
 {.pop.}
