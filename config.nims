@@ -198,10 +198,6 @@ switch("hint", "XCannotRaiseY:off")
 # Unfortunately this is filename based instead of path-based
 # Assumes GCC
 
-# BLST
-put("server.always", "-fno-lto")
-put("assembly.always", "-fno-lto")
-
 # Secp256k1
 # -fomit-frame-pointer for https://github.com/status-im/nimbus-eth2/issues/6324
 put("secp256k1.always", "-fno-lto -fomit-frame-pointer")
