@@ -24,7 +24,7 @@ func wallclockSlot(): SlotNumber =
   ## and slot duration.
   high(SlotNumber)
 
-proc txBytesLen(txs: openArray[SignedMantleTx]): int =
+func txBytesLen(txs: openArray[SignedMantleTx]): int =
   var total = 0
   for stx in txs:
     total += encodeSignedMantleTx(stx).len
@@ -35,13 +35,13 @@ func blockPayloadBytesLen(blk: Block): int =
   ## IBD additionally caps the full bincode wire blob (header framing + signature + txs).
   txBytesLen(blk.txs) + EdSignatureSize
 
-proc verifyPoL(localTree: LocalTree, header: Header): bool =
+func verifyPoL(localTree: LocalTree, header: Header): bool =
   ## TODO: implement `verifyPoL()`.
   discard localTree
   discard header
   true
 
-proc validateBlockHeader(blk: Block, localTree: LocalTree): bool =
+func validateBlockHeader(blk: Block, localTree: LocalTree): bool =
   let header = blk.header
 
   if header.bedrockVersion != ExpectedBedrockVersion:
@@ -75,11 +75,11 @@ proc validateBlockHeader(blk: Block, localTree: LocalTree): bool =
 
   true
 
-proc validateBlockBody(blk: Block): bool =
+func validateBlockBody(blk: Block): bool =
   discard blk # TODO: body checks
   true
 
-proc validateBlock*(blk: Block, localTree: LocalTree): bool =
+func validateBlock*(blk: Block, localTree: LocalTree): bool =
   validateBlockHeader(blk, localTree) and validateBlockBody(blk)
 
 {.pop.}

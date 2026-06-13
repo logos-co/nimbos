@@ -14,6 +14,7 @@
 {.push raises: [], gcsafe.}
 
 import results
+import bincode
 import libp2p/crypto/ed25519/ed25519
 import stew/endians2
 import ../../zk/poseidon2/hasher           # FieldElement (+ re-exported poseidon2 symbols)
@@ -41,6 +42,9 @@ type
   Ed25519Signature* = EdSignature
 
   DecodingError* = object of CatchableError
+
+deriveBincode(EdPublicKey)
+deriveBincode(EdSignature)
 
 const
   CompressedGroth16ProofBytes* = 128
@@ -106,27 +110,27 @@ func encodeZkPublicKey*(value: ZkPublicKey): array[32, byte] =
   ## ZkPublicKey = FieldElement (32-byte).
   encodeFieldElement(value)
 
-proc ensureRemaining*(data: openArray[byte], pos: int, need: int) {.inline, raises: [DecodingError].} =
+func ensureRemaining*(data: openArray[byte], pos: int, need: int) {.inline, raises: [DecodingError].} =
   if pos < 0 or pos + need > data.len:
     raise newException(DecodingError, "unexpected end of encoded data")
 
-proc finishDecode*(data: openArray[byte], pos: int) {.inline, raises: [DecodingError].} =
+func finishDecode*(data: openArray[byte], pos: int) {.inline, raises: [DecodingError].} =
   if pos != data.len:
     raise newException(DecodingError, "trailing bytes after decoded value")
 
-proc readLe*[T: SomeEndianInt](data: openArray[byte], pos: var int): T {.raises: [DecodingError].} =
+func readLe*[T: SomeEndianInt](data: openArray[byte], pos: var int): T {.raises: [DecodingError].} =
   ensureRemaining(data, pos, sizeof(T))
   let res = fromBytesLE(T, data.toOpenArray(pos, pos + sizeof(T) - 1))
   pos += sizeof(T)
   res
 
-proc readByte*(data: openArray[byte], pos: var int): byte {.raises: [DecodingError].} =
+func readByte*(data: openArray[byte], pos: var int): byte {.raises: [DecodingError].} =
   ensureRemaining(data, pos, 1)
   let res = data[pos]
   pos += 1
   res
 
-proc readFixed*[N: static[int]](data: openArray[byte], pos: var int): array[N, byte] {.raises: [DecodingError].} =
+func readFixed*[N: static[int]](data: openArray[byte], pos: var int): array[N, byte] {.raises: [DecodingError].} =
   ensureRemaining(data, pos, N)
   var res: array[N, byte]
   for i in 0 ..< N:
@@ -134,37 +138,35 @@ proc readFixed*[N: static[int]](data: openArray[byte], pos: var int): array[N, b
   pos += N
   res
 
-proc readU32LeLenPrefixed*(data: openArray[byte], pos: var int): seq[byte] {.raises: [DecodingError].} =
+func readU32LeLenPrefixed*(data: openArray[byte], pos: var int): seq[byte] {.raises: [DecodingError].} =
   let ln = readLe[uint32](data, pos)
   if ln > uint32(data.len - pos):
     raise newException(DecodingError, "u32 length-prefixed payload exceeds buffer")
   let plen = int ln
   var res: seq[byte]
   if plen > 0:
-    res = newSeq[byte](plen)
-    copyMem(res[0].addr, data[pos].unsafeAddr, plen)
+    res = @data[pos ..< pos + plen]
     pos += plen
   res
 
-proc readU16LeLenPrefixed*(data: openArray[byte], pos: var int): seq[byte] {.raises: [DecodingError].} =
+func readU16LeLenPrefixed*(data: openArray[byte], pos: var int): seq[byte] {.raises: [DecodingError].} =
   let ln = readLe[uint16](data, pos)
   if ln > uint16(data.len - pos):
     raise newException(DecodingError, "u16 length-prefixed payload exceeds buffer")
   let plen = int ln
   var res: seq[byte]
   if plen > 0:
-    res = newSeq[byte](plen)
-    copyMem(res[0].addr, data[pos].unsafeAddr, plen)
+    res = @data[pos ..< pos + plen]
     pos += plen
   res
 
-proc decodeGroth16*(data: openArray[byte]): CompressedGroth16Proof {.raises: [DecodingError].} =
+func decodeGroth16*(data: openArray[byte]): CompressedGroth16Proof {.raises: [DecodingError].} =
   var pos = 0
   let res = readFixed[128](data, pos)
   finishDecode(data, pos)
   res
 
-proc decodeFieldElementAt*(data: openArray[byte], pos: var int): FieldElement {.raises: [DecodingError].} =
+func decodeFieldElementAt*(data: openArray[byte], pos: var int): FieldElement {.raises: [DecodingError].} =
   frFromBytesLE(readFixed[32](data, pos)).valueOr:
     raise newException(DecodingError, "field element exceeds BN254 scalar modulus")
 
@@ -180,7 +182,7 @@ func decodeHash32*(data: openArray[byte]): Hash32 {.raises: [DecodingError].} =
   finishDecode(data, pos)
   res
 
-proc decodeEd25519PublicKey*(data: openArray[byte]): Ed25519PublicKey {.raises: [DecodingError].} =
+func decodeEd25519PublicKey*(data: openArray[byte]): Ed25519PublicKey {.raises: [DecodingError].} =
   var pos = 0
   let raw = readFixed[EdPublicKeySize](data, pos)
   finishDecode(data, pos)
@@ -189,7 +191,7 @@ proc decodeEd25519PublicKey*(data: openArray[byte]): Ed25519PublicKey {.raises: 
     raise newException(DecodingError, "invalid Ed25519 public key bytes")
   key
 
-proc decodeEd25519Signature*(data: openArray[byte]): Ed25519Signature {.raises: [DecodingError].} =
+func decodeEd25519Signature*(data: openArray[byte]): Ed25519Signature {.raises: [DecodingError].} =
   var pos = 0
   let raw = readFixed[EdSignatureSize](data, pos)
   finishDecode(data, pos)
@@ -204,19 +206,19 @@ func decodeZkSignature*(data: openArray[byte]): ZkSignature {.raises: [DecodingE
 func decodeZkPublicKey*(data: openArray[byte]): ZkPublicKey {.raises: [DecodingError].} =
   decodeFieldElement(data)
 
-proc decodeByte*(data: openArray[byte]): byte {.raises: [DecodingError].} =
+func decodeByte*(data: openArray[byte]): byte {.raises: [DecodingError].} =
   var pos = 0
   let res = readByte(data, pos)
   finishDecode(data, pos)
   res
 
-proc decodeU32LeLenPrefixed*(data: openArray[byte]): seq[byte] {.raises: [DecodingError].} =
+func decodeU32LeLenPrefixed*(data: openArray[byte]): seq[byte] {.raises: [DecodingError].} =
   var pos = 0
   let res = readU32LeLenPrefixed(data, pos)
   finishDecode(data, pos)
   res
 
-proc decodeU16LeLenPrefixed*(data: openArray[byte]): seq[byte] {.raises: [DecodingError].} =
+func decodeU16LeLenPrefixed*(data: openArray[byte]): seq[byte] {.raises: [DecodingError].} =
   var pos = 0
   let res = readU16LeLenPrefixed(data, pos)
   finishDecode(data, pos)

@@ -82,9 +82,10 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
     var sw2: Switch = nil
     try:
       # Create a plain libp2p switch (not LBNode) that uses QUIC transport.
-      let keys2 = rng2[].getRandomNetKeys()
-      let addr2 =
-        MultiAddress.init("/ip4/127.0.0.1/udp/0/quic-v1").tryGet()
+      let
+        keys2 = rng2[].getRandomNetKeys()
+        addr2 =
+          MultiAddress.init("/ip4/127.0.0.1/udp/0/quic-v1").tryGet()
 
       var sb = SwitchBuilder.new()
       sb = sb.withPrivateKey(keys2.seckey)
@@ -101,8 +102,9 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
       await sw2.start()
 
       # Connect (transport-level) to validate inbound QUIC upgrading works.
-      let peerId1 = node1.switch.peerInfo.peerId
-      let addrs1 = node1.switch.peerInfo.addrs
+      let
+        peerId1 = node1.switch.peerInfo.peerId
+        addrs1 = node1.switch.peerInfo.addrs
 
       await sw2.connect(peerId1, addrs1, forceDial = true)
     finally:
@@ -138,11 +140,12 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
     await node.startListening()
     # Ensure clean shutdown even if assertions fail.
     try:
-      let peerIdStr = $node.switch.peerInfo.peerId
-      let expectedNeedle =
-        "/udp/" & $expectedPort & "/quic-v1/p2p/" & peerIdStr
+      let
+        peerIdStr = $node.switch.peerInfo.peerId
+        expectedNeedle =
+          "/udp/" & $expectedPort & "/quic-v1/p2p/" & peerIdStr
 
-      let fullAddrsRes = node.switch.peerInfo.fullAddrs()
+        fullAddrsRes = node.switch.peerInfo.fullAddrs()
       check fullAddrsRes.isOk
       let fullAddrs = fullAddrsRes.get()
 
@@ -200,9 +203,10 @@ suite "P2P stack — bootstrap and discovery":
     let listener = listenerRes.get()
     await listener.startListening()
 
-    let listenerPeerId = listener.switch.peerInfo.peerId
-    let bootstrapAddr =
-      "/ip4/127.0.0.1/udp/" & $listenerPort &
+    let
+      listenerPeerId = listener.switch.peerInfo.peerId
+      bootstrapAddr =
+        "/ip4/127.0.0.1/udp/" & $listenerPort &
       "/quic-v1/p2p/" & $listenerPeerId
 
     var confDial = confD
@@ -230,12 +234,14 @@ suite "P2P stack — bootstrap and discovery":
     ## Full DNS dial integration depends on the resolver; ip4 bootstrap covers
     ## the dial path. This validates Logos Chain bootstrap string parsing for DNS.
     var rng = HmacDrbgContext.new()
-    let keys = rng[].getRandomNetKeys()
-    let pidRes = PeerId.init(keys.seckey)
+    let
+      keys = rng[].getRandomNetKeys()
+      pidRes = PeerId.init(keys.seckey)
     check pidRes.isOk
-    let peerId = pidRes.get()
-    let dnsBootstrap =
-      "/dns4/localhost/udp/5011/quic-v1/p2p/" & $peerId
+    let
+      peerId = pidRes.get()
+      dnsBootstrap =
+        "/dns4/localhost/udp/5011/quic-v1/p2p/" & $peerId
     check parseBootstrapAddress(dnsBootstrap).isOk
 
   asyncTest "After bootstrap: libp2p QUIC session stays up (decentralized DHT deferred)":
@@ -255,9 +261,10 @@ suite "P2P stack — bootstrap and discovery":
     let listener = listenerRes.get()
     await listener.startListening()
 
-    let listenerPeerId = listener.switch.peerInfo.peerId
-    let bootstrapAddr =
-      "/ip4/127.0.0.1/udp/" & $listenerPort &
+    let
+      listenerPeerId = listener.switch.peerInfo.peerId
+      bootstrapAddr =
+        "/ip4/127.0.0.1/udp/" & $listenerPort &
       "/quic-v1/p2p/" & $listenerPeerId
 
     var confDial = confD

@@ -11,10 +11,11 @@
 {.push raises: [], gcsafe.}
 
 import stew/bitops2
+import bincode
 import ./crypto/hashing
-import ./mantle/[tx_types, tx_hashing]
+import ./mantle/[tx_types, tx_hashing, tx_bincode]
 import libp2p/crypto/ed25519/ed25519
-export hashing, tx_types
+export hashing, tx_types, tx_bincode
 
 const
   ExpectedBedrockVersion* = 1'u8
@@ -48,11 +49,14 @@ type
     references*: References
     signature*: Ed25519Signature
 
+deriveBincode(ProofOfLeadership)
+deriveBincode(Header)
+deriveBincode(Block)
 
 func hashPair*(left, right: Hash32): Hash32 =
   var pairBytes: array[64, byte]
-  copyMem(addr pairBytes[0], unsafeAddr left[0], 32)
-  copyMem(addr pairBytes[32], unsafeAddr right[0], 32)
+  pairBytes[0 ..< 32] = left
+  pairBytes[32 ..< 64] = right
   blake2b256Hash(pairBytes)
 
 func createBlockRoot*(txs: openArray[SignedMantleTx]): Hash32 =

@@ -9,62 +9,40 @@
 {.used.}
 
 import unittest2
+import ../testutil
 
 import ../../logos_chain/core/types
 import ../../logos_chain/chain/genesis
 import ../../logos_chain/core/block_validation
-import ../../logos_chain/core/mantle/tx_types
 import ../../logos_chain/core/local_tree
 
 from ../../logos_chain/core/mantle/primitives import SlotNumber
 
-proc minimalSignedTx(): SignedMantleTx =
-  SignedMantleTx(
-    tx: MantleTx(
-      ops: @[],
-      executionGasPrice: 0'u64,
-      permanentStorageGasPrice: 0'u64,
-    ),
-    opProofs: @[],
-  )
-
-proc childBlock(
-    parentHdr: Header,
-    parentId: BlockId,
-    slot: SlotNumber,
-    txs: openArray[SignedMantleTx],
-): Block =
-  let h = initHeader(
-    bedrockVersion = parentHdr.bedrockVersion,
-    parentBlock = parentId,
-    slot = slot,
-    txs = txs,
-    proofOfLeadership = parentHdr.proofOfLeadership,
-  )
-  initBlock(h, txs = txs)
-
 suite "core/block_validation":
   test "validateBlockHeader accepts child block with parent in tree":
-    let sm = minimalSignedTx()
-    let genesis = createGenesisBlock(sm)
-    let gid = blockId(genesis.header)
-    let tree = newLocalTree(genesis)
-    let b1 = childBlock(genesis.header, gid, SlotNumber(1), [sm])
+    let
+      sm = minimalSignedTx()
+      genesis = createGenesisBlock(sm)
+      gid = blockId(genesis.header)
+      tree = newLocalTree(genesis)
+      b1 = childBlock(genesis.header, gid, SlotNumber(1), [sm])
     check validateBlock(b1, tree)
 
   test "validateBlockHeader rejects wrong bedrock version":
-    let sm = minimalSignedTx()
-    let genesis = createGenesisBlock(sm)
-    let gid = blockId(genesis.header)
-    let tree = newLocalTree(genesis)
+    let
+      sm = minimalSignedTx()
+      genesis = createGenesisBlock(sm)
+      gid = blockId(genesis.header)
+      tree = newLocalTree(genesis)
     var b1 = childBlock(genesis.header, gid, SlotNumber(1), [sm])
     b1.header.bedrockVersion = 99'u8
     check not validateBlock(b1, tree)
 
   test "validateBlockHeader rejects missing parent":
-    let sm = minimalSignedTx()
-    let genesis = createGenesisBlock(sm)
-    let tree = newLocalTree(genesis)
+    let
+      sm = minimalSignedTx()
+      genesis = createGenesisBlock(sm)
+      tree = newLocalTree(genesis)
     var miss: BlockId
     miss[0] = 1'u8
     let orphan = childBlock(genesis.header, miss, SlotNumber(1), [sm])

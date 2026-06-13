@@ -40,7 +40,7 @@ import # Unit test
   ./ledger/test_ledger,
   ./logos_chain/sync/test_framing,
   ./logos_chain/sync/test_types,
-  ./logos_chain/sync/test_initial_block_download
+  ./logos_chain/sync/test_ibd
 
 summarizeLongTests("AllTests")
 

@@ -14,17 +14,18 @@ import ../../../logos_chain/core/mantle/tx_types
 
 suite "core/mantle/tx_hashing":
   test "mantleTxHash is sensitive to tx bytes":
-    let txA = MantleTx(
-      ops: @[
-        createTransferOp(TransferPayload(
-          inputs: Inputs(noteIds: @[]),
-          outputs: Outputs(notes: @[]),
-        )),
-      ],
-      executionGasPrice: 0'u64,
-      permanentStorageGasPrice: 0'u64,
-    )
-    let txB = MantleTx(ops: @[])
+    let
+      txA = MantleTx(
+        ops: @[
+          createTransferOp(TransferPayload(
+            inputs: Inputs(noteIds: @[]),
+            outputs: Outputs(notes: @[]),
+          )),
+        ],
+        executionGasPrice: 0'u64,
+        permanentStorageGasPrice: 0'u64,
+      )
+      txB = MantleTx(ops: @[])
     check mantleTxHash(txA) != mantleTxHash(txB)
 
   test "mantleTxHash is deterministic":

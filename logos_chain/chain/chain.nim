@@ -11,16 +11,27 @@
 
 import results
 import ../core/types
+import ../core/local_tree
 import ../deployment/deployment_settings
 import ./genesis
 
-export genesis
+export genesis, local_tree
 
 type
   Chain* = object
     genesisBlock*: Block
+    localTree*: LocalTree
 
-proc init*(settings: DeploymentSettings): Result[Chain, string] =
-  ok(Chain(genesisBlock: createGenesisBlock(settings.cryptarchia.genesisState.signedMantleTx)))
+func init*(
+    genesisBlock: Block, latestImmutableHeight: uint64 = 0
+): Chain =
+  Chain(
+    genesisBlock: genesisBlock,
+    localTree: newLocalTree(genesisBlock, latestImmutableHeight),
+  )
+
+func init*(settings: DeploymentSettings): Result[Chain, string] =
+  let genesisBlock = createGenesisBlock(settings.cryptarchia.genesisState.signedMantleTx)
+  ok(init(genesisBlock))
 
 {.pop.}

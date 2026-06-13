@@ -25,9 +25,10 @@ suite "chain/genesis":
       executionGasPrice: 0'u64,
       permanentStorageGasPrice: 0'u64,
     )
-    let sm = SignedMantleTx(tx: tx, opProofs: @[])
-    let h = createGenesisBlock(sm).header
-    let b = createGenesisBlock(sm)
+    let
+      sm = SignedMantleTx(tx: tx, opProofs: @[])
+      h = createGenesisBlock(sm).header
+      b = createGenesisBlock(sm)
     check h.blockRoot == createBlockRoot([sm])
     check b.txs.len == 1
     check b.header.bedrockVersion == GenesisBedrockVersion
@@ -36,20 +37,22 @@ suite "chain/genesis":
     check b.signature == DefaultEd25519Signature
 
   test "createGenesisBlock builds expected header/envelope from deployment settings":
-    let text = readAllChars(deploymentSettingsPath).valueOr:
-      check false
-      return
-    let ds = parseDeploymentSettings(text).valueOr:
-      check false
-      return
+    let
+      text = readAllChars(deploymentSettingsPath).valueOr:
+        check false
+        return
+      ds = parseDeploymentSettings(text).valueOr:
+        check false
+        return
     check validateDeploymentSettings(ds).isOk
 
-    let gstate = ds.cryptarchia.genesisState
-    let genesisTx = gstate.signedMantleTx
-    let chain = init(ds).valueOr:
-      check false
-      return
-    let gb = chain.genesisBlock
+    let
+      gstate = ds.cryptarchia.genesisState
+      genesisTx = gstate.signedMantleTx
+      testChain = chain.init(ds).valueOr:
+        check false
+        return
+      gb = testChain.genesisBlock
 
     check gb.txs.len == 1
     check gb.txs[0].tx.executionGasPrice == genesisTx.tx.executionGasPrice
@@ -67,17 +70,19 @@ suite "chain/genesis":
     check gb.signature == gstate.blockSignature
 
   test "createGenesisBlock from genesisState matches createGenesisBlock from signedMantleTx":
-    let text = readAllChars(deploymentSettingsPath).valueOr:
-      check false
-      return
-    let ds = parseDeploymentSettings(text).valueOr:
-      check false
-      return
+    let
+      text = readAllChars(deploymentSettingsPath).valueOr:
+        check false
+        return
+      ds = parseDeploymentSettings(text).valueOr:
+        check false
+        return
     check validateDeploymentSettings(ds).isOk
 
-    let gstate = ds.cryptarchia.genesisState
-    let byState = createGenesisBlock(gstate.signedMantleTx)
-    let byTx = createGenesisBlock(gstate.signedMantleTx)
+    let
+      gstate = ds.cryptarchia.genesisState
+      byState = createGenesisBlock(gstate.signedMantleTx)
+      byTx = createGenesisBlock(gstate.signedMantleTx)
 
     check byState.header == byTx.header
     check blockId(byState.header) == blockId(byTx.header)

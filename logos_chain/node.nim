@@ -22,7 +22,7 @@ import
   ./core/types,
   ./deployment/deployment_settings,
   ./networking/network,
-  ./core/local_tree,
+  ./sync/syncer,
   ./core/utils,
   ./process_state
 
@@ -43,7 +43,7 @@ type
     netKeys*: NetKeyPair
     config*: LBNodeConf
     deploymentSettings*: DeploymentSettings
-    chain*: Chain
+    syncer*: Syncer
     metricsServer*: Opt[MetricsHttpServerRef]
     shutdownEvent*: AsyncEvent
 
@@ -109,28 +109,33 @@ proc init*(
       polLeaderKey = byteutils.toHex(leaderKeyBytes),
       blockSignature = byteutils.toHex(genesisBlock.signature.data)
 
-  let
-    localTree = newLocalTree(genesisBlock)
-    chainSyncProtocol = deploymentSettings.network.chainSyncProtocolName
-    network = createLBP2PNode(
-      rng,
-      config,
-      rng[].getRandomNetKeys(),
-      localTree,
-      chainSyncProtocol,
-    ).valueOr:
-      error "Failed to initialize node", err = error
-      return Opt.none(LBNode)
+  let network = createLBP2PNode(
+    rng,
+    config,
+    rng[].getRandomNetKeys(),
+  ).valueOr:
+    error "Failed to initialize node", err = error
+    return Opt.none(LBNode)
 
-  debug "Cryptarchia IBD configured at node startup",
-    chainSyncProtocol = chainSyncProtocol,
-    genesisBlockId = blockId(genesisBlock.header)
+  var nodeSyncer: Syncer = nil
+  if chain.localTree != nil and deploymentSettings.network.chainSyncProtocolName.len > 0:
+    nodeSyncer = syncer.init(
+      network.switch, chain, deploymentSettings.network.chainSyncProtocolName)
+
+  if nodeSyncer != nil:
+    info "Syncer configured at node startup",
+      chainSyncProtocol = deploymentSettings.network.chainSyncProtocolName,
+      genesisBlockId = blockId(genesisBlock.header)
+  else:
+    debug "Syncer not configured at node startup",
+      hasLocalTree = chain.localTree != nil,
+      chainSyncProtocol = deploymentSettings.network.chainSyncProtocolName
 
   ok LBNode(
     network: network,
     config: config,
     deploymentSettings: deploymentSettings,
-    chain: chain,
+    syncer: nodeSyncer,
     shutdownEvent: newAsyncEvent())
 
 when defined(windows):
@@ -198,6 +203,9 @@ proc initializeNetworking(node: LBNode) {.async.} =
   await node.network.startListening()
 
   await node.network.start()
+  if node.syncer != nil:
+    debug "Scheduling syncer startup after network bootstrap"
+    node.syncer.start(node.network.bootstrapPeerIds)
 
 type StopFuture = Future[void].Raising([CancelledError])
 

@@ -10,6 +10,7 @@
 import std/tables
 
 import results
+import bincode
 
 import ./types
 from ./mantle/primitives import SlotNumber
@@ -22,6 +23,9 @@ type
     slot*: SlotNumber
     height*: uint64
 
+deriveBincode(Tip)
+
+type
   BlockNode = ref object
     id: BlockId
     blk: Block
@@ -46,7 +50,7 @@ func ancestorAtHeight(node: BlockNode, targetHeight: uint64): BlockNode =
     n = n.parent
   nil
 
-proc newLocalTree*(genesisBlock: Block, latestImmutableHeight: uint64 = 0): LocalTree =
+func newLocalTree*(genesisBlock: Block, latestImmutableHeight: uint64 = 0): LocalTree =
   let gid = blockId(genesisBlock.header)
   let gn = BlockNode(id: gid, blk: genesisBlock, parent: nil, height: 0'u64)
   LocalTree(
@@ -55,34 +59,34 @@ proc newLocalTree*(genesisBlock: Block, latestImmutableHeight: uint64 = 0): Loca
     latestImmutableHeight: latestImmutableHeight,
   )
 
-proc blockHeight*(localTree: LocalTree, blockId: BlockId): Opt[uint64] =
+func blockHeight*(localTree: LocalTree, blockId: BlockId): Opt[uint64] =
   let n = localTree.blocks.getOrDefault(blockId, nil)
   if n == nil:
     Opt.none(uint64)
   else:
     Opt.some(n.height)
 
-proc fetchParentHeader*(localTree: LocalTree, parentBlock: BlockId): Opt[Header] =
+func fetchParentHeader*(localTree: LocalTree, parentBlock: BlockId): Opt[Header] =
   let n = localTree.blocks.getOrDefault(parentBlock, nil)
   if n == nil:
     Opt.none(Header)
   else:
     Opt.some(n.blk.header)
 
-proc hasBlock*(localTree: LocalTree, blockId: BlockId): bool =
+func hasBlock*(localTree: LocalTree, blockId: BlockId): bool =
   localTree.blocks.hasKey(blockId)
 
-proc getBlock*(localTree: LocalTree, id: BlockId): Opt[Block] =
+func getBlock*(localTree: LocalTree, id: BlockId): Opt[Block] =
   let n = localTree.blocks.getOrDefault(id, nil)
   if n == nil:
     Opt.none(Block)
   else:
     Opt.some(n.blk)
 
-proc localTipId*(localTree: LocalTree): BlockId =
+func localTipId*(localTree: LocalTree): BlockId =
   localTree.tipId
 
-proc latestImmutableBlockId*(localTree: LocalTree): BlockId =
+func latestImmutableBlockId*(localTree: LocalTree): BlockId =
   let tip = localTree.blocks.getOrDefault(localTree.tipId, nil)
   if tip == nil:
     return default(BlockId)
@@ -95,7 +99,7 @@ proc latestImmutableBlockId*(localTree: LocalTree): BlockId =
   else:
     a.id
 
-proc isAncestor*(localTree: LocalTree, ancestor: BlockId, descendant: BlockId): bool =
+func isAncestor*(localTree: LocalTree, ancestor: BlockId, descendant: BlockId): bool =
   if ancestor == descendant:
     return localTree.hasBlock(ancestor)
   let start = localTree.blocks.getOrDefault(descendant, nil)
@@ -108,7 +112,7 @@ proc isAncestor*(localTree: LocalTree, ancestor: BlockId, descendant: BlockId): 
     n = n.parent
   false
 
-proc isFutureDescendantOfImmutable*(localTree: LocalTree, header: Header): bool =
+func isFutureDescendantOfImmutable*(localTree: LocalTree, header: Header): bool =
   ## `height(B) > height(B_imm)` and `is_ancestor(B_imm, B)` over the parent
   ## chain (B is not yet in the tree).
   let parentHeight = blockHeight(localTree, header.parentBlock).valueOr:
@@ -128,25 +132,27 @@ proc isFutureDescendantOfImmutable*(localTree: LocalTree, header: Header): bool 
     cur = parentHeader.parentBlock
   false
 
-proc lcaBlockId*(localTree: LocalTree, idA, idB: BlockId): Opt[BlockId] =
+func lcaBlockIdAndHeight*(
+    localTree: LocalTree, idA, idB: BlockId,
+): Opt[(BlockId, uint64)] =
   var na = localTree.blocks.getOrDefault(idA, nil)
   var nb = localTree.blocks.getOrDefault(idB, nil)
   if na == nil or nb == nil:
-    return Opt.none(BlockId)
+    return Opt.none((BlockId, uint64))
   while na.height > nb.height:
     na = na.parent
     if na == nil:
-      return Opt.none(BlockId)
+      return Opt.none((BlockId, uint64))
   while nb.height > na.height:
     nb = nb.parent
     if nb == nil:
-      return Opt.none(BlockId)
+      return Opt.none((BlockId, uint64))
   while na.id != nb.id:
     na = na.parent
     nb = nb.parent
     if na == nil or nb == nil:
-      return Opt.none(BlockId)
-  Opt.some(na.id)
+      return Opt.none((BlockId, uint64))
+  Opt.some((na.id, na.height))
 
 proc addBlockToTree*(localTree: LocalTree, blk: Block): bool =
   let id = blockId(blk.header)

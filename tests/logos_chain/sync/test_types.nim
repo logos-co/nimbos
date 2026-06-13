@@ -18,7 +18,7 @@ import ../../../logos_chain/core/types
 import ../../../logos_chain/chain/genesis
 import ../../../logos_chain/core/local_tree
 import ../../../logos_chain/deployment/deployment_settings
-import ../../../logos_chain/sync/[framing, types, initial_block_download]
+import ../../../logos_chain/sync/[framing, types, ibd_client]
 import ./helpers
 
 from ../../../logos_chain/core/mantle/primitives import SlotNumber
@@ -81,8 +81,9 @@ suite "sync/types (GetTip RequestMessage / response wire)":
     var bid: BlockId
     bid[0] = 7'u8
     bid[31] = 42'u8
-    let tip = Tip(tip: bid, slot: SlotNumber(9), height: 123'u64)
-    let resp = GetTipResponse(kind: gtrTip, tipData: tip)
+    let
+      tip = Tip(tip: bid, slot: SlotNumber(9), height: 123'u64)
+      resp = GetTipResponse(kind: gtrTip, tipData: tip)
     let wire = try:
       serializeGetTipResponseToSeq(resp, cryptarchiaSyncBincodeConfig)
     except BincodeError, IOError:
@@ -130,11 +131,12 @@ suite "sync/types (GetTip RequestMessage / response wire)":
 
 suite "sync/types (download RequestMessage / request & response payloads)":
   test "serializeDownloadBlocksRequestToSeq / deserializeDownloadBlocksRequest roundtrip":
-    let sm = minimalSignedTx()
-    let genesis = createGenesisBlock(sm)
-    let gid = blockId(genesis.header)
-    let tree = newLocalTree(genesis)
-    let req = DownloadBlocksRequest(targetBlock: gid, knownBlocks: buildKnownBlocks(tree))
+    let
+      sm = minimalSignedTx()
+      genesis = createGenesisBlock(sm)
+      gid = blockId(genesis.header)
+      tree = newLocalTree(genesis)
+      req = DownloadBlocksRequest(targetBlock: gid, knownBlocks: buildKnownBlocks(tree))
     let inner = try:
       serializeDownloadBlocksRequestToSeq(req, cryptarchiaSyncBincodeConfig)
     except BincodeError, IOError:
@@ -147,11 +149,12 @@ suite "sync/types (download RequestMessage / request & response payloads)":
     check dec.isSome and downloadBlocksRequestEqual(dec.get, req)
 
   test "RequestMessage download discriminant roundtrips":
-    let sm = minimalSignedTx()
-    let genesis = createGenesisBlock(sm)
-    let gid = blockId(genesis.header)
-    let tree = newLocalTree(genesis)
-    let req = DownloadBlocksRequest(targetBlock: gid, knownBlocks: buildKnownBlocks(tree))
+    let
+      sm = minimalSignedTx()
+      genesis = createGenesisBlock(sm)
+      gid = blockId(genesis.header)
+      tree = newLocalTree(genesis)
+      req = DownloadBlocksRequest(targetBlock: gid, knownBlocks: buildKnownBlocks(tree))
     let wire = try:
       serializeRequestMessageToSeq(
         RequestMessage(kind: rmDownloadBlocksRequest, downloadBlocksRequest: req),
@@ -182,8 +185,9 @@ suite "sync/types (download RequestMessage / request & response payloads)":
     check dec.isSome and downloadBlocksResponseEqual(dec.get, msg)
 
   test "serializeDownloadBlocksResponseToSeq / deserializeDownloadBlocksResponse roundtrip (one block)":
-    let sm = minimalSignedTx()
-    let genesis = createGenesisBlock(sm)
+    let
+      sm = minimalSignedTx()
+      genesis = createGenesisBlock(sm)
     let blockWire = try:
       serializeBlockToSeq(genesis, cryptarchiaSyncBincodeConfig)
     except BincodeError, IOError:
@@ -234,12 +238,13 @@ suite "sync/types (download RequestMessage / request & response payloads)":
   test "deserialize Rust Failure(Unknown) download response":
     const rustInnerHex =
       "020000000200000033000000000000004661696c656420746f20637265617465206120626c6f636b2073747265616d3a205374617274426c6f636b4e6f74466f756e64"
-    let inner = byteutils.hexToSeqByte(rustInnerHex)
-    let dec =
-      try:
-        Opt.some(deserializeDownloadBlocksResponse(inner, cryptarchiaSyncBincodeConfig))
-      except BincodeError as exc:
-        fail exc.msg
+    let
+      inner = byteutils.hexToSeqByte(rustInnerHex)
+      dec =
+        try:
+          Opt.some(deserializeDownloadBlocksResponse(inner, cryptarchiaSyncBincodeConfig))
+        except BincodeError as exc:
+          fail exc.msg
     check dec.isSome
     check dec.get.kind == dbrFailure
     check dec.get.blocksUnavailableReason.kind == burUnknown

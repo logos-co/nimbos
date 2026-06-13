@@ -7,43 +7,20 @@
 
 {.push raises: [], gcsafe.}
 
-import std/[sequtils, algorithm]
+import std/sequtils
 import results
 import bincode
 import stew/byteutils as byteutils
 import ../../testutil
 
 import ../../../logos_chain/core/types
-import ../../../logos_chain/chain/genesis
 import ../../../logos_chain/core/local_tree
-import ../../../logos_chain/sync/[framing, types, initial_block_download]
+import ../../../logos_chain/sync/[framing, types, ibd_client, ibd_server]
 
 from ../../../logos_chain/core/mantle/primitives import SlotNumber
-from ../../../logos_chain/core/mantle/tx_types import MantleTx, SignedMantleTx, encodeSignedMantleTx
+from ../../../logos_chain/core/mantle/tx_types import SignedMantleTx, encodeSignedMantleTx
 
 const testChainSyncProtocol* = "/logos-blockchain-testnet-v0.1.2/chainsync/1.0.0"
-
-proc minimalSignedTx*(): SignedMantleTx =
-  SignedMantleTx(
-    tx: MantleTx(
-      ops: @[],
-      executionGasPrice: 0'u64,
-      permanentStorageGasPrice: 0'u64,
-    ),
-    opProofs: @[],
-  )
-
-proc childBlock*(
-    parentHdr: Header, parentId: BlockId, slot: SlotNumber, txs: openArray[SignedMantleTx]
-): Block =
-  let h = initHeader(
-    bedrockVersion = parentHdr.bedrockVersion,
-    parentBlock = parentId,
-    slot = slot,
-    txs = txs,
-    proofOfLeadership = parentHdr.proofOfLeadership,
-  )
-  initBlock(h, txs = txs)
 
 func exampleBlockId*(fill: byte): BlockId =
   var id: BlockId
@@ -97,8 +74,9 @@ func downloadBlocksResponseEqual*(a, b: DownloadBlocksResponse): bool =
   of dbrNoMoreBlocks:
     true
   of dbrFailure:
-    let ra = a.blocksUnavailableReason
-    let rb = b.blocksUnavailableReason
+    let
+      ra = a.blocksUnavailableReason
+      rb = b.blocksUnavailableReason
     if ra.kind != rb.kind:
       return false
     case ra.kind
@@ -116,12 +94,13 @@ func downloadBlocksResponsesEqual*(a, b: seq[DownloadBlocksResponse]): bool =
 proc downloadBlocksResponsesForRequest*(
     tree: LocalTree, req: DownloadBlocksRequest
 ): seq[DownloadBlocksResponse] =
-  var blocks = collectBlocksTargetToAncestor(tree, req)
-  if blocks.len == 0:
+  let sendIds = cappedDownloadPathBlockIds(tree, req)
+  if sendIds.len == 0:
     return @[DownloadBlocksResponse(kind: dbrNoMoreBlocks)]
-  reverse(blocks)
-  var responses = newSeqOfCap[DownloadBlocksResponse](blocks.len + 1)
-  for blk in blocks:
+  var responses = newSeqOfCap[DownloadBlocksResponse](sendIds.len + 1)
+  for i in countdown(sendIds.high, 0):
+    let blk = tree.getBlock(sendIds[i]).valueOr:
+      fail "block not in tree"
     let innerWire = try:
       serializeBlockToSeq(blk, cryptarchiaSyncBincodeConfig)
     except BincodeError, IOError:

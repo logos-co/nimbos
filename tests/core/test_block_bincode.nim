@@ -20,17 +20,7 @@ from libp2p/crypto/ed25519/ed25519 import EdSignatureSize
 
 const cfg = cryptarchiaSyncBincodeConfig
 
-proc minimalSignedTx(): SignedMantleTx =
-  SignedMantleTx(
-    tx: MantleTx(
-      ops: @[],
-      executionGasPrice: 0'u64,
-      permanentStorageGasPrice: 0'u64,
-    ),
-    opProofs: @[],
-  )
-
-proc sampleHeader(txs: openArray[SignedMantleTx]): Header =
+func sampleHeader(txs: openArray[SignedMantleTx]): Header =
   initHeader(
     bedrockVersion = ExpectedBedrockVersion,
     parentBlock = default(BlockId),
@@ -66,8 +56,9 @@ suite "core/block bincode (cryptarchia sync)":
     var sig = default(Ed25519Signature)
     for i in 0 ..< EdSignatureSize:
       sig.data[i] = byte(i)
-    let sm = minimalSignedTx()
-    let blk = initBlock(sampleHeader([sm]), signature = sig, txs = [sm])
+    let
+      sm = minimalSignedTx()
+      blk = initBlock(sampleHeader([sm]), signature = sig, txs = [sm])
     try:
       let back = roundtrip(blk)
       checkBlockEqual(back, blk)
@@ -85,15 +76,17 @@ suite "core/block bincode (cryptarchia sync)":
       fail getCurrentExceptionMsg()
 
   test "bincode field order is header then signature then txs":
-    let sm = minimalSignedTx()
-    let h = sampleHeader([sm])
+    let
+      sm = minimalSignedTx()
+      h = sampleHeader([sm])
     var sig = default(Ed25519Signature)
     sig.data[0] = 0xAA'u8
     sig.data[1] = 0xBB'u8
     let blk = initBlock(h, signature = sig, txs = [sm])
     try:
-      let hdrWire = serializeHeaderToSeq(h, cfg)
-      let blkWire = serializeBlockToSeq(blk, cfg)
+      let
+        hdrWire = serializeHeaderToSeq(h, cfg)
+        blkWire = serializeBlockToSeq(blk, cfg)
       check blkWire.len > hdrWire.len + EdSignatureSize
       check blkWire[hdrWire.len] == 0xAA'u8
       check blkWire[hdrWire.len + 1] == 0xBB'u8
@@ -104,8 +97,9 @@ suite "core/block bincode (cryptarchia sync)":
       fail getCurrentExceptionMsg()
 
   test "serialized block wire includes signature bytes in payload size":
-    let sm = minimalSignedTx()
-    let h = sampleHeader([sm])
+    let
+      sm = minimalSignedTx()
+      h = sampleHeader([sm])
     try:
       let withDefaultSig = serializeBlockToSeq(initBlock(h, txs = [sm]), cfg)
       var sig = default(Ed25519Signature)

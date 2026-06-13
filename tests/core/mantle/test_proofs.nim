@@ -60,40 +60,42 @@ suite "core/mantle/proofs":
     )) == ptProofOfClaim
 
   test "encodeOpsProofs accepts proofs length <= op count":
-    let ops = @[
-      createTransferOp(TransferPayload(
-        inputs: Inputs(noteIds: @[]),
-        outputs: Outputs(notes: @[]),
-      )),
-      createSdpActiveOp(SdpActivePayload(
-        declarationId: default(DeclarationId),
-        nonce: default(Nonce),
-        metadata: @[],
-      )),
-    ]
-    let proofs = @[
-      OpProof(kind: opfTransfer, transferProof: DefaultZkSignature),
-    ]
-    let encoded = encodeOpsProofs(ops, proofs)
+    let
+      ops = @[
+        createTransferOp(TransferPayload(
+          inputs: Inputs(noteIds: @[]),
+          outputs: Outputs(notes: @[]),
+        )),
+        createSdpActiveOp(SdpActivePayload(
+          declarationId: default(DeclarationId),
+          nonce: default(Nonce),
+          metadata: @[],
+        )),
+      ]
+      proofs = @[
+        OpProof(kind: opfTransfer, transferProof: DefaultZkSignature),
+      ]
+      encoded = encodeOpsProofs(ops, proofs)
     check encoded.len == 128
 
   test "decodeOpsProofs roundtrips encodeOpsProofs":
-    let ops = @[
-      createTransferOp(TransferPayload(
-        inputs: Inputs(noteIds: @[]),
-        outputs: Outputs(notes: @[]),
-      )),
-      createSdpActiveOp(SdpActivePayload(
-        declarationId: default(DeclarationId),
-        nonce: default(Nonce),
-        metadata: @[],
-      )),
-    ]
-    let proofs = @[
-      OpProof(kind: opfTransfer, transferProof: DefaultZkSignature),
-    ]
-    let wire = encodeOpsProofs(ops, proofs)
-    let back = decodeOpsProofs(ops, wire)
+    let
+      ops = @[
+        createTransferOp(TransferPayload(
+          inputs: Inputs(noteIds: @[]),
+          outputs: Outputs(notes: @[]),
+        )),
+        createSdpActiveOp(SdpActivePayload(
+          declarationId: default(DeclarationId),
+          nonce: default(Nonce),
+          metadata: @[],
+        )),
+      ]
+      proofs = @[
+        OpProof(kind: opfTransfer, transferProof: DefaultZkSignature),
+      ]
+      wire = encodeOpsProofs(ops, proofs)
+      back = decodeOpsProofs(ops, wire)
     check back.len == proofs.len
     check back[0].kind == proofs[0].kind
 

@@ -12,18 +12,18 @@ import stew/endians2
 
 const CryptarchiaSyncInnerLengthPrefixSize* = 4
 
-proc addPrefixLengthToPayload*(inner: seq[byte]): seq[byte] {.raises: [BincodeError].} =
+func addPrefixLengthToPayload*(inner: seq[byte]): seq[byte] {.raises: [BincodeError].} =
   let n = inner.len.uint64
   if n > uint64(uint32.high):
     raise newException(BincodeError, "cryptarchia sync LP inner length exceeds uint32")
   let le = inner.len.uint32.toBytesLE
   var framed = newSeq[byte](4 + inner.len)
-  copyMem(framed[0].unsafeAddr, le[0].unsafeAddr, 4)
+  framed[0 ..< 4] = le
   if inner.len > 0:
-    copyMem(framed[4].unsafeAddr, inner[0].unsafeAddr, inner.len)
+    framed[4 .. framed.high] = inner
   framed
 
-proc removePrefixLengthFromPacket*(frame: seq[byte]): seq[byte] {.raises: [BincodeError].} =
+func removePrefixLengthFromPacket*(frame: seq[byte]): seq[byte] {.raises: [BincodeError].} =
   if frame.len < 4:
     raise newException(BincodeError, "cryptarchia sync LP frame too short for length prefix")
   let ln = uint32.fromBytesLE(frame.toOpenArray(0, 3)).uint64
@@ -34,9 +34,7 @@ proc removePrefixLengthFromPacket*(frame: seq[byte]): seq[byte] {.raises: [Binco
     raise newException(BincodeError, "cryptarchia sync LP payload too large")
   let plen = int ln
   if plen > 0:
-    var payload = newSeq[byte](plen)
-    copyMem(payload[0].unsafeAddr, frame[4].unsafeAddr, plen)
-    payload
+    frame[4 ..< 4 + plen]
   else:
     @[]
 

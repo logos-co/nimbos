@@ -454,7 +454,7 @@ func decodeChannelInscribe*(data: openArray[byte]): ChannelInscribePayload {.rai
   )
 
 
-proc readOpPayload*(data: openArray[byte], pos: var int, opcode: Opcode): OpPayload {.raises: [DecodingError].} =
+func readOpPayload*(data: openArray[byte], pos: var int, opcode: Opcode): OpPayload {.raises: [DecodingError].} =
   case opcode
   of OpTransfer:
     let inputs = readInputs(data, pos)
@@ -557,7 +557,7 @@ proc readOpPayload*(data: openArray[byte], pos: var int, opcode: Opcode): OpPayl
   else:
     raise newException(DecodingError, "unsupported opcode for OpPayload decode: " & $opcode)
 
-proc readOp*(data: openArray[byte], pos: var int): Op {.raises: [DecodingError].} =
+func readOp*(data: openArray[byte], pos: var int): Op {.raises: [DecodingError].} =
   let opcode = Opcode(readByte(data, pos))
   let payload = readOpPayload(data, pos, opcode)
   Op(opcode: opcode, payload: payload)

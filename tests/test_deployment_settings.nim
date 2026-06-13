@@ -209,12 +209,13 @@ mempool:
 suite "deployment-settings":
   test "parse and validate canonical deployment-settings YAML":
     check fileExists(deploymentSettingsPath)
-    let text = readAllChars(deploymentSettingsPath).valueOr:
-      check false
-      return
-    let ds = parseDeploymentSettings(text).valueOr:
-      check false
-      return
+    let
+      text = readAllChars(deploymentSettingsPath).valueOr:
+        check false
+        return
+      ds = parseDeploymentSettings(text).valueOr:
+        check false
+        return
     check validateDeploymentSettings(ds).isOk
     check ds.network.kademliaProtocolName.len > 0
     check ds.mempool.pubsubTopic.startsWith("/")
@@ -222,18 +223,19 @@ suite "deployment-settings":
     check ds.cryptarchia.genesisState.signedMantleTx.tx.ops.len > 0
 
   test "deployment-settings: mantle_tx ops and ops_proofs are block sequences":
-    let text = readAllChars(deploymentSettingsPath).valueOr:
-      check false
-      return
-    let root = parseDeploymentSettingsYaml(text).valueOr:
-      check false
-      return
-    let crypt = yamlGetPathNode(root, ["cryptarchia"]).get()
-    let gb = yamlGetPathNode(crypt, ["genesis_block"]).get()
-    let txs = yamlGetPathNode(gb, ["transactions"]).get()
-    let tx0 = txs[0]
-    let mt = yamlGetPathNode(tx0, ["mantle_tx"]).get()
-    let ops = yamlGetPathNode(mt, ["ops"]).get()
+    let
+      text = readAllChars(deploymentSettingsPath).valueOr:
+        check false
+        return
+      root = parseDeploymentSettingsYaml(text).valueOr:
+        check false
+        return
+      crypt = yamlGetPathNode(root, ["cryptarchia"]).get()
+      gb = yamlGetPathNode(crypt, ["genesis_block"]).get()
+      txs = yamlGetPathNode(gb, ["transactions"]).get()
+      tx0 = txs[0]
+      mt = yamlGetPathNode(tx0, ["mantle_tx"]).get()
+      ops = yamlGetPathNode(mt, ["ops"]).get()
     check ops.kind == ySequence
     check ops.elems.len == 6
     let proofs = yamlGetPathNode(tx0, ["ops_proofs"]).get()
@@ -305,10 +307,11 @@ suite "deployment-settings":
 
   test "parseDeploymentSettings: network not a mapping":
     check fileExists(wrongTypesFixturePath)
-    let text = readAllChars(wrongTypesFixturePath).valueOr:
-      check false
-      return
-    let r = parseDeploymentSettings(text)
+    let
+      text = readAllChars(wrongTypesFixturePath).valueOr:
+        check false
+        return
+      r = parseDeploymentSettings(text)
     check r.isErr
     check "expected top-level section 'network' to be a mapping" in r.error
 
@@ -339,25 +342,27 @@ suite "deployment-settings":
 
   test "validateDeploymentSettings: empty kademlia string":
     check fileExists(emptyScalarsFixturePath)
-    let text = readAllChars(emptyScalarsFixturePath).valueOr:
-      check false
-      return
-    let ds = parseDeploymentSettings(text).valueOr:
-      check false
-      return
-    let v = validateDeploymentSettings(ds)
+    let
+      text = readAllChars(emptyScalarsFixturePath).valueOr:
+        check false
+        return
+      ds = parseDeploymentSettings(text).valueOr:
+        check false
+        return
+      v = validateDeploymentSettings(ds)
     check v.isErr
     check "empty network.kademlia_protocol_name" in v.error
 
   test "validateDeploymentSettings: protocol without leading slash":
     check fileExists(noLeadingSlashFixturePath)
-    let text = readAllChars(noLeadingSlashFixturePath).valueOr:
-      check false
-      return
-    let ds = parseDeploymentSettings(text).valueOr:
-      check false
-      return
-    let v = validateDeploymentSettings(ds)
+    let
+      text = readAllChars(noLeadingSlashFixturePath).valueOr:
+        check false
+        return
+      ds = parseDeploymentSettings(text).valueOr:
+        check false
+        return
+      v = validateDeploymentSettings(ds)
     check v.isErr
     check "kademlia_protocol_name must start with '/'" in v.error
 
@@ -387,10 +392,11 @@ network:
 mempool:
   pubsub_topic: /a/mem
 """
-    let ds = parseDeploymentSettings(badYaml).valueOr:
-      check false
-      return
-    let v = validateDeploymentSettings(ds)
+    let
+      ds = parseDeploymentSettings(badYaml).valueOr:
+        check false
+        return
+      v = validateDeploymentSettings(ds)
     check v.isErr
     check "empty blend.common.protocol_name" in v.error
 
@@ -405,10 +411,11 @@ network:
 mempool:
   pubsub_topic: /a/mem
 """
-    let ds = parseDeploymentSettings(badYaml).valueOr:
-      check false
-      return
-    let v = validateDeploymentSettings(ds)
+    let
+      ds = parseDeploymentSettings(badYaml).valueOr:
+        check false
+        return
+      v = validateDeploymentSettings(ds)
     check v.isErr
     check "cryptarchia.slot_activation_coeff.denominator must be > 0" in v.error
 

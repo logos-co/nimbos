@@ -28,8 +28,6 @@ import
   eth/net/nat, eth/p2p/discoveryv5/[node, random2],
   ssz_serialization,
   ../[version, conf],
-  ../core/local_tree,
-  ../sync/[types, initial_block_download],
   ../core/utils,
   ./[discovery, protocol_dsl,
        libp2p_json_serialization, peer_pool, peer_scores]
@@ -91,8 +89,6 @@ type
     peerTrimmerHeartbeatFut: Future[void].Raising([CancelledError])
     bootstrapHeartbeatFut: Future[void].Raising([CancelledError])
     quota: TokenBucket ## Global quota mainly for high-bandwidth stuff
-    localTree: LocalTree
-    chainSyncProtocol: string
 
   AverageThroughput = object
     count: uint64
@@ -1613,9 +1609,7 @@ proc new(T: type LBP2PNode,
          discovery: bool,
          announcedAddresses: openArray[MultiAddress],
          bootstrapPeers: openArray[PeerAddr],
-         rng: ref HmacDrbgContext,
-         localTree: LocalTree = nil,
-         chainSyncProtocol: string = ""): T =
+         rng: ref HmacDrbgContext): T =
   when not defined(local_testnet):
     let
       connectTimeout = chronos.minutes(1)
@@ -1647,8 +1641,6 @@ proc new(T: type LBP2PNode,
     announcedAddresses: @announcedAddresses,
     bootstrapPeers: @bootstrapPeers,
     quota: TokenBucket.new(maxGlobalQuota, fullReplenishTime),
-    localTree: localTree,
-    chainSyncProtocol: chainSyncProtocol,
   )
 
   proc peerHook(
@@ -1692,10 +1684,6 @@ proc startListening*(node: LBP2PNode) {.async.} =
             exc = exc.msg
       quit 1
 
-  if node.localTree != nil and node.chainSyncProtocol.len > 0:
-    mountCryptarchiaSyncHandler(
-      node.switch, node.localTree, node.chainSyncProtocol)
-
   try:
     await node.switch.start()
   except LPError as exc:
@@ -1720,36 +1708,19 @@ proc peerPingerHeartbeat(node: LBP2PNode): Future[void] {.async: (raises: [Cance
 proc peerTrimmerHeartbeat(node: LBP2PNode): Future[void] {.async: (raises: [CancelledError]).}
 proc bootstrapHeartbeat(node: LBP2PNode): Future[void] {.async: (raises: [CancelledError]).}
 
-proc waitForBootstrapConnectivity(
-    node: LBP2PNode, attempts: int = 100,
+func bootstrapPeerIds*(node: LBP2PNode): seq[PeerId] =
+  node.bootstrapPeers.mapIt(it.peerId)
+
+proc waitForBootstrapConnectivity*(
+    sw: Switch, bootstrapPeerIds: seq[PeerId], attempts: int = 100,
 ): Future[bool] {.async: (raises: [CancelledError]).} =
-  if node.bootstrapPeers.len == 0:
+  if bootstrapPeerIds.len == 0:
     return true
   for _ in 0 ..< attempts:
-    if node.bootstrapPeers.anyIt(node.switch.isConnected(it.peerId)):
+    if bootstrapPeerIds.anyIt(sw.isConnected(it)):
       return true
     await sleepAsync(100.milliseconds)
   false
-
-proc runCryptarchiaIbdAtStartup(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
-  if node.localTree == nil or node.chainSyncProtocol.len == 0:
-    debug "Initial block download skipped: not configured",
-      hasLocalTree = node.localTree != nil,
-      chainSyncProtocolLen = node.chainSyncProtocol.len
-    return
-  if node.bootstrapPeers.len > 0:
-    if not await waitForBootstrapConnectivity(node):
-      warn "Initial block download skipped: bootstrap peer not connected"
-      return
-  try:
-    await initialBlockDownload(
-      node.switch,
-      node.bootstrapPeers.mapIt(it.peerId),
-      node.localTree,
-      node.chainSyncProtocol)
-    notice "Initial block download completed", peerCount = node.bootstrapPeers.len
-  except IBDFailure as exc:
-    warn "Initial block download failed", msg = exc.msg
 
 proc start*(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
   proc onPeerCountChanged() =
@@ -1765,8 +1736,6 @@ proc start*(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
     await node.enqueueBootstrapPeers("startup")
   else:
     notice "No libp2p bootstrap multiaddrs configured"
-
-  asyncSpawn node.runCryptarchiaIbdAtStartup()
 
   if node.discoveryEnabled:
     node.discovery.start()
@@ -2093,8 +2062,6 @@ proc createLBP2PNode*(
     rng: ref HmacDrbgContext,
     config: LBNodeConf,
     netKeys: NetKeyPair,
-    localTree: LocalTree = nil,
-    chainSyncProtocol: string = "",
 ): Result[LBP2PNode, string] =
   let
     # Would be configurable
@@ -2195,8 +2162,6 @@ proc createLBP2PNode*(
     extQuicPort, extUdpPort,
     discovery = config.discv5Enabled, announcedAddresses, bootstrapPeers,
     rng = rng,
-    localTree = localTree,
-    chainSyncProtocol = chainSyncProtocol,
   )
 
   if bootstrapPeers.len > 0:

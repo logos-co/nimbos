@@ -88,7 +88,7 @@ proc checkSignedMantleTxEqual(a, b: SignedMantleTx) =
     checkOpEqual(a.tx.ops[i], b.tx.ops[i])
     checkOpProofEqual(a.opProofs[i], b.opProofs[i])
 
-proc signedTxWithAllOps(): SignedMantleTx =
+func signedTxWithAllOps(): SignedMantleTx =
   var ops: seq[Op]
   var proofs: seq[OpProof]
   for opcode in allOpcodes:
@@ -104,8 +104,9 @@ proc signedTxWithAllOps(): SignedMantleTx =
   )
 
 proc checkSignedMantleTxRoundtrip(signed: SignedMantleTx) {.raises: [BincodeError, IOError].} =
-  let wire = serializeSignedMantleTxToSeq(signed)
-  let back = deserializeSignedMantleTx(wire)
+  let
+    wire = serializeSignedMantleTxToSeq(signed)
+    back = deserializeSignedMantleTx(wire)
   checkSignedMantleTxEqual(signed, back)
 
 suite "core/mantle/tx_bincode":

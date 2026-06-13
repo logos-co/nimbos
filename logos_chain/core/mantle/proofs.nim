@@ -232,13 +232,13 @@ func decodeProofOfClaimProof*(data: openArray[byte]): ProofOfClaimProof {.raises
   decodeGroth16(data)
 
 
-proc readEd25519Signature(data: openArray[byte], pos: var int): Ed25519Signature {.raises: [DecodingError].} =
+func readEd25519Signature(data: openArray[byte], pos: var int): Ed25519Signature {.raises: [DecodingError].} =
   var sig: Ed25519Signature
   if not sig.init(readFixed[EdSignatureSize](data, pos)):
     raise newException(DecodingError, "invalid Ed25519 signature bytes")
   sig
 
-proc readIndexedEd25519Signature(data: openArray[byte], pos: var int): (Ed25519Signature, ChannelKeyIndex) {.raises: [DecodingError].} =
+func readIndexedEd25519Signature(data: openArray[byte], pos: var int): (Ed25519Signature, ChannelKeyIndex) {.raises: [DecodingError].} =
   let signature = readEd25519Signature(data, pos)
   let index = ChannelKeyIndex(readLe[uint16](data, pos))
   (signature, index)
@@ -256,7 +256,7 @@ func decodeZkAndEd25519SigsProof*(data: openArray[byte]): ZkAndEd25519SigsProof 
   finishDecode(data, pos)
   ZkAndEd25519SigsProof(zkSig: zkSig, ed25519Sig: ed25519Sig)
 
-proc readChannelWithdrawOpProof(data: openArray[byte], pos: var int): ChannelWithdrawOpProof {.raises: [DecodingError].} =
+func readChannelWithdrawOpProof(data: openArray[byte], pos: var int): ChannelWithdrawOpProof {.raises: [DecodingError].} =
   let count = SignatureCount(readLe[uint16](data, pos))
   var signatures = newSeqOfCap[Ed25519Signature](count)
   var indexes = newSeqOfCap[ChannelKeyIndex](count)
@@ -278,7 +278,7 @@ func decodeChannelWithdrawOpProof*(data: openArray[byte]): ChannelWithdrawOpProo
   finishDecode(data, pos)
   res
 
-proc readOpProof*(data: openArray[byte], pos: var int, kind: OpProofKind): OpProof {.raises: [DecodingError].} =
+func readOpProof*(data: openArray[byte], pos: var int, kind: OpProofKind): OpProof {.raises: [DecodingError].} =
   case kind
   of opfChannelInscribe:
     OpProof(kind: opfChannelInscribe, ed25519SigProof: readEd25519Signature(data, pos))

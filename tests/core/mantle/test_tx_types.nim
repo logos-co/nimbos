@@ -19,8 +19,9 @@ suite "core/mantle/tx_types":
       executionGasPrice: 7'u64,
       permanentStorageGasPrice: 8'u64,
     )
-    let wire = encodeMantleTx(tx)
-    let back = decodeMantleTx(wire)
+    let
+      wire = encodeMantleTx(tx)
+      back = decodeMantleTx(wire)
     check back.ops.len == tx.ops.len
     check back.executionGasPrice == tx.executionGasPrice
     check back.permanentStorageGasPrice == tx.permanentStorageGasPrice
@@ -41,8 +42,9 @@ suite "core/mantle/tx_types":
         OpProof(kind: opfTransfer, transferProof: DefaultZkSignature),
       ],
     )
-    let wire = encodeSignedMantleTx(signed)
-    let back = decodeSignedMantleTx(wire)
+    let
+      wire = encodeSignedMantleTx(signed)
+      back = decodeSignedMantleTx(wire)
     check back.tx.ops.len == signed.tx.ops.len
     check back.tx.executionGasPrice == signed.tx.executionGasPrice
     check back.tx.permanentStorageGasPrice == signed.tx.permanentStorageGasPrice

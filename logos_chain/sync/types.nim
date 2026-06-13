@@ -8,18 +8,14 @@
 {.push raises: [], gcsafe.}
 
 import ../core/local_tree
-import ../core/mantle/tx_bincode
+import ../core/types
 import bincode
-import libp2p/crypto/ed25519/ed25519
-
-from ../core/types import Block, BlockId, Header, ProofOfLeadership
 
 export local_tree.Tip
-export tx_bincode
+export types
 
-# ---------------------------------------------------------------------------
-# IBD download request
-# ---------------------------------------------------------------------------
+const MaxRequestBlocks* = 128
+  ## Maximum blocks served per ``DownloadBlocksRequest`` (DoS limit).
 
 type
   KnownBlocks* = object
@@ -30,10 +26,6 @@ type
   DownloadBlocksRequest* = object
     targetBlock*: BlockId
     knownBlocks*: KnownBlocks
-
-# ---------------------------------------------------------------------------
-# IBD download response
-# ---------------------------------------------------------------------------
 
 type
   SerializedBlock = seq[byte]
@@ -68,10 +60,6 @@ type
     of dbrFailure:
       blocksUnavailableReason*: BlocksUnavailableReason
 
-# ---------------------------------------------------------------------------
-# Chain-sync request envelope
-# ---------------------------------------------------------------------------
-
 type
   RequestMessageKind* {.pure.} = enum
     rmDownloadBlocksRequest = 0
@@ -83,10 +71,6 @@ type
       downloadBlocksRequest*: DownloadBlocksRequest
     of rmGetTip:
       discard
-
-# ---------------------------------------------------------------------------
-# GetTip response
-# ---------------------------------------------------------------------------
 
 type
   GetTipResponseKind* {.pure.} = enum
@@ -100,17 +84,9 @@ type
     of gtrFailure:
       failureMessage*: string
 
-# ---------------------------------------------------------------------------
-# IBD client
-# ---------------------------------------------------------------------------
-
 type
   IBDFailure* = object of CatchableError
   InvalidBlock* = object of CatchableError
-
-# ---------------------------------------------------------------------------
-# Bincode derives (wire codecs)
-# ---------------------------------------------------------------------------
 
 const cryptarchiaSyncBincodeConfig* = BincodeConfig(
   byteOrder: LittleEndian,
@@ -118,13 +94,6 @@ const cryptarchiaSyncBincodeConfig* = BincodeConfig(
   sizeLimit: high(uint64),
 )
 
-deriveBincode(EdPublicKey)
-deriveBincode(EdSignature)
-deriveBincode(ProofOfLeadership)
-deriveBincode(Header)
-deriveBincode(Block)
-
-deriveBincode(Tip)
 deriveBincode(KnownBlocks)
 deriveBincode(DownloadBlocksRequest)
 deriveBincode(BlocksUnavailableReason)

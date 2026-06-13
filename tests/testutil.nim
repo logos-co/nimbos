@@ -14,8 +14,14 @@ import
 import
   ../logos_chain/conf,
   ../logos_chain/networking/network,
+  ../logos_chain/core/types,
+  ../logos_chain/chain/genesis,
+  ../logos_chain/core/local_tree,
+  ../logos_chain/core/mantle/tx_types,
   libp2p/switch,
   libp2p/peerid
+
+from ../logos_chain/core/mantle/primitives import SlotNumber
 
 from std/algorithm import SortOrder, sort
 from std/strformat import `&`
@@ -75,6 +81,54 @@ proc summarizeLongTests*(name: string) =
     raiseAssert getCurrentExceptionMsg()
 
 const TestLoopbackIp* = parseIpAddress("127.0.0.1")
+
+func minimalSignedTx*(): SignedMantleTx =
+  SignedMantleTx(
+    tx: MantleTx(
+      ops: @[],
+      executionGasPrice: 0'u64,
+      permanentStorageGasPrice: 0'u64,
+    ),
+    opProofs: @[],
+  )
+
+func childBlock*(
+    parentHdr: Header,
+    parentId: BlockId,
+    slot: SlotNumber,
+    txs: openArray[SignedMantleTx],
+): Block =
+  let h = initHeader(
+    bedrockVersion = parentHdr.bedrockVersion,
+    parentBlock = parentId,
+    slot = slot,
+    txs = txs,
+    proofOfLeadership = parentHdr.proofOfLeadership,
+  )
+  initBlock(h, txs = txs)
+
+proc extendChainAfterGenesis*(
+    tree: LocalTree, genesis: Block, extraBlocks: int,
+): BlockId =
+  ## Add ``extraBlocks`` descendants on top of ``genesis``; return the tip id.
+  let sm = minimalSignedTx()
+  var parentHdr = genesis.header
+  var parentId = blockId(genesis.header)
+  for slot in 1 .. extraBlocks:
+    let blk = childBlock(parentHdr, parentId, SlotNumber(slot.uint64), [sm])
+    check tree.addBlockToTree(blk)
+    parentHdr = blk.header
+    parentId = blockId(blk.header)
+  parentId
+
+proc waitLocalTreeBlock*(
+    tree: LocalTree, id: BlockId, attempts: int = 150,
+): Future[bool] {.async.} =
+  for _ in 0 ..< attempts:
+    if tree.hasBlock(id):
+      return true
+    await sleepAsync(chronos.milliseconds(100))
+  false
 
 proc waitLibp2pConnected*(sw: Switch, remote: PeerId): Future[bool] {.async.} =
   for i in 0 ..< 150:
