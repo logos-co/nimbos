@@ -38,13 +38,14 @@ func getTipResponseFromLocalTree(localTree: LocalTree): GetTipResponse =
   )
 
 func distinctKnownBlockIds(known: KnownBlocks): seq[BlockId] =
-  result = newSeqOfCap[BlockId](2 + known.additionalBlocks.len)
+  var ids = newSeqOfCap[BlockId](2 + known.additionalBlocks.len)
   for id in [known.localTip, known.latestImmutableBlock]:
-    if id != default(BlockId) and id notin result:
-      result.add id
+    if id != default(BlockId) and id notin ids:
+      ids.add id
   for id in known.additionalBlocks:
-    if id != default(BlockId) and id notin result:
-      result.add id
+    if id != default(BlockId) and id notin ids:
+      ids.add id
+  ids
 
 func deepestKnownAncestor(
     localTree: LocalTree, target: BlockId, known: KnownBlocks,

@@ -1483,9 +1483,8 @@ when crypto.supported(crypto.PKScheme.Secp256k1):
 
     debug "Peer's ENR recovery task started", node_id = $nodeId
 
-    let gnode = peer.network.discovery.getNode(nodeId)
-    if gnode.isSome():
-      peer.enr = Opt.some(gnode.get().record)
+    peer.network.discovery.getNode(nodeId).isErrOr:
+      peer.enr = Opt.some(value.record)
       inc(nbc_successful_discoveries)
       let delay = now(chronos.Moment) - startTime
       debug "Peer's ENR recovered", delay
