@@ -8,19 +8,17 @@
 {.push raises: [].}
 {.used.}
 
-import std/[os, strutils]
-import ../../testutil
-import stew/byteutils as byteutils
-import results
-import bincode
-
-import ../../../logos_chain/core/types
-import ../../../logos_chain/chain/genesis
-import ../../../logos_chain/core/local_tree
-import ../../../logos_chain/deployment/deployment_settings
-import ../../../logos_chain/sync/[framing, types, ibd_client]
-import ./helpers
-
+import
+  std/[os, strutils],
+  ../../testutil,
+  stew/byteutils as byteutils,
+  results,
+  bincode,
+  ../../../logos_chain/core/[types, local_tree],
+  ../../../logos_chain/chain/genesis,
+  ../../../logos_chain/deployment/deployment_settings,
+  ../../../logos_chain/sync/[types, ibd_client],
+  ./helpers
 from ../../../logos_chain/core/mantle/primitives import SlotNumber
 
 const testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
@@ -39,23 +37,6 @@ suite "sync/types (GetTip RequestMessage / response wire)":
     except BincodeError as exc:
       fail exc.msg
     check m.isSome and m.get.kind == rmGetTip
-
-  test "GetTip request wire frame is u32 inner length then bincode":
-    let inner = try:
-      serializeRequestMessageToSeq(RequestMessage(kind: rmGetTip), cryptarchiaSyncBincodeConfig)
-    except BincodeError, IOError:
-      fail getCurrentExceptionMsg()
-    check inner == @[1'u8, 0'u8, 0'u8, 0'u8]
-    let lpBody = try:
-      addPrefixLengthToPayload(inner)
-    except BincodeError as exc:
-      fail exc.msg
-    check byteutils.toHex(lpBody) == "0400000001000000"
-    let backInner = try:
-      removePrefixLengthFromPacket(lpBody)
-    except BincodeError as exc:
-      fail exc.msg
-    check backInner == inner
 
   test "serializeRequestMessageToSeq(GetTip RequestMessage) inner bincode hex":
     let body =

@@ -7,10 +7,9 @@
 
 {.push raises: [], gcsafe.}
 
-import ../core/local_tree
-import ../core/types
-import bincode
-
+import
+  ../core/[local_tree, types],
+  bincode
 export local_tree.Tip
 export types
 

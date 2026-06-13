@@ -7,20 +7,18 @@
 
 {.push raises: [], gcsafe.}
 
-import chronicles
-import chronos
-import libp2p/[switch, peerid, errors]
-import ../chain/chain
-import ../networking/network
-import ./syncer_types
-import ./ibd_server
-import ./ibd_client
-import ./types
+import
+  chronicles,
+  chronos,
+  libp2p/[switch, peerid, errors],
+  ../chain/chain,
+  ../networking/network,
+  ./[syncer_types, ibd_server, ibd_client, types]
 
 export syncer_types
 
-func init*(sw: Switch, chain: Chain, chainSyncProtocol: string): Syncer =
-  Syncer(sw: sw, chain: chain, chainSyncProtocol: chainSyncProtocol)
+func init*(T: type Syncer, sw: Switch, chain: Chain, protocol: string): T =
+  T(sw: sw, chain: chain, chainSyncProtocol: protocol)
 
 proc runAtStartup(
     syncer: Syncer, bootstrapPeerIds: seq[PeerId],

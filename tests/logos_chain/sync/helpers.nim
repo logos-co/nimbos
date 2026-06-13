@@ -7,16 +7,14 @@
 
 {.push raises: [], gcsafe.}
 
-import std/sequtils
-import results
-import bincode
-import stew/byteutils as byteutils
-import ../../testutil
-
-import ../../../logos_chain/core/types
-import ../../../logos_chain/core/local_tree
-import ../../../logos_chain/sync/[framing, types, ibd_client, ibd_server]
-
+import
+  std/sequtils,
+  results,
+  bincode,
+  stew/byteutils as byteutils,
+  ../../testutil,
+  ../../../logos_chain/core/[types, local_tree],
+  ../../../logos_chain/sync/[framing, types, ibd_client, ibd_server]
 from ../../../logos_chain/core/mantle/primitives import SlotNumber
 from ../../../logos_chain/core/mantle/tx_types import SignedMantleTx, encodeSignedMantleTx
 

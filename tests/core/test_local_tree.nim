@@ -8,14 +8,12 @@
 {.push raises: [], gcsafe.}
 {.used.}
 
-import unittest2
-import results
-
-import ../../logos_chain/core/types
-import ../../logos_chain/chain/genesis
-import ../../logos_chain/core/mantle/tx_types
-import ../../logos_chain/core/local_tree
-
+import
+  unittest2,
+  results,
+  ../../logos_chain/core/[types, local_tree],
+  ../../logos_chain/chain/genesis,
+  ../../logos_chain/core/mantle/tx_types
 proc minimalSignedTx(): SignedMantleTx =
   SignedMantleTx(
     tx: MantleTx(

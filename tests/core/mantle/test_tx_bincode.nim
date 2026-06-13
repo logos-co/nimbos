@@ -8,9 +8,10 @@
 {.push raises: [], gcsafe.}
 {.used.}
 
-import ../../testutil
-import bincode
-import ../../../logos_chain/core/mantle/[operations, proofs, tx_bincode, tx_types]
+import
+  ../../testutil,
+  bincode,
+  ../../../logos_chain/core/mantle/[operations, proofs, tx_bincode, tx_types]
 
 const allOpcodes = [
   OpTransfer,

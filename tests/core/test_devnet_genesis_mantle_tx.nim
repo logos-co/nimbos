@@ -11,16 +11,16 @@
 {.push raises: [].}
 {.used.}
 
-import std/[os, strutils]
-import unittest2
-import results
-import stew/[byteutils, io2]
-import yaml/dom
-import ../../logos_chain/deployment/[deployment_settings, deployment_settings_helpers]
-import ../../logos_chain/chain/genesis
-import ../../logos_chain/core/types
-import ../../logos_chain/core/crypto/hashing
-import ../../logos_chain/core/mantle/[tx_types, tx_hashing]
+import
+  std/[os, strutils],
+  unittest2,
+  results,
+  stew/[byteutils, io2],
+  yaml/dom,
+  ../../logos_chain/deployment/[deployment_settings, deployment_settings_helpers],
+  ../../logos_chain/chain/genesis,
+  ../../logos_chain/core/[types, crypto/hashing],
+  ../../logos_chain/core/mantle/[tx_types, tx_hashing]
 
 const testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
 const mantleTxFixturePath = testsDir / "../fixtures/devnet-genesis-mantle-tx.yaml"

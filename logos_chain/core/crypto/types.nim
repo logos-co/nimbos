@@ -13,11 +13,12 @@
 
 {.push raises: [], gcsafe.}
 
-import results
-import bincode
-import libp2p/crypto/ed25519/ed25519
-import stew/endians2
-import ../../zk/poseidon2/hasher           # FieldElement (+ re-exported poseidon2 symbols)
+import
+  results,
+  bincode,
+  libp2p/crypto/ed25519/ed25519,
+  stew/[assign2, endians2],
+  ../../zk/poseidon2/hasher           # FieldElement (+ re-exported poseidon2 symbols)
 export hasher
 
 type
@@ -133,8 +134,7 @@ func readByte*(data: openArray[byte], pos: var int): byte {.raises: [DecodingErr
 func readFixed*[N: static[int]](data: openArray[byte], pos: var int): array[N, byte] {.raises: [DecodingError].} =
   ensureRemaining(data, pos, N)
   var res: array[N, byte]
-  for i in 0 ..< N:
-    res[i] = data[pos + i]
+  assign(res, data.toOpenArray(pos, pos + N - 1))
   pos += N
   res
 
@@ -145,7 +145,7 @@ func readU32LeLenPrefixed*(data: openArray[byte], pos: var int): seq[byte] {.rai
   let plen = int ln
   var res: seq[byte]
   if plen > 0:
-    res = @data[pos ..< pos + plen]
+    assign(res, data.toOpenArray(pos, pos + plen - 1))
     pos += plen
   res
 
@@ -156,7 +156,7 @@ func readU16LeLenPrefixed*(data: openArray[byte], pos: var int): seq[byte] {.rai
   let plen = int ln
   var res: seq[byte]
   if plen > 0:
-    res = @data[pos ..< pos + plen]
+    assign(res, data.toOpenArray(pos, pos + plen - 1))
     pos += plen
   res
 

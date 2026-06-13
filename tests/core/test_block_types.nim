@@ -8,9 +8,10 @@
 {.push raises: [], gcsafe.}
 {.used.}
 
-import unittest2
-import ../../logos_chain/core/mantle/[tx_types, tx_hashing]
-import ../../logos_chain/core/types
+import
+  unittest2,
+  ../../logos_chain/core/mantle/[tx_types, tx_hashing],
+  ../../logos_chain/core/types
 
 suite "core/types":
   const testBedrockVersion = 1'u8

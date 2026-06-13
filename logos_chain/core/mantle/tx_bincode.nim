@@ -11,8 +11,9 @@
 
 {.push raises: [], gcsafe.}
 
-import faststreams
-import bincode
+import
+  faststreams,
+  bincode
 from ../crypto/types import DecodingError
 from ./tx_types import SignedMantleTx, encodeSignedMantleTx, decodeSignedMantleTx
 

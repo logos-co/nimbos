@@ -14,8 +14,10 @@
 
 {.push raises: [], gcsafe.}
 
-import ./[primitives, operations, proofs]
-import ../crypto/types
+import
+  ./[primitives, operations, proofs],
+  ../crypto/types
+
 export primitives, operations, proofs
 
 

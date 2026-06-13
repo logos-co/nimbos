@@ -8,9 +8,10 @@
 {.push raises: [], gcsafe.}
 {.used.}
 
-import unittest2
-import ../../../logos_chain/core/crypto/types
-import ../../../logos_chain/core/mantle/tx_types
+import
+  unittest2,
+  ../../../logos_chain/core/crypto/types,
+  ../../../logos_chain/core/mantle/tx_types
 
 suite "core/mantle/tx_types":
   test "decodeMantleTx roundtrips encodeMantleTx":

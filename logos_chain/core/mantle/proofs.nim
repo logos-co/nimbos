@@ -12,9 +12,10 @@
 
 {.push raises: [], gcsafe.}
 
-import ./[primitives, opcodes, operations]
-import ../crypto/types
-import libp2p/crypto/ed25519/ed25519
+import
+  ./[primitives, opcodes, operations],
+  ../crypto/types,
+  libp2p/crypto/ed25519/ed25519
 
 type
   OpProofKind* {.pure.} = enum

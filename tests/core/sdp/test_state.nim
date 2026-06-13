@@ -8,11 +8,12 @@
 {.push raises: [], gcsafe.}
 {.used.}
 
-import std/sets
-import unittest2
-import libp2p/multiaddress
-import ../../../logos_chain/core/mantle/primitives
-import ../../../logos_chain/core/sdp/state
+import
+  std/sets,
+  unittest2,
+  libp2p/multiaddress,
+  ../../../logos_chain/core/mantle/primitives,
+  ../../../logos_chain/core/sdp/state
 
 suite "core/sdp/state":
   test "LockedNote starts with empty declaration set":

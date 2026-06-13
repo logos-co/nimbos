@@ -8,12 +8,13 @@
 {.push raises: [].}
 {.used.}
 
-import std/[os, strutils]
-import unittest2
-import stew/io2
-import ../../logos_chain/core/mantle/[tx_types, tx_hashing]
-import ../../logos_chain/chain/chain
-import ../../logos_chain/deployment/deployment_settings
+import
+  std/[os, strutils],
+  unittest2,
+  stew/io2,
+  ../../logos_chain/core/mantle/[tx_types, tx_hashing],
+  ../../logos_chain/chain/chain,
+  ../../logos_chain/deployment/deployment_settings
 
 const testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
 const deploymentSettingsPath = testsDir / "../../config/deployment-settings.yaml"
@@ -49,7 +50,7 @@ suite "chain/genesis":
     let
       gstate = ds.cryptarchia.genesisState
       genesisTx = gstate.signedMantleTx
-      testChain = chain.init(ds).valueOr:
+      testChain = Chain.init(ds).valueOr:
         check false
         return
       gb = testChain.genesisBlock

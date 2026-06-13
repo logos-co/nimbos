@@ -8,21 +8,18 @@
 {.push raises: [], gcsafe.}
 {.used.}
 
-import chronos
-import chronos/unittest2/asynctests
-import unittest2
-import bincode
-
-import libp2p/builders
-
-import ../../../logos_chain/networking/network
-import ../../../logos_chain/core/types
-import ../../../logos_chain/chain/[genesis, chain]
-import ../../../logos_chain/core/local_tree
-import ../../../logos_chain/sync/[types, ibd_client, ibd_server, syncer]
-import ./helpers
-import ../../testutil
-
+import
+  chronos,
+  chronos/unittest2/asynctests,
+  unittest2,
+  bincode,
+  libp2p/builders,
+  ../../../logos_chain/networking/network,
+  ../../../logos_chain/core/[types, local_tree],
+  ../../../logos_chain/chain/[genesis, chain],
+  ../../../logos_chain/sync/[types, ibd_client, ibd_server, syncer],
+  ./helpers,
+  ../../testutil
 from ../../../logos_chain/core/mantle/primitives import SlotNumber
 
 proc runLbp2pIbdSyncTest(
@@ -32,11 +29,11 @@ proc runLbp2pIbdSyncTest(
     sm = minimalSignedTx()
     genesis = createGenesisBlock(sm)
 
-  var chainBootstrap = chain.init(genesis)
+  var chainBootstrap = Chain.init(genesis)
   let tipId = extendChainAfterGenesis(chainBootstrap.localTree, genesis, extraBlocks)
   check chainBootstrap.localTree.localTipId == tipId
 
-  let chainClient = chain.init(genesis)
+  let chainClient = Chain.init(genesis)
 
   let (confBootstrap, confClient, rngBootstrap, rngClient) =
     makeBootstrapConfs(bootstrapPort, clientPort)
@@ -48,7 +45,7 @@ proc runLbp2pIbdSyncTest(
   )
   check bootstrapRes.isOk
   let bootstrap = bootstrapRes.get()
-  let bootstrapSyncer = syncer.init(
+  let bootstrapSyncer = Syncer.init(
     bootstrap.switch, chainBootstrap, testChainSyncProtocol)
   await bootstrap.startListening()
   bootstrapSyncer.start(@[])
@@ -70,7 +67,7 @@ proc runLbp2pIbdSyncTest(
   check clientRes.isOk
   let
     client = clientRes.get()
-    clientSyncer = syncer.init(client.switch, chainClient, testChainSyncProtocol)
+    clientSyncer = Syncer.init(client.switch, chainClient, testChainSyncProtocol)
     waitAttempts = 150 + extraBlocks * 5
 
   try:
@@ -156,18 +153,18 @@ suite "sync/initial_block_download (download blocks)":
       genesis = createGenesisBlock(sm)
       gid = blockId(genesis.header)
       b1 = childBlock(genesis.header, gid, SlotNumber(1), [sm])
-    var serverChain = chain.init(genesis)
+    var serverChain = Chain.init(genesis)
     check serverChain.localTree.addBlockToTree(b1)
     let
       b1id = blockId(b1.header)
-      clientChain = chain.init(genesis)
+      clientChain = Chain.init(genesis)
       req = DownloadBlocksRequest(
         targetBlock: b1id, knownBlocks: buildKnownBlocks(clientChain.localTree))
       server = newStandardSwitch()
-    let serverSyncer = syncer.init(server, serverChain, testChainSyncProtocol)
+    let serverSyncer = Syncer.init(server, serverChain, testChainSyncProtocol)
     mountCryptarchiaSyncHandler(serverSyncer)
     let client = newStandardSwitch()
-    let clientSyncer = syncer.init(client, clientChain, testChainSyncProtocol)
+    let clientSyncer = Syncer.init(client, clientChain, testChainSyncProtocol)
 
     await server.start()
     await client.start()
@@ -192,13 +189,13 @@ suite "sync/initial_block_download (GetTip)":
     let
       sm = minimalSignedTx()
       genesis = createGenesisBlock(sm)
-    var serverChain = chain.init(genesis)
+    var serverChain = Chain.init(genesis)
     let
       server = newStandardSwitch()
-    let serverSyncer = syncer.init(server, serverChain, testChainSyncProtocol)
+    let serverSyncer = Syncer.init(server, serverChain, testChainSyncProtocol)
     mountCryptarchiaSyncHandler(serverSyncer)
     let client = newStandardSwitch()
-    let clientSyncer = syncer.init(client, chain.init(genesis), testChainSyncProtocol)
+    let clientSyncer = Syncer.init(client, Chain.init(genesis), testChainSyncProtocol)
 
     await server.start()
     await client.start()
@@ -225,7 +222,7 @@ suite "sync/initial_block_download (IBD requester loop)":
       sm = minimalSignedTx()
       genesis = createGenesisBlock(sm)
       sw = newStandardSwitch()
-    let clientSyncer = syncer.init(sw, chain.init(genesis), testChainSyncProtocol)
+    let clientSyncer = Syncer.init(sw, Chain.init(genesis), testChainSyncProtocol)
     await initialBlockDownload(clientSyncer, @[])
 
   asyncTest "initialBlockDownload succeeds when peer tip is already in local tree":
@@ -233,12 +230,12 @@ suite "sync/initial_block_download (IBD requester loop)":
       sm = minimalSignedTx()
       genesis = createGenesisBlock(sm)
       server = newStandardSwitch()
-    var serverChain = chain.init(genesis)
-    var clientChain = chain.init(genesis)
-    let serverSyncer = syncer.init(server, serverChain, testChainSyncProtocol)
+    var serverChain = Chain.init(genesis)
+    var clientChain = Chain.init(genesis)
+    let serverSyncer = Syncer.init(server, serverChain, testChainSyncProtocol)
     mountCryptarchiaSyncHandler(serverSyncer)
     let client = newStandardSwitch()
-    let clientSyncer = syncer.init(client, clientChain, testChainSyncProtocol)
+    let clientSyncer = Syncer.init(client, clientChain, testChainSyncProtocol)
 
     await server.start()
     await client.start()
@@ -255,15 +252,15 @@ suite "sync/initial_block_download (IBD requester loop)":
       genesis = createGenesisBlock(sm)
       gid = blockId(genesis.header)
       b1 = childBlock(genesis.header, gid, SlotNumber(1), [sm])
-    var serverChain = chain.init(genesis)
+    var serverChain = Chain.init(genesis)
     check serverChain.localTree.addBlockToTree(b1)
     check serverChain.localTree.localTipId == blockId(b1.header)
 
     let
-      clientChain = chain.init(genesis)
+      clientChain = Chain.init(genesis)
       server = newStandardSwitch()
       client = newStandardSwitch()
-    let clientSyncer = syncer.init(client, clientChain, testChainSyncProtocol)
+    let clientSyncer = Syncer.init(client, clientChain, testChainSyncProtocol)
 
     await server.start()
     await client.start()
@@ -285,18 +282,18 @@ suite "sync/initial_block_download (IBD requester loop)":
       genesis = createGenesisBlock(sm)
       gid = blockId(genesis.header)
       b1 = childBlock(genesis.header, gid, SlotNumber(1), [sm])
-    var serverChain = chain.init(genesis)
+    var serverChain = Chain.init(genesis)
     check serverChain.localTree.addBlockToTree(b1)
     let b1id = blockId(b1.header)
     check serverChain.localTree.localTipId == b1id
 
     let
-      clientChain = chain.init(genesis)
+      clientChain = Chain.init(genesis)
       server = newStandardSwitch()
-    let serverSyncer = syncer.init(server, serverChain, testChainSyncProtocol)
+    let serverSyncer = Syncer.init(server, serverChain, testChainSyncProtocol)
     mountCryptarchiaSyncHandler(serverSyncer)
     let client = newStandardSwitch()
-    let clientSyncer = syncer.init(client, clientChain, testChainSyncProtocol)
+    let clientSyncer = Syncer.init(client, clientChain, testChainSyncProtocol)
 
     await server.start()
     await client.start()

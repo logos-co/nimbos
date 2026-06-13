@@ -8,8 +8,9 @@
 {.push raises: [], gcsafe.}
 {.used.}
 
-import unittest2
-import ../../../logos_chain/core/crypto/types
+import
+  unittest2,
+  ../../../logos_chain/core/crypto/types
 
 suite "core/crypto/types":
   test "encodeLe infers output width from unsigned input type":

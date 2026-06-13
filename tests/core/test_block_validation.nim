@@ -8,14 +8,11 @@
 {.push raises: [], gcsafe.}
 {.used.}
 
-import unittest2
-import ../testutil
-
-import ../../logos_chain/core/types
-import ../../logos_chain/chain/genesis
-import ../../logos_chain/core/block_validation
-import ../../logos_chain/core/local_tree
-
+import
+  unittest2,
+  ../testutil,
+  ../../logos_chain/core/[types, block_validation, local_tree],
+  ../../logos_chain/chain/genesis
 from ../../logos_chain/core/mantle/primitives import SlotNumber
 
 suite "core/block_validation":

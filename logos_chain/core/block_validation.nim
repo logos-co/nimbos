@@ -10,12 +10,13 @@
 
 {.push raises: [], gcsafe.}
 
-import results
-import ./local_tree
-import libp2p/crypto/ed25519/ed25519
+import
+  results,
+  ./local_tree,
+  libp2p/crypto/ed25519/ed25519
 
 from ./types import
-  Block, Header, createBlockRoot, ExpectedBedrockVersion, MaxBlockSize
+  Block, Header, createBlockRoot, ExpectedBedrockVersion, MaxBlockSize, header
 from ./mantle/primitives import MaxBlockTxs, SlotNumber
 from ./mantle/tx_types import SignedMantleTx, encodeSignedMantleTx
 
@@ -42,9 +43,7 @@ func verifyPoL(localTree: LocalTree, header: Header): bool =
   true
 
 func validateBlockHeader(blk: Block, localTree: LocalTree): bool =
-  let header = blk.header
-
-  if header.bedrockVersion != ExpectedBedrockVersion:
+  if header(blk).bedrockVersion != ExpectedBedrockVersion:
     return false
 
   if blockPayloadBytesLen(blk) >= MaxBlockSize:
@@ -53,24 +52,24 @@ func validateBlockHeader(blk: Block, localTree: LocalTree): bool =
   if blk.txs.len >= MaxBlockTxs:
     return false
 
-  if createBlockRoot(blk.txs) != header.blockRoot:
+  if createBlockRoot(blk.txs) != header(blk).blockRoot:
     return false
 
-  let parentHeader = fetchParentHeader(localTree, header.parentBlock).valueOr:
+  let parentHeader = fetchParentHeader(localTree, header(blk).parentBlock).valueOr:
     return false
-  if header.slot <= parentHeader.slot:
-    return false
-
-  if wallclockSlot() < header.slot:
+  if header(blk).slot <= parentHeader.slot:
     return false
 
-  if not hasBlock(localTree, header.parentBlock):
+  if wallclockSlot() < header(blk).slot:
     return false
 
-  if not isFutureDescendantOfImmutable(localTree, header):
+  if not hasBlock(localTree, header(blk).parentBlock):
     return false
 
-  if not verifyPoL(localTree, header):
+  if not isFutureDescendantOfImmutable(localTree, header(blk)):
+    return false
+
+  if not verifyPoL(localTree, header(blk)):
     return false
 
   true

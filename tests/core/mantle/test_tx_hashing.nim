@@ -8,10 +8,9 @@
 {.push raises: [], gcsafe.}
 {.used.}
 
-import unittest2
-import ../../../logos_chain/core/mantle/tx_hashing
-import ../../../logos_chain/core/mantle/tx_types
-
+import
+  unittest2,
+  ../../../logos_chain/core/mantle/[tx_hashing, tx_types]
 suite "core/mantle/tx_hashing":
   test "mantleTxHash is sensitive to tx bytes":
     let

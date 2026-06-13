@@ -22,7 +22,7 @@ import ../core/crypto/types           # FieldElement, zero, +, *, ==
 
 const
   TreeDepth* = 32
-  Capacity*  = 1 shl TreeDepth   # 2^32 leaves
+  Capacity* = 1 shl TreeDepth   # 2^32 leaves
 
 type
   Side* {.pure.} = enum
@@ -228,7 +228,7 @@ func collectPath[Item, Hash](
   of Inner:
     let
       leftCap = nodeCapacity(n.left)
-      slot    = TreeDepth - 1 - depthFromRoot
+      slot = TreeDepth - 1 - depthFromRoot
     if index < leftCap:
       if not collectPath(n.left, index, depthFromRoot + 1, outPath):
         return false

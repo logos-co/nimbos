@@ -15,17 +15,14 @@ import
   results,
   libp2p/[switch, peerid],
   libp2p/stream/connection,
-  stew/byteutils as sbyteutils
-
-import ../chain/chain
-import ../core/block_validation
-import ./ibd_server
-import ./syncer_types
-import ./types
+  stew/byteutils as sbyteutils,
+  ../chain/chain,
+  ../core/block_validation,
+  ./[framing, syncer_types, types]
 
 from ../core/local_tree import
   LocalTree, localTipId, latestImmutableBlockId, hasBlock, addBlockToTree
-from ../core/types import Block, BlockId, blockId
+from ../core/types import Block, BlockId, blockId, header
 from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
 
 export types, chain, syncer_types
@@ -212,19 +209,18 @@ proc onBlock(
   if not validateBlock(blk, localTree):
     raise newException(InvalidBlock, "invalid block")
   discard addBlockToTree(localTree, blk)
-  let h = blk.header
   var leaderKeyBytes: array[EdPublicKeySize, byte]
-  doAssert toBytes(h.proofOfLeadership.leaderKey, leaderKeyBytes) == EdPublicKeySize
+  doAssert toBytes(header(blk).proofOfLeadership.leaderKey, leaderKeyBytes) == EdPublicKeySize
   info "IBD ingested block",
-    id = sbyteutils.toHex(blockId(h)),
-    bedrockVersion = h.bedrockVersion,
-    parent = sbyteutils.toHex(h.parentBlock),
-    slot = h.slot,
-    blockRoot = sbyteutils.toHex(h.blockRoot),
+    id = sbyteutils.toHex(blockId(header(blk))),
+    bedrockVersion = header(blk).bedrockVersion,
+    parent = sbyteutils.toHex(header(blk).parentBlock),
+    slot = header(blk).slot,
+    blockRoot = sbyteutils.toHex(header(blk).blockRoot),
     txCount = blk.txs.len,
-    polLeaderVoucher = sbyteutils.toHex(h.proofOfLeadership.leaderVoucher),
-    polEntropyContribution = sbyteutils.toHex(h.proofOfLeadership.entropyContribution),
-    polProof = sbyteutils.toHex(h.proofOfLeadership.proof),
+    polLeaderVoucher = sbyteutils.toHex(header(blk).proofOfLeadership.leaderVoucher),
+    polEntropyContribution = sbyteutils.toHex(header(blk).proofOfLeadership.entropyContribution),
+    polProof = sbyteutils.toHex(header(blk).proofOfLeadership.proof),
     polLeaderKey = sbyteutils.toHex(leaderKeyBytes),
     blockSignature = sbyteutils.toHex(blk.signature.data)
 

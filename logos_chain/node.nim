@@ -9,23 +9,16 @@
 
 import
   std/[osproc, random],
-
-  # Nimble packages
   chronos, chronicles, presto, presto/server, bearssl/rand,
   metrics, metrics/chronos_httpserver,
   eth/p2p/discoveryv5/random2,
   stew/byteutils,
-
-  # Local modules
   ./chain/chain,
-  ./conf,
-  ./core/types,
+  ./[conf, process_state],
+  ./core/[types, utils],
   ./deployment/deployment_settings,
   ./networking/network,
-  ./sync/syncer,
-  ./core/utils,
-  ./process_state
-
+  ./sync/syncer
 from ./core/types as coreTypes import Block, blockId
 from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
 from libp2p/protocols/pubsub/gossipsub import
@@ -78,7 +71,7 @@ proc init*(
   # Doesn't use std/random directly, but dependencies might
   randomize(rng[].rand(high(int)))
 
-  let chain = chain.init(deploymentSettings).valueOr:
+  let chain = Chain.init(deploymentSettings).valueOr:
     fatal "Failed to initialize chain", err = error
     return Opt.none(LBNode)
 
@@ -119,7 +112,7 @@ proc init*(
 
   var nodeSyncer: Syncer = nil
   if chain.localTree != nil and deploymentSettings.network.chainSyncProtocolName.len > 0:
-    nodeSyncer = syncer.init(
+    nodeSyncer = Syncer.init(
       network.switch, chain, deploymentSettings.network.chainSyncProtocolName)
 
   if nodeSyncer != nil:

@@ -8,10 +8,9 @@
 {.push raises: [], gcsafe.}
 {.used.}
 
-import unittest2
-import ../../../logos_chain/core/mantle/operations
-import ../../../logos_chain/core/mantle/tx_types
-
+import
+  unittest2,
+  ../../../logos_chain/core/mantle/[operations, tx_types]
 suite "core/mantle/operations":
   test "Mantle opcode constants match expected wire values":
     check OpTransfer == 0x00'u8

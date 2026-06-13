@@ -7,8 +7,9 @@
 
 {.push raises: [], gcsafe.}
 
-import libp2p/switch
-import ../chain/chain
+import
+  libp2p/switch,
+  ../chain/chain
 
 from ../core/local_tree import LocalTree
 

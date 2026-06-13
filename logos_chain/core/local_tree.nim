@@ -7,12 +7,11 @@
 
 {.push raises: [], gcsafe.}
 
-import std/tables
-
-import results
-import bincode
-
-import ./types
+import
+  std/tables,
+  results,
+  bincode,
+  ./types
 from ./mantle/primitives import SlotNumber
 
 export types.Block, types.Header, types.BlockId

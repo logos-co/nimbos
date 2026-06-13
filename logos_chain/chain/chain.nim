@@ -9,11 +9,11 @@
 
 {.push raises: [], gcsafe.}
 
-import results
-import ../core/types
-import ../core/local_tree
-import ../deployment/deployment_settings
-import ./genesis
+import
+  results,
+  ../core/[types, local_tree],
+  ../deployment/deployment_settings,
+  ./genesis
 
 export genesis, local_tree
 
@@ -22,16 +22,14 @@ type
     genesisBlock*: Block
     localTree*: LocalTree
 
-func init*(
-    genesisBlock: Block, latestImmutableHeight: uint64 = 0
-): Chain =
-  Chain(
+func init*(T: type Chain, genesisBlock: Block, latestImmutableHeight: uint64 = 0): T =
+  T(
     genesisBlock: genesisBlock,
     localTree: newLocalTree(genesisBlock, latestImmutableHeight),
   )
 
-func init*(settings: DeploymentSettings): Result[Chain, string] =
+func init*(T: type Chain, settings: DeploymentSettings): Result[T, string] =
   let genesisBlock = createGenesisBlock(settings.cryptarchia.genesisState.signedMantleTx)
-  ok(init(genesisBlock))
+  ok(T.init(genesisBlock))
 
 {.pop.}

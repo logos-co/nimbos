@@ -8,9 +8,10 @@
 {.push raises: [], gcsafe.}
 {.used.}
 
-import unittest2
-import libp2p/multiaddress
-import ../../../logos_chain/core/mantle/primitives
+import
+  unittest2,
+  libp2p/multiaddress,
+  ../../../logos_chain/core/mantle/primitives
 
 suite "core/mantle/primitives":
   test "primitive constants match expected values":
@@ -22,14 +23,14 @@ suite "core/mantle/primitives":
 
   test "encodeValue is uint64 LE":
     let
-      v: Value  = 0xAABB_CCDD_EEFF_0011'u64
+      v: Value = 0xAABB_CCDD_EEFF_0011'u64
       b = encodeValue(v)
     check b[0] == 0x11'u8
     check b[7] == 0xAA'u8
 
   test "encodeMetadata empty is length 0 u32 le":
     let
-      m: Metadata  = @[]
+      m: Metadata = @[]
       s = encodeMetadata(m)
     check s.len == 4
     check s[0] == 0'u8
@@ -42,13 +43,13 @@ suite "core/mantle/primitives":
 
   test "decodeValue roundtrips encodeValue":
     let
-      v: Value  = 0xAABB_CCDD_EEFF_0011'u64
+      v: Value = 0xAABB_CCDD_EEFF_0011'u64
       wire = @(encodeValue(v))
     check decodeValue(wire) == v
 
   test "decodeMetadata roundtrips encodeMetadata":
     let
-      m: Metadata  = @[1'u8, 2'u8, 3'u8]
+      m: Metadata = @[1'u8, 2'u8, 3'u8]
       wire = encodeMetadata(m)
     check decodeMetadata(wire) == m
 

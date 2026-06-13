@@ -10,11 +10,13 @@
 
 {.push raises: [], gcsafe.}
 
-import stew/bitops2
-import bincode
-import ./crypto/hashing
-import ./mantle/[tx_types, tx_hashing, tx_bincode]
-import libp2p/crypto/ed25519/ed25519
+import
+  stew/[assign2, bitops2],
+  bincode,
+  ./crypto/hashing,
+  ./mantle/[tx_types, tx_hashing, tx_bincode],
+  libp2p/crypto/ed25519/ed25519
+
 export hashing, tx_types, tx_bincode
 
 const
@@ -53,10 +55,12 @@ deriveBincode(ProofOfLeadership)
 deriveBincode(Header)
 deriveBincode(Block)
 
+template header*(blk: Block): auto = blk.header
+
 func hashPair*(left, right: Hash32): Hash32 =
   var pairBytes: array[64, byte]
-  pairBytes[0 ..< 32] = left
-  pairBytes[32 ..< 64] = right
+  assign(pairBytes.toOpenArray(0, 31), left)
+  assign(pairBytes.toOpenArray(32, 63), right)
   blake2b256Hash(pairBytes)
 
 func createBlockRoot*(txs: openArray[SignedMantleTx]): Hash32 =

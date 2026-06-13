@@ -15,49 +15,17 @@ import
   libp2p/[switch, errors],
   libp2p/protocols/protocol,
   libp2p/stream/connection,
-  stew/endians2,
-  stew/byteutils as sbyteutils
-
-import ./framing
-import ./syncer_types
-import ./types
+  stew/byteutils as sbyteutils,
+  ./[framing, syncer_types, types]
 
 from ../core/local_tree import
-  LocalTree, localTipId, latestImmutableBlockId, lcaBlockIdAndHeight, isAncestor,
+  LocalTree, localTipId, latestImmutableBlockId, lcaBlockIdAndHeight,
   hasBlock, getBlock, blockHeight
 from ../core/types import Block, BlockId
 from ../core/mantle/primitives import SlotNumber
 
 logScope:
   topics = "cryptarchia_ibd"
-
-proc readCryptarchiaPrefixedInner*(
-    conn: Connection
-): Future[Opt[seq[byte]]] {.async: (raises: [CancelledError]).} =
-  ## Read LE ``uint32`` inner length, then exactly ``innerLen`` bytes.
-  try:
-    var lenPrefix = newSeqUninit[byte](CryptarchiaSyncInnerLengthPrefixSize)
-    await conn.readExactly(addr lenPrefix[0], CryptarchiaSyncInnerLengthPrefixSize)
-    let innerLen = int(uint32.fromBytesLE(lenPrefix.toOpenArray(
-        0, CryptarchiaSyncInnerLengthPrefixSize - 1)))
-    if innerLen == 0:
-      return Opt.some(newSeq[byte]())
-    var inner = newSeqUninit[byte](innerLen)
-    await conn.readExactly(addr inner[0], innerLen)
-    debug "IBD wire read ok", innerBytes = inner.len
-    Opt.some(inner)
-  except LPStreamError as exc:
-    debug "IBD wire read failed", exc = exc.msg
-    Opt.none(seq[byte])
-
-proc writeCryptarchiaPrefixedInner*(
-    conn: Connection, inner: seq[byte]
-) {.async: (raises: [BincodeError, LPStreamError, CancelledError]).} =
-  ## Prepend LE ``uint32`` inner length, then ``write`` the frame raw on the stream.
-  let framed = addPrefixLengthToPayload(inner)
-  debug "IBD wire write", innerBytes = inner.len, framedBytes = framed.len
-  await conn.write(framed)
-  debug "IBD wire write ok", framedBytes = framed.len
 
 func getTipResponseFromLocalTree(localTree: LocalTree): GetTipResponse =
   GetTipResponse(
@@ -87,15 +55,8 @@ func deepestKnownAncestor(
   for kid in distinctKnownBlockIds(known):
     if not localTree.hasBlock(kid):
       continue
-    var candidateId: BlockId
-    var candidateHeight: uint64
-    if isAncestor(localTree, kid, target):
-      candidateId = kid
-      candidateHeight = localTree.blockHeight(kid).valueOr:
-        continue
-    else:
-      (candidateId, candidateHeight) = lcaBlockIdAndHeight(localTree, kid, target).valueOr:
-        continue
+    let (candidateId, candidateHeight) = lcaBlockIdAndHeight(localTree, kid, target).valueOr:
+      continue
     if not haveAncestor or candidateHeight > ancestorHeight:
       ancestorHeight = candidateHeight
       ancestorId = candidateId

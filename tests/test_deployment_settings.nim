@@ -8,12 +8,13 @@
 {.push raises: [].}
 {.used.}
 
-import std/[os, strutils]
-import chronos
-import unittest2
-import stew/io2
-import ../logos_chain/conf
-import ../logos_chain/deployment/deployment_settings
+import
+  std/[os, strutils],
+  chronos,
+  unittest2,
+  stew/io2,
+  ../logos_chain/conf,
+  ../logos_chain/deployment/deployment_settings
 
 const testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
 

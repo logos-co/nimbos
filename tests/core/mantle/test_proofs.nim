@@ -8,10 +8,10 @@
 {.push raises: [], gcsafe.}
 {.used.}
 
-import unittest2
-import ../../../logos_chain/core/crypto/types
-import ../../../logos_chain/core/mantle/proofs
-import ../../../logos_chain/core/mantle/operations
+import
+  unittest2,
+  ../../../logos_chain/core/crypto/types,
+  ../../../logos_chain/core/mantle/[proofs, operations]
 
 suite "core/mantle/proofs":
   test "proofType maps concrete proof variants to canonical families":

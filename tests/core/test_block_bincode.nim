@@ -8,13 +8,13 @@
 {.push raises: [], gcsafe.}
 {.used.}
 
-import unittest2
-import ../testutil
-import bincode
-import ../../logos_chain/core/types
-import ../../logos_chain/chain/genesis
-import ../../logos_chain/sync/types
-import ../../logos_chain/core/mantle/tx_types
+import
+  unittest2,
+  ../testutil,
+  bincode,
+  ../../logos_chain/core/[types, mantle/tx_types],
+  ../../logos_chain/chain/genesis,
+  ../../logos_chain/sync/types
 
 from libp2p/crypto/ed25519/ed25519 import EdSignatureSize
 

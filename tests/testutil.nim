@@ -14,12 +14,10 @@ import
 import
   ../logos_chain/conf,
   ../logos_chain/networking/network,
-  ../logos_chain/core/types,
+  ../logos_chain/core/[types, local_tree],
   ../logos_chain/chain/genesis,
-  ../logos_chain/core/local_tree,
   ../logos_chain/core/mantle/tx_types,
-  libp2p/switch,
-  libp2p/peerid
+  libp2p/[switch, peerid]
 
 from ../logos_chain/core/mantle/primitives import SlotNumber
 

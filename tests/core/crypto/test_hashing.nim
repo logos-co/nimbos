@@ -8,8 +8,9 @@
 {.push raises: [], gcsafe.}
 {.used.}
 
-import unittest2
-import ../../../logos_chain/core/crypto/hashing
+import
+  unittest2,
+  ../../../logos_chain/core/crypto/hashing
 
 suite "core/crypto/hashing":
   test "blake2b256Hash is deterministic":

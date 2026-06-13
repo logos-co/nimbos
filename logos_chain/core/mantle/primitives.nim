@@ -11,10 +11,11 @@
 
 {.push raises: [], gcsafe.}
 
-import results
-import ../crypto/[hashing, types]
-import libp2p/multiaddress
-import poseidon2/[types, io]
+import
+  results,
+  ../crypto/[hashing, types],
+  libp2p/multiaddress,
+  poseidon2/[types, io]
 export hashing, types, io
 export
   encodeByte, encodeEd25519PublicKey, encodeEd25519Signature, encodeFieldElement,

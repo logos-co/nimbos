@@ -11,9 +11,10 @@
 
 {.push raises: [], gcsafe.}
 
-import ./[primitives, opcodes]
-import ../crypto/types
-import libp2p/crypto/ed25519/ed25519
+import
+  ./[primitives, opcodes],
+  ../crypto/types,
+  libp2p/crypto/ed25519/ed25519
 export primitives, opcodes
 
 
