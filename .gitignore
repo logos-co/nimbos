@@ -84,6 +84,8 @@ nimbus-build-system.paths
 
 CLAUDE*
 .claude/
+.tool-versions
+AllTests.md
 
 plans/
 
