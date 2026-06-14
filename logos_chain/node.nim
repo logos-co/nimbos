@@ -19,8 +19,6 @@ import
   ./deployment/deployment_settings,
   ./networking/network,
   ./sync/syncer,
-  ./core/utils,
-  ./process_state,
   ./zk/[circuits, pol]
 
 from ./core/types as coreTypes import Block, blockId

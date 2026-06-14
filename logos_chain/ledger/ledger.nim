@@ -12,7 +12,7 @@
 
 import
   std/tables,
-  ./[balance, types, cryptarchia_state, locked_notes, zk_verifier],
+  ./[balance, types, cryptarchia_state, locked_notes, pol_verifier,zk_verifier],
   ../core/mantle/[tx_types, tx_hashing, operations, proofs],
   ../core/types
 
