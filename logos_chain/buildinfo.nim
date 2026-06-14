@@ -61,10 +61,11 @@ func getNimGitHash(): string =
   const gitPrefix = "git hash: "
   let tmp = splitLines(nimFullBanner)
   if tmp.len == 0:
-    return
+    return ""
   for line in tmp:
     if line.startsWith(gitPrefix) and line.len > 8 + gitPrefix.len:
-      result = line[gitPrefix.len ..< gitPrefix.len + 8]
+      return line[gitPrefix.len ..< gitPrefix.len + 8]
+  ""
 
 func nimBanner*(): string =
   let gitHash = getNimGitHash()

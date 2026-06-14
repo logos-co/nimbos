@@ -8,8 +8,7 @@
 {.push raises: [], gcsafe.}
 
 import
-  ../../../logos_chain/core/types,
-  ../../../logos_chain/core/crypto/hashing,
+  ../../../logos_chain/core/[types, crypto/hashing],
   ../../../logos_chain/core/mantle/
     [primitives, operations, proofs, tx_types, utxo],
   ../../../logos_chain/zk/poseidon2/hasher

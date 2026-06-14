@@ -5,14 +5,15 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-{.push raises: [].}
+{.push raises: [], gcsafe.}
 {.used.}
 
-import std/sets
-import unittest2
-import libp2p/multiaddress
-import ../../../logos_chain/core/mantle/primitives
-import ../../../logos_chain/core/sdp/state
+import
+  std/sets,
+  unittest2,
+  libp2p/multiaddress,
+  ../../../logos_chain/core/mantle/primitives,
+  ../../../logos_chain/core/sdp/state
 
 suite "core/sdp/state":
   test "LockedNote starts with empty declaration set":

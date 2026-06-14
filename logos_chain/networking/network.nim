@@ -42,137 +42,137 @@ logScope:
 
 type
   NetKeyPair* = crypto.KeyPair
-  PublicKey* = crypto.PublicKey
-  PrivateKey* = crypto.PrivateKey
+  PublicKey = crypto.PublicKey
+  PrivateKey = crypto.PrivateKey
 
   ErrorMsg = List[byte, 256]
-  SendResult* = Result[void, cstring]
+  SendResult = Result[void, cstring]
 
   # TODO: This is here only to eradicate a compiler
   # warning about unused import (rpc/messages).
   GossipMsg = messages.Message
 
-  ValidationSyncProc*[T] =
+  ValidationSyncProc[T] =
     proc(msg: T, src: PeerId): ValidationResult {.gcsafe, raises: [].}
 
-  ValidationAsyncProc*[T] =
+  ValidationAsyncProc[T] =
     proc(msg: T, src: PeerId): Future[ValidationResult] {.
       async: (raises: [CancelledError]).}
 
-  SeenItem* = object
-    peerId*: PeerId
-    stamp*: chronos.Moment
+  SeenItem = object
+    peerId: PeerId
+    stamp: chronos.Moment
 
   LBP2PNode* = ref object of RootObj
     switch*: Switch
-    pubsub*: GossipSub
-    discovery*: Eth2DiscoveryProtocol
-    discoveryEnabled*: bool
-    wantedPeers*: int
-    hardMaxPeers*: int
+    pubsub: GossipSub
+    discovery: Eth2DiscoveryProtocol
+    discoveryEnabled: bool
+    wantedPeers: int
+    hardMaxPeers: int
     peerPool*: PeerPool[Peer, PeerId]
     protocols: seq[ProtocolInfo]
       ## Protocols managed by the DSL and mounted on the switch
-    protocolStates*: seq[RootRef]
-    connectTimeout*: chronos.Duration
-    seenThreshold*: chronos.Duration
+    protocolStates: seq[RootRef]
+    connectTimeout: chronos.Duration
+    seenThreshold: chronos.Duration
     connQueue: AsyncQueue[PeerAddr]
     seenTable: Table[PeerId, SeenItem]
     connWorkers: seq[Future[void].Raising([CancelledError])]
     connTable: HashSet[PeerId]
     rng*: ref HmacDrbgContext
-    peers*: Table[PeerId, Peer]
+    peers: Table[PeerId, Peer]
     announcedAddresses*: seq[MultiAddress]
-    bootstrapPeers*: seq[PeerAddr]
+    bootstrapPeers: seq[PeerAddr]
     validTopics: HashSet[string]
     peerPingerHeartbeatFut: Future[void].Raising([CancelledError])
     peerTrimmerHeartbeatFut: Future[void].Raising([CancelledError])
     bootstrapHeartbeatFut: Future[void].Raising([CancelledError])
     quota: TokenBucket ## Global quota mainly for high-bandwidth stuff
 
-  AverageThroughput* = object
-    count*: uint64
-    average*: float
+  AverageThroughput = object
+    count: uint64
+    average: float
 
   Peer* = ref object
     network*: LBP2PNode
     peerId*: PeerId
-    discoveryId*: Eth2DiscoveryId
+    discoveryId: Eth2DiscoveryId
     connectionState*: ConnectionState
-    protocolStates*: seq[RootRef]
+    protocolStates: seq[RootRef]
     netThroughput: AverageThroughput
-    score*: int
-    quota*: TokenBucket
-    lastReqTime*: Moment
-    connections*: int
-    enr*: Opt[enr.Record]
+    score: int
+    quota: TokenBucket
+    lastReqTime: Moment
+    connections: int
+    enr: Opt[enr.Record]
     failedMetadataRequests: int
-    lastMetadataTime*: Moment
-    direction*: PeerType
+    lastMetadataTime: Moment
+    direction: PeerType
     disconnectedFut: Future[void]
-    statistics*: SyncResponseStats
+    statistics: SyncResponseStats
 
   PeerAddr* = object
     peerId*: PeerId
     addrs*: seq[MultiAddress]
 
-  ConnectionState* = enum
+  ConnectionState* {.pure.} = enum
     None,
     Connecting,
     Connected,
     Disconnecting,
     Disconnected
 
-  UntypedResponse* = ref object
-    peer*: Peer
-    stream*: Connection
-    writtenChunks*: int
+  UntypedResponse = ref object
+    peer: Peer
+    stream: Connection
+    writtenChunks: int
 
   SingleChunkResponse*[MsgType] = distinct UntypedResponse
     ## Protocol requests using this type will produce request-making
     ## client-side procs that return `NetRes[MsgType]`
 
-  MultipleChunksResponse*[
+  MultipleChunksResponse[
       MsgType; maxLen: static Limit] = distinct UntypedResponse
     ## Protocol requests using this type will produce request-making
     ## client-side procs that return `NetRes[List[MsgType, maxLen]]`.
     ## In the future, such procs will return an `InputStream[NetRes[MsgType]]`.
 
-  MessageInfo* = object
-    name*: string
+  MessageInfo = object
+    name: string
 
     # Private fields:
     libp2pCodecName: string
-    protocolMounter*: MounterProc
+    protocolMounter: MounterProc
 
-  ProtocolInfoObj* = object
-    name*: string
-    messages*: seq[MessageInfo]
-    index*: int # the position of the protocol in the
-                # ordered list of supported protocols
+  ProtocolInfoObj = object
+    name: string
+    messages: seq[MessageInfo]
+    index: int # the position of the protocol in the
+               # ordered list of supported protocols
 
     # Private fields:
-    peerStateInitializer*: PeerStateInitializer
-    networkStateInitializer*: NetworkStateInitializer
-    onPeerConnected*: OnPeerConnectedHandler
-    onPeerDisconnected*: OnPeerDisconnectedHandler
+    peerStateInitializer: PeerStateInitializer
+    networkStateInitializer: NetworkStateInitializer
+    onPeerConnected: OnPeerConnectedHandler
+    onPeerDisconnected: OnPeerDisconnectedHandler
 
-  ProtocolInfo* = ptr ProtocolInfoObj
+  ProtocolInfo = ptr ProtocolInfoObj
 
-  ResponseCode* = enum
+  ResponseCode {.pure.} = enum
     Success
     InvalidRequest
     ServerError
     ResourceUnavailable
 
-  PeerStateInitializer* = proc(peer: Peer): RootRef {.gcsafe, raises: [].}
-  NetworkStateInitializer* = proc(network: LBP2PNode): RootRef {.gcsafe, raises: [].}
-  OnPeerConnectedHandler* = proc(peer: Peer, incoming: bool): Future[void] {.async: (raises: [CancelledError]).}
-  OnPeerDisconnectedHandler* = proc(peer: Peer): Future[void] {.async: (raises: [CancelledError]).}
-  MounterProc* = proc(network: LBP2PNode) {.gcsafe, raises: [].}
-  MessageContentPrinter* = proc(msg: pointer): string {.gcsafe, raises: [].}
+  PeerStateInitializer = proc(peer: Peer): RootRef {.gcsafe, raises: [].}
+  NetworkStateInitializer = proc(network: LBP2PNode): RootRef {.gcsafe, raises: [].}
+  OnPeerConnectedHandler = proc(peer: Peer, incoming: bool): Future[void] {.async: (raises: [CancelledError]).}
+  OnPeerDisconnectedHandler = proc(peer: Peer): Future[void] {.async: (raises: [CancelledError]).}
+  MounterProc = proc(network: LBP2PNode) {.gcsafe, raises: [].}
+  MessageContentPrinter = proc(msg: pointer): string {.gcsafe, raises: [].}
 
-  DisconnectionReason* = enum
+  DisconnectionReason* {.pure.} = enum
     # might see other values on the wire!
     ClientShutDown = 1
     IrrelevantNetwork = 2
@@ -181,7 +181,7 @@ type
     # erroneous request-specific responses.
     PeerScoreLow = 237 # 79 * 3
 
-  Eth2NetworkingErrorKind* = enum
+  Eth2NetworkingErrorKind* {.pure.} = enum
     # Potentially benign errors (network conditions)
     BrokenConnection
     ReceivedErrorResponse
@@ -210,9 +210,9 @@ type
     else:
       discard
 
-  InvalidInputsError* = object of CatchableError
+  InvalidInputsError = object of CatchableError
 
-  ResourceUnavailableError* = object of CatchableError
+  ResourceUnavailableError = object of CatchableError
 
   NetRes*[T] = Result[T, Eth2NetworkingError]
     ## This is type returned from all network requests
@@ -296,8 +296,9 @@ declareCounter nbc_reqresp_messages_throttled,
 const
   libp2p_pki_schemes {.strdefine.} = ""
 
-when libp2p_pki_schemes != "secp256k1":
-  {.fatal: "Incorrect building process, please use -d:\"libp2p_pki_schemes=secp256k1\"".}
+when not (crypto.PKScheme.Ed25519 in crypto.SupportedSchemes):
+  {.fatal:
+    "Incorrect building process, please use -d:\"libp2p_pki_schemes=ed25519\"".}
 
 const
   NetworkInsecureKeyPassword = "INSECUREPASSWORD"
@@ -354,7 +355,7 @@ template protocolState*(node: LBP2PNode, Protocol: type): untyped =
   type S = Protocol.NetworkState
   S(getNetworkState(node, Protocol.protocolInfo))
 
-func initProtocolState*[T](state: T, x: Peer|LBP2PNode) {.raises: [].} =
+func initProtocolState*[T](state: T, x: Peer|LBP2PNode) =
   discard
 
 template networkState*(connection: Peer, Protocol: type): untyped =
@@ -366,10 +367,13 @@ func peerId*(node: LBP2PNode): PeerId =
   node.switch.peerInfo.peerId
 
 func nodeId*(node: LBP2PNode): NodeId =
-  # `secp256k1` keys are always stored inside PeerId.
-  toNodeId(keys.PublicKey(node.switch.peerInfo.publicKey.skkey))
+  when crypto.supported(crypto.PKScheme.Secp256k1):
+    toNodeId(keys.PublicKey(node.switch.peerInfo.publicKey.skkey))
+  else:
+    raiseAssert "nodeId is unavailable without discv5 secp256k1 identity"
 
 func enrRecord*(node: LBP2PNode): Record =
+  doAssert node.discovery != nil, "discv5 is disabled"
   node.discovery.localNode.record
 
 proc getPeer(node: LBP2PNode, peerId: PeerId): Peer =
@@ -380,8 +384,9 @@ proc getPeer(node: LBP2PNode, peerId: PeerId): Peer =
     return node.peers.mgetOrPut(peerId, peer)
 
 proc peerFromStream(network: LBP2PNode, conn: Connection): Peer =
-  result = network.getPeer(conn.peerId)
-  result.peerId = conn.peerId
+  var peer = network.getPeer(conn.peerId)
+  peer.peerId = conn.peerId
+  peer
 
 func getKey*(peer: Peer): PeerId {.inline.} =
   peer.peerId
@@ -506,29 +511,21 @@ proc disconnect*(peer: Peer, reason: DisconnectionReason,
   # we currently don't - the fact that we're disconnecting is obvious and the
   # reason already known (wrong network is known from status message) or doesn't
   # greatly matter for the listening side (since it can't be trusted anyway)
-  try:
-    if peer.connectionState notin {Disconnecting, Disconnected}:
-      peer.connectionState = Disconnecting
-      # We adding peer in SeenTable before actual disconnect to avoid races.
-      let seenTime = case reason
-        of ClientShutDown:
-          SeenTableTimeClientShutDown
-        of IrrelevantNetwork:
-          SeenTableTimeIrrelevantNetwork
-        of FaultOrError:
-          SeenTableTimeFaultOrError
-        of PeerScoreLow:
-          SeenTablePenaltyError
-      peer.network.addSeen(peer.peerId, seenTime)
-      await peer.network.switch.disconnect(peer.peerId)
-  except CancelledError as exc:
-    raise exc
-  except CatchableError as exc:
-    # switch.disconnect shouldn't raise
-    warn "Unexpected error while disconnecting peer",
-      peer = peer.peerId,
-      reason = reason,
-      exc = exc.msg
+  # ``switch.disconnect`` only raises ``CancelledError``, which we let propagate.
+  if peer.connectionState notin {ConnectionState.Disconnecting, ConnectionState.Disconnected}:
+    peer.connectionState = ConnectionState.Disconnecting
+    # We adding peer in SeenTable before actual disconnect to avoid races.
+    let seenTime = case reason
+      of ClientShutDown:
+        SeenTableTimeClientShutDown
+      of IrrelevantNetwork:
+        SeenTableTimeIrrelevantNetwork
+      of FaultOrError:
+        SeenTableTimeFaultOrError
+      of PeerScoreLow:
+        SeenTablePenaltyError
+    peer.network.addSeen(peer.peerId, seenTime)
+    await peer.network.switch.disconnect(peer.peerId)
 
 proc releasePeer(peer: Peer) =
   ## Checks for peer's score and disconnects peer if score is less than
@@ -876,7 +873,7 @@ proc readResponseChunk(
 
   let responseCode = ResponseCode responseCodeByte
   case responseCode:
-  of InvalidRequest, ServerError, ResourceUnavailable:
+  of ResponseCode.InvalidRequest, ResponseCode.ServerError, ResponseCode.ResourceUnavailable:
     let
       errorMsg = ? await readChunkPayload(conn, peer, ErrorMsg)
       errorMsgStr = toPrettyString(errorMsg.asSeq)
@@ -884,7 +881,7 @@ proc readResponseChunk(
     return err Eth2NetworkingError(kind: ReceivedErrorResponse,
                                     responseCode: responseCode,
                                     errorMsg: errorMsgStr)
-  of Success:
+  of ResponseCode.Success:
     discard
 
   return await readChunkPayload(conn, peer, MsgType)
@@ -999,26 +996,26 @@ proc makeEth2Request(
   else:
     static: raiseAssert $ResponseMsg & " does not support `maxResponseItems`"
 
-func init*(T: type MultipleChunksResponse, peer: Peer, conn: Connection): T =
+func init(T: type MultipleChunksResponse, peer: Peer, conn: Connection): T =
   T(UntypedResponse(peer: peer, stream: conn))
 
 func init*[MsgType](T: type SingleChunkResponse[MsgType],
                     peer: Peer, conn: Connection): T =
   T(UntypedResponse(peer: peer, stream: conn))
 
-template write*[M; maxLen: static Limit](
+template write[M; maxLen: static Limit](
     r: MultipleChunksResponse[M, maxLen], val: M,
     contextBytes: openArray[byte] = []): untyped =
   mixin sendResponseChunk
   sendResponseChunk(UntypedResponse(r), val, contextBytes)
 
-template writeSSZ*[M; maxLen: static Limit](
+template writeSSZ[M; maxLen: static Limit](
     r: MultipleChunksResponse[M, maxLen], val: auto,
     contextBytes: openArray[byte] = []): untyped =
   mixin sendResponseChunk
   sendResponseChunk(UntypedResponse(r), val, contextBytes)
 
-template writeBytesSZ*(
+template writeBytesSZ(
     r: MultipleChunksResponse, uncompressedLen: uint64,
     bytes: openArray[byte], contextBytes: openArray[byte]): untyped =
   sendResponseChunkBytesSZ(UntypedResponse(r), uncompressedLen, bytes, contextBytes)
@@ -1109,30 +1106,30 @@ proc handleIncomingStream(network: LBP2PNode,
   let peer = peerFromStream(network, conn)
   try:
     case peer.connectionState
-    of Disconnecting, Disconnected, None:
+    of ConnectionState.Disconnecting, ConnectionState.Disconnected, ConnectionState.None:
       # We got incoming stream request while disconnected or disconnecting.
       debug "Got incoming request from disconnected peer", peer = peer,
            message = msgName
       return
-    of Connecting:
+    of ConnectionState.Connecting:
       # We got incoming stream request while handshake is not yet finished,
       # TODO: We could check it here.
       debug "Got incoming request from peer while in handshake", peer = peer,
             msgName
-    of Connected:
+    of ConnectionState.Connected:
       # We got incoming stream from peer with proper connection state.
       debug "Got incoming request from peer", peer = peer, msgName
 
     template returnInvalidRequest(msg: ErrorMsg) =
       peer.updateScore(PeerScoreInvalidRequest)
-      await sendErrorResponse(peer, conn, InvalidRequest, msg)
+      await sendErrorResponse(peer, conn, ResponseCode.InvalidRequest, msg)
       return
 
     template returnInvalidRequest(msg: string) =
       returnInvalidRequest(ErrorMsg msg.toBytes)
 
     template returnResourceUnavailable(msg: ErrorMsg) =
-      await sendErrorResponse(peer, conn, ResourceUnavailable, msg)
+      await sendErrorResponse(peer, conn, ResponseCode.ResourceUnavailable, msg)
       return
 
     template returnResourceUnavailable(msg: string) =
@@ -1163,7 +1160,7 @@ proc handleIncomingStream(network: LBP2PNode,
               # Treat this similarly to `UnexpectedEOF`, `PotentiallyExpectedEOF`.
               nbc_reqresp_messages_failed.inc(1, [shortProtocolId(protocolId)])
               await sendErrorResponse(
-                peer, conn, InvalidRequest,
+                peer, conn, ResponseCode.InvalidRequest,
                 errorMsgLit "Request full data not sent in time")
               return
 
@@ -1198,41 +1195,41 @@ proc handleIncomingStream(network: LBP2PNode,
       let (responseCode, errMsg) = case msg.error.kind
         of UnexpectedEOF, PotentiallyExpectedEOF:
           nbc_reqresp_messages_failed.inc(1, [shortProtocolId(protocolId)])
-          (InvalidRequest, errorMsgLit "Incomplete request")
+          (ResponseCode.InvalidRequest, errorMsgLit "Incomplete request")
 
         of InvalidContextBytes:
-          (ServerError, errorMsgLit "Unrecognized context bytes")
+          (ResponseCode.ServerError, errorMsgLit "Unrecognized context bytes")
 
         of InvalidSnappyBytes:
-          (InvalidRequest, errorMsgLit "Failed to decompress snappy payload")
+          (ResponseCode.InvalidRequest, errorMsgLit "Failed to decompress snappy payload")
 
         of InvalidSszBytes:
-          (InvalidRequest, errorMsgLit "Failed to decode SSZ payload")
+          (ResponseCode.InvalidRequest, errorMsgLit "Failed to decode SSZ payload")
 
         of InvalidSizePrefix:
-          (InvalidRequest, errorMsgLit "Invalid chunk size prefix")
+          (ResponseCode.InvalidRequest, errorMsgLit "Invalid chunk size prefix")
 
         of ZeroSizePrefix:
-          (InvalidRequest, errorMsgLit "The request chunk cannot have a size of zero")
+          (ResponseCode.InvalidRequest, errorMsgLit "The request chunk cannot have a size of zero")
 
         of SizePrefixOverflow:
-          (InvalidRequest, errorMsgLit "The chunk size exceed the maximum allowed")
+          (ResponseCode.InvalidRequest, errorMsgLit "The chunk size exceed the maximum allowed")
 
         of InvalidResponseCode, ReceivedErrorResponse,
            StreamOpenTimeout, ReadResponseTimeout:
           # These shouldn't be possible in a request, because
           # there are no response codes being read, no stream
           # openings and no reading of responses:
-          (ServerError, errorMsgLit "Internal server error")
+          (ResponseCode.ServerError, errorMsgLit "Internal server error")
 
         of BrokenConnection:
           return
 
         of ResponseChunkOverflow:
-          (InvalidRequest, errorMsgLit "Too many chunks in response")
+          (ResponseCode.InvalidRequest, errorMsgLit "Too many chunks in response")
 
         of UnknownError:
-          (InvalidRequest, errorMsgLit "Unknown error while processing request")
+          (ResponseCode.InvalidRequest, errorMsgLit "Unknown error while processing request")
 
       await sendErrorResponse(peer, conn, responseCode, errMsg)
       return
@@ -1247,7 +1244,7 @@ proc handleIncomingStream(network: LBP2PNode,
       returnResourceUnavailable exc.msg
     except CatchableError as exc:
       nbc_reqresp_messages_failed.inc(1, [shortProtocolId(protocolId)])
-      await sendErrorResponse(peer, conn, ServerError, ErrorMsg exc.msg.toBytes)
+      await sendErrorResponse(peer, conn, ResponseCode.ServerError, ErrorMsg exc.msg.toBytes)
 
   except CatchableError as exc:
     nbc_reqresp_messages_failed.inc(1, [shortProtocolId(protocolId)])
@@ -1257,59 +1254,64 @@ proc handleIncomingStream(network: LBP2PNode,
     await noCancel conn.closeWithEOF()
     releasePeer(peer)
 
-func toPeerAddr*(r: enr.TypedRecord,
-                 proto: IpTransportProtocol): Result[PeerAddr, cstring] =
-  if not r.secp256k1.isSome:
-    return err("enr: no secp256k1 key in record")
+when crypto.supported(crypto.PKScheme.Secp256k1):
+  func toPeerAddr*(r: enr.TypedRecord,
+                   proto: IpTransportProtocol): Result[PeerAddr, cstring] =
+    if not r.secp256k1.isSome:
+      return err("enr: no secp256k1 key in record")
 
-  let
-    pubKey = ? keys.PublicKey.fromRaw(r.secp256k1.get)
-    peerId = ? PeerId.init(crypto.PublicKey(
-      scheme: Secp256k1, skkey: secp.SkPublicKey(pubKey)))
+    let
+      pubKey = ? keys.PublicKey.fromRaw(r.secp256k1.get)
+      peerId = ? PeerId.init(crypto.PublicKey(
+        scheme: Secp256k1, skkey: secp.SkPublicKey(pubKey)))
 
-  var addrs = newSeq[MultiAddress]()
+    var addrs = newSeq[MultiAddress]()
 
-  case proto
-  of tcpProtocol:
-    if r.ip.isSome and r.tcp.isSome:
-      let ip = IpAddress(
-        family: IpAddressFamily.IPv4,
-        address_v4: r.ip.get)
-      addrs.add MultiAddress.init(ip, tcpProtocol, Port r.tcp.get)
-
-    if r.ip6.isSome:
-      let ip = IpAddress(
-        family: IpAddressFamily.IPv6,
-        address_v6: r.ip6.get)
-      if r.tcp6.isSome:
-        addrs.add MultiAddress.init(ip, tcpProtocol, Port r.tcp6.get)
-      elif r.tcp.isSome:
+    case proto
+    of tcpProtocol:
+      if r.ip.isSome and r.tcp.isSome:
+        let ip = IpAddress(
+          family: IpAddressFamily.IPv4,
+          address_v4: r.ip.get)
         addrs.add MultiAddress.init(ip, tcpProtocol, Port r.tcp.get)
-      else:
-        discard
 
-  of udpProtocol:
-    if r.ip.isSome and r.udp.isSome:
-      let ip = IpAddress(
-        family: IpAddressFamily.IPv4,
-        address_v4: r.ip.get)
-      addrs.add MultiAddress.init(ip, udpProtocol, Port r.udp.get)
+      if r.ip6.isSome:
+        let ip = IpAddress(
+          family: IpAddressFamily.IPv6,
+          address_v6: r.ip6.get)
+        if r.tcp6.isSome:
+          addrs.add MultiAddress.init(ip, tcpProtocol, Port r.tcp6.get)
+        elif r.tcp.isSome:
+          addrs.add MultiAddress.init(ip, tcpProtocol, Port r.tcp.get)
+        else:
+          discard
 
-    if r.ip6.isSome:
-      let ip = IpAddress(
-        family: IpAddressFamily.IPv6,
-        address_v6: r.ip6.get)
-      if r.udp6.isSome:
-        addrs.add MultiAddress.init(ip, udpProtocol, Port r.udp6.get)
-      elif r.udp.isSome:
+    of udpProtocol:
+      if r.ip.isSome and r.udp.isSome:
+        let ip = IpAddress(
+          family: IpAddressFamily.IPv4,
+          address_v4: r.ip.get)
         addrs.add MultiAddress.init(ip, udpProtocol, Port r.udp.get)
-      else:
-        discard
 
-  if addrs.len == 0:
-    return err("enr: no addresses in record")
+      if r.ip6.isSome:
+        let ip = IpAddress(
+          family: IpAddressFamily.IPv6,
+          address_v6: r.ip6.get)
+        if r.udp6.isSome:
+          addrs.add MultiAddress.init(ip, udpProtocol, Port r.udp6.get)
+        elif r.udp.isSome:
+          addrs.add MultiAddress.init(ip, udpProtocol, Port r.udp.get)
+        else:
+          discard
 
-  ok(PeerAddr(peerId: peerId, addrs: addrs))
+    if addrs.len == 0:
+      return err("enr: no addresses in record")
+
+    ok(PeerAddr(peerId: peerId, addrs: addrs))
+else:
+  func toPeerAddr*(r: enr.TypedRecord,
+                   proto: IpTransportProtocol): Result[PeerAddr, cstring] =
+    err("discv5 peer resolution is unavailable")
 
 proc checkPeer(node: LBP2PNode, peerAddr: PeerAddr): bool =
   logScope: peer = peerAddr.peerId
@@ -1355,7 +1357,7 @@ proc dialPeer(node: LBP2PNode, peerAddr: PeerAddr, index = 0) {.async: (raises: 
       inc nbc_timeout_dials
       node.addSeen(peerAddr.peerId, SeenTableTimeTimeout)
       await cancelAndWait(workfut)
-  except CatchableError as exc:
+  except DialFailedError as exc:
     debug "Connection to remote peer failed", msg = exc.msg, addrs = peerAddr.addrs
     inc nbc_failed_dials
     node.addSeen(peerAddr.peerId, SeenTableTimeDeadPeer)
@@ -1469,36 +1471,26 @@ proc runDiscoveryLoop(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
     # Also, give some time to dial the discovered nodes and update stats etc
     await sleepAsync(5.seconds)
 
-proc fetchNodeIdFromPeerId*(peer: Peer): NodeId=
-  # Convert peer id to node id by extracting the peer's public key
-  var key: PublicKey
-  discard peer.peerId.extractPublicKey(key)
-  keys.PublicKey.fromRaw(key.skkey.getBytes()).get().toNodeId()
+when crypto.supported(crypto.PKScheme.Secp256k1):
+  proc resolvePeer(peer: Peer) =
+    logScope: peer = peer.peerId
+    let startTime = now(chronos.Moment)
+    let nodeId =
+      block:
+        var key: PublicKey
+        discard peer.peerId.extractPublicKey(key)
+        keys.PublicKey.fromRaw(key.skkey.getBytes()).get().toNodeId()
 
-proc resolvePeer(peer: Peer) =
-  # Resolve task which performs searching of peer's public key and recovery of
-  # ENR using discovery5. We only resolve ENR for peers we know about to avoid
-  # querying the network - as of now, the ENR is not needed, except for
-  # debuggging
-  logScope: peer = peer.peerId
-  let startTime = now(chronos.Moment)
-  let nodeId =
-    block:
-      var key: PublicKey
-      # `secp256k1` keys are always stored inside PeerId.
-      discard peer.peerId.extractPublicKey(key)
-      keys.PublicKey.fromRaw(key.skkey.getBytes()).get().toNodeId()
+    debug "Peer's ENR recovery task started", node_id = $nodeId
 
-  debug "Peer's ENR recovery task started", node_id = $nodeId
-
-  # This is "fast-path" for peers which was dialed. In this case discovery
-  # already has most recent ENR information about this peer.
-  let gnode = peer.network.discovery.getNode(nodeId)
-  if gnode.isSome():
-    peer.enr = Opt.some(gnode.get().record)
-    inc(nbc_successful_discoveries)
-    let delay = now(chronos.Moment) - startTime
-    debug "Peer's ENR recovered", delay
+    peer.network.discovery.getNode(nodeId).isErrOr:
+      peer.enr = Opt.some(value.record)
+      inc(nbc_successful_discoveries)
+      let delay = now(chronos.Moment) - startTime
+      debug "Peer's ENR recovered", delay
+else:
+  proc resolvePeer(peer: Peer) {.inline.} =
+    discard
 
 proc handlePeer*(peer: Peer) {.async: (raises: [CancelledError]).} =
   let res = peer.network.peerPool.addPeerNoWait(peer, peer.direction)
@@ -1526,9 +1518,9 @@ proc handlePeer*(peer: Peer) {.async: (raises: [CancelledError]).} =
   of PeerStatus.Success:
     # Peer was added to PeerPool.
     peer.score = NewPeerScore
-    peer.connectionState = Connected
-    # We spawn task which will obtain ENR for this peer.
-    resolvePeer(peer)
+    peer.connectionState = ConnectionState.Connected
+    if peer.network.discoveryEnabled:
+      resolvePeer(peer)
     debug "Peer successfully connected", peer = peer,
                                          connections = peer.connections
 
@@ -1552,29 +1544,25 @@ proc onConnEvent(
       # * Protocol handshakes are wonky: we'll not necessarily use the newly
       #   connected transport - instead we'll just pick a random one!
       case peer.connectionState
-      of Disconnecting:
+      of ConnectionState.Disconnecting:
         # We got connection with peer which we currently disconnecting.
         # Normally this does not happen, but if a peer is being disconnected
         # while a concurrent (incoming for example) connection attempt happens,
         # we might end up here
         debug "Got connection attempt from peer that we are disconnecting",
              peer = peerId
-        try:
-          await node.switch.disconnect(peerId)
-        except CancelledError as exc:
-          raise exc
-        except CatchableError as exc:
-          debug "Unexpected error while disconnecting peer", exc = exc.msg
+        # ``switch.disconnect`` only raises ``CancelledError``, which propagates.
+        await node.switch.disconnect(peerId)
         return
-      of None:
+      of ConnectionState.None:
         # We have established a connection with the new peer.
-        peer.connectionState = Connecting
-      of Disconnected:
+        peer.connectionState = ConnectionState.Connecting
+      of ConnectionState.Disconnected:
         # We have established a connection with the peer that we have seen
         # before - reusing the existing peer object is fine
-        peer.connectionState = Connecting
+        peer.connectionState = ConnectionState.Connecting
         peer.score = 0 # Will be set to NewPeerScore after handshake
-      of Connecting, Connected:
+      of ConnectionState.Connecting, ConnectionState.Connected:
         # This means that we got notification event from peer which we already
         # connected or connecting right now. If this situation will happened,
         # it means bug on `nim-libp2p` side.
@@ -1611,13 +1599,13 @@ proc onConnEvent(
         # `nim-libp2p`.
         debug "Got new event while peer is already disconnected",
               peer = peerId, peer_state = peer.connectionState
-      peer.connectionState = Disconnected
+      peer.connectionState = ConnectionState.Disconnected
 
 proc new(T: type LBP2PNode,
          config: LBNodeConf,
          switch: Switch, pubsub: GossipSub,
          ip: Opt[IpAddress], tcpPort, udpPort: Opt[Port],
-         privKey: keys.PrivateKey, discovery: bool,
+         discovery: bool,
          announcedAddresses: openArray[MultiAddress],
          bootstrapPeers: openArray[PeerAddr],
          rng: ref HmacDrbgContext): T =
@@ -1639,16 +1627,19 @@ proc new(T: type LBP2PNode,
     # Its important here to create AsyncQueue with limited size, otherwise
     # it could produce HIGH cpu usage.
     connQueue: newAsyncQueue[PeerAddr](ConcurrentConnections),
-    discovery: Eth2DiscoveryProtocol.new(
-      config, ip, tcpPort, udpPort, privKey,
-    rng),
+    discovery:
+      if discovery:
+        Eth2DiscoveryProtocol.new(
+          config, ip, tcpPort, udpPort, keys.PrivateKey.random(rng[]), rng)
+      else:
+        nil,
     discoveryEnabled: discovery,
     rng: rng,
     connectTimeout: connectTimeout,
     seenThreshold: seenThreshold,
     announcedAddresses: @announcedAddresses,
     bootstrapPeers: @bootstrapPeers,
-    quota: TokenBucket.new(maxGlobalQuota, fullReplenishTime)
+    quota: TokenBucket.new(maxGlobalQuota, fullReplenishTime),
   )
 
   proc peerHook(
@@ -1687,14 +1678,14 @@ proc startListening*(node: LBP2PNode) {.async.} =
   if node.discoveryEnabled:
     try:
        node.discovery.open()
-    except CatchableError as exc:
+    except TransportOsError as exc:
       fatal "Failed to start discovery service. UDP port may be already in use",
             exc = exc.msg
       quit 1
 
   try:
     await node.switch.start()
-  except CatchableError as exc:
+  except LPError as exc:
     fatal "Failed to start LibP2P transport. Listen address/port may be already in use",
           exc = exc.msg
     quit 1
@@ -1715,6 +1706,20 @@ proc startListening*(node: LBP2PNode) {.async.} =
 proc peerPingerHeartbeat(node: LBP2PNode): Future[void] {.async: (raises: [CancelledError]).}
 proc peerTrimmerHeartbeat(node: LBP2PNode): Future[void] {.async: (raises: [CancelledError]).}
 proc bootstrapHeartbeat(node: LBP2PNode): Future[void] {.async: (raises: [CancelledError]).}
+
+func bootstrapPeerIds*(node: LBP2PNode): seq[PeerId] =
+  node.bootstrapPeers.mapIt(it.peerId)
+
+proc waitForBootstrapConnectivity*(
+    sw: Switch, bootstrapPeerIds: seq[PeerId], attempts: int = 100,
+): Future[bool] {.async: (raises: [CancelledError]).} =
+  if bootstrapPeerIds.len == 0:
+    return true
+  for _ in 0 ..< attempts:
+    if bootstrapPeerIds.anyIt(sw.isConnected(it)):
+      return true
+    await sleepAsync(100.milliseconds)
+  false
 
 proc start*(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
   proc onPeerCountChanged() =
@@ -1876,7 +1881,7 @@ proc p2pProtocolBackendImpl*(p: P2PProtocol): Backend =
                                  `msgVar`: `MsgRecName`): untyped =
         `userHandlerCall`
 
-      proc `protocolMounterName`(`networkVar`: `LBP2PNode`) {.raises: [].} =
+      proc `protocolMounterName`(`networkVar`: `LBP2PNode`) =
         proc snappyThunk(
             `streamVar`: `Connection`,
             `protocolVar`: string
@@ -1941,14 +1946,14 @@ proc peerPingerHeartbeat(node: LBP2PNode) {.async: (raises: [CancelledError]).} 
     var updateFutures: seq[Future[void]]
 
     for peer in node.peers.values:
-      if peer.connectionState != Connected: continue
+      if peer.connectionState != ConnectionState.Connected: continue
 
     await allFutures(updateFutures)
 
     reset(updateFutures)
 
     for peer in node.peers.values:
-      if peer.connectionState != Connected: continue
+      if peer.connectionState != ConnectionState.Connected: continue
 
       if peer.failedMetadataRequests > MetadataRequestMaxFailures:
         debug "no metadata from peer, kicking it", peer
@@ -1964,7 +1969,7 @@ proc peerTrimmerHeartbeat(node: LBP2PNode) {.async: (raises: [CancelledError]).}
     # Only count Connected peers (to avoid counting Disconnecting ones)
     let
       connectedPeers = node.peers.values.countIt(
-        it.connectionState == Connected)
+        it.connectionState == ConnectionState.Connected)
       excessPeers = connectedPeers - node.wantedPeers
 
     if excessPeers > 0:
@@ -1984,11 +1989,6 @@ proc bootstrapHeartbeat(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
     # We use 30s as a pragmatic default: fast enough for recovery, slow enough
     # to avoid dial/log spam while existing attempts are still in progress/backoff.
     await sleepAsync(30.seconds)
-
-# TODO: Replace with an LBKey (or Logos-native key) wrapper; this only bridges
-# libp2p `PrivateKey` to `eth/common/keys` for discovery / ENR code paths.
-func asEthKey*(key: PrivateKey): keys.PrivateKey =
-  keys.PrivateKey(key.skkey)
 
 template udpEndpoint(address, port): auto =
   MultiAddress.init(address, udpProtocol, port)
@@ -2011,15 +2011,17 @@ func quicEndPoint(address: IpAddress, port: Port): Result[MultiAddress, string] 
     err(exc.msg)
 
 proc loadBootstrapPeers(config: LBNodeConf): seq[PeerAddr] =
+  var peers: seq[PeerAddr]
   for (peerId, maddr) in loadBootstrapNodes(config):
-    result.add(PeerAddr(peerId: peerId, addrs: @[maddr]))
+    peers.add(PeerAddr(peerId: peerId, addrs: @[maddr]))
+  peers
 
 func initNetKeys(privKey: PrivateKey): NetKeyPair =
   let pubKey = privKey.getPublicKey().expect("working public key from random")
   NetKeyPair(seckey: privKey, pubkey: pubKey)
 
 proc getRandomNetKeys*(rng: var HmacDrbgContext): NetKeyPair =
-  let privKey = PrivateKey.random(Secp256k1, rng).valueOr:
+  let privKey = PrivateKey.random(Ed25519, rng).valueOr:
     fatal "Could not generate random network key file"
     quit QuitFailure
   initNetKeys(privKey)
@@ -2055,7 +2057,7 @@ proc newBeaconSwitch(
   except LPError as exc:
     err(exc.msg)
 
-proc createLBNode*(
+proc createLBP2PNode*(
     rng: ref HmacDrbgContext,
     config: LBNodeConf,
     netKeys: NetKeyPair,
@@ -2097,13 +2099,10 @@ proc createLBNode*(
   let switch = ?newBeaconSwitch(config, netKeys.seckey, hostAddress, rng)
 
   func msgIdProvider(m: messages.Message): Result[seq[byte], ValidationResult] =
-    try:
-      # This doesn't have to be a tight bound, just enough to avoid denial of
-      # service attacks.
-      let decoded = snappy.decode(m.data, static(MAX_PAYLOAD_SIZE.uint32))
-      ok(gossipId(decoded, m.topic))
-    except CatchableError:
-      err(ValidationResult.Reject)
+    # ``snappy.decode`` returns an empty seq (rather than raising) on failure,
+    # and ``gossipId`` doesn't raise, so no exception handling is needed here.
+    let decoded = snappy.decode(m.data, static(MAX_PAYLOAD_SIZE.uint32))
+    ok(gossipId(decoded, m.topic))
 
   let
     bootstrapPeers = loadBootstrapPeers(config)
@@ -2159,10 +2158,10 @@ proc createLBNode*(
 
   let node = LBP2PNode.new(
     config, switch, pubsub, extIp,
-    # TODO: replace `asEthKey` with LBKey once discovery/ENR uses Logos types.
-    extQuicPort, extUdpPort, netKeys.seckey.asEthKey,
+    extQuicPort, extUdpPort,
     discovery = config.discv5Enabled, announcedAddresses, bootstrapPeers,
-    rng = rng)
+    rng = rng,
+  )
 
   if bootstrapPeers.len > 0:
     notice "Loaded libp2p bootstrap multiaddrs", count = bootstrapPeers.len
@@ -2170,13 +2169,13 @@ proc createLBNode*(
     notice "No libp2p bootstrap multiaddrs loaded"
 
   node.pubsub.subscriptionValidator =
-    proc(topic: string): bool {.gcsafe, raises: [].} =
+    proc(topic: string): bool {.gcsafe.} =
       topic in node.validTopics
 
   ok node
 
 func announcedENR*(node: LBP2PNode): enr.Record =
-  doAssert node.discovery != nil, "The LBP2PNode must be initialized"
+  doAssert node.discovery != nil, "discv5 is disabled"
   node.discovery.localNode.record
 
 func shortForm*(id: NetKeyPair): string =
@@ -2209,7 +2208,7 @@ func addValidator*[MsgType](
   # or not - validation is `async` but implemented without the macro because
   # this is a performance hotspot.
   proc execValidator(topic: string, message: GossipMsg):
-      Future[ValidationResult] {.raises: [].} =
+      Future[ValidationResult] =
     inc nbc_gossip_messages_received
     trace "Validating incoming gossip message", len = message.data.len, topic
 

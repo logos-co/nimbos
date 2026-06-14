@@ -11,16 +11,16 @@
 {.push raises: [].}
 {.used.}
 
-import std/[os, strutils]
-import unittest2
-import results
-import stew/[byteutils, io2]
-import yaml/dom
-import ../../logos_chain/deployment/[deployment_settings, deployment_settings_helpers]
-import ../../logos_chain/chain/genesis
-import ../../logos_chain/core/types
-import ../../logos_chain/core/crypto/hashing
-import ../../logos_chain/core/mantle/[tx_types, tx_hashing]
+import
+  std/[os, strutils],
+  unittest2,
+  results,
+  stew/[byteutils, io2],
+  yaml/dom,
+  ../../logos_chain/deployment/[deployment_settings, deployment_settings_helpers],
+  ../../logos_chain/chain/genesis,
+  ../../logos_chain/core/[types, crypto/hashing],
+  ../../logos_chain/core/mantle/[tx_types, tx_hashing]
 
 const testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
 const mantleTxFixturePath = testsDir / "../fixtures/devnet-genesis-mantle-tx.yaml"
@@ -40,10 +40,11 @@ proc signedMantleTxFromDevnetFixture(text: string): Result[SignedMantleTx, strin
   let yroot = ? parseDeploymentSettingsYaml(text)
   if yroot.kind != yMapping:
     return err("fixture: expected top-level mapping")
-  let mantle = yamlGetPathNode(yroot, ["mantle_tx"]).valueOr:
-    return err("fixture: missing mantle_tx or ops_proofs")
-  let proofsNode = yamlGetPathNode(yroot, ["ops_proofs"]).valueOr:
-    return err("fixture: missing mantle_tx or ops_proofs")
+  let
+    mantle = yamlGetPathNode(yroot, ["mantle_tx"]).valueOr:
+      return err("fixture: missing mantle_tx or ops_proofs")
+    proofsNode = yamlGetPathNode(yroot, ["ops_proofs"]).valueOr:
+      return err("fixture: missing mantle_tx or ops_proofs")
   if mantle.kind != yMapping:
     return err("fixture: mantle_tx must be a mapping")
   let opsNode = yamlGetPathNode(mantle, ["ops"]).valueOr:
@@ -59,21 +60,22 @@ proc signedMantleTxFromDevnetFixture(text: string): Result[SignedMantleTx, strin
 suite "devnet genesis mantle_tx block root":
   test "genesis fixture single-tx block root matches deployment header.block_root":
     check fileExists(mantleTxFixturePath)
-    let text = readAllChars(mantleTxFixturePath).valueOr:
-      check false
-      return
-    let smt = signedMantleTxFromDevnetFixture(text).valueOr:
-      check false
-      return
-    let blockRoot = createBlockRoot([smt])
-    let dsText = readAllChars(deploymentSettingsPath).valueOr:
-      check false
-      return
-    let ds = parseDeploymentSettings(dsText).valueOr:
-      check false
-      return
-    let gstate = ds.cryptarchia.genesisState
-    let smtFromDeployment = gstate.signedMantleTx
+    let
+      text = readAllChars(mantleTxFixturePath).valueOr:
+        check false
+        return
+      smt = signedMantleTxFromDevnetFixture(text).valueOr:
+        check false
+        return
+      blockRoot = createBlockRoot([smt])
+      dsText = readAllChars(deploymentSettingsPath).valueOr:
+        check false
+        return
+      ds = parseDeploymentSettings(dsText).valueOr:
+        check false
+        return
+      gstate = ds.cryptarchia.genesisState
+      smtFromDeployment = gstate.signedMantleTx
     check mantleTxHash(smt.tx) == mantleTxHash(smtFromDeployment.tx)
     check blockRoot == createBlockRoot([smtFromDeployment])
     check toHex(blockRoot) == expectedDevnetGenesisBlockRoot
@@ -81,25 +83,27 @@ suite "devnet genesis mantle_tx block root":
     check blockRoot == mantleTxHash(smt.tx)
 
   test "deployment genesis block id matches devnet header preimage":
-    let dsText = readAllChars(deploymentSettingsPath).valueOr:
-      check false
-      return
-    let ds = parseDeploymentSettings(dsText).valueOr:
-      check false
-      return
+    let
+      dsText = readAllChars(deploymentSettingsPath).valueOr:
+        check false
+        return
+      ds = parseDeploymentSettings(dsText).valueOr:
+        check false
+        return
     check validateDeploymentSettings(ds).isOk
     let gb = createGenesisBlock(ds.cryptarchia.genesisState.signedMantleTx)
     check toHex(gb.header.blockRoot) == expectedDevnetGenesisBlockRoot
     check toHex(blockId(gb.header)) == expectedDevnetGenesisBlockId
 
   test "devnet genesis mantle tx encoding and hashes match fixed vectors":
-    let text = readAllChars(mantleTxFixturePath).valueOr:
-      check false
-      return
-    let smt = signedMantleTxFromDevnetFixture(text).valueOr:
-      check false
-      return
-    let txBytes = encodeMantleTx(smt.tx)
+    let
+      text = readAllChars(mantleTxFixturePath).valueOr:
+        check false
+        return
+      smt = signedMantleTxFromDevnetFixture(text).valueOr:
+        check false
+        return
+      txBytes = encodeMantleTx(smt.tx)
     check toHex(txBytes) == fixedGenesisTxBytesHex
     check txBytes == hexToSeqByte(fixedGenesisTxBytesHex)
     check toHex(blake2b256Hash(txBytes)) == expectedDevnetBlake2bMantleDigest

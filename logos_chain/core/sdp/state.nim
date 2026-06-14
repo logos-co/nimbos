@@ -10,9 +10,10 @@
 
 {.push raises: [], gcsafe.}
 
-import std/sets
-import libp2p/multiaddress
-import ../mantle/primitives
+import
+  std/sets,
+  libp2p/multiaddress,
+  ../mantle/primitives
 
 
 type

@@ -9,24 +9,18 @@
 
 import
   std/[osproc, random],
-
-  # Nimble packages
   chronos, chronicles, presto, presto/server, bearssl/rand,
   metrics, metrics/chronos_httpserver,
   eth/p2p/discoveryv5/random2,
   stew/byteutils,
-
-  # Local modules
   ./chain/chain,
-  ./conf,
-  ./core/types,
+  ./[conf, process_state],
+  ./core/[types, utils],
   ./deployment/deployment_settings,
   ./networking/network,
-  ./core/utils,
-  ./process_state
-
+  ./sync/syncer
+from ./core/types as coreTypes import Block, blockId
 from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
-
 from libp2p/protocols/pubsub/gossipsub import
   TopicParams, init
 
@@ -42,7 +36,7 @@ type
     netKeys*: NetKeyPair
     config*: LBNodeConf
     deploymentSettings*: DeploymentSettings
-    chain*: Chain
+    syncer*: Syncer
     metricsServer*: Opt[MetricsHttpServerRef]
     shutdownEvent*: AsyncEvent
 
@@ -77,12 +71,12 @@ proc init*(
   # Doesn't use std/random directly, but dependencies might
   randomize(rng[].rand(high(int)))
 
-  let chain = chain.init(deploymentSettings).valueOr:
+  let chain = Chain.init(deploymentSettings).valueOr:
     fatal "Failed to initialize chain", err = error
     return Opt.none(LBNode)
 
+  let genesisBlock = chain.genesisBlock
   block:
-    let genesisBlock = chain.genesisBlock
     let genesisState = genesisBlock.txs[0]
     var leaderKeyBytes: array[EdPublicKeySize, byte]
     let leaderKeyWritten = toBytes(
@@ -108,20 +102,33 @@ proc init*(
       polLeaderKey = byteutils.toHex(leaderKeyBytes),
       blockSignature = byteutils.toHex(genesisBlock.signature.data)
 
-  let
-    network = createLBNode(
-      rng,
-      config,
-      rng[].getRandomNetKeys(),
-    ).valueOr:
-      error "Failed to initialize node", err = error
-      return Opt.none(LBNode)
+  let network = createLBP2PNode(
+    rng,
+    config,
+    rng[].getRandomNetKeys(),
+  ).valueOr:
+    error "Failed to initialize node", err = error
+    return Opt.none(LBNode)
+
+  var nodeSyncer: Syncer = nil
+  if chain.localTree != nil and deploymentSettings.network.chainSyncProtocolName.len > 0:
+    nodeSyncer = Syncer.init(
+      network.switch, chain, deploymentSettings.network.chainSyncProtocolName)
+
+  if nodeSyncer != nil:
+    info "Syncer configured at node startup",
+      chainSyncProtocol = deploymentSettings.network.chainSyncProtocolName,
+      genesisBlockId = blockId(genesisBlock.header)
+  else:
+    debug "Syncer not configured at node startup",
+      hasLocalTree = chain.localTree != nil,
+      chainSyncProtocol = deploymentSettings.network.chainSyncProtocolName
 
   ok LBNode(
     network: network,
     config: config,
     deploymentSettings: deploymentSettings,
-    chain: chain,
+    syncer: nodeSyncer,
     shutdownEvent: newAsyncEvent())
 
 when defined(windows):
@@ -177,7 +184,7 @@ proc installMessageValidators(node: LBNode) =
 proc stop(node: LBNode) =
   try:
     waitFor node.network.stop()
-  except CatchableError as exc:
+  except CancelledError as exc:
     warn "Couldn't stop network", msg = exc.msg
 
   waitFor node.metricsServer.stopMetricsServer()
@@ -189,6 +196,9 @@ proc initializeNetworking(node: LBNode) {.async.} =
   await node.network.startListening()
 
   await node.network.start()
+  if node.syncer != nil:
+    debug "Scheduling syncer startup after network bootstrap"
+    node.syncer.start(node.network.bootstrapPeerIds)
 
 type StopFuture = Future[void].Raising([CancelledError])
 

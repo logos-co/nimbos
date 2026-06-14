@@ -10,11 +10,11 @@
 
 {.push raises: [], gcsafe.}
 
-import std/tables
-
-import ./[balance, types, cryptarchia_state, locked_notes, zk_verifier]
-import ../core/mantle/[tx_types, tx_hashing, operations, proofs]
-import ../core/types
+import
+  std/tables,
+  ./[balance, types, cryptarchia_state, locked_notes, zk_verifier],
+  ../core/mantle/[tx_types, tx_hashing, operations, proofs],
+  ../core/types
 
 export types, cryptarchia_state
 

@@ -10,9 +10,10 @@
 
 {.push raises: [], gcsafe.}
 
-import ./[tx_types, operations]
-import ../crypto/hashing
-import ../../zk/poseidon2/hasher
+import
+  ./[tx_types, operations],
+  ../crypto/hashing,
+  ../../zk/poseidon2/hasher
 
 const
   MantleTxHashDomainTag = "MANTLE_TXHASH_V1"

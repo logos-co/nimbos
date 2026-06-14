@@ -358,8 +358,8 @@ template raiseUnexpectedValue(r: var TomlReader, msg: string) =
 proc readValue*(r: var TomlReader, val: var NatConfig)
                {.raises: [SerializationError].} =
   val = try: parseCmdArg(NatConfig, r.readValue(string))
-        except CatchableError as err:
-          raise newException(SerializationError, err.msg)
+        except ValueError, IOError:
+          raise newException(SerializationError, getCurrentExceptionMsg())
 
 proc formatIt*(v: Option[IpAddress]): string =
   if v.isSome():
