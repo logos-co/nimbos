@@ -8,7 +8,7 @@
 {.push raises: [].}
 
 import
-  std/[algorithm, net, strformat, tables, times],
+  std/[net, times],
   chronos,
   libp2p/[switch, peerid],
   testutils/markdown_reports,
@@ -20,10 +20,9 @@ import
   ../logos_chain/chain/genesis
 
 from ../logos_chain/core/mantle/primitives import SlotNumber
-
 from std/algorithm import SortOrder, sort
 from std/strformat import `&`
-from std/tables import OrderedTable, `[]=`, initOrderedTable, mgetOrPut, sort
+from std/tables import OrderedTable, `[]=`, initOrderedTable, mgetOrPut
 
 export unittest2
 
