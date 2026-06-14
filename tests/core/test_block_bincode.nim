@@ -53,7 +53,7 @@ suite "core/block bincode (cryptarchia sync)":
       fail getCurrentExceptionMsg()
 
   test "serializeBlockToSeq / deserializeBlock roundtrip (non-default signature, one tx)":
-    var sig = default(Ed25519Signature)
+    var sig: Ed25519Signature
     for i in 0 ..< EdSignatureSize:
       sig.data[i] = byte(i)
     let
@@ -79,7 +79,7 @@ suite "core/block bincode (cryptarchia sync)":
     let
       sm = minimalSignedTx()
       h = sampleHeader([sm])
-    var sig = default(Ed25519Signature)
+    var sig: Ed25519Signature
     sig.data[0] = 0xAA'u8
     sig.data[1] = 0xBB'u8
     let blk = initBlock(h, signature = sig, txs = [sm])
@@ -102,7 +102,7 @@ suite "core/block bincode (cryptarchia sync)":
       h = sampleHeader([sm])
     try:
       let withDefaultSig = serializeBlockToSeq(initBlock(h, txs = [sm]), cfg)
-      var sig = default(Ed25519Signature)
+      var sig: Ed25519Signature
       sig.data[0] = 0x55'u8
       let withMarkedSig = serializeBlockToSeq(initBlock(h, signature = sig, txs = [sm]), cfg)
       check withDefaultSig.len == withMarkedSig.len
