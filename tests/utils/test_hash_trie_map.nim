@@ -8,11 +8,11 @@
 {.push raises: [], gcsafe.}
 {.used.}
 
-import std/[hashes, random, sets, strutils, tables]
-import unittest2
-import results
-
-import ../../logos_chain/utils/hash_trie_map
+import
+  std/[hashes, random, sets, strutils, tables],
+  unittest2,
+  results,
+  ../../logos_chain/utils/hash_trie_map
 
 ## A key type whose hash is fully controlled by the caller, so we can force
 ## collisions and exercise the Collision-node path explicitly.

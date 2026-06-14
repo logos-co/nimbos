@@ -56,12 +56,12 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
     conf2.agentString = "p2p-test-node2"
 
     let node1Res =
-      createLBNode(rng1, conf, rng1[].getRandomNetKeys())
+      createLBP2PNode(rng1, conf, rng1[].getRandomNetKeys())
     check:
       node1Res.isOk
 
     if node1Res.isErr():
-      checkpoint("createLBNode failed: " & node1Res.error)
+      checkpoint("createLBP2PNode failed: " & node1Res.error)
       fail()
 
     let node1 = node1Res.get()
@@ -82,9 +82,10 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
     var sw2: Switch = nil
     try:
       # Create a plain libp2p switch (not LBNode) that uses QUIC transport.
-      let keys2 = rng2[].getRandomNetKeys()
-      let addr2 =
-        MultiAddress.init("/ip4/127.0.0.1/udp/0/quic-v1").tryGet()
+      let
+        keys2 = rng2[].getRandomNetKeys()
+        addr2 =
+          MultiAddress.init("/ip4/127.0.0.1/udp/0/quic-v1").tryGet()
 
       var sb = SwitchBuilder.new()
       sb = sb.withPrivateKey(keys2.seckey)
@@ -101,8 +102,9 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
       await sw2.start()
 
       # Connect (transport-level) to validate inbound QUIC upgrading works.
-      let peerId1 = node1.switch.peerInfo.peerId
-      let addrs1 = node1.switch.peerInfo.addrs
+      let
+        peerId1 = node1.switch.peerInfo.peerId
+        addrs1 = node1.switch.peerInfo.addrs
 
       await sw2.connect(peerId1, addrs1, forceDial = true)
     finally:
@@ -128,21 +130,22 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
     conf.hardMaxPeers = some(4)
     conf.agentString = "p2p-test-node1"
 
-    let nodeRes = createLBNode(rng, conf, rng[].getRandomNetKeys())
+    let nodeRes = createLBP2PNode(rng, conf, rng[].getRandomNetKeys())
     check nodeRes.isOk
     if nodeRes.isErr():
-      checkpoint("createLBNode failed: " & nodeRes.error)
+      checkpoint("createLBP2PNode failed: " & nodeRes.error)
       fail()
     let node = nodeRes.get()
 
     await node.startListening()
     # Ensure clean shutdown even if assertions fail.
     try:
-      let peerIdStr = $node.switch.peerInfo.peerId
-      let expectedNeedle =
-        "/udp/" & $expectedPort & "/quic-v1/p2p/" & peerIdStr
+      let
+        peerIdStr = $node.switch.peerInfo.peerId
+        expectedNeedle =
+          "/udp/" & $expectedPort & "/quic-v1/p2p/" & peerIdStr
 
-      let fullAddrsRes = node.switch.peerInfo.fullAddrs()
+        fullAddrsRes = node.switch.peerInfo.fullAddrs()
       check fullAddrsRes.isOk
       let fullAddrs = fullAddrsRes.get()
 
@@ -174,10 +177,10 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
     conf.hardMaxPeers = some(4)
     conf.agentString = "p2p-test-node1"
 
-    let nodeRes = createLBNode(rng, conf, rng[].getRandomNetKeys())
+    let nodeRes = createLBP2PNode(rng, conf, rng[].getRandomNetKeys())
     check nodeRes.isOk
     if nodeRes.isErr():
-      checkpoint("createLBNode failed: " & nodeRes.error)
+      checkpoint("createLBP2PNode failed: " & nodeRes.error)
       fail()
     let node = nodeRes.get()
 
@@ -192,26 +195,27 @@ suite "P2P stack — bootstrap and discovery":
 
     let (confL, confD, rngL, rngD) = makeBootstrapConfs(listenerPort, dialerPort)
 
-    let listenerRes = createLBNode(rngL, confL, rngL[].getRandomNetKeys())
+    let listenerRes = createLBP2PNode(rngL, confL, rngL[].getRandomNetKeys())
     check listenerRes.isOk
     if listenerRes.isErr():
-      checkpoint("createLBNode listener: " & listenerRes.error)
+      checkpoint("createLBP2PNode listener: " & listenerRes.error)
       fail()
     let listener = listenerRes.get()
     await listener.startListening()
 
-    let listenerPeerId = listener.switch.peerInfo.peerId
-    let bootstrapAddr =
-      "/ip4/127.0.0.1/udp/" & $listenerPort &
+    let
+      listenerPeerId = listener.switch.peerInfo.peerId
+      bootstrapAddr =
+        "/ip4/127.0.0.1/udp/" & $listenerPort &
       "/quic-v1/p2p/" & $listenerPeerId
 
     var confDial = confD
     confDial.bootstrapNodes = @[bootstrapAddr]
 
-    let dialerRes = createLBNode(rngD, confDial, rngD[].getRandomNetKeys())
+    let dialerRes = createLBP2PNode(rngD, confDial, rngD[].getRandomNetKeys())
     check dialerRes.isOk
     if dialerRes.isErr():
-      checkpoint("createLBNode dialer: " & dialerRes.error)
+      checkpoint("createLBP2PNode dialer: " & dialerRes.error)
       await listener.stop()
       fail()
     let dialer = dialerRes.get()
@@ -230,12 +234,14 @@ suite "P2P stack — bootstrap and discovery":
     ## Full DNS dial integration depends on the resolver; ip4 bootstrap covers
     ## the dial path. This validates Logos Chain bootstrap string parsing for DNS.
     var rng = HmacDrbgContext.new()
-    let keys = rng[].getRandomNetKeys()
-    let pidRes = PeerId.init(keys.seckey)
+    let
+      keys = rng[].getRandomNetKeys()
+      pidRes = PeerId.init(keys.seckey)
     check pidRes.isOk
-    let peerId = pidRes.get()
-    let dnsBootstrap =
-      "/dns4/localhost/udp/5011/quic-v1/p2p/" & $peerId
+    let
+      peerId = pidRes.get()
+      dnsBootstrap =
+        "/dns4/localhost/udp/5011/quic-v1/p2p/" & $peerId
     check parseBootstrapAddress(dnsBootstrap).isOk
 
   asyncTest "After bootstrap: libp2p QUIC session stays up (decentralized DHT deferred)":
@@ -247,26 +253,27 @@ suite "P2P stack — bootstrap and discovery":
 
     let (confL, confD, rngL, rngD) = makeBootstrapConfs(listenerPort, dialerPort)
 
-    let listenerRes = createLBNode(rngL, confL, rngL[].getRandomNetKeys())
+    let listenerRes = createLBP2PNode(rngL, confL, rngL[].getRandomNetKeys())
     check listenerRes.isOk
     if listenerRes.isErr():
-      checkpoint("createLBNode listener: " & listenerRes.error)
+      checkpoint("createLBP2PNode listener: " & listenerRes.error)
       fail()
     let listener = listenerRes.get()
     await listener.startListening()
 
-    let listenerPeerId = listener.switch.peerInfo.peerId
-    let bootstrapAddr =
-      "/ip4/127.0.0.1/udp/" & $listenerPort &
+    let
+      listenerPeerId = listener.switch.peerInfo.peerId
+      bootstrapAddr =
+        "/ip4/127.0.0.1/udp/" & $listenerPort &
       "/quic-v1/p2p/" & $listenerPeerId
 
     var confDial = confD
     confDial.bootstrapNodes = @[bootstrapAddr]
 
-    let dialerRes = createLBNode(rngD, confDial, rngD[].getRandomNetKeys())
+    let dialerRes = createLBP2PNode(rngD, confDial, rngD[].getRandomNetKeys())
     check dialerRes.isOk
     if dialerRes.isErr():
-      checkpoint("createLBNode dialer: " & dialerRes.error)
+      checkpoint("createLBP2PNode dialer: " & dialerRes.error)
       await listener.stop()
       fail()
     let dialer = dialerRes.get()

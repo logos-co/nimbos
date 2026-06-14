@@ -10,9 +10,10 @@
 
 {.push raises: [], gcsafe.}
 
-import nimcrypto/blake2
-import poseidon2/sponge
-import ./types
+import
+  nimcrypto/blake2,
+  poseidon2/sponge,
+  ./types
 export types
 
 

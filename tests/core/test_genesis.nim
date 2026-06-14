@@ -8,12 +8,13 @@
 {.push raises: [].}
 {.used.}
 
-import std/[os, strutils]
-import unittest2
-import stew/io2
-import ../../logos_chain/core/mantle/[tx_types, tx_hashing]
-import ../../logos_chain/chain/chain
-import ../../logos_chain/deployment/deployment_settings
+import
+  std/[os, strutils],
+  unittest2,
+  stew/io2,
+  ../../logos_chain/core/mantle/[tx_types, tx_hashing],
+  ../../logos_chain/chain/chain,
+  ../../logos_chain/deployment/deployment_settings
 
 const testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
 const deploymentSettingsPath = testsDir / "../../config/deployment-settings.yaml"
@@ -31,20 +32,22 @@ suite "chain/genesis":
     check b.signature == DefaultEd25519Signature
 
   test "createGenesisBlock builds expected header/envelope from deployment settings":
-    let text = readAllChars(deploymentSettingsPath).valueOr:
-      check false
-      return
-    let ds = parseDeploymentSettings(text).valueOr:
-      check false
-      return
+    let
+      text = readAllChars(deploymentSettingsPath).valueOr:
+        check false
+        return
+      ds = parseDeploymentSettings(text).valueOr:
+        check false
+        return
     check validateDeploymentSettings(ds).isOk
 
-    let gstate = ds.cryptarchia.genesisState
-    let genesisTx = gstate.signedMantleTx
-    let chain = init(ds).valueOr:
-      check false
-      return
-    let gb = chain.genesisBlock
+    let
+      gstate = ds.cryptarchia.genesisState
+      genesisTx = gstate.signedMantleTx
+      testChain = Chain.init(ds).valueOr:
+        check false
+        return
+      gb = testChain.genesisBlock
 
     check gb.txs.len == 1
     check gb.txs[0].opProofs.len == genesisTx.opProofs.len
@@ -59,26 +62,29 @@ suite "chain/genesis":
     check gb.header == gstate.header
     check gb.signature == gstate.blockSignature
 
-  test "createGenesisBlock from genesisState matches createGenesisBlock from signedMantleTx":
-    let text = readAllChars(deploymentSettingsPath).valueOr:
-      check false
-      return
-    let ds = parseDeploymentSettings(text).valueOr:
-      check false
-      return
+  test "createGenesisBlock from signedMantleTx matches deployment genesisState envelope":
+    let
+      text = readAllChars(deploymentSettingsPath).valueOr:
+        check false
+        return
+      ds = parseDeploymentSettings(text).valueOr:
+        check false
+        return
     check validateDeploymentSettings(ds).isOk
 
-    let gstate = ds.cryptarchia.genesisState
-    let byState = createGenesisBlock(gstate.signedMantleTx)
-    let byTx = createGenesisBlock(gstate.signedMantleTx)
+    let
+      gstate = ds.cryptarchia.genesisState
+      fromTx = createGenesisBlock(gstate.signedMantleTx)
+      fromState = initBlock(gstate.header, gstate.blockSignature, [gstate.signedMantleTx])
 
-    check byState.header == byTx.header
-    check blockId(byState.header) == blockId(byTx.header)
-    check byState.txs.len == byTx.txs.len
-    check byState.txs.len == 1
-    check mantleTxHash(byState.txs[0].tx) == mantleTxHash(byTx.txs[0].tx)
-    check byState.txs[0].opProofs.len == byTx.txs[0].opProofs.len
-    for i in 0 ..< byState.txs[0].opProofs.len:
-      check byState.txs[0].opProofs[i].kind == byTx.txs[0].opProofs[i].kind
+    check fromTx.header == fromState.header
+    check blockId(fromTx.header) == blockId(fromState.header)
+    check fromTx.signature == fromState.signature
+    check fromTx.txs.len == fromState.txs.len
+    check fromTx.txs.len == 1
+    check mantleTxHash(fromTx.txs[0].tx) == mantleTxHash(fromState.txs[0].tx)
+    check fromTx.txs[0].opProofs.len == fromState.txs[0].opProofs.len
+    for i in 0 ..< fromTx.txs[0].opProofs.len:
+      check fromTx.txs[0].opProofs[i].kind == fromState.txs[0].opProofs[i].kind
 
 {.pop.}

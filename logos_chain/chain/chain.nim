@@ -7,20 +7,29 @@
 
 ## Chain initialization: load deployment settings, build genesis block, seed ledger state.
 
-{.push raises: [].}
+{.push raises: [], gcsafe.}
 
-import results
-import ../core/types
-import ../deployment/deployment_settings
-import ./genesis
+import
+  results,
+  ../core/[types, local_tree],
+  ../deployment/deployment_settings,
+  ./genesis
 
-export genesis
+export genesis, local_tree
 
 type
   Chain* = object
     genesisBlock*: Block
+    localTree*: LocalTree
 
-proc init*(settings: DeploymentSettings): Result[Chain, string] =
-  ok(Chain(genesisBlock: createGenesisBlock(settings.cryptarchia.genesisState.signedMantleTx)))
+func init*(T: type Chain, genesisBlock: Block, latestImmutableHeight: uint64 = 0): T =
+  T(
+    genesisBlock: genesisBlock,
+    localTree: newLocalTree(genesisBlock, latestImmutableHeight),
+  )
+
+func init*(T: type Chain, settings: DeploymentSettings): Result[T, string] =
+  let genesisBlock = createGenesisBlock(settings.cryptarchia.genesisState.signedMantleTx)
+  ok(T.init(genesisBlock))
 
 {.pop.}

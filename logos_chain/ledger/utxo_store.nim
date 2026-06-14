@@ -18,7 +18,7 @@ import ../utils/[dynamic_merkle_tree, hash_trie_map]
 import ../zk/poseidon2/hasher
 
 type
-  UtxoStoreError* = enum
+  UtxoStoreError* {.pure.} = enum
     NotFound
 
   UtxoStore* = object

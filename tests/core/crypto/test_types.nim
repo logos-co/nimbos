@@ -5,17 +5,19 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-{.push raises: [].}
+{.push raises: [], gcsafe.}
 {.used.}
 
-import unittest2
-import ../../../logos_chain/core/crypto/types
+import
+  unittest2,
+  ../../../logos_chain/core/crypto/types
 
 suite "core/crypto/types":
   test "encodeLe infers output width from unsigned input type":
-    let le16 = encodeLe(0x0123'u16)
-    let le32 = encodeLe(0x0123_4567'u32)
-    let le64 = encodeLe(0x0123_4567_89AB_CDEF'u64)
+    let
+      le16 = encodeLe(0x0123'u16)
+      le32 = encodeLe(0x0123_4567'u32)
+      le64 = encodeLe(0x0123_4567_89AB_CDEF'u64)
     check le16.len == 2
     check le32.len == 4
     check le64.len == 8
@@ -23,9 +25,10 @@ suite "core/crypto/types":
     check le32 == [0x67'u8, 0x45'u8, 0x23'u8, 0x01'u8]
 
   test "encodeLe explicit generic and inferred forms match":
-    let v16 = 0xBEEF'u16
-    let v32 = 0xDEAD_BEEF'u32
-    let v64 = 0x0123_4567_89AB_CDEF'u64
+    let
+      v16 = 0xBEEF'u16
+      v32 = 0xDEAD_BEEF'u32
+      v64 = 0x0123_4567_89AB_CDEF'u64
     check encodeLe(v16) == encodeLe[uint16](v16)
     check encodeLe(v32) == encodeLe[uint32](v32)
     check encodeLe(v64) == encodeLe[uint64](v64)

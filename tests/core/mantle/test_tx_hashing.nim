@@ -5,12 +5,12 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-{.push raises: [].}
+{.push raises: [], gcsafe.}
 {.used.}
 
-import unittest2
-import ../../../logos_chain/core/mantle/tx_hashing
-import ../../../logos_chain/core/mantle/tx_types
+import
+  unittest2,
+  ../../../logos_chain/core/mantle/[tx_hashing, tx_types]
 
 suite "core/mantle/tx_hashing":
   test "mantleTxHash is sensitive to tx bytes":

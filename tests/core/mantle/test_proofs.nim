@@ -5,13 +5,13 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-{.push raises: [].}
+{.push raises: [], gcsafe.}
 {.used.}
 
-import unittest2
-import ../../../logos_chain/core/crypto/types
-import ../../../logos_chain/core/mantle/proofs
-import ../../../logos_chain/core/mantle/operations
+import
+  unittest2,
+  ../../../logos_chain/core/crypto/types,
+  ../../../logos_chain/core/mantle/[proofs, operations]
 
 suite "core/mantle/proofs":
   test "proofType maps concrete proof variants to canonical families":

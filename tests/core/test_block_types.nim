@@ -5,12 +5,13 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-{.push raises: [].}
+{.push raises: [], gcsafe.}
 {.used.}
 
-import unittest2
-import ../../logos_chain/core/mantle/[tx_types, tx_hashing]
-import ../../logos_chain/core/types
+import
+  unittest2,
+  ../../logos_chain/core/mantle/[tx_types, tx_hashing],
+  ../../logos_chain/core/types
 
 suite "core/types":
   const testBedrockVersion = 1'u8

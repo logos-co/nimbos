@@ -120,7 +120,7 @@ proc setupLogging*(
               x = proc(logLevel: LogLevel, msg: LogOutputStr) =
                 writeAndFlush(f, msg) # will close when program terminates
             x
-          except CatchableError as exc:
+          except IOError as exc:
             error "Failed to create log file", logFile, msg = exc.msg
             noOutput
         else:
@@ -202,7 +202,7 @@ proc loadWithBanners*(
             sources.addConfigFile(Toml, config.configFile.get)
         ,
       )
-    except CatchableError as exc:
+    except ConfigurationError as exc:
       # Logging not configured yet!
       var msg = "Failure while loading the configuration:\p" & exc.msg & "\p"
       if (exc[] of ConfigurationError) and not (isNil(exc.parent)) and

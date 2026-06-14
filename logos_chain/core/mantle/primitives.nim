@@ -11,10 +11,11 @@
 
 {.push raises: [], gcsafe.}
 
-import results
-import ../crypto/[hashing, types]
-import libp2p/multiaddress
-import poseidon2/[types, io]
+import
+  results,
+  ../crypto/[hashing, types],
+  libp2p/multiaddress,
+  poseidon2/[types, io]
 export hashing, types, io
 export
   encodeByte, encodeEd25519PublicKey, encodeEd25519Signature, encodeFieldElement,
@@ -56,7 +57,7 @@ type
   ConfigurationThreshold* = uint16
   WithdrawThreshold* = uint16
 
-  ServiceType* = enum
+  ServiceType* {.pure.} = enum
     bn = 0
   Locator* = MultiAddress
 
@@ -318,7 +319,7 @@ func decodeMetadata*(data: openArray[byte]): Metadata {.raises: [DecodingError].
 func decodeInscription*(data: openArray[byte]): Inscription {.raises: [DecodingError].} =
   decodeU32LeLenPrefixed(data)
 
-proc readServiceType*(data: openArray[byte], pos: var int): ServiceType {.raises: [DecodingError].} =
+func readServiceType*(data: openArray[byte], pos: var int): ServiceType {.raises: [DecodingError].} =
   let b = readByte(data, pos)
   case b
   of byte(ord(bn)):
@@ -335,7 +336,7 @@ func decodeServiceType*(data: openArray[byte]): ServiceType {.raises: [DecodingE
 func decodeLocatorCount*(data: openArray[byte]): byte {.raises: [DecodingError].} =
   decodeByte(data)
 
-proc readLocator*(data: openArray[byte], pos: var int): Locator {.raises: [DecodingError].} =
+func readLocator*(data: openArray[byte], pos: var int): Locator {.raises: [DecodingError].} =
   let raw = readU16LeLenPrefixed(data, pos)
   if raw.len > MaxLocatorMultiaddrBytes:
     raise newException(DecodingError, "Locator exceeds max multiaddr byte length")
@@ -367,19 +368,19 @@ func decodeKeyCount*(data: openArray[byte]): KeyCount {.raises: [DecodingError].
   res
 
 
-proc readNote*(data: openArray[byte], pos: var int): Note {.raises: [DecodingError].} =
+func readNote*(data: openArray[byte], pos: var int): Note {.raises: [DecodingError].} =
   let value = Value(readLe[uint64](data, pos))
   let zkPublicKey = decodeFieldElementAt(data, pos)
   Note(value: value, zkPublicKey: zkPublicKey)
 
-proc readInputs*(data: openArray[byte], pos: var int): Inputs {.raises: [DecodingError].} =
+func readInputs*(data: openArray[byte], pos: var int): Inputs {.raises: [DecodingError].} =
   let count = readByte(data, pos)
   var noteIds = newSeqOfCap[NoteId](count)
   for _ in 0 ..< int(count):
     noteIds.add decodeFieldElementAt(data, pos)
   Inputs(noteIds: noteIds)
 
-proc readOutputs*(data: openArray[byte], pos: var int): Outputs {.raises: [DecodingError].} =
+func readOutputs*(data: openArray[byte], pos: var int): Outputs {.raises: [DecodingError].} =
   let count = readByte(data, pos)
   var notes = newSeqOfCap[Note](count)
   for _ in 0 ..< int(count):

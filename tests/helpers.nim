@@ -7,9 +7,10 @@
 
 {.push raises: [], gcsafe.}
 
-import std/uri
-import chronos, chronos/apps
-import presto/common
+import
+  std/uri,
+  chronos, chronos/apps,
+  presto/common
 
 type
   ClientResponse* = object

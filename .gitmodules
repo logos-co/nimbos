@@ -164,3 +164,8 @@
 	url = https://github.com/mratsim/constantine.git
 	ignore = untracked
 	branch = master
+[submodule "vendor/nim-bincode"]
+	path = vendor/nim-bincode
+	url = https://github.com/aimendj/nim-bincode.git
+	ignore = untracked
+	branch = master

@@ -23,9 +23,13 @@ import # Unit test
   ./core/mantle/test_operations,
   ./core/mantle/test_proofs,
   ./core/mantle/test_tx_types,
+  ./core/mantle/test_tx_bincode,
   ./core/mantle/test_tx_hashing,
   ./core/mantle/test_utxo,
   ./core/test_block_types,
+  ./core/test_block_bincode,
+  ./core/test_block_validation,
+  ./core/test_local_tree,
   ./core/test_genesis,
   ./core/test_devnet_genesis_mantle_tx,
   ./core/sdp/test_state,
@@ -33,7 +37,10 @@ import # Unit test
   ./utils/test_dynamic_merkle_tree,
   ./ledger/test_utxo_store,
   ./ledger/test_cryptarchia,
-  ./ledger/test_ledger
+  ./ledger/test_ledger,
+  ./logos_chain/sync/test_framing,
+  ./logos_chain/sync/test_types,
+  ./logos_chain/sync/test_ibd
 
 summarizeLongTests("AllTests")
 

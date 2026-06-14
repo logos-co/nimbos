@@ -16,8 +16,7 @@ import
   libp2p/multiaddress,
   libp2p/crypto/ed25519/ed25519,
   ../chain/genesis,
-  ../core/types,
-  ../core/mantle/tx_types,
+  ../core/[types, mantle/tx_types],
   ../zk/poseidon2/hasher
 
 export genesis, chronos
@@ -383,9 +382,7 @@ func parseGenesisOpProof(
     ok(OpProof(kind: opfLeaderClaim, proofOfClaimProof: ? parseZkSigNode(node, path)))
   of opfChannelInscribe:
     let edSigNode = yamlGetPathNode(node, ["ed25519_sig"])
-    let edNode =
-      if edSigNode.isSome: edSigNode.get
-      else: node
+    let edNode = edSigNode.valueOr(node)
     ok(OpProof(kind: opfChannelInscribe, ed25519SigProof: ? parseEd25519SignatureNode(edNode, path)))
   of opfSdpDeclare:
     let zkNode = yamlGetPathNode(node, ["zk_sig"]).valueOr:

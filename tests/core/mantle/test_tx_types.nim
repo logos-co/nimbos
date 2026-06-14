@@ -5,12 +5,13 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-{.push raises: [].}
+{.push raises: [], gcsafe.}
 {.used.}
 
-import unittest2
-import ../../../logos_chain/core/crypto/types
-import ../../../logos_chain/core/mantle/tx_types
+import
+  unittest2,
+  ../../../logos_chain/core/crypto/types,
+  ../../../logos_chain/core/mantle/tx_types
 
 suite "core/mantle/tx_types":
   test "decodeMantleTx roundtrips encodeMantleTx":
@@ -35,8 +36,9 @@ suite "core/mantle/tx_types":
         OpProof(kind: opfTransfer, transferProof: DefaultZkSignature),
       ],
     )
-    let wire = encodeSignedMantleTx(signed)
-    let back = decodeSignedMantleTx(wire)
+    let
+      wire = encodeSignedMantleTx(signed)
+      back = decodeSignedMantleTx(wire)
     check back.tx.ops.len == signed.tx.ops.len
     check back.opProofs.len == signed.opProofs.len
     check back.opProofs[0].kind == signed.opProofs[0].kind

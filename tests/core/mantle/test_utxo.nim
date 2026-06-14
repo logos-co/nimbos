@@ -8,15 +8,14 @@
 {.push raises: [], gcsafe.}
 {.used.}
 
-import std/options
-import unittest2
-import results
-
-import constantine/math/[arithmetic, io/io_bigints]
-import poseidon2/types
-
-import ../../../logos_chain/core/mantle/[primitives, utxo]
-import ./test_helpers
+import
+  std/options,
+  unittest2,
+  results,
+  constantine/math/[arithmetic, io/io_bigints],
+  poseidon2/types,
+  ../../../logos_chain/core/mantle/[primitives, utxo],
+  ./test_helpers
 
 suite "Utxo.id":
   test "deterministic: same Utxo data → same NoteId":
