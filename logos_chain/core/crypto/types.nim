@@ -97,6 +97,16 @@ func encodeEd25519PublicKey*(value: Ed25519PublicKey): array[32, byte] =
   doAssert written == EdPublicKeySize, "failed to encode Ed25519 public key"
   buf
 
+func ed25519PkToFrPair*(pk: Ed25519PublicKey): (FieldElement, FieldElement) =
+  ## Split a 32-byte Ed25519 public key into two 16-byte halves, each as a
+  ## BN254 field element. Used wherever a public key participates in a
+  ## ZK public-input vector.
+  let raw = encodeEd25519PublicKey(pk)
+  (
+    frFromBytesLE(raw.toOpenArray(0, 15)).get,
+    frFromBytesLE(raw.toOpenArray(16, 31)).get,
+  )
+
 func encodeEd25519Signature*(value: Ed25519Signature): array[64, byte] =
   ## Ed25519 signature = 64BYTE.
   var buf: array[EdSignatureSize, byte]

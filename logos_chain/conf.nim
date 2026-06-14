@@ -326,7 +326,7 @@ type
         desc: "Directory containing the logos-blockchain-circuits release bundle " &
               "(install via scripts/setup-logos-blockchain-circuits.sh)"
         defaultValue: defaultCircuitsDir()
-        defaultValueDesc: "<platform cache>/logos-blockchain-circuits/<version>"
+        defaultValueDesc: "<platform data>/logos-blockchain-circuits/<version>"
         name: "circuits-dir" .}: InputDir
 
   AnyConf* = LBNodeConf

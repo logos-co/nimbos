@@ -11,12 +11,10 @@
 {.push raises: [], gcsafe.}
 
 import
-  stew/endians2,
   ../core/types,
   ../core/crypto/types,
   ../core/mantle/primitives,
-  ../zk/pol,
-  ../zk/poseidon2/hasher
+  ../zk/pol
 
 export pol
 
@@ -29,18 +27,6 @@ type
     lottery1*: FieldElement
     agedRoot*: FieldElement
     latestRoot*: FieldElement
-
-func slotToFr(slot: SlotNumber): FieldElement =
-  # uint64 → 8 LE bytes; `frFromBytesLE` zero-pads to 32. No signed-int hop.
-  frFromBytesLE(uint64(slot).toBytesLE()).get
-
-func ed25519PkToFrPair(pk: Ed25519PublicKey): (FieldElement, FieldElement) =
-  # Split a 32-byte ed25519 key into two 16-byte halves; each fits in BN254.
-  let raw = encodeEd25519PublicKey(pk)
-  (
-    frFromBytesLE(raw.toOpenArray(0, 15)).get,
-    frFromBytesLE(raw.toOpenArray(16, 31)).get,
-  )
 
 func isGenesisLeaderProof(p: ProofOfLeadership): bool =
   p.proof == DefaultCompressedGroth16Proof and

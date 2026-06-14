@@ -235,6 +235,11 @@ func encodeLocator*(value: Locator): seq[byte] =
     "Locator exceeds max multiaddr byte length"
   encodeU16LeLenPrefixed(locatorBytes)
 
+func slotToFr*(slot: SlotNumber): FieldElement =
+  ## Convert a ``SlotNumber`` to a BN254 field element via 8-byte
+  ## little-endian zero-padded encoding.
+  frFromBytesLE(encodeLe(uint64(slot))).get
+
 func decodeDeclarationId*(data: openArray[byte]): DeclarationId {.raises: [DecodingError].} =
   decodeHash32(data)
 
