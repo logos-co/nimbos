@@ -29,6 +29,8 @@ type
     UnsupportedOp ## Op kind not yet wired in this ledger version
     UnbalancedTransaction ## inputs - outputs > fees
     InsufficientBalance ## inputs - outputs < fees
+    VerifierNotInitialised ## per-circuit VK singleton wasn't installed at
+      ## node startup — wiring bug, not adversarial input
 
   LedgerConfig* = object
     ## Chain configuration. Currently empty — fields land with the modules

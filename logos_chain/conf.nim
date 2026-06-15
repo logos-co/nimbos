@@ -23,9 +23,10 @@ import
   json_serialization, json_serialization/std/net as jsnet,
   chronos/transports/common,
   ./deployment/deployment_settings,
-  ./binary_common
+  ./binary_common,
+  ./zk/circuits
 
-from std/os import dirExists, getHomeDir, `/`
+from std/os import dirExists, getDataDir, `/`
 from std/strutils import parseBiggestUInt, replace
 
 export
@@ -52,6 +53,13 @@ when defined(windows):
 else:
   {.pragma: windowsOnly, hidden.}
   {.pragma: posixOnly.}
+
+proc defaultCircuitsDir*(): InputDir =
+  ## Platform-aware data location (`$XDG_DATA_HOME` or `~/.local/share` on
+  ## Linux, `~/Library/Application Support` on macOS, `%APPDATA%` on Windows),
+  ## suffixed with the pinned bundle version. XDG `data` (not `cache`) because
+  ## the bundle is essential for the prover; losing it breaks the node.
+  InputDir(getDataDir() / "logos-blockchain-circuits" / ExpectedCircuitsVersion)
 
 type
   BNStartUpCmd* {.pure.} = enum
@@ -313,6 +321,13 @@ type
         desc: "cfgsync deployment-settings YAML (network protocol IDs, mempool pubsub topic, cryptarchia gossipsub protocol)"
         defaultValue: InputFile(defaultDeploymentSettingsPath)
         name: "deployment-settings" .}: InputFile
+
+      circuitsDir* {.
+        desc: "Directory containing the logos-blockchain-circuits release bundle " &
+              "(install via scripts/setup-logos-blockchain-circuits.sh)"
+        defaultValue: defaultCircuitsDir()
+        defaultValueDesc: "<platform data>/logos-blockchain-circuits/<version>"
+        name: "circuits-dir" .}: InputDir
 
   AnyConf* = LBNodeConf
 

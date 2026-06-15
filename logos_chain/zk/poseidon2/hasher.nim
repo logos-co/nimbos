@@ -7,11 +7,10 @@
 
 {.push raises: [], gcsafe.}
 
-import std/options
-import results
-
 import
-  poseidon2/[types, io, permutation],   # F, zero, one, +, *, ==, fromBytes, toBytes, permInPlace
+  std/options,
+  results,
+  poseidon2/[types, io, permutation],
   constantine/math/arithmetic
 
 export types, io, results

@@ -19,6 +19,7 @@ import
   libp2p/crypto/ed25519/ed25519,
   stew/[assign2, endians2],
   ../../zk/poseidon2/hasher           # FieldElement (+ re-exported poseidon2 symbols)
+
 export hasher
 
 type
@@ -95,6 +96,16 @@ func encodeEd25519PublicKey*(value: Ed25519PublicKey): array[32, byte] =
   let written = toBytes(value, buf)
   doAssert written == EdPublicKeySize, "failed to encode Ed25519 public key"
   buf
+
+func ed25519PkToFrPair*(pk: Ed25519PublicKey): (FieldElement, FieldElement) =
+  ## Split a 32-byte Ed25519 public key into two 16-byte halves, each as a
+  ## BN254 field element. Used wherever a public key participates in a
+  ## ZK public-input vector.
+  let raw = encodeEd25519PublicKey(pk)
+  (
+    frFromBytesLE(raw.toOpenArray(0, 15)).get,
+    frFromBytesLE(raw.toOpenArray(16, 31)).get,
+  )
 
 func encodeEd25519Signature*(value: Ed25519Signature): array[64, byte] =
   ## Ed25519 signature = 64BYTE.

@@ -83,5 +83,11 @@ nimble.paths
 nimbus-build-system.paths
 
 CLAUDE*
+.claude/
+.tool-versions
+AllTests.md
 
 plans/
+
+# Downloaded circuits bundle for tests (provisioned by `make circuits-install-test`).
+tests/circuits-bundle/

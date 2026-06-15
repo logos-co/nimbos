@@ -128,10 +128,62 @@ ifeq ($(USE_LIBBACKTRACE), 0)
 NIM_PARAMS += -d:disable_libbacktrace
 endif
 
-deps: | deps-common nat-libs build/generate_makefile
+# Route `deps` to the per-goal circuits install: repo-local for tests,
+# user data dir otherwise. Tests stay self-contained.
+ifneq (,$(filter test all_tests,$(MAKECMDGOALS)))
+DEPS_CIRCUITS_INSTALL := circuits-install-test
+else
+DEPS_CIRCUITS_INSTALL := circuits-install
+endif
+
+deps: | deps-common nat-libs build/generate_makefile $(DEPS_CIRCUITS_INSTALL)
 ifneq ($(USE_LIBBACKTRACE), 0)
 deps: | libbacktrace
 endif
+
+# logos-blockchain-circuits release bundle (VK + zkey + witness binaries).
+# Keep LBC_VERSION in sync with `ExpectedCircuitsVersion` (logos_chain/zk/circuits.nim).
+LBC_VERSION := v0.4.2
+
+# Platform-aware data layout mirrors `std/os.getDataDir`.
+ifeq ($(OS),Windows_NT)
+	LBC_INSTALL_DIR := $(APPDATA)/logos-blockchain-circuits/$(LBC_VERSION)
+	LBC_INSTALL_CMD := powershell.exe -ExecutionPolicy Bypass -File scripts/setup-logos-blockchain-circuits.ps1 -Version $(LBC_VERSION) -InstallDir
+else
+# XDG spec: reject empty or non-absolute XDG_DATA_HOME. Use bash `${X:0:1}` for
+# the first-char test so paths containing spaces stay recognised as absolute.
+ifneq ($(shell test "$${XDG_DATA_HOME:0:1}" = "/" && echo yes),yes)
+	XDG_DATA_HOME :=
+endif
+ifeq ($(XDG_DATA_HOME),)
+ifeq ($(shell uname),Darwin)
+	XDG_DATA_HOME := $(HOME)/Library/Application Support
+else
+	XDG_DATA_HOME := $(HOME)/.local/share
+endif
+endif
+	LBC_INSTALL_DIR := $(XDG_DATA_HOME)/logos-blockchain-circuits/$(LBC_VERSION)
+	LBC_INSTALL_CMD := ./scripts/setup-logos-blockchain-circuits.sh $(LBC_VERSION)
+endif
+LBC_TEST_INSTALL_DIR := $(CURDIR)/tests/circuits-bundle/$(LBC_VERSION)
+
+.PHONY: circuits-install
+circuits-install:
+	@if [ -f "$(LBC_INSTALL_DIR)/VERSION" ] && \
+	    [ "$$(cat "$(LBC_INSTALL_DIR)/VERSION")" = "$(LBC_VERSION)" ]; then \
+		echo "logos-blockchain-circuits $(LBC_VERSION) present at $(LBC_INSTALL_DIR)"; \
+	else \
+		$(LBC_INSTALL_CMD) "$(LBC_INSTALL_DIR)"; \
+	fi
+
+.PHONY: circuits-install-test
+circuits-install-test:
+	@if [ -f "$(LBC_TEST_INSTALL_DIR)/VERSION" ] && \
+	    [ "$$(cat "$(LBC_TEST_INSTALL_DIR)/VERSION")" = "$(LBC_VERSION)" ]; then \
+		echo "logos-blockchain-circuits $(LBC_VERSION) present at $(LBC_TEST_INSTALL_DIR)"; \
+	else \
+		$(LBC_INSTALL_CMD) "$(LBC_TEST_INSTALL_DIR)"; \
+	fi
 
 #- deletes binaries that might need to be rebuilt after a Git pull
 update: | update-common

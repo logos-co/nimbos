@@ -9,8 +9,10 @@
 {.used.}
 
 import
+  std/[os, strutils],
   unittest2,
   results,
+  stew/io2,
   poseidon2/types          # `==` for F
 
 import
@@ -19,7 +21,12 @@ import
   ../../logos_chain/core/mantle/
     [primitives, operations, proofs, tx_types, tx_hashing, utxo],
   ../../logos_chain/core/types,
+  ../../logos_chain/zk/pol,
   ../core/mantle/test_helpers
+
+const
+  testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
+  fixtureVk = testsDir / "../fixtures/pol/verification_key.json"
 
 suite "LedgerState constructors and reads":
   test "fromUtxos with empty seq → empty state":
@@ -36,23 +43,38 @@ suite "LedgerState constructors and reads":
     check s.latestUtxos.contains(u2.id)
 
 suite "tryApplyHeader":
-  test "accepting verifier returns state unchanged":
+  test "genesis-sentinel proof returns state unchanged":
     let
       u = mkUtxo()
       s0 = LedgerState.fromUtxos([u])
-      r = s0.tryApplyHeader(
-        slot = 1'u64, proof = mkProof(), leaderVerifier = mockAcceptLeaderVerifier()
-      )
+      r = s0.tryApplyHeader(slot = 1'u64, proof = mkProof())
     check r.isOk
     check r.get.latestUtxos == s0.latestUtxos
 
-  test "rejecting verifier returns InvalidProof":
-    let
-      s0 = LedgerState.fromUtxos([mkUtxo()])
-      r = s0.tryApplyHeader(
-        slot = 1'u64, proof = mkProof(), leaderVerifier = mockRejectLeaderVerifier()
-      )
-    check r.isErr
+  test "returns VerifierNotInitialised when VK singleton missing":
+    pol.resetVkForTesting()
+    let s0 = LedgerState.fromUtxos([mkUtxo()])
+    var bad = mkProof()
+    bad.proof[0] = 0x01  # break the genesis sentinel so verify is invoked
+    let r = s0.tryApplyHeader(slot = 1'u64, proof = bad)
+    check r.error == VerifierNotInitialised
+
+  test "returns InvalidProof when verifier rejects":
+    # Install real fixture VK + pass a deliberately-invalid proof. Mirrors the
+    # nimbus skipBlsValidation pattern: consumer-level negative-path test.
+    pol.resetVkForTesting()
+    let vkText = readAllChars(fixtureVk).valueOr:
+      check false
+      return
+    let vk = parseVk(vkText).valueOr:
+      check false
+      return
+    check pol.initVk(vk).isOk
+
+    let s0 = LedgerState.fromUtxos([mkUtxo()])
+    var bad = mkProof()
+    bad.proof[0] = 0x01  # bit-pattern can't be a valid compressed G1 point
+    let r = s0.tryApplyHeader(slot = 1'u64, proof = bad)
     check r.error == InvalidProof
 
 suite "tryApplyTx — happy path":
@@ -273,7 +295,6 @@ suite "prepareUpdate":
         txs = @[],
         lockedNotes = LockedNotes.init(),
         verifier = mockAcceptVerifier(),
-        leaderVerifier = mockAcceptLeaderVerifier(),
       )
     check r.isErr
     check r.error == ParentNotFound
@@ -292,7 +313,6 @@ suite "prepareUpdate":
         txs = @[],
         lockedNotes = LockedNotes.init(),
         verifier = mockAcceptVerifier(),
-        leaderVerifier = mockAcceptLeaderVerifier(),
       )
     check r.isOk
     let prepared = r.get
@@ -315,7 +335,6 @@ suite "prepareUpdate":
         txs = @[tx],
         lockedNotes = LockedNotes.init(),
         verifier = mockAcceptVerifier(),
-        leaderVerifier = mockAcceptLeaderVerifier(),
       )
     check r.isOk
     let prepared = r.get
@@ -323,22 +342,6 @@ suite "prepareUpdate":
     check l.state(mkId(0x02)).isSome
     check l.state(mkId(0x02)).get.latestUtxos.len == 1
     check not l.state(mkId(0x02)).get.latestUtxos.contains(input.id)
-
-  test "rejected leader proof → InvalidProof":
-    let
-      l = Ledger[TestId].init(mkId(0x01), LedgerState.fromUtxos(@[]))
-      r = l.prepareUpdate(
-        id = mkId(0x02),
-        parentId = mkId(0x01),
-        slot = 1'u64,
-        proof = mkProof(),
-        txs = @[],
-        lockedNotes = LockedNotes.init(),
-        verifier = mockAcceptVerifier(),
-        leaderVerifier = mockRejectLeaderVerifier(),
-      )
-    check r.isErr
-    check r.error == InvalidProof
 
   test "unbalanced tx → UnbalancedTransaction":
     let
@@ -353,7 +356,6 @@ suite "prepareUpdate":
         txs = @[tx],
         lockedNotes = LockedNotes.init(),
         verifier = mockAcceptVerifier(),
-        leaderVerifier = mockAcceptLeaderVerifier(),
       )
     check r.isErr
     check r.error == UnbalancedTransaction
@@ -377,7 +379,6 @@ suite "prepareUpdate":
         txs = @[tx1],
         lockedNotes = LockedNotes.init(),
         verifier = mockAcceptVerifier(),
-        leaderVerifier = mockAcceptLeaderVerifier(),
       )
     check r1.isOk
     l.commitUpdate(r1.get.id, r1.get.state)
@@ -406,7 +407,6 @@ suite "prepareUpdate":
         txs = @[tx2],
         lockedNotes = LockedNotes.init(),
         verifier = mockAcceptVerifier(),
-        leaderVerifier = mockAcceptLeaderVerifier(),
       )
     check r2.isOk
     l.commitUpdate(r2.get.id, r2.get.state)
@@ -434,7 +434,6 @@ suite "prepareUpdate":
         txs = @[tx3],
         lockedNotes = LockedNotes.init(),
         verifier = mockAcceptVerifier(),
-        leaderVerifier = mockAcceptLeaderVerifier(),
       )
     check r3.isOk
     l.commitUpdate(r3.get.id, r3.get.state)
