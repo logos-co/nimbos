@@ -12,7 +12,7 @@
 
 import
   std/tables,
-  ./[balance, types, cryptarchia_state, locked_notes, pol_verifier,zk_verifier],
+  ./[balance, types, cryptarchia_state, locked_notes, pol_verifier],
   ../core/mantle/[tx_types, tx_hashing, operations, proofs],
   ../core/types
 
@@ -55,11 +55,10 @@ proc tryApplyHeader*(
     return err(InvalidProof)
   ok(state)
 
-func tryApplyTx*(
+proc tryApplyTx*(
     state: sink LedgerState,
     tx: SignedMantleTx,
     lockedNotes: LockedNotes,
-    verifier: ZkSigVerifier,
 ): Result[tuple[state: LedgerState, balance: Balance], LedgerError] =
   ## Applies one transaction; returns the new state and the tx's net balance
   ## (sum of per-op balances).
@@ -81,7 +80,7 @@ func tryApplyTx*(
         return err(InvalidProof)
       let r =
         ?s.cryptarchiaLedger.tryApplyTransfer(
-          lockedNotes, op.payload.transfer, proof.transferProof, txHash, verifier
+          lockedNotes, op.payload.transfer, proof.transferProof, txHash
         )
       s = LedgerState(cryptarchiaLedger: r.state)
       balance = ?balance.checkedAdd(r.balance)
@@ -89,18 +88,17 @@ func tryApplyTx*(
       return err(UnsupportedOp)
   ok((state: s, balance: balance))
 
-func tryApplyTxns*(
+proc tryApplyTxns*(
     state: sink LedgerState,
     txs: openArray[SignedMantleTx],
     lockedNotes: LockedNotes,
-    verifier: ZkSigVerifier,
 ): Result[LedgerState, LedgerError] =
   ## Applies a block's transactions in order. Each tx must net to zero
   ## balance — otherwise returns `UnbalancedTransaction` or
   ## `InsufficientBalance`.
   var s = state
   for tx in txs:
-    let r = ?s.tryApplyTx(tx, lockedNotes, verifier)
+    let r = ?s.tryApplyTx(tx, lockedNotes)
     s = r.state
     if r.balance > Balance.zero:
       return err(UnbalancedTransaction)
@@ -147,7 +145,6 @@ proc prepareUpdate*[Id](
     proof: ProofOfLeadership,
     txs: openArray[SignedMantleTx],
     lockedNotes: LockedNotes,
-    verifier: ZkSigVerifier,
 ): Result[tuple[id: Id, state: LedgerState], LedgerError] =
   ## Validates a block's header + transactions against the parent state.
   ## Caller invokes `commitUpdate` to install the result, or drops it to reject.
@@ -156,7 +153,7 @@ proc prepareUpdate*[Id](
   let
     parent = l.states.getOrDefault(parentId)
     afterHeader = ?parent.tryApplyHeader(slot, proof)
-    afterTxs = ?afterHeader.tryApplyTxns(txs, lockedNotes, verifier)
+    afterTxs = ?afterHeader.tryApplyTxns(txs, lockedNotes)
   ok((id: id, state: afterTxs))
 
 {.pop.}

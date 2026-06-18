@@ -19,7 +19,7 @@ import
   ./deployment/deployment_settings,
   ./networking/network,
   ./sync/syncer,
-  ./zk/[circuits, pol]
+  ./zk/[circuits, pol, zksign]
 
 from ./core/types as coreTypes import Block, blockId
 from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
@@ -44,6 +44,14 @@ type
 
 template rng*(node: LBNode): ref HmacDrbgContext =
   node.network.rng
+
+# Install a single circuit's VK or fatal-log and bail. Requires `circuitsDir`
+# in scope at the call site and an enclosing proc returning `Opt[LBNode]`.
+template loadVkOrFatal(circuit, pathFn: untyped, name: string) =
+  circuit.loadAndInitVk(circuitsDir).isOkOr:
+    fatal name & " verification key install failed",
+      path = pathFn(circuitsDir), err = $error
+    return Opt.none(LBNode)
 
 proc initFullNode(
     node: LBNode,
@@ -81,10 +89,9 @@ proc init*(
       err = $error,
       hint = "Run scripts/setup-logos-blockchain-circuits.sh"
     return Opt.none(LBNode)
-  pol.loadAndInitVk(circuitsDir).isOkOr:
-    fatal "PoL verification key install failed",
-      path = polVerificationKeyPath(circuitsDir), err = $error
-    return Opt.none(LBNode)
+
+  loadVkOrFatal(pol, polVerificationKeyPath, "PoL")
+  loadVkOrFatal(zksign, zksignVerificationKeyPath, "ZkSig")
 
   let chain = Chain.init(deploymentSettings).valueOr:
     fatal "Failed to initialize chain", err = error

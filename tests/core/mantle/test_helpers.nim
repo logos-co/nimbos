@@ -16,9 +16,13 @@ import
 type TestId* = BlockId
 
 func mkZkPubKey(seed: byte): ZkPublicKey =
-  var bytes: array[32, byte]
-  bytes[0] = seed
-  frFromBytesLE(bytes).get
+  frFromBytesLE([seed]).get
+
+proc mkRealZkPubKey*(sk: byte): ZkPublicKey =
+  ## Circuit-derived PK: `Poseidon2.compress(KDF, sk)`. Use when a test needs
+  ## a pk that matches what the zksign prover would emit for a given sk —
+  ## e.g. when verifying against committed fixture proofs.
+  zkPublicKeyFromSecret(frFromBytesLE([sk]).get)
 
 func mkUtxo*(
     value: Value = 100, pkSeed: byte = 1, opIdSeed: byte = 0,
@@ -30,6 +34,20 @@ func mkUtxo*(
     opId: opId,
     outputIndex: outputIndex,
     note: Note(value: value, zkPublicKey: mkZkPubKey(pkSeed)),
+  )
+
+func mkUtxoWithPk*(
+    pk: ZkPublicKey, value: Value = 100, opIdSeed: byte = 0,
+    outputIndex: uint64 = 0,
+): Utxo =
+  ## Sibling of `mkUtxo` that takes a raw pk instead of deriving one from a
+  ## seed. Used by fixture-driven tests that need a specific zkPublicKey.
+  var opId: Hash32
+  opId[0] = opIdSeed
+  Utxo(
+    opId: opId,
+    outputIndex: outputIndex,
+    note: Note(value: value, zkPublicKey: pk),
   )
 
 func mkNote*(value: Value, pkSeed: byte): Note =
