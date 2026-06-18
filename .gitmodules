@@ -137,14 +137,6 @@
 	path = vendor/nim-minilru
 	url = https://github.com/status-im/nim-minilru.git
 	branch = master
-[submodule "vendor/nim-ngtcp2"]
-	path = vendor/nim-ngtcp2
-	url = https://github.com/vacp2p/nim-ngtcp2
-	branch = main
-[submodule "vendor/nim-quic"]
-	path = vendor/nim-quic
-	url = https://github.com/vacp2p/nim-quic
-	branch = main
 [submodule "vendor/nim-yaml"]
 	path = vendor/nim-yaml
 	url = https://github.com/flyx/NimYAML.git
@@ -168,5 +160,15 @@
 [submodule "vendor/nim-bincode"]
 	path = vendor/nim-bincode
 	url = https://github.com/aimendj/nim-bincode.git
+	ignore = untracked
+	branch = master
+[submodule "vendor/nim-lsquic"]
+	path = vendor/nim-lsquic
+	url = https://github.com/vacp2p/nim-lsquic
+	ignore = untracked
+	branch = main
+[submodule "vendor/nim-zlib"]
+	path = vendor/nim-zlib
+	url = https://github.com/status-im/nim-zlib
 	ignore = untracked
 	branch = master
