@@ -66,8 +66,8 @@ if defined(limitStackUsage):
   # available on some GCC versions but not all - run with `-d:limitStackUsage`
   # and look for .su files in "./build/", "./nimcache/" or $TMPDIR that list the
   # stack size of each function.
-  switch("passC", "-fstack-usage -Werror=stack-usage=1048576")
-  switch("passL", "-fstack-usage -Werror=stack-usage=1048576")
+  switch("passC", "-fstack-usage -Werror=stack-usage=262144")
+  switch("passL", "-fstack-usage -Werror=stack-usage=262144")
 
 if defined(windows):
   # disable timestamps in Windows PE headers - https://wiki.debian.org/ReproducibleBuilds/TimestampsInPEBinaries
@@ -134,6 +134,8 @@ switch("passL", "-fno-omit-frame-pointer")
 --define:chronicles_line_numbers # These are disabled for release binaries
 # for heap-usage-by-instance-type metrics and object base-type strings
 --define:nimTypeNames
+--styleCheck:usages
+--styleCheck:error
 
 switch("define", "nim_compiler_path=" & currentDir & "env.sh nim")
 switch("define", "withoutPCRE")
@@ -206,6 +208,16 @@ put("secp256k1.always", "-fno-lto -fomit-frame-pointer")
 put("aesctr_drbg.always", "-fno-lto")
 put("hmac_drbg.always", "-fno-lto")
 put("sysrng.always", "-fno-lto")
+
+# ############################################################
+#
+#                    Variable stack usage
+#
+# ############################################################
+
+put("lsquic_enc_sess_ietf.always", "-fno-lto -Wno-stack-usage")
+put("lsquic_handshake.always", "-fno-lto -Wno-stack-usage")
+put("lsquic_hkdf.always", "-fno-lto -Wno-stack-usage")
 
 # Constantine MSM scheduler does variable stack allocations that defeat GCC's
 # stack-usage analyzer after LTO inlining. Drop separately when the upstream
