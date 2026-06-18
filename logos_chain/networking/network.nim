@@ -15,7 +15,6 @@ import
   results,
   stew/[leb128, endians2, byteutils, io2],
   stew/shims/macros,
-  snappy,
   json_serialization, json_serialization/std/[net, sets, options],
   chronos, chronos/ratelimit, chronicles, metrics,
   libp2p/[switch, peerinfo, multiaddress, multicodec, crypto/crypto,
@@ -592,18 +591,14 @@ proc writeChunk(
   var
     data = newSeqUninit[byte](
       ord(responseCode.isSome) + contextBytes.len + uncompressedLenBytes.len +
-      snappy.maxCompressedLenFramed(payload.len).int)
+      payload.len)
     pos = 0
 
   if responseCode.isSome:
     data.add(pos, [byte responseCode.get])
   data.add(pos, contextBytes)
   data.add(pos, uncompressedLenBytes.toOpenArray())
-  let
-    pre = pos
-    written = snappy.compressFramed(payload, data.toOpenArray(pos, data.high))
-      .expect("compression shouldn't fail with correctly preallocated buffer")
-  data.setLen(pre + written)
+  data.add(pos, payload)
 
   conn.write(data)
 
@@ -686,100 +681,14 @@ template sendUserHandlerResultAsChunkImpl*(stream: Connection,
 proc uncompressFramedStream(conn: Connection,
                             expectedSize: int): Future[Result[seq[byte], string]]
                             {.async: (raises: [CancelledError]).} =
-  var header: array[framingHeader.len, byte]
+  var output = newSeqUninit[byte](expectedSize)
   try:
-    await conn.readExactly(addr header[0], header.len)
+    await conn.readExactly(addr output[0], expectedSize)
   except LPStreamEOFError, LPStreamIncompleteError:
-    return err "Unexpected EOF before snappy header"
+    return err "Unexpected EOF reading payload"
   except LPStreamError as exc:
-    return err "Unexpected error reading header: " & exc.msg
-
-  if header != framingHeader:
-    return err "Incorrect snappy header"
-
-  static:
-    doAssert maxCompressedFrameDataLen >= maxUncompressedFrameDataLen.uint64
-
-  var
-    frameData = newSeqUninit[byte](maxCompressedFrameDataLen + 4)
-    output = newSeqUninit[byte](expectedSize)
-    written = 0
-
-  while written < expectedSize:
-    var frameHeader: array[4, byte]
-    try:
-      await conn.readExactly(addr frameHeader[0], frameHeader.len)
-    except LPStreamEOFError, LPStreamIncompleteError:
-      return err "Snappy frame header missing"
-    except LPStreamError as exc:
-      return err "Unexpected error reading frame header: " & exc.msg
-
-    let (id, dataLen) = decodeFrameHeader(frameHeader)
-
-    if dataLen > frameData.len:
-      # In theory, compressed frames could be bigger and still result in a
-      # valid, small snappy frame, but this would mean they are not getting
-      # compressed correctly
-      return err "Snappy frame too big"
-
-    if dataLen > 0:
-      try:
-        await conn.readExactly(addr frameData[0], dataLen)
-      except LPStreamEOFError, LPStreamIncompleteError:
-        return err "Incomplete snappy frame"
-      except LPStreamError as exc:
-        return err "Unexpected error reading frame data: " & exc.msg
-
-    if id == chunkCompressed:
-      if dataLen < 6: # At least CRC + 2 bytes of frame data
-        return err "Compressed snappy frame too small"
-
-      let
-        crc = uint32.fromBytesLE frameData.toOpenArray(0, 3)
-        uncompressed =
-          snappy.uncompress(
-            frameData.toOpenArray(4, dataLen - 1),
-            output.toOpenArray(written, output.high)).valueOr:
-              return err "Failed to decompress content"
-
-      if maskedCrc(
-          output.toOpenArray(written, written + uncompressed-1)) != crc:
-        return err "Snappy content CRC checksum failed"
-
-      written += uncompressed
-
-    elif id == chunkUncompressed:
-      if dataLen < 5: # At least one byte of data
-        return err "Uncompressed snappy frame too small"
-
-      let uncompressed = dataLen - 4
-
-      if uncompressed > maxUncompressedFrameDataLen.int:
-        return err "Snappy frame size too large"
-
-      if uncompressed > output.len - written:
-        return err "Too much data"
-
-      let crc = uint32.fromBytesLE frameData.toOpenArray(0, 3)
-      if maskedCrc(frameData.toOpenArray(4, dataLen - 1)) != crc:
-        return err "Snappy content CRC checksum failed"
-
-      output[written..<written + uncompressed] =
-        frameData.toOpenArray(4, dataLen-1)
-      written += uncompressed
-
-    elif id < 0x80:
-      # Reserved unskippable chunks (chunk types 0x02-0x7f)
-      # if we encounter this type of chunk, stop decoding
-      # the spec says it is an error
-      return err "Invalid snappy chunk type"
-
-    else:
-      # Reserved skippable chunks (chunk types 0x80-0xfe)
-      # including STREAM_HEADER (0xff) should be skipped
-      continue
-
-  return ok output
+    return err "Unexpected error reading payload: " & exc.msg
+  ok output
 
 func chunkMaxSize[T](): uint32 =
   # compiler error on (T: type) syntax...
@@ -2099,10 +2008,7 @@ proc createLBP2PNode*(
   let switch = ?newBeaconSwitch(config, netKeys.seckey, hostAddress, rng)
 
   func msgIdProvider(m: messages.Message): Result[seq[byte], ValidationResult] =
-    # ``snappy.decode`` returns an empty seq (rather than raising) on failure,
-    # and ``gossipId`` doesn't raise, so no exception handling is needed here.
-    let decoded = snappy.decode(m.data, static(MAX_PAYLOAD_SIZE.uint32))
-    ok(gossipId(decoded, m.topic))
+    ok(gossipId(m.data, m.topic))
 
   let
     bootstrapPeers = loadBootstrapPeers(config)
@@ -2212,21 +2118,17 @@ func addValidator*[MsgType](
     inc nbc_gossip_messages_received
     trace "Validating incoming gossip message", len = message.data.len, topic
 
-    var decompressed = snappy.decode(message.data, gossipMaxSize(MsgType))
-    let res = if decompressed.len > 0:
+    let res = if message.data.len > 0:
       try:
-        let decoded = SSZ.decode(decompressed, MsgType)
-        decompressed = newSeq[byte](0) # release memory before validating
-        msgValidator(decoded, message.fromPeer) # doesn't raise!
+        msgValidator(SSZ.decode(message.data, MsgType), message.fromPeer) # doesn't raise!
       except SerializationError as e:
         inc nbc_gossip_failed_ssz
         debug "Error decoding gossip",
-          topic, len = message.data.len, decompressed = decompressed.len,
-          error = e.msg
+          topic, len = message.data.len, error = e.msg
         ValidationResult.Reject
-    else: # snappy returns empty seq on failed decompression
+    else:
       inc nbc_gossip_failed_snappy
-      debug "Error decompressing gossip", topic, len = message.data.len
+      debug "Error decoding gossip", topic, len = message.data.len
       ValidationResult.Reject
 
     newValidationResultFuture(res)
@@ -2246,21 +2148,17 @@ proc addAsyncValidator*[MsgType](
     inc nbc_gossip_messages_received
     trace "Validating incoming gossip message", len = message.data.len, topic
 
-    var decompressed = snappy.decode(message.data, gossipMaxSize(MsgType))
-    if decompressed.len > 0:
+    if message.data.len > 0:
       try:
-        let decoded = SSZ.decode(decompressed, MsgType)
-        decompressed = newSeq[byte](0) # release memory before validating
-        msgValidator(decoded, message.fromPeer) # doesn't raise!
+        msgValidator(SSZ.decode(message.data, MsgType), message.fromPeer) # doesn't raise!
       except SerializationError as e:
         inc nbc_gossip_failed_ssz
         debug "Error decoding gossip",
-          topic, len = message.data.len, decompressed = decompressed.len,
-          error = e.msg
+          topic, len = message.data.len, error = e.msg
         newValidationResultFuture(ValidationResult.Reject)
-    else: # snappy returns empty seq on failed decompression
+    else:
       inc nbc_gossip_failed_snappy
-      debug "Error decompressing gossip", topic, len = message.data.len
+      debug "Error decoding gossip", topic, len = message.data.len
       newValidationResultFuture(ValidationResult.Reject)
 
   node.validTopics.incl topic # Only allow subscription to validated topics
@@ -2276,7 +2174,7 @@ func gossipEncode(msg: auto): seq[byte] =
   # an internal logic error.
   doAssert uncompressed.lenu64 <= MAX_PAYLOAD_SIZE
 
-  snappy.encode(uncompressed)
+  uncompressed
 
 proc broadcast(node: LBP2PNode, topic: string, msg: seq[byte]):
     Future[SendResult] {.async: (raises: [CancelledError]).} =

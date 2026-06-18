@@ -93,11 +93,6 @@
 	url = https://github.com/status-im/nim-testutils.git
 	ignore = untracked
 	branch = master
-[submodule "vendor/nim-snappy"]
-	path = vendor/nim-snappy
-	url = https://github.com/status-im/nim-snappy.git
-	ignore = untracked
-	branch = master
 [submodule "vendor/nim-unittest2"]
 	path = vendor/nim-unittest2
 	url = https://github.com/status-im/nim-unittest2.git
