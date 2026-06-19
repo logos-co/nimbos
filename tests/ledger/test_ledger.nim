@@ -12,9 +12,7 @@ import
   std/[os, strutils],
   unittest2,
   results,
-  stew/io2
-
-import
+  stew/io2,
   ../../logos_chain/ledger/
     [balance, cryptarchia_state, ledger, locked_notes, types],
   ../../logos_chain/core/mantle/[primitives, operations, proofs, tx_types, utxo],

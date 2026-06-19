@@ -12,9 +12,7 @@ import
   std/[os, strutils],
   unittest2,
   results,
-  poseidon2/types          # `==` for F
-
-import
+  poseidon2/types,          # `==` for F
   ../../logos_chain/ledger/
     [balance, cryptarchia_state, locked_notes, types, utxo_store],
   ../../logos_chain/core/mantle/[primitives, operations, proofs, tx_hashing, utxo],
