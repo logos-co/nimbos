@@ -25,7 +25,7 @@ import
   libp2p/services/wildcardresolverservice,
   eth/[common/keys, async_utils],
   eth/net/nat, eth/p2p/discoveryv5/[node, random2],
-  ssz_serialization,
+  ./bincode,
   ../[version, conf],
   ../core/utils,
   ./[discovery, protocol_dsl,
@@ -33,7 +33,7 @@ import
 
 export
   tables, chronos, ratelimit, version, multiaddress, peerinfo, p2pProtocol,
-  connection, libp2p_json_serialization, ssz_serialization, results,
+  connection, libp2p_json_serialization, bincode, results,
   discovery, peer_pool, peer_scores
 
 logScope:
@@ -192,7 +192,7 @@ type
     # Errors for which we descore heavily (protocol violations)
     InvalidResponseCode
     InvalidSnappyBytes
-    InvalidSszBytes
+    InvalidBincodeBytes
     InvalidSizePrefix
     ZeroSizePrefix
     SizePrefixOverflow
@@ -614,7 +614,7 @@ proc sendErrorResponse(
 ): Future[void] {.async: (raises: [CancelledError, LPStreamError], raw: true).} =
   debug "Error processing request",
     peer, responseCode, errMsg = formatErrorMsg(errMsg)
-  conn.writeChunk(Opt.some responseCode, SSZ.encode(errMsg))
+  conn.writeChunk(Opt.some responseCode, Bincode.encode(errMsg))
 
 proc sendNotificationMsg(
     peer: Peer, protocolId: string, requestBytes: seq[byte]
@@ -661,16 +661,16 @@ proc sendResponseChunkBytes(
 proc sendResponseChunk(
     response: UntypedResponse, val: auto, contextBytes: openArray[byte] = []
 ): Future[void] {.async: (raises: [CancelledError, LPStreamError], raw: true).} =
-  sendResponseChunkBytes(response, SSZ.encode(val), contextBytes)
+  sendResponseChunkBytes(response, Bincode.encode(val), contextBytes)
 
 template sendUserHandlerResultAsChunkImpl*(stream: Connection,
                                            handlerResultFut: Future): untyped =
   let handlerRes = await handlerResultFut
-  writeChunk(stream, Opt.some ResponseCode.Success, SSZ.encode(handlerRes))
+  writeChunk(stream, Opt.some ResponseCode.Success, Bincode.encode(handlerRes))
 
 template sendUserHandlerResultAsChunkImpl*(stream: Connection,
                                            handlerResult: auto): untyped =
-  writeChunk(stream, Opt.some ResponseCode.Success, SSZ.encode(handlerResult))
+  writeChunk(stream, Opt.some ResponseCode.Success, Bincode.encode(handlerResult))
 
 proc uncompressFramedStream(conn: Connection,
                             expectedSize: int): Future[Result[seq[byte], string]]
@@ -684,24 +684,7 @@ proc uncompressFramedStream(conn: Connection,
     return err "Unexpected error reading payload: " & exc.msg
   ok output
 
-func chunkMaxSize[T](): uint32 =
-  # compiler error on (T: type) syntax...
-  when isFixedSize(T):
-    uint32 fixedPortionSize(T)
-  else:
-    MAX_PAYLOAD_SIZE
-
-template gossipMaxSize(T: untyped): uint32 =
-  const maxSize = static:
-    when isFixedSize(T):
-      fixedPortionSize(T).uint32
-    elif T is phase0.Attestation or T is phase0.AttesterSlashing or
-         T is phase0.SignedAggregateAndProof or T is phase0.SignedBeaconBlock:
-      MAX_PAYLOAD_SIZE
-    else:
-      {.fatal: "unknown type " & name(T).}
-  static: doAssert maxSize <= MAX_PAYLOAD_SIZE
-  maxSize.uint32
+func chunkMaxSize[T](): uint32 = MAX_PAYLOAD_SIZE
 
 proc readVarint2(conn: Connection): Future[NetRes[uint64]] {.
     async: (raises: [CancelledError]).} =
@@ -744,9 +727,9 @@ proc readChunkPayload*(conn: Connection, peer: Peer,
   peer.updateNetThroughput(now(chronos.Moment) - sm,
                             uint64(10 + size))
   try:
-    ok SSZ.decode(data, MsgType)
+    ok Bincode.decode(data, MsgType)
   except SerializationError:
-    neterr InvalidSszBytes
+    neterr InvalidBincodeBytes
 
 proc readResponseChunk(
     conn: Connection, peer: Peer, MsgType: typedesc):
@@ -912,7 +895,7 @@ template write[M; maxLen: static Limit](
   mixin sendResponseChunk
   sendResponseChunk(UntypedResponse(r), val, contextBytes)
 
-template writeSSZ[M; maxLen: static Limit](
+template writeBincode[M; maxLen: static Limit](
     r: MultipleChunksResponse[M, maxLen], val: auto,
     contextBytes: openArray[byte] = []): untyped =
   mixin sendResponseChunk
@@ -930,7 +913,7 @@ template send*[M](
   doAssert UntypedResponse(r).writtenChunks == 0
   sendResponseChunk(UntypedResponse(r), val, contextBytes)
 
-template sendSSZ*[M](
+template sendBincode*[M](
     r: SingleChunkResponse[M], val: auto,
     contextBytes: openArray[byte] = []): untyped =
   mixin sendResponseChunk
@@ -1106,8 +1089,8 @@ proc handleIncomingStream(network: LBP2PNode,
         of InvalidSnappyBytes:
           (ResponseCode.InvalidRequest, errorMsgLit "Failed to decompress snappy payload")
 
-        of InvalidSszBytes:
-          (ResponseCode.InvalidRequest, errorMsgLit "Failed to decode SSZ payload")
+        of InvalidBincodeBytes:
+          (ResponseCode.InvalidRequest, errorMsgLit "Failed to decode bincode payload")
 
         of InvalidSizePrefix:
           (ResponseCode.InvalidRequest, errorMsgLit "Invalid chunk size prefix")
@@ -1700,7 +1683,7 @@ func registerMsg(protocol: ProtocolInfo,
 
 proc p2pProtocolBackendImpl*(p: P2PProtocol): Backend =
   var
-    Format = ident "SSZ"
+    Format = ident "Bincode"
     Connection = bindSym "Connection"
     Peer = bindSym "Peer"
     LBP2PNode = bindSym "LBP2PNode"
@@ -2114,7 +2097,7 @@ func addValidator*[MsgType](
 
     let res = if message.data.len > 0:
       try:
-        msgValidator(SSZ.decode(message.data, MsgType), message.fromPeer) # doesn't raise!
+        msgValidator(Bincode.decode(message.data, MsgType), message.fromPeer) # doesn't raise!
       except SerializationError as e:
         debug "Error decoding gossip",
           topic, len = message.data.len, error = e.msg
@@ -2142,7 +2125,7 @@ proc addAsyncValidator*[MsgType](
 
     if message.data.len > 0:
       try:
-        msgValidator(SSZ.decode(message.data, MsgType), message.fromPeer) # doesn't raise!
+        msgValidator(Bincode.decode(message.data, MsgType), message.fromPeer) # doesn't raise!
       except SerializationError as e:
         debug "Error decoding gossip",
           topic, len = message.data.len, error = e.msg
@@ -2159,7 +2142,7 @@ proc unsubscribe*(node: LBP2PNode, topic: string) =
   node.pubsub.unsubscribeAll(topic)
 
 func gossipEncode(msg: auto): seq[byte] =
-  let uncompressed = SSZ.encode(msg)
+  let uncompressed = Bincode.encode(msg)
   # This function only for messages we create. A message this large amounts to
   # an internal logic error.
   doAssert uncompressed.lenu64 <= MAX_PAYLOAD_SIZE
