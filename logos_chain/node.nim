@@ -8,10 +8,10 @@
 {.push raises: [], gcsafe.}
 
 import
-  std/[osproc, random],
-  chronos, chronicles, presto, presto/server, bearssl/rand,
+  std/osproc,
+  chronos, chronicles, presto, presto/server,
+  bearssl/rand,
   metrics, metrics/chronos_httpserver,
-  eth/p2p/discoveryv5/random2,
   stew/byteutils,
   ./chain/chain,
   ./[conf, process_state],
@@ -25,6 +25,8 @@ from ./core/types as coreTypes import Block, blockId
 from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
 from libp2p/protocols/pubsub/gossipsub import
   TopicParams, init
+
+from std/random import randomize
 
 export
   osproc, chronos, presto, server, conf,
@@ -71,7 +73,7 @@ proc init*(
     return Opt.none(LBNode)
 
   # Doesn't use std/random directly, but dependencies might
-  randomize(rng[].rand(high(int)))
+  randomize(rng[].generate(int))
 
   let circuitsDir = string(config.circuitsDir)
   verifyCircuitsVersion(circuitsDir).isOkOr:

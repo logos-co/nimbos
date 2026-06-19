@@ -8,23 +8,12 @@
 {.push raises: [], gcsafe.}
 
 import
-  std/[algorithm, sequtils],
-  chronos, chronicles,
+  chronicles,
   libp2p/[peerinfo, multiaddress, multicodec],
-  eth/common/keys,
-  eth/p2p/discoveryv5/[protocol, node, random2],
   ../conf
 
 from std/os import splitFile
 from std/strutils import cmpIgnoreCase, split, startsWith, strip
-
-export protocol, node
-
-type
-  Eth2DiscoveryProtocol* = protocol.Protocol
-  Eth2DiscoveryId* = NodeId
-
-const udpPort* = 5000.Port
 
 func parseBootstrapAddress*(address: string):
     Result[(PeerId, MultiAddress), string] =
@@ -96,37 +85,3 @@ proc loadBootstrapNodes*(config: LBNodeConf): seq[(PeerId, MultiAddress)] =
     addBootstrapNode(node, bootstrapPeers)
   loadBootstrapFile(string config.bootstrapNodesFile, bootstrapPeers)
   bootstrapPeers
-
-proc new*(T: type Eth2DiscoveryProtocol,
-          config: LBNodeConf,
-          enrIp: Opt[IpAddress], enrTcpPort, enrUdpPort: Opt[Port],
-          pk: keys.PrivateKey,
-          rng: ref HmacDrbgContext):
-          T =
-  # ENR-based bootstrap was removed from the Logos path; `bootstrapEnrs` stays
-  # empty for now only to satisfy `newProtocol`'s API. TODO: drop or replace
-  # once discovery is wired without this parameter.
-  let bootstrapEnrs: seq[enr.Record] = @[]
-
-  let listenAddress =
-    if config.listenAddress.isSome():
-      Opt.some(config.listenAddress.get())
-    else:
-      Opt.none(IpAddress)
-
-  newProtocol(pk, enrIp, enrTcpPort, enrUdpPort, @[], bootstrapEnrs,
-    bindPort = config.udpPort, bindIp = listenAddress,
-    enrAutoUpdate = config.enrAutoUpdate, rng = rng)
-
-proc queryRandom*(
-    d: Eth2DiscoveryProtocol,
-    minScore: int): Future[seq[Node]] {.async: (raises: [CancelledError]).} =
-  ## Perform a discovery query for a random target
-  let nodes = await d.queryRandom()
-
-  var filtered: seq[(int, Node)]
-  for n in nodes:
-    filtered.add((0, n))
-
-  d.rng[].shuffle(filtered)
-  return filtered.sortedByIt(-it[0]).mapIt(it[1])

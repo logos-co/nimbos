@@ -18,7 +18,6 @@
 
 import
   chronicles,
-  eth/enr/enr,
   libp2p/[multiaddress, multicodec, peerstore],
   ../version, ../node,
   ../networking/[network, peer_pool],
@@ -126,21 +125,6 @@ proc getLastSeenAddress(node: LBNode, id: PeerId): string =
     normalized = address.normalize(id).valueOr:
       return ""
   $normalized
-
-proc getDiscoveryAddresses(node: LBNode): seq[string] =
-  let
-    typedRec = TypedRecord.fromRecord(node.network.enrRecord())
-    peerAddr = typedRec.toPeerAddr(udpProtocol).valueOr:
-      return default(seq[string])
-    maddress = MultiAddress.init(multiCodec("p2p"), peerAddr.peerId).valueOr:
-      return default(seq[string])
-
-  var addresses: seq[string]
-  for item in peerAddr.addrs:
-    let res = concat(item, maddress)
-    if res.isOk():
-      addresses.add($(res.get()))
-  addresses
 
 proc getP2PAddresses(node: LBNode): seq[string] =
   let
