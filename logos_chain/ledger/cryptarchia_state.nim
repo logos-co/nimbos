@@ -58,7 +58,7 @@ proc applyTransferState*(
   tuple[state: CryptarchiaState, balance: Balance, pks: seq[ZkPublicKey]],
   LedgerError,
 ] =
-  ## Pure state transition for a `TransferPayload` — removes inputs, inserts
+  ## Pure state transition for a `TransferPayload`, removes inputs, inserts
   ## outputs, sums balance. No signature verify; the caller must run
   ## `zksign.verify` over the returned `pks` ++ tx hash.
   var
