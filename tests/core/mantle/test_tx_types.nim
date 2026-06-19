@@ -15,17 +15,12 @@ import
 
 suite "core/mantle/tx_types":
   test "decodeMantleTx roundtrips encodeMantleTx":
-    let tx = MantleTx(
-      ops: @[],
-      executionGasPrice: 7'u64,
-      permanentStorageGasPrice: 8'u64,
-    )
-    let
-      wire = encodeMantleTx(tx)
-      back = decodeMantleTx(wire)
+    let tx = MantleTx(ops: @[])
+    let wire = encodeMantleTx(tx)
+    let back = decodeMantleTx(wire)
     check back.ops.len == tx.ops.len
-    check back.executionGasPrice == tx.executionGasPrice
-    check back.permanentStorageGasPrice == tx.permanentStorageGasPrice
+    check wire.len == 1
+    check wire[0] == byte(0)
 
   test "decodeSignedMantleTx roundtrips encodeSignedMantleTx":
     let signed = SignedMantleTx(
@@ -36,8 +31,6 @@ suite "core/mantle/tx_types":
             outputs: Outputs(notes: @[]),
           )),
         ],
-        executionGasPrice: 1'u64,
-        permanentStorageGasPrice: 2'u64,
       ),
       opProofs: @[
         OpProof(kind: opfTransfer, transferProof: DefaultZkSignature),
@@ -47,8 +40,6 @@ suite "core/mantle/tx_types":
       wire = encodeSignedMantleTx(signed)
       back = decodeSignedMantleTx(wire)
     check back.tx.ops.len == signed.tx.ops.len
-    check back.tx.executionGasPrice == signed.tx.executionGasPrice
-    check back.tx.permanentStorageGasPrice == signed.tx.permanentStorageGasPrice
     check back.opProofs.len == signed.opProofs.len
     check back.opProofs[0].kind == signed.opProofs[0].kind
 

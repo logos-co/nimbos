@@ -10,8 +10,17 @@
 
 import
   unittest2,
+  libp2p/crypto/ed25519/ed25519,
   ../../../logos_chain/core/mantle/[operations, tx_types]
+
 suite "core/mantle/operations":
+  proc mkSigner(seed: byte): Signer =
+    var bytes: array[EdPublicKeySize, byte]
+    bytes[0] = seed
+    var key: Signer
+    doAssert key.init(bytes)
+    key
+
   test "Mantle opcode constants match expected wire values":
     check OpTransfer == 0x00'u8
     check OpChannelConfig == 0x10'u8
@@ -234,5 +243,45 @@ suite "core/mantle/operations":
     check wdrBack.channel == wdrPayload.channel
     check wdrBack.outputs == wdrPayload.outputs
     check wdrBack.opIdNonce == wdrPayload.opIdNonce
+
+  test "encodeChannelConfig uses UINT16 KeyCount and roundtrips":
+    var keys: seq[Signer]
+    for i in 0 ..< 256:
+      keys.add mkSigner(byte(i))
+    let cfgPayload = ChannelConfigPayload(
+      channel: default(ChannelId),
+      keys: keys,
+      postingTimeframe: 42'u32,
+      postingTimeout: 7'u32,
+      configurationThreshold: 3'u16,
+      withdrawThreshold: 5'u16,
+    )
+    let wire = encodeChannelConfig(cfgPayload)
+    check wire.len == 32 + 2 + (256 * 32) + 4 + 4 + 2 + 2
+    check wire[32] == 0'u8
+    check wire[33] == 1'u8 # KeyCount 256 as UINT16 LE
+    let cfgBack = decodeChannelConfig(wire)
+    check cfgBack.channel == cfgPayload.channel
+    check cfgBack.keys.len == 256
+    check cfgBack.postingTimeframe == cfgPayload.postingTimeframe
+    check cfgBack.postingTimeout == cfgPayload.postingTimeout
+    check cfgBack.configurationThreshold == cfgPayload.configurationThreshold
+    check cfgBack.withdrawThreshold == cfgPayload.withdrawThreshold
+
+  test "decodeOp roundtrips ChannelConfig through encodeOp":
+    let op = createChannelConfigOp(ChannelConfigPayload(
+      channel: default(ChannelId),
+      keys: @[mkSigner(9)],
+      postingTimeframe: 1'u32,
+      postingTimeout: 2'u32,
+      configurationThreshold: 3'u16,
+      withdrawThreshold: 4'u16,
+    ))
+    let wire = encodeOp(op)
+    let back = decodeOp(wire)
+    check back.opcode == OpChannelConfig
+    check back.payload.kind == ChannelConfig
+    check back.payload.channelConfig.keys.len == 1
+    check back.payload.channelConfig.postingTimeframe == 1'u32
 
 {.pop.}

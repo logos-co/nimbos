@@ -11,28 +11,9 @@
 import
   unittest2,
   results,
+  ../testutil,
   ../../logos_chain/core/[types, local_tree],
-  ../../logos_chain/chain/genesis,
-  ../../logos_chain/core/mantle/tx_types
-proc minimalSignedTx(): SignedMantleTx =
-  SignedMantleTx(
-    tx: MantleTx(
-      ops: @[],
-      executionGasPrice: 0'u64,
-      permanentStorageGasPrice: 0'u64,
-    ),
-    opProofs: @[],
-  )
-
-proc childBlock(parentHdr: Header, parentId: BlockId, slot: SlotNumber, txs: openArray[SignedMantleTx]): Block =
-  let h = initHeader(
-    bedrockVersion = parentHdr.bedrockVersion,
-    parentBlock = parentId,
-    slot = slot,
-    txs = txs,
-    proofOfLeadership = parentHdr.proofOfLeadership,
-  )
-  initBlock(h, txs = txs)
+  ../../logos_chain/chain/genesis
 
 suite "core/local_tree":
   test "newLocalTree stores genesis as tip at height 0":

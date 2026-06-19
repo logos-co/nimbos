@@ -6,9 +6,9 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## Mantle proof domain types.
-## Spec: [v1.4 Mantle](https://nomos-tech.notion.site/v1-4-Mantle-335261aa09df8065a38acff4b25aee82)
+## Spec: [v1.5.0 Mantle](https://nomos-tech.notion.site/1-5-0-Mantle-33d261aa09df8051b0d0cd4d5ddade85)
 ##
-## Wire encoding/decoding: [v1.3 Mantle Transaction Encoding](https://nomos-tech.notion.site/v1-3-Mantle-Transaction-Encoding-335261aa09df8051a8a6f325aa41f6a7)
+## Wire encoding/decoding: [v1.4.1 Mantle Transaction Encoding](https://nomos-tech.notion.site/1-4-1-Mantle-Transaction-Encoding-33e261aa09df8050beb6c9b72a042217)
 
 {.push raises: [], gcsafe.}
 
@@ -319,10 +319,10 @@ func decodeOpProof*(data: openArray[byte], kind: OpProofKind): OpProof {.raises:
 
 func encodeOpsProofs*(ops: openArray[Op], proofs: openArray[OpProof]): seq[byte] =
   ## OpsProofs = *OpProof
-  ## 1. Length must be <= OpCount.
-  ## 2. type(OpProofs[i]) == ProofFor(Op[i]) for provided proofs.
-  doAssert proofs.len <= ops.len,
-    "OpsProofs length must be <= OpCount"
+  ## 1. Length must equal OpCount.
+  ## 2. type(OpProofs[i]) == ProofFor(Op[i]).
+  doAssert proofs.len == ops.len,
+    "OpsProofs length must equal OpCount"
   var res: seq[byte]
   for i in 0 ..< proofs.len:
     doAssert proofs[i].kind == expectedOpProofKindForOpcode(ops[i].opcode),
@@ -332,17 +332,13 @@ func encodeOpsProofs*(ops: openArray[Op], proofs: openArray[OpProof]): seq[byte]
   res
 
 func decodeOpsProofs*(ops: openArray[Op], data: openArray[byte]): seq[OpProof] {.raises: [DecodingError].} =
+  if ops.len > 0 and data.len == 0:
+    raise newException(DecodingError, "OpsProofs length must equal OpCount")
   var pos = 0
   var res = newSeqOfCap[OpProof](ops.len)
-  var i = 0
-  while pos < data.len:
-    if i >= ops.len:
-      raise newException(DecodingError, "OpsProofs length exceeds OpCount")
+  for i in 0 ..< ops.len:
     let kind = expectedOpProofKindForOpcode(ops[i].opcode)
     res.add readOpProof(data, pos, kind)
-    inc i
-  if res.len > ops.len:
-    raise newException(DecodingError, "OpsProofs length exceeds OpCount")
   finishDecode(data, pos)
   res
 

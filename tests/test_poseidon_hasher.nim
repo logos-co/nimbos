@@ -8,12 +8,11 @@
 {.push raises: [], gcsafe.}
 {.used.}
 
-import unittest2
-
-import constantine/math/[arithmetic, io/io_bigints]
-import poseidon2/types                   # B, F, zero, one, two
-
-import ../logos_chain/zk/poseidon2/hasher
+import
+  unittest2,
+  constantine/math/[arithmetic, io/io_bigints],
+  poseidon2/types,
+  ../logos_chain/zk/poseidon2/hasher
 
 # Reference values cross-checked against logos-blockchain/zk/poseidon2/src/hasher.rs.
 # We go BigInt -> fromBig instead of F.fromDecimal because constantine's FF

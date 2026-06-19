@@ -81,8 +81,6 @@ proc checkOpEqual(a, b: Op) =
     check a.payload.channelConfig == b.payload.channelConfig
 
 proc checkSignedMantleTxEqual(a, b: SignedMantleTx) =
-  check a.tx.executionGasPrice == b.tx.executionGasPrice
-  check a.tx.permanentStorageGasPrice == b.tx.permanentStorageGasPrice
   check a.tx.ops.len == b.tx.ops.len
   check a.opProofs.len == b.opProofs.len
   for i in 0 ..< a.tx.ops.len:
@@ -96,11 +94,7 @@ func signedTxWithAllOps(): SignedMantleTx =
     ops.add defaultOpForOpcode(opcode)
     proofs.add defaultOpProofForOpcode(opcode)
   SignedMantleTx(
-    tx: MantleTx(
-      ops: ops,
-      executionGasPrice: 9'u64,
-      permanentStorageGasPrice: 10'u64,
-    ),
+    tx: MantleTx(ops: ops),
     opProofs: proofs,
   )
 
@@ -113,11 +107,7 @@ proc checkSignedMantleTxRoundtrip(signed: SignedMantleTx) {.raises: [BincodeErro
 suite "core/mantle/tx_bincode":
   test "serializeSignedMantleTxToSeq roundtrips deserializeSignedMantleTx (empty tx)":
     let signed = SignedMantleTx(
-      tx: MantleTx(
-        ops: @[],
-        executionGasPrice: 7'u64,
-        permanentStorageGasPrice: 8'u64,
-      ),
+      tx: MantleTx(ops: @[]),
       opProofs: @[],
     )
     checkSignedMantleTxRoundtrip(signed)

@@ -21,19 +21,13 @@ const deploymentSettingsPath = testsDir / "../../config/deployment-settings.yaml
 
 suite "chain/genesis":
   test "createGenesisBlock wraps a minimal signed mantle tx":
-    let tx = MantleTx(
-      ops: @[],
-      executionGasPrice: 0'u64,
-      permanentStorageGasPrice: 0'u64,
-    )
-    let
-      sm = SignedMantleTx(tx: tx, opProofs: @[])
-      h = createGenesisBlock(sm).header
-      b = createGenesisBlock(sm)
+    let tx = MantleTx(ops: @[])
+    let sm = SignedMantleTx(tx: tx, opProofs: @[])
+    let h = createGenesisBlock(sm).header
+    let b = createGenesisBlock(sm)
     check h.blockRoot == createBlockRoot([sm])
     check b.txs.len == 1
     check b.header.bedrockVersion == GenesisBedrockVersion
-    check b.txs[0].tx.executionGasPrice == sm.tx.executionGasPrice
     check b.txs[0].tx.ops.len == sm.tx.ops.len
     check b.signature == DefaultEd25519Signature
 
@@ -56,8 +50,6 @@ suite "chain/genesis":
       gb = testChain.genesisBlock
 
     check gb.txs.len == 1
-    check gb.txs[0].tx.executionGasPrice == genesisTx.tx.executionGasPrice
-    check gb.txs[0].tx.permanentStorageGasPrice == genesisTx.tx.permanentStorageGasPrice
     check gb.txs[0].opProofs.len == genesisTx.opProofs.len
     for i in 0 ..< genesisTx.opProofs.len:
       check gb.txs[0].opProofs[i].kind == genesisTx.opProofs[i].kind
@@ -70,7 +62,7 @@ suite "chain/genesis":
     check gb.header == gstate.header
     check gb.signature == gstate.blockSignature
 
-  test "createGenesisBlock from genesisState matches createGenesisBlock from signedMantleTx":
+  test "createGenesisBlock from signedMantleTx matches deployment genesisState envelope":
     let
       text = readAllChars(deploymentSettingsPath).valueOr:
         check false
@@ -82,16 +74,17 @@ suite "chain/genesis":
 
     let
       gstate = ds.cryptarchia.genesisState
-      byState = createGenesisBlock(gstate.signedMantleTx)
-      byTx = createGenesisBlock(gstate.signedMantleTx)
+      fromTx = createGenesisBlock(gstate.signedMantleTx)
+      fromState = initBlock(gstate.header, gstate.blockSignature, [gstate.signedMantleTx])
 
-    check byState.header == byTx.header
-    check blockId(byState.header) == blockId(byTx.header)
-    check byState.txs.len == byTx.txs.len
-    check byState.txs.len == 1
-    check mantleTxHash(byState.txs[0].tx) == mantleTxHash(byTx.txs[0].tx)
-    check byState.txs[0].opProofs.len == byTx.txs[0].opProofs.len
-    for i in 0 ..< byState.txs[0].opProofs.len:
-      check byState.txs[0].opProofs[i].kind == byTx.txs[0].opProofs[i].kind
+    check fromTx.header == fromState.header
+    check blockId(fromTx.header) == blockId(fromState.header)
+    check fromTx.signature == fromState.signature
+    check fromTx.txs.len == fromState.txs.len
+    check fromTx.txs.len == 1
+    check mantleTxHash(fromTx.txs[0].tx) == mantleTxHash(fromState.txs[0].tx)
+    check fromTx.txs[0].opProofs.len == fromState.txs[0].opProofs.len
+    for i in 0 ..< fromTx.txs[0].opProofs.len:
+      check fromTx.txs[0].opProofs[i].kind == fromState.txs[0].opProofs[i].kind
 
 {.pop.}

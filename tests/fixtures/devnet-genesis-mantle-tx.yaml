@@ -68,8 +68,6 @@ mantle_tx:
       provider_id: 6b7278c8fe8af5d768a3d729a76b3b7ca33c25c67ed471fbe04f09f8d80539d4
       zk_id: 9c9c111d4e3f7f8f734ce2e489b4c7f0581d73bc171cee91db39802f300e8e2f
       locked_note_id: 6d5e340340bb6f669a0b4b350d7bed7428aec44d2e9059a2f0fb510954497800
-  execution_gas_price: 0
-  storage_gas_price: 0
 ops_proofs:
   - !ZkSig
     pi_a:

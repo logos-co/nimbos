@@ -7,23 +7,22 @@
 
 {.push raises: [].}
 
-import testutils/markdown_reports, unittest2
 import
   std/[net, times],
-  chronos
-import
+  chronos,
+  libp2p/[switch, peerid],
+  testutils/markdown_reports,
+  unittest2,
   ../logos_chain/conf,
   ../logos_chain/networking/network,
   ../logos_chain/core/[types, local_tree],
-  ../logos_chain/chain/genesis,
   ../logos_chain/core/mantle/tx_types,
-  libp2p/[switch, peerid]
+  ../logos_chain/chain/genesis
 
 from ../logos_chain/core/mantle/primitives import SlotNumber
-
 from std/algorithm import SortOrder, sort
 from std/strformat import `&`
-from std/tables import OrderedTable, `[]=`, initOrderedTable, mgetOrPut, sort
+from std/tables import OrderedTable, `[]=`, initOrderedTable, mgetOrPut
 
 export unittest2
 
@@ -82,11 +81,7 @@ const TestLoopbackIp* = parseIpAddress("127.0.0.1")
 
 func minimalSignedTx*(): SignedMantleTx =
   SignedMantleTx(
-    tx: MantleTx(
-      ops: @[],
-      executionGasPrice: 0'u64,
-      permanentStorageGasPrice: 0'u64,
-    ),
+    tx: MantleTx(ops: @[]),
     opProofs: @[],
   )
 

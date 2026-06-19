@@ -8,12 +8,12 @@
 {.push raises: [], gcsafe.}
 {.used.}
 
-import unittest2
-import results
-import poseidon2/types
-
-import ../../logos_chain/utils/dynamic_merkle_tree
-import ../../logos_chain/zk/poseidon2/hasher # Poseidon2Hasher
+import
+  unittest2,
+  results,
+  poseidon2/types,
+  ../../logos_chain/utils/dynamic_merkle_tree,
+  ../../logos_chain/zk/poseidon2/hasher
 
 # A trivial Item whose `asField` view is its own F value. Exercises the
 # `mixin asField(item: Item): F` contract.

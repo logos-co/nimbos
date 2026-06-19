@@ -300,10 +300,6 @@ func validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
       proofOk,
       "cryptarchia.genesis_block: ops_proofs[" & $i & "] does not match ProofFor(mantle_tx.ops[" & $i & "])"
     )
-  need(smt.tx.executionGasPrice == TokenValue(0'u64),
-    "cryptarchia.genesis_block first mantle_tx.execution_gas_price must be 0 for genesis")
-  need(smt.tx.permanentStorageGasPrice == TokenValue(0'u64),
-    "cryptarchia.genesis_block first mantle_tx.storage_gas_price must be 0 for genesis")
   need(smt.tx.ops.len >= 2,
     "cryptarchia.genesis_block first mantle_tx.ops must contain at least transfer and inscription")
   need(

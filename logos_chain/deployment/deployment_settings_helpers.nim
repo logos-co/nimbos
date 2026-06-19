@@ -359,10 +359,6 @@ func parseGenesisOpProof(
   let expectedDefaultProof = defaultOpProofForOpcode(forOp.opcode)
   let expectedKind = expectedOpProofKindForOpcode(forOp.opcode)
   if node.kind == yScalar:
-    ## TODO(mantle): `NoProof` was removed in Mantle v1.4; drop this compatibility
-    ## branch once we receive the updated deployment file format.
-    if node.content == "NoProof":
-      return ok(expectedDefaultProof)
     if expectedKind == opfChannelInscribe:
       return ok(OpProof(
         kind: opfChannelInscribe,
@@ -448,18 +444,11 @@ func validateCryptarchiaGenesisYaml*(root: YamlNode): Result[void, string] =
   if mantle.kind != yMapping:
     return err("deployment-settings: cryptarchia.genesis_block.transactions[0].mantle_tx must be a mapping")
   needUnder(mantle, ["ops"], "cryptarchia.genesis_block.transactions[0].mantle_tx.ops")
-  needUnder(
-    mantle, ["execution_gas_price"],
-    "cryptarchia.genesis_block.transactions[0].mantle_tx.execution_gas_price")
-  needUnder(
-    mantle, ["storage_gas_price"],
-    "cryptarchia.genesis_block.transactions[0].mantle_tx.storage_gas_price")
   ok()
 
 func parseSignedMantleTxFromOpsYaml*(
     opsNode: YamlNode,
     proofsNode: YamlNode,
-    mantleGasNode: YamlNode,
     opsPathPrefix: string,
     proofsPathPrefix: string,
 ): Result[SignedMantleTx, string] =
@@ -501,21 +490,10 @@ func parseSignedMantleTxFromOpsYaml*(
   for i in 0 ..< proofsNode.len:
     opProofs[i] = ? parseGenesisOpProof(proofsNode[i], i, ops[i], proofsPathPrefix)
 
-  let executionGasPrice = ? reqInt(mantleGasNode, ["execution_gas_price"])
-  if executionGasPrice < 0:
-    return err("deployment-settings: mantle_tx.execution_gas_price must be >= 0")
-  let storageGasPrice = ? reqInt(mantleGasNode, ["storage_gas_price"])
-  if storageGasPrice < 0:
-    return err("deployment-settings: mantle_tx.storage_gas_price must be >= 0")
-
   doAssert ops.len <= MantleMaxOps, "Mantle: too many ops for OpCount byte"
-  let mantleTx = MantleTx(
-    ops: ops,
-    permanentStorageGasPrice: TokenValue(uint64(storageGasPrice)),
-    executionGasPrice: TokenValue(uint64(executionGasPrice)),
-  )
+  let mantleTx = MantleTx(ops: ops)
   doAssert opProofs.len == mantleTx.ops.len,
-    "signed mantle tx: len(ops_proofs) must be <= len(ops) before fill"
+    "signed mantle tx: len(ops_proofs) must equal len(ops)"
   ok(SignedMantleTx(tx: mantleTx, opProofs: opProofs))
 
 func parseDeploymentGenesisState*(root: YamlNode): Result[GenesisState, string] =
@@ -555,7 +533,6 @@ func parseDeploymentGenesisState*(root: YamlNode): Result[GenesisState, string] 
   let smt = ? parseSignedMantleTxFromOpsYaml(
     opsNode,
     proofsNode,
-    mantle,
     "cryptarchia.genesis_block.transactions[0].mantle_tx.ops",
     "cryptarchia.genesis_block.transactions[0].ops_proofs",
   )

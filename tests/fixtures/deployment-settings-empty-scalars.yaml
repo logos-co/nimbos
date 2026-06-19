@@ -67,8 +67,6 @@ cryptarchia:
             inscription: '00'
             parent: '0000000000000000000000000000000000000000000000000000000000000000'
             signer: 'd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a'
-        execution_gas_price: 0
-        storage_gas_price: 0
       ops_proofs:
       - !ZkSig
         pi_a: [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]

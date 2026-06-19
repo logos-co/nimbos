@@ -8,9 +8,9 @@
 ## Mantle **transaction** layer: re-exports **``mantle/primitives``** and
 ## **``mantle/operations``**; **``Op``** (``Opcode`` + **``OpPayload``**),
 ## **``MantleTx``** / **``SignedMantleTx``**, and **``OpProof``**.
-## Spec: [v1.4 Mantle](https://nomos-tech.notion.site/v1-4-Mantle-335261aa09df8065a38acff4b25aee82)
+## Spec: [v1.5.0 Mantle](https://nomos-tech.notion.site/1-5-0-Mantle-33d261aa09df8051b0d0cd4d5ddade85)
 ##
-## Wire encoding/decoding: [v1.3 Mantle Transaction Encoding](https://nomos-tech.notion.site/v1-3-Mantle-Transaction-Encoding-335261aa09df8051a8a6f325aa41f6a7)
+## Wire encoding/decoding: [v1.4.1 Mantle Transaction Encoding](https://nomos-tech.notion.site/1-4-1-Mantle-Transaction-Encoding-33e261aa09df8050beb6c9b72a042217)
 
 {.push raises: [], gcsafe.}
 
@@ -24,19 +24,14 @@ export primitives, operations, proofs
 type
   MantleTx* = object
     ops*: seq[Op]
-    permanentStorageGasPrice*: TokenValue
-    executionGasPrice*: TokenValue
 
   SignedMantleTx* = object
     tx*: MantleTx
     opProofs*: seq[OpProof]
 
 func encodeMantleTx*(tx: MantleTx): seq[byte] =
-  ## MantleTx = Ops || ExecutionGasPrice || StorageGasPrice
-  var res = encodeOps(tx.ops)
-  res.add(encodeLe(uint64(tx.executionGasPrice)))
-  res.add(encodeLe(uint64(tx.permanentStorageGasPrice)))
-  res
+  ## MantleTx = OpCount (u8) || *Op
+  encodeOps(tx.ops)
 
 func encodeSignedMantleTx*(signedTx: SignedMantleTx): seq[byte] =
   ## SignedMantleTx = MantleTx || OpsProofs
@@ -50,14 +45,8 @@ func decodeMantleTx*(data: openArray[byte]): MantleTx {.raises: [DecodingError].
   var ops = newSeqOfCap[Op](count)
   for _ in 0 ..< int(count):
     ops.add readOp(data, pos)
-  let executionGasPrice = TokenValue(readLe[uint64](data, pos))
-  let permanentStorageGasPrice = TokenValue(readLe[uint64](data, pos))
   finishDecode(data, pos)
-  MantleTx(
-    ops: ops,
-    executionGasPrice: executionGasPrice,
-    permanentStorageGasPrice: permanentStorageGasPrice,
-  )
+  MantleTx(ops: ops)
 
 func decodeSignedMantleTx*(data: openArray[byte]): SignedMantleTx {.raises: [DecodingError].} =
   var pos = 0
@@ -65,17 +54,13 @@ func decodeSignedMantleTx*(data: openArray[byte]): SignedMantleTx {.raises: [Dec
   var ops = newSeqOfCap[Op](count)
   for _ in 0 ..< int(count):
     ops.add readOp(data, pos)
-  let executionGasPrice = TokenValue(readLe[uint64](data, pos))
-  let permanentStorageGasPrice = TokenValue(readLe[uint64](data, pos))
-  let tx = MantleTx(
-    ops: ops,
-    executionGasPrice: executionGasPrice,
-    permanentStorageGasPrice: permanentStorageGasPrice,
-  )
+  let tx = MantleTx(ops: ops)
   let opProofs =
-    if pos < data.len:
+    if ops.len == 0:
+      @[]
+    elif pos < data.len:
       decodeOpsProofs(ops, data[pos .. data.high])
     else:
-      @[]
+      raise newException(DecodingError, "SignedMantleTx: missing OpsProofs")
   SignedMantleTx(tx: tx, opProofs: opProofs)
 {.pop.}
