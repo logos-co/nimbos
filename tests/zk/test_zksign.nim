@@ -27,7 +27,7 @@ const
 proc uniqueTmpDir(tag: string): string =
   getTempDir() / ("nimbos_zksign_" & tag & "_" & $epochTime())
 
-proc seedFr(seed: byte): FieldElement =
+func seedFr(seed: byte): FieldElement =
   var b: array[32, byte]
   b[0] = seed
   frFromBytesLE(b).get
@@ -154,20 +154,16 @@ suite "zk/zksign — zksignInput shape and padding":
 
 proc loadFixtureProof(): array[ProofBytesLen, byte] =
   let proofText = readAllChars(fixtureProof).valueOr:
-    doAssert false, "zksign fixture proof.json unreadable"
-    return
+    raiseAssert "zksign fixture proof.json unreadable"
   proofJsonToBytes(proofText).valueOr:
-    doAssert false, "zksign fixture proof.json malformed"
-    return
+    raiseAssert "zksign fixture proof.json malformed"
 
 proc loadFixturePublic(): ZkSignVerifierInput =
   let
     publicText = readAllChars(fixturePublic).valueOr:
-      doAssert false, "zksign fixture public.json unreadable"
-      return
+      raiseAssert "zksign fixture public.json unreadable"
     inputs = publicJsonToInputs(publicText).valueOr:
-      doAssert false, "zksign fixture public.json malformed"
-      return
+      raiseAssert "zksign fixture public.json malformed"
   doAssert inputs.len == ZkSignMaxKeys + 1,
     "zksign fixture public.json must have exactly 33 entries"
   result.msg = inputs[ZkSignMaxKeys]

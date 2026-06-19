@@ -62,7 +62,6 @@ proc tryApplyTx*(
 ): Result[tuple[state: LedgerState, balance: Balance], LedgerError] =
   ## Applies one transaction; returns the new state and the tx's net balance
   ## (sum of per-op balances).
-
   if tx.tx.ops.len != tx.opProofs.len:
     return err(InvalidProof)
 

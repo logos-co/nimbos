@@ -69,7 +69,6 @@ proc zkPublicKeyFromSecret*(sk: FieldElement): ZkPublicKey =
   ## Circuit-equivalent zksign key derivation: PK = Poseidon2.compress(KDF, sk).
   Poseidon2Hasher.compress(KDF, sk)
 
-
 func encodeLe*[T: SomeUnsignedInt](value: T): array[sizeof(T), byte] =
   value.toBytesLE()
 

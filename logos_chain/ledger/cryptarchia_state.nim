@@ -51,7 +51,7 @@ func latestUtxos*(s: CryptarchiaState): lent UtxoStore =
 func `==`*(a, b: CryptarchiaState): bool =
   a.utxos == b.utxos
 
-proc applyTransferState*(
+func applyTransferState*(
     s: sink CryptarchiaState,
     lockedNotes: LockedNotes,
     op: TransferPayload,

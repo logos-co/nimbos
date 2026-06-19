@@ -30,24 +30,21 @@ proc installZksignVk*(vkPath: string): bool =
 
 proc loadProof*(proofPath: string): ZkSigProof =
   ## Read a snarkjs `proof.json` and decode to the 128-byte on-wire
-  ## ZkSig proof. doAsserts on read or parse failure since tests can't recover.
+  ## ZkSig proof. Raises `AssertionDefect` on read/parse failure since
+  ## tests can't recover.
   let proofText = readAllChars(proofPath).valueOr:
-    doAssert false, "proof.json unreadable: " & proofPath
-    return
+    raiseAssert "proof.json unreadable: " & proofPath
   proofJsonToBytes(proofText).valueOr:
-    doAssert false, "proof.json malformed: " & proofPath
-    return
+    raiseAssert "proof.json malformed: " & proofPath
 
 proc loadTxHash*(publicPath: string): ZkHash =
   ## Last entry of a zksign `public.json` is the signed Fr; return its 32-byte
   ## LE encoding — the wire shape `tryApplyTransfer` expects as `txHash`.
   let
     publicText = readAllChars(publicPath).valueOr:
-      doAssert false, "public.json unreadable: " & publicPath
-      return
+      raiseAssert "public.json unreadable: " & publicPath
     inputs = publicJsonToInputs(publicText).valueOr:
-      doAssert false, "public.json malformed: " & publicPath
-      return
+      raiseAssert "public.json malformed: " & publicPath
   doAssert inputs.len == 33,
     "public.json must have 33 entries: " & publicPath
   encodeFieldElement(inputs[32])
