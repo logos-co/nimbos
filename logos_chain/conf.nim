@@ -245,7 +245,7 @@ type
       hardMaxPeers* {.
         desc: "The maximum number of peers to connect to. Defaults to maxPeers * 1.5"
         name: "hard-max-peers" .}: Option[int]
-      
+
       # TODO(logos-chain-networking): replace this eth-net NatConfig field with a
       # Logos-native public-address/reachability configuration type. Current UX
       # is confusing: setting a plain public IP via `extip:<IP>` hangs off the
@@ -274,14 +274,6 @@ type
         defaultValue: true
         name: "sync-light-client" .}: bool
 
-      finalizedCheckpointState* {.
-        desc: "SSZ file specifying a recent finalized state"
-        name: "finalized-checkpoint-state" .}: Option[InputFile]
-
-      genesisState* {.
-        desc: "SSZ file specifying the genesis state of the network (for networks without a built-in genesis state)"
-        name: "genesis-state" .}: Option[InputFile]
-
       genesisStateUrl* {.
         desc: "URL for obtaining the genesis state of the network (for networks without a built-in genesis state)"
         name: "genesis-state-url" .}: Option[Uri]
@@ -289,11 +281,6 @@ type
       finalizedDepositTreeSnapshot* {.
         hidden
         name: "finalized-deposit-tree-snapshot" .}: Option[InputFile]
-
-      finalizedCheckpointBlock* {.
-        hidden
-        desc: "SSZ file specifying a recent finalized block"
-        name: "finalized-checkpoint-block" .}: Option[InputFile]
 
       nodeName* {.
         desc: "A name for this node that will appear in the logs. " &

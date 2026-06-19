@@ -259,12 +259,6 @@ declareCounter nbc_gossip_messages_sent,
 declareCounter nbc_gossip_messages_received,
   "Number of gossip messages received by this peer"
 
-declareCounter nbc_gossip_failed_snappy,
-  "Number of gossip messages that failed snappy decompression"
-
-declareCounter nbc_gossip_failed_ssz,
-  "Number of gossip messages that failed SSZ parsing"
-
 declareCounter nbc_successful_dials,
   "Number of successfully dialed peers"
 
@@ -2122,12 +2116,10 @@ func addValidator*[MsgType](
       try:
         msgValidator(SSZ.decode(message.data, MsgType), message.fromPeer) # doesn't raise!
       except SerializationError as e:
-        inc nbc_gossip_failed_ssz
         debug "Error decoding gossip",
           topic, len = message.data.len, error = e.msg
         ValidationResult.Reject
     else:
-      inc nbc_gossip_failed_snappy
       debug "Error decoding gossip", topic, len = message.data.len
       ValidationResult.Reject
 
@@ -2152,12 +2144,10 @@ proc addAsyncValidator*[MsgType](
       try:
         msgValidator(SSZ.decode(message.data, MsgType), message.fromPeer) # doesn't raise!
       except SerializationError as e:
-        inc nbc_gossip_failed_ssz
         debug "Error decoding gossip",
           topic, len = message.data.len, error = e.msg
         newValidationResultFuture(ValidationResult.Reject)
     else:
-      inc nbc_gossip_failed_snappy
       debug "Error decoding gossip", topic, len = message.data.len
       newValidationResultFuture(ValidationResult.Reject)
 

@@ -13,10 +13,9 @@ import
   stew/[base10, byteutils],
   libp2p/peerid,
   presto/common as presto_common,
-  ssz_serialization,
   ./rest_json
 
-export peerid, presto_common, rest_json, ssz_serialization
+export peerid, presto_common, rest_json
 
 func decodeMediaType*(
     contentType: Opt[ContentTypeData]): Result[MediaType, string] =
@@ -327,38 +326,6 @@ proc jsonErrorList*(_: typedesc[RestApiResponse],
 
   RestApiResponse.error(status, data, "application/json")
 
-proc sszResponsePlain*(
-    _: typedesc[RestApiResponse],
-    res: seq[byte],
-    hasRestAllowedOrigin: bool): RestApiResponse =
-  let headers = ethHeaders(hasRestAllowedOrigin)
-  RestApiResponse.response(
-    res, Http200, "application/octet-stream", headers = headers)
-
-proc sszResponse*(
-    _: typedesc[RestApiResponse],
-    data: auto,
-    hasRestAllowedOrigin: bool): RestApiResponse =
-  let
-    res = SSZ.encode(data)
-    headers = ethHeaders(hasRestAllowedOrigin)
-  RestApiResponse.response(
-    res, Http200, "application/octet-stream", headers = headers)
-
-proc sszResponse*(
-    _: typedesc[RestApiResponse],
-    data: auto,
-    isBlinded: bool,
-    executionValue: UInt256,
-    consensusValue: UInt256,
-    hasRestAllowedOrigin: bool): RestApiResponse =
-  let
-    res = SSZ.encode(data)
-    headers = ethHeaders(
-      isBlinded, executionValue, consensusValue, hasRestAllowedOrigin)
-  RestApiResponse.response(
-    res, Http200, "application/octet-stream", headers = headers)
-
 proc decodeBody*(T: typedesc, body: ContentBody): Result[T, cstring] =
   if body.contentType != ApplicationJsonMediaType:
     return err("Unsupported content type")
@@ -367,27 +334,6 @@ proc decodeBody*(T: typedesc, body: ContentBody): Result[T, cstring] =
     ok RestJson.decode(body.data, T)
   except SerializationError as exc:
     err("Unable to deserialize data")
-
-proc decodeBodyJsonOrSsz*(T: typedesc,
-                          body: ContentBody): Result[T, RestErrorMessage] =
-  if body.contentType == ApplicationJsonMediaType:
-    try:
-      ok RestJson.decode(body.data, T)
-    except SerializationError as exc:
-      debug "Failed to decode JSON data",
-            err = exc.formatMsg("<data>"),
-            data = string.fromBytes(body.data)
-      err(RestErrorMessage.init(Http400, UnableDecodeError,
-                                [exc.formatMsg("<data>")]))
-  elif body.contentType == OctetStreamMediaType:
-    try:
-      ok SSZ.decode(body.data, T)
-    except SerializationError as exc:
-      err(RestErrorMessage.init(Http400, UnableDecodeError,
-                                [exc.formatMsg("<data>")]))
-  else:
-    err(RestErrorMessage.init(Http415, InvalidContentTypeError,
-                              [$body.contentType]))
 
 proc encodeBytes*[T: EncodeTypes](value: T,
                                   contentType: string): RestResult[seq[byte]] =

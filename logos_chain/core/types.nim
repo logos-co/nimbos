@@ -65,8 +65,8 @@ func hashPair*(left, right: Hash32): Hash32 =
 
 func createBlockRoot*(txs: openArray[SignedMantleTx]): Hash32 =
   ## Computes Merkle root over tx hashes (in block order).
-  ## Pads the leaf layer to the next power of two with zero ``Hash32`` leaves
-  ## (SSZ-style), then pairs ``left || right`` with BLAKE2b-256.
+  ## Pads the leaf layer to the next power of two with zero ``Hash32`` leaves,
+  ## then pairs ``left || right`` with BLAKE2b-256.
   ## TODO: confirm empty-root rule and domain separation against Nomos spec.
   doAssert txs.len <= MaxBlockTxs,
     "tx set exceeds MaxBlockTxs (" & $MaxBlockTxs & "): " & $txs.len
