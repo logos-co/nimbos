@@ -18,7 +18,7 @@ import
 import
   ../../logos_chain/ledger/
     [balance, cryptarchia_state, locked_notes, types, utxo_store],
-  ../../logos_chain/core/mantle/[primitives, operations, proofs, utxo],
+  ../../logos_chain/core/mantle/[primitives, operations, proofs, tx_hashing, utxo],
   ../../logos_chain/zk/zksign,
   ../zk/snarkjs_helpers,
   ../core/mantle/test_helpers
@@ -310,84 +310,64 @@ suite "tryApplyTransfer — happy paths (fixture-driven)":
     check s0.root == preRoot
     check s0.utxos.contains(input.id)
 
-# The two suites below need fixture data the 1-key vector doesn't cover:
-# - multi-input combine: two inputs → the prover would have to sign with
-#   `sks = [1, 1, 0*30]`, not the current `[1, 0*31]`. Requires a second
-#   2-key fixture.
-# - chain of txs: tx2 has 2 inputs derived from tx1's outputs (which use
-#   different pkSeeds), so tx2's pks differ from any pre-baked vector.
-#   Requires either a 2-key fixture or restructuring the test to a 1-input
-#   chain (which would change its semantics).
-when false:
-  suite "tryApplyTransfer — multi-input (needs 2-key fixture)":
-    test "multi-input combine (2 inputs, 1 output)":
-      let
-        a = mkUtxo(value = 60, pkSeed = 1)
-        b = mkUtxo(value = 40, pkSeed = 1, opIdSeed = 1)
-        s0 = CryptarchiaState.init([a, b])
-        op = TransferPayload(
-          inputs: Inputs(noteIds: @[a.id, b.id]),
-          outputs: Outputs(notes: @[mkNote(100, pkSeed = 2)]),
-        )
-        r = s0.tryApplyTransfer(
-          LockedNotes.init(),
-          op,
-          sig = default(ZkSigProof),
-          txHash = mkTxHash(),
-        )
-      check r.isOk
+# The suites below exercise state changes only — they call `applyTransferState`
+# directly so they don't need a real ZkSig fixture covering the input pks.
+suite "applyTransferState — multi-input":
+  test "multi-input combine (2 inputs, 1 output)":
+    let
+      a = mkUtxo(value = 60, pkSeed = 1)
+      b = mkUtxo(value = 40, pkSeed = 1, opIdSeed = 1)
+      s0 = CryptarchiaState.init([a, b])
+      op = TransferPayload(
+        inputs: Inputs(noteIds: @[a.id, b.id]),
+        outputs: Outputs(notes: @[mkNote(100, pkSeed = 2)]),
+      )
+      r = s0.applyTransferState(LockedNotes.init(), op)
+    check r.isOk
 
-      let (s1, balance) = r.get
-      check balance == Balance.zero
-      check s1.len == 1
-      check not s1.utxos.contains(a.id)
-      check not s1.utxos.contains(b.id)
+    let (s1, balance, pks) = r.get
+    check balance == Balance.zero
+    check s1.len == 1
+    check not s1.utxos.contains(a.id)
+    check not s1.utxos.contains(b.id)
+    check pks.len == 2
 
-  suite "tryApplyTransfer — chain (needs 2-key fixture)":
-    test "chain of txs: tx2 spends outputs created by tx1":
-      let
-        input = mkUtxo(value = 100, pkSeed = 1)
-        s0 = CryptarchiaState.init([input])
-        tx1 = TransferPayload(
-          inputs: Inputs(noteIds: @[input.id]),
-          outputs: Outputs(notes: @[mkNote(60, pkSeed = 2), mkNote(40, pkSeed = 3)]),
-        )
-        r1 = s0.tryApplyTransfer(
-          LockedNotes.init(),
-          tx1,
-          sig = default(ZkSigProof),
-          txHash = mkTxHash(seed = 0x11),
-        )
-      check r1.isOk
+suite "applyTransferState — chain":
+  test "chain of txs: tx2 spends outputs created by tx1":
+    let
+      input = mkUtxo(value = 100, pkSeed = 1)
+      s0 = CryptarchiaState.init([input])
+      tx1 = TransferPayload(
+        inputs: Inputs(noteIds: @[input.id]),
+        outputs: Outputs(notes: @[mkNote(60, pkSeed = 2), mkNote(40, pkSeed = 3)]),
+      )
+      r1 = s0.applyTransferState(LockedNotes.init(), tx1)
+    check r1.isOk
 
-      let
-        s1 = r1.get.state
-        tx1OpId = opId(tx1)
-        outUtxo0 =
-          Utxo(opId: tx1OpId, outputIndex: 0, note: mkNote(60, pkSeed = 2))
-        outUtxo1 =
-          Utxo(opId: tx1OpId, outputIndex: 1, note: mkNote(40, pkSeed = 3))
+    let
+      s1 = r1.get.state
+      tx1OpId = opId(tx1)
+      outUtxo0 =
+        Utxo(opId: tx1OpId, outputIndex: 0, note: mkNote(60, pkSeed = 2))
+      outUtxo1 =
+        Utxo(opId: tx1OpId, outputIndex: 1, note: mkNote(40, pkSeed = 3))
 
-      check s1.utxos.contains(outUtxo0.id)
-      check s1.utxos.contains(outUtxo1.id)
+    check s1.utxos.contains(outUtxo0.id)
+    check s1.utxos.contains(outUtxo1.id)
 
-      let
-        tx2 = TransferPayload(
-          inputs: Inputs(noteIds: @[outUtxo0.id, outUtxo1.id]),
-          outputs: Outputs(notes: @[mkNote(100, pkSeed = 4)]),
-        )
-        r2 = s1.tryApplyTransfer(
-          LockedNotes.init(),
-          tx2,
-          sig = default(ZkSigProof),
-          txHash = mkTxHash(seed = 0x22),
-        )
-      check r2.isOk
+    let
+      tx2 = TransferPayload(
+        inputs: Inputs(noteIds: @[outUtxo0.id, outUtxo1.id]),
+        outputs: Outputs(notes: @[mkNote(100, pkSeed = 4)]),
+      )
+      r2 = s1.applyTransferState(LockedNotes.init(), tx2)
+    check r2.isOk
 
-      let (s2, balance2) = r2.get
-      check balance2 == Balance.zero
-      check s2.len == 1
-      check not s2.utxos.contains(outUtxo0.id)
-      check not s2.utxos.contains(outUtxo1.id)
+    let (s2, balance2, pks2) = r2.get
+    check balance2 == Balance.zero
+    check s2.len == 1
+    check not s2.utxos.contains(outUtxo0.id)
+    check not s2.utxos.contains(outUtxo1.id)
+    check pks2.len == 2
 
 {.pop.}

@@ -209,8 +209,9 @@ suite "prepareUpdate — no-verify paths":
     check prepared.state.latestUtxos == parent.latestUtxos
     check l.state(id1).isNone # not committed
 
-# Suites below need verify-success against a real zksign proof. Re-enable when
-# committed fixtures land under `tests/fixtures/zksign/` (plan §6.6 C/E).
+# Suites below need a valid `OpProof` per transfer op — i.e. a zksign proof
+# generated for that op's input pks + tx hash. nimbos has no Nim-side prover
+# yet (only the verifier); re-enable these tests once a prover lands.
 when false:
   suite "tryApplyTx — happy path":
     test "single OpTransfer (balanced) returns balance == 0":

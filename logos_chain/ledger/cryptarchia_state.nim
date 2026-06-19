@@ -50,22 +50,21 @@ func latestUtxos*(s: CryptarchiaState): lent UtxoStore =
 func `==`*(a, b: CryptarchiaState): bool =
   a.utxos == b.utxos
 
-proc tryApplyTransfer*(
+proc applyTransferState*(
     s: sink CryptarchiaState,
     lockedNotes: LockedNotes,
     op: TransferPayload,
-    sig: ZkSigProof,
-    txHash: ZkHash,
-): Result[tuple[state: CryptarchiaState, balance: Balance], LedgerError] =
-  ## Applies a `TransferPayload` to the cryptarchia state.
-  ## Returns `(new_state, sum(inputs) − sum(outputs))`. The returned balance
-  ## may be positive (surplus → fees), zero (balanced), or negative (deficit).
+): Result[
+  tuple[state: CryptarchiaState, balance: Balance, pks: seq[ZkPublicKey]],
+  LedgerError,
+] =
+  ## Pure state transition for a `TransferPayload` — removes inputs, inserts
+  ## outputs, sums balance. No signature verify; the caller must run
+  ## `zksign.verify` over the returned `pks` ++ tx hash.
   var
     balance = Balance.zero
     pks = newSeqOfCap[ZkPublicKey](op.inputs.noteIds.len)
 
-  # Collect input pks *before* verify — the ZkSig public-input vector is
-  # `[notes[*].zkPublicKey ... ; txHash]`, so pks must be known up front.
   for inputId in op.inputs.noteIds:
     if lockedNotes.contains(inputId):
       return err(LockedNote)
@@ -75,19 +74,7 @@ proc tryApplyTransfer*(
     balance = ?balance.checkedAdd(i128(removedUtxo.note.value))
     pks.add(removedUtxo.note.zkPublicKey)
 
-  # `txHash` is a Poseidon2 digest — always in-field by construction, but
-  # decoded defensively to keep the failure path symmetric with the PoL seam.
-  let msgFr = frFromBytesLE(txHash).valueOr:
-    return err(InvalidProof)
-  let input = zksignInput(pks, msgFr).valueOr:
-    return err(InvalidProof)
-  let verified = zksign.verify(sig, input).valueOr:
-    return err(VerifierNotInitialised)
-  if not verified:
-    return err(InvalidProof)
-
   let transferOpId = opId(op)
-
   for i, outNote in op.outputs.notes:
     if outNote.value == 0:
       return err(ZeroValueNote)
@@ -95,6 +82,32 @@ proc tryApplyTransfer*(
     let u = Utxo(opId: transferOpId, outputIndex: uint64(i), note: outNote)
     s = CryptarchiaState(utxos: s.utxos.insert(u.id, u).store)
 
-  ok((s, balance))
+  ok((s, balance, pks))
+
+proc tryApplyTransfer*(
+    s: sink CryptarchiaState,
+    lockedNotes: LockedNotes,
+    op: TransferPayload,
+    sig: ZkSigProof,
+    txHash: ZkHash,
+): Result[tuple[state: CryptarchiaState, balance: Balance], LedgerError] =
+  ## Applies a `TransferPayload` to the cryptarchia state and verifies the
+  ## ZkSig over the collected input pks. Returns
+  ## `(new_state, sum(inputs) − sum(outputs))`. The returned balance may be
+  ## positive (surplus → fees), zero (balanced), or negative (deficit).
+  let r = ?s.applyTransferState(lockedNotes, op)
+
+  # `txHash` is a Poseidon2 digest — always in-field by construction, but
+  # decoded defensively to keep the failure path symmetric with the PoL seam.
+  let msgFr = frFromBytesLE(txHash).valueOr:
+    return err(InvalidProof)
+  let input = zksignInput(r.pks, msgFr).valueOr:
+    return err(InvalidProof)
+  let verified = zksign.verify(sig, input).valueOr:
+    return err(VerifierNotInitialised)
+  if not verified:
+    return err(InvalidProof)
+
+  ok((r.state, r.balance))
 
 {.pop.}
