@@ -11,9 +11,10 @@
 
 import results
 
-import ./[balance, types, locked_notes, utxo_store]
-import ../core/mantle/[primitives, operations, proofs, utxo, tx_hashing]
-import ../zk/zksign
+import
+  ./[balance, types, locked_notes, utxo_store],
+  ../core/mantle/[primitives, operations, proofs, utxo, tx_hashing],
+  ../zk/zksign
 
 export types, utxo, primitives, utxo_store
 
@@ -97,10 +98,9 @@ proc tryApplyTransfer*(
   ## positive (surplus → fees), zero (balanced), or negative (deficit).
   let r = ?s.applyTransferState(lockedNotes, op)
 
-  # `txHash` is a Poseidon2 digest — always in-field by construction, but
-  # decoded defensively to keep the failure path symmetric with the PoL seam.
-  let msgFr = frFromBytesLE(txHash).valueOr:
-    return err(InvalidProof)
+  # `txHash` is a Blake2b-256 digest that may exceed the BN254 field order;
+  # reduce mod p so the prover and verifier agree on the signed Fr.
+  let msgFr = frFromBytesLEModOrder(txHash)
   let input = zksignInput(r.pks, msgFr).valueOr:
     return err(InvalidProof)
   let verified = zksign.verify(sig, input).valueOr:

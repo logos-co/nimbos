@@ -15,6 +15,7 @@
 
 import
   json_serialization,
+  stew/io2,
   groth16/bn128,
   ../../logos_chain/zk/groth16/[utils, verifier]
 

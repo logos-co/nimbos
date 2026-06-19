@@ -12,7 +12,6 @@ import
   std/[os, strutils],
   unittest2,
   results,
-  stew/io2,
   poseidon2/types          # `==` for F
 
 import
@@ -20,7 +19,7 @@ import
     [balance, cryptarchia_state, locked_notes, types, utxo_store],
   ../../logos_chain/core/mantle/[primitives, operations, proofs, tx_hashing, utxo],
   ../../logos_chain/zk/zksign,
-  ../zk/snarkjs_helpers,
+  ../zk/zksign_helpers,
   ../core/mantle/test_helpers
 
 const
@@ -29,36 +28,6 @@ const
   fixtureVk = zksignFixtureDir / "verification_key.json"
   fixtureProof = zksignFixtureDir / "proof.json"
   fixturePublic = zksignFixtureDir / "public.json"
-
-proc installFixtureZksignVk(): bool =
-  zksign.resetVkForTesting()
-  let
-    vkText = readAllChars(fixtureVk).valueOr:
-      return false
-    vk = parseVk(vkText).valueOr:
-      return false
-  zksign.initVk(vk).isOk
-
-proc loadFixtureProof(): ZkSigProof =
-  let proofText = readAllChars(fixtureProof).valueOr:
-    doAssert false, "zksign fixture proof.json unreadable"
-    return
-  proofJsonToBytes(proofText).valueOr:
-    doAssert false, "zksign fixture proof.json malformed"
-    return
-
-proc loadFixtureTxHash(): ZkHash =
-  ## Last entry of `public.json` is the Poseidon2 digest the fixture signed.
-  ## Encode it as 32 LE bytes — the wire shape `tryApplyTransfer` expects.
-  let
-    publicText = readAllChars(fixturePublic).valueOr:
-      doAssert false, "zksign fixture public.json unreadable"
-      return
-    inputs = publicJsonToInputs(publicText).valueOr:
-      doAssert false, "zksign fixture public.json malformed"
-      return
-  doAssert inputs.len == 33
-  encodeFieldElement(inputs[32])
 
 suite "CryptarchiaState init":
   test "empty init has no utxos":
@@ -101,12 +70,8 @@ suite "CryptarchiaState reads":
     check s.latestUtxos == s.utxos
 
 suite "tryApplyTransfer — error paths":
-  # Production zksign VK + a deliberately-invalid (zero-byte) proof. The
-  # input-failure tests (LockedNote, InvalidNote) short-circuit before
-  # verify is reached; the bad-signature test relies on the verifier
-  # rejecting the malformed proof and returning `InvalidProof`.
   setup:
-    check installFixtureZksignVk()
+    check installZksignVk(fixtureVk)
 
   test "missing input → InvalidNote (three shapes)":
     let
@@ -186,20 +151,20 @@ suite "tryApplyTransfer — error paths":
     check r.error == VerifierNotInitialised
 
 suite "tryApplyTransfer — happy paths (fixture-driven)":
-  # All tests in this suite use the 1-key zksign fixture (`PK(SK=1)`-signed,
-  # message = Poseidon2(b"nimbos-test-vector")). Inputs are constructed with
-  # `mkUtxoWithPk(mkRealZkPubKey(1), ...)` so the collected pks vector matches
-  # what the prover signed; the fixture's msg + proof get passed verbatim.
+  # All tests in this suite use the 1-key zksign fixture (`PK(SK=1)`-signed).
+  # Inputs are constructed with `mkUtxoWithPk(mkRealZkPubKey(1), ...)` so the
+  # collected pks vector matches what the prover signed; the fixture's msg +
+  # proof get passed verbatim.
   var
     signerPk: ZkPublicKey
     sig: ZkSigProof
     txHash: ZkHash
 
   setup:
-    check installFixtureZksignVk()
+    check installZksignVk(fixtureVk)
     signerPk = mkRealZkPubKey(1)
-    sig = loadFixtureProof()
-    txHash = loadFixtureTxHash()
+    sig = loadProof(fixtureProof)
+    txHash = loadTxHash(fixturePublic)
 
   test "1-in / 1-out same value":
     let
@@ -310,8 +275,6 @@ suite "tryApplyTransfer — happy paths (fixture-driven)":
     check s0.root == preRoot
     check s0.utxos.contains(input.id)
 
-# The suites below exercise state changes only — they call `applyTransferState`
-# directly so they don't need a real ZkSig fixture covering the input pks.
 suite "applyTransferState — multi-input":
   test "multi-input combine (2 inputs, 1 output)":
     let

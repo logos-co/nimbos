@@ -20,15 +20,15 @@ import
   ../../logos_chain/core/mantle/[primitives, operations, proofs, tx_types, utxo],
   ../../logos_chain/core/types,
   ../../logos_chain/zk/pol,
+  ../zk/[snarkjs_helpers, zksign_helpers],
   ../core/mantle/test_helpers
 
 const
   testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
   fixtureVk = testsDir / "../fixtures/pol/verification_key.json"
-
-# Suites that exercise verify-success (happy paths, balance/chain, IBD) are
-# deferred until committed zksign fixtures under `tests/fixtures/zksign/`
-# land — see plan §6.6 C/E.
+  zksignFixtureDir = testsDir / "../fixtures/zksign"
+  zksignFixtureVk = zksignFixtureDir / "verification_key.json"
+  transferProofPath = zksignFixtureDir / "proof.json"
 
 suite "LedgerState constructors and reads":
   test "fromUtxos with empty seq → empty state":
@@ -209,22 +209,45 @@ suite "prepareUpdate — no-verify paths":
     check prepared.state.latestUtxos == parent.latestUtxos
     check l.state(id1).isNone # not committed
 
+suite "tryApplyTx — happy path (Rust-generated fixture)":
+  # Uses a pre-generated proof tied to this exact tx shape. Any change to
+  # the inputs/outputs/values requires regenerating the fixture.
+  setup:
+    check installZksignVk(zksignFixtureVk)
+
+  test "single OpTransfer (balanced) verifies and clears the input":
+    let
+      input = mkUtxoWithPk(mkRealZkPubKey(1), value = 100)
+      s0 = LedgerState.fromUtxos([input])
+      outputNote = Note(value: 100, zkPublicKey: default(ZkPublicKey))
+      tx = SignedMantleTx(
+        tx: MantleTx(
+          ops:
+            @[
+              createTransferOp(
+                TransferPayload(
+                  inputs: Inputs(noteIds: @[input.id]),
+                  outputs: Outputs(notes: @[outputNote]),
+                )
+              )
+            ],
+        ),
+        opProofs: @[
+          OpProof(kind: opfTransfer, transferProof: loadProof(transferProofPath)),
+        ],
+      )
+      r = s0.tryApplyTx(tx, LockedNotes.init())
+    check r.isOk
+
+    let res = r.get
+    check res.balance == Balance.zero
+    check res.state.latestUtxos.len == 1
+    check not res.state.latestUtxos.contains(input.id)
+
 # Suites below need a valid `OpProof` per transfer op — i.e. a zksign proof
 # generated for that op's input pks + tx hash. nimbos has no Nim-side prover
 # yet (only the verifier); re-enable these tests once a prover lands.
 when false:
-  suite "tryApplyTx — happy path":
-    test "single OpTransfer (balanced) returns balance == 0":
-      let
-        input = mkUtxo(value = 100, pkSeed = 1)
-        s0 = LedgerState.fromUtxos([input])
-        tx = mkTransferTx([input.id], [mkNote(100, pkSeed = 2)])
-        r = s0.tryApplyTx(tx, LockedNotes.init())
-      check r.isOk
-      let res = r.get
-      check res.balance == Balance.zero
-      check res.state.latestUtxos.len == 1
-
   suite "tryApplyTx — multi-op":
     test "two balanced Transfer ops → balance == 0, both applied":
       let
