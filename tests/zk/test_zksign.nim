@@ -59,8 +59,7 @@ suite "zk/zksign — loadVk":
     let
       dir = uniqueTmpDir("good-vk")
       vkBytes = readAllChars(fixtureVk).valueOr:
-        check false
-        return
+        raiseAssert "zksign fixture VK unreadable"
     check createPath(dir / "zksign").isOk
     check io2.writeFile(dir / "zksign" / "verification_key.json", vkBytes).isOk
     let r = loadVk(dir)
@@ -77,11 +76,9 @@ suite "zk/zksign — singleton lifecycle":
 
   test "double initVk returns VkAlreadyLoaded":
     let vkText = readAllChars(fixtureVk).valueOr:
-      check false
-      return
+      raiseAssert "zksign fixture VK unreadable"
     let vk = parseVk(vkText).valueOr:
-      check false
-      return
+      raiseAssert "zksign fixture VK unparseable"
     check zksign.initVk(vk).isOk
     check zksign.initVk(vk).error == VkAlreadyLoaded
 
@@ -89,19 +86,16 @@ suite "zk/zksign — singleton lifecycle":
     let
       dir = uniqueTmpDir("compose-vk")
       vkBytes = readAllChars(fixtureVk).valueOr:
-        check false
-        return
+        raiseAssert "zksign fixture VK unreadable"
     check createPath(dir / "zksign").isOk
     check io2.writeFile(dir / "zksign" / "verification_key.json", vkBytes).isOk
     check zksign.loadAndInitVk(dir).isOk
 
   test "resetVkForTesting clears prior install":
     let vkText = readAllChars(fixtureVk).valueOr:
-      check false
-      return
+      raiseAssert "zksign fixture VK unreadable"
     let vk = parseVk(vkText).valueOr:
-      check false
-      return
+      raiseAssert "zksign fixture VK unparseable"
     check zksign.initVk(vk).isOk
     zksign.resetVkForTesting()
     check zksign.initVk(vk).isOk
@@ -178,11 +172,9 @@ suite "zk/zksign — verify against committed fixture":
     zksign.resetVkForTesting()
     let
       vkText = readAllChars(fixtureVk).valueOr:
-        check false
-        return
+        raiseAssert "zksign fixture VK unreadable"
       vk = parseVk(vkText).valueOr:
-        check false
-        return
+        raiseAssert "zksign fixture VK unparseable"
     check zksign.initVk(vk).isOk
     proofBytes = loadFixtureProof()
     input = loadFixturePublic()
