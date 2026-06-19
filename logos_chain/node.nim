@@ -45,14 +45,6 @@ type
 template rng*(node: LBNode): ref HmacDrbgContext =
   node.network.rng
 
-# Install a single circuit's VK or fatal-log and bail. Requires `circuitsDir`
-# in scope at the call site and an enclosing proc returning `Opt[LBNode]`.
-template loadVkOrFatal(circuit, pathFn: untyped, name: string) =
-  circuit.loadAndInitVk(circuitsDir).isOkOr:
-    fatal name & " verification key install failed",
-      path = pathFn(circuitsDir), err = $error
-    return Opt.none(LBNode)
-
 proc initFullNode(
     node: LBNode,
     rng: ref HmacDrbgContext,
@@ -90,8 +82,15 @@ proc init*(
       hint = "Run scripts/setup-logos-blockchain-circuits.sh"
     return Opt.none(LBNode)
 
-  loadVkOrFatal(pol, polVerificationKeyPath, "PoL")
-  loadVkOrFatal(zksign, zksignVerificationKeyPath, "ZkSig")
+  pol.loadAndInitVk(circuitsDir).isOkOr:
+    fatal "PoL verification key install failed",
+      path = polVerificationKeyPath(circuitsDir), err = $error
+    return Opt.none(LBNode)
+
+  zksign.loadAndInitVk(circuitsDir).isOkOr:
+    fatal "ZkSig verification key install failed",
+      path = zksignVerificationKeyPath(circuitsDir), err = $error
+    return Opt.none(LBNode)
 
   let chain = Chain.init(deploymentSettings).valueOr:
     fatal "Failed to initialize chain", err = error
