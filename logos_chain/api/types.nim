@@ -1,5 +1,5 @@
 # nimbos
-# Copyright (c) 2018-2026 Status Research & Development GmbH
+# Copyright (c) 2026 Status Research & Development GmbH
 # Licensed and distributed under either of
 #   * MIT license (license terms in the root directory or at https://opensource.org/licenses/MIT).
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
@@ -30,9 +30,6 @@ const
   # requests. Validator ids are sent in decimal encoding with comma, so
   # number of ids should not exceed beacon node's `rest-max-body-size`.
   DutiesMaximumValidatorIds* = 16384
-
-const
-  preferSSZ* = "application/octet-stream,application/json;q=0.9"
 
 type
   PeerStateKind* {.pure.} = enum

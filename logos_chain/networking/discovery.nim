@@ -13,7 +13,6 @@ import
   libp2p/[peerinfo, multiaddress, multicodec],
   eth/common/keys,
   eth/p2p/discoveryv5/[protocol, node, random2],
-  ssz_serialization,
   ../conf
 
 from std/os import splitFile
