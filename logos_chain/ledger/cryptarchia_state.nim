@@ -11,8 +11,10 @@
 
 import results
 
-import ./[balance, types, locked_notes, zk_verifier, utxo_store]
-import ../core/mantle/[primitives, operations, proofs, utxo, tx_hashing]
+import
+  ./[balance, types, locked_notes, utxo_store],
+  ../core/mantle/[primitives, operations, proofs, utxo, tx_hashing],
+  ../zk/zksign
 
 export types, utxo, primitives, utxo_store
 
@@ -49,23 +51,20 @@ func latestUtxos*(s: CryptarchiaState): lent UtxoStore =
 func `==`*(a, b: CryptarchiaState): bool =
   a.utxos == b.utxos
 
-func tryApplyTransfer*(
+func applyTransferState*(
     s: sink CryptarchiaState,
     lockedNotes: LockedNotes,
     op: TransferPayload,
-    sig: ZkSigProof,
-    txHash: ZkHash,
-    verifier: ZkSigVerifier,
-): Result[tuple[state: CryptarchiaState, balance: Balance], LedgerError] =
-  ## Applies a `TransferPayload` to the cryptarchia state.
-  ## Returns `(new_state, sum(inputs) − sum(outputs))`. The returned balance
-  ## may be positive (surplus → fees), zero (balanced), or negative (deficit).
+): Result[
+  tuple[state: CryptarchiaState, balance: Balance, pks: seq[ZkPublicKey]],
+  LedgerError,
+] =
+  ## Pure state transition for a `TransferPayload`, removes inputs, inserts
+  ## outputs, sums balance. No signature verify; the caller must run
+  ## `zksign.verify` over the returned `pks` ++ tx hash.
   var
     balance = Balance.zero
     pks = newSeqOfCap[ZkPublicKey](op.inputs.noteIds.len)
-
-  if not verifier(pks, txHash, sig):
-    return err(InvalidProof)
 
   for inputId in op.inputs.noteIds:
     if lockedNotes.contains(inputId):
@@ -76,9 +75,7 @@ func tryApplyTransfer*(
     balance = ?balance.checkedAdd(i128(removedUtxo.note.value))
     pks.add(removedUtxo.note.zkPublicKey)
 
-
   let transferOpId = opId(op)
-
   for i, outNote in op.outputs.notes:
     if outNote.value == 0:
       return err(ZeroValueNote)
@@ -86,6 +83,31 @@ func tryApplyTransfer*(
     let u = Utxo(opId: transferOpId, outputIndex: uint64(i), note: outNote)
     s = CryptarchiaState(utxos: s.utxos.insert(u.id, u).store)
 
-  ok((s, balance))
+  ok((s, balance, pks))
+
+proc tryApplyTransfer*(
+    s: sink CryptarchiaState,
+    lockedNotes: LockedNotes,
+    op: TransferPayload,
+    sig: ZkSigProof,
+    txHash: ZkHash,
+): Result[tuple[state: CryptarchiaState, balance: Balance], LedgerError] =
+  ## Applies a `TransferPayload` to the cryptarchia state and verifies the
+  ## ZkSig over the collected input pks. Returns
+  ## `(new_state, sum(inputs) − sum(outputs))`. The returned balance may be
+  ## positive (surplus → fees), zero (balanced), or negative (deficit).
+  let r = ?s.applyTransferState(lockedNotes, op)
+
+  # `txHash` is a Blake2b-256 digest that may exceed the BN254 field order;
+  # reduce mod p so the prover and verifier agree on the signed Fr.
+  let msgFr = frFromBytesLEModOrder(txHash)
+  let input = zksignInput(r.pks, msgFr).valueOr:
+    return err(InvalidProof)
+  let verified = zksign.verify(sig, input).valueOr:
+    return err(VerifierNotInitialised)
+  if not verified:
+    return err(InvalidProof)
+
+  ok((r.state, r.balance))
 
 {.pop.}

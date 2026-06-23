@@ -5,7 +5,7 @@
 # Usage: ./setup-logos-blockchain-circuits.sh [VERSION] [INSTALL_DIR]
 #
 # Arguments:
-#   VERSION      - Optional. Version to install (default: v0.4.2)
+#   VERSION      - Optional. Version to install (default: v0.5.1)
 #   INSTALL_DIR  - Optional. Installation directory.
 #                  Default follows the XDG Base Directory Spec:
 #                    Linux:  $XDG_DATA_HOME/logos-blockchain-circuits/<VERSION>
@@ -16,13 +16,13 @@
 #
 # Examples:
 #   ./setup-logos-blockchain-circuits.sh                    # Install default version to default location
-#   ./setup-logos-blockchain-circuits.sh v0.4.2             # Install specific version to default location
-#   ./setup-logos-blockchain-circuits.sh v0.4.2 /opt/circuits  # Install to custom location
+#   ./setup-logos-blockchain-circuits.sh v0.5.1             # Install specific version to default location
+#   ./setup-logos-blockchain-circuits.sh v0.5.1 /opt/circuits  # Install to custom location
 
 set -e
 
 # Default values
-VERSION="${1:-v0.4.2}"
+VERSION="${1:-v0.5.1}"
 
 # XDG Base Directory Spec: treat empty XDG_DATA_HOME as unset (covered by `:-`)
 # and treat non-absolute values as invalid.
