@@ -1332,7 +1332,7 @@ proc onConnEvent(
       peer.connectionState = ConnectionState.Disconnected
 
 proc new(T: type LBP2PNode,
-         config: LBNodeConf,
+         config: NetworkConfig,
          switch: Switch, pubsub: GossipSub,
          announcedAddresses: openArray[MultiAddress],
          bootstrapPeers: openArray[PeerAddr],
@@ -1718,7 +1718,7 @@ func quicEndPoint(address: IpAddress, port: Port): Result[MultiAddress, string] 
   except MaError as exc:
     err(exc.msg)
 
-proc loadBootstrapPeers(config: LBNodeConf): seq[PeerAddr] =
+proc loadBootstrapPeers(config: NetworkConfig): seq[PeerAddr] =
   var peers: seq[PeerAddr]
   for (peerId, maddr) in loadBootstrapNodes(config):
     peers.add(PeerAddr(peerId: peerId, addrs: @[maddr]))
@@ -1743,7 +1743,7 @@ func gossipId(data: openArray[byte], topic: string): seq[byte] =
   ctx.finish().data[0..19]
 
 proc newBeaconSwitch(
-    config: LBNodeConf,
+    config: NetworkConfig,
     seckey: PrivateKey,
     address: MultiAddress,
     rng: ref HmacDrbgContext,
@@ -1765,7 +1765,7 @@ proc newBeaconSwitch(
     # rejects that session over QUIC, so allow headroom for the dial-back.
     .withMaxConnsPerPeer(2)
     .withAutonatV2Server(
-      AutonatV2Config.new(allowPrivateAddresses = autonatAllowPrivateAddresses(config))
+      AutonatV2Config.new(allowPrivateAddresses = config.autonatAllowPrivateAddresses)
     )
     # Do not probe on PeerEventKind.Joined: bootstrap dials complete before the
     # peer-pool handshake finishes, and concurrent dial-back attempts fail (QUIC
@@ -1778,7 +1778,7 @@ proc newBeaconSwitch(
 
 proc createLBP2PNode*(
     rng: ref HmacDrbgContext,
-    config: LBNodeConf,
+    config: NetworkConfig,
     netKeys: NetKeyPair,
 ): Result[LBP2PNode, string] =
   let

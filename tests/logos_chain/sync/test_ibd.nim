@@ -35,51 +35,25 @@ proc runLbp2pIbdSyncTest(
 
   let chainClient = Chain.init(genesis)
 
-  let (confBootstrap, confClient, rngBootstrap, rngClient) =
-    makeBootstrapConfs(bootstrapPort, clientPort)
-
-  let bootstrapRes = createLBP2PNode(
-    rngBootstrap,
-    confBootstrap,
-    rngBootstrap[].getRandomNetKeys(),
-  )
-  check bootstrapRes.isOk
-  let bootstrap = bootstrapRes.get()
+  let peers = await createBootstrapPeers(bootstrapPort, clientPort)
   let bootstrapSyncer = Syncer.init(
-    bootstrap.switch, chainBootstrap, testChainSyncProtocol)
-  await bootstrap.startListening()
+    peers.listener.switch, chainBootstrap, testChainSyncProtocol)
   bootstrapSyncer.start(@[])
 
   let
-    bootstrapPeerId = bootstrap.switch.peerInfo.peerId
-    bootstrapAddr =
-      "/ip4/127.0.0.1/udp/" & $bootstrapPort &
-      "/quic-v1/p2p/" & $bootstrapPeerId
-
-  var confClientWithBootstrap = confClient
-  confClientWithBootstrap.bootstrapNodes = @[bootstrapAddr]
-
-  let clientRes = createLBP2PNode(
-    rngClient,
-    confClientWithBootstrap,
-    rngClient[].getRandomNetKeys(),
-  )
-  check clientRes.isOk
-  let
-    client = clientRes.get()
-    clientSyncer = Syncer.init(client.switch, chainClient, testChainSyncProtocol)
+    clientSyncer = Syncer.init(peers.dialer.switch, chainClient, testChainSyncProtocol)
     waitAttempts = 150 + extraBlocks * 5
 
   try:
-    await client.start()
-    clientSyncer.start(client.bootstrapPeerIds)
+    await peers.dialer.start()
+    clientSyncer.start(peers.dialer.bootstrapPeerIds)
 
-    check await waitLibp2pConnected(client.switch, bootstrapPeerId)
+    check await waitLibp2pConnected(peers.dialer.switch, peers.listenerPeerId)
     check await waitLocalTreeBlock(chainClient.localTree, tipId, waitAttempts)
     check chainClient.localTree.localTipId == tipId
   finally:
-    await client.stop()
-    await bootstrap.stop()
+    await peers.dialer.stop()
+    await peers.listener.stop()
 
 suite "sync/initial_block_download (download blocks)":
   test "decodeBlocksFromDownloadResponses roundtrip (genesis wrapped in dbrBlock)":

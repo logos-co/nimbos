@@ -303,6 +303,19 @@ type
         defaultValueDesc: "<platform data>/logos-blockchain-circuits/<version>"
         name: "circuits-dir" .}: InputDir
 
+  ## Networking settings extracted from ``LBNodeConf`` at node startup and passed
+  ## to the libp2p stack without threading the full CLI config object.
+  NetworkConfig* = object
+    listenAddress*: Option[IpAddress]
+    quicPort*: Port
+    nat*: NatConfig
+    maxPeers*: int
+    hardMaxPeers*: Option[int]
+    agentString*: string
+    autonatAllowPrivateAddresses*: bool
+    bootstrapNodes*: seq[string]
+    bootstrapNodesFile*: InputFile
+
   AnyConf* = LBNodeConf
 
 func parseCmdArg*(T: type Uri, input: string): T
@@ -324,10 +337,20 @@ template databaseDir*(config: AnyConf): string =
 func runAsService*(config: LBNodeConf): bool =
   config.runAsServiceFlag
 
-func autonatAllowPrivateAddresses*(config: LBNodeConf): bool =
-  ## Testnets may advertise loopback/private addresses; mainnet AutoNAT dial-back
-  ## should only prove public reachability.
-  config.logosNetwork == Testnet
+proc networkConfig*(config: LBNodeConf): NetworkConfig =
+  NetworkConfig(
+    listenAddress: config.listenAddress,
+    quicPort: config.quicPort,
+    nat: config.nat,
+    maxPeers: config.maxPeers,
+    hardMaxPeers: config.hardMaxPeers,
+    agentString: config.agentString,
+    # Testnets may advertise loopback/private addresses; mainnet dial-back should
+    # only prove public reachability.
+    autonatAllowPrivateAddresses: config.logosNetwork == Testnet,
+    bootstrapNodes: config.bootstrapNodes,
+    bootstrapNodesFile: config.bootstrapNodesFile,
+  )
 
 template writeValue*(writer: var JsonWriter,
                      value: TypedInputFile|InputFile|InputDir|OutPath|OutDir|OutFile) =
