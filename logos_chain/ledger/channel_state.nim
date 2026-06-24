@@ -151,9 +151,8 @@ func applyChannelInscribe*(
 ): ChannelStore =
   ## Mutation only; assumes `validateChannelInscribe` passed. JIT-creates
   ## the channel if absent, then advances sequencer + tipMessage + tipSlot.
-  var chan =
-    if op.channelId in channels: channels.getOrDefault(op.channelId)
-    else: defaultChannel(blockSlot, [op.signer])
+  var chan = channels.getOrDefault(
+    op.channelId, defaultChannel(blockSlot, [op.signer]))
   let (newSeq, newStart) = roundRobin(blockSlot, chan)
   chan.tipSequencer = newSeq
   chan.tipSequencerStartingSlot = newStart
@@ -188,9 +187,8 @@ func applyChannelConfig*(
 ): ChannelStore =
   ## Mutation only; assumes `validateChannelConfig` passed. Overwrites the
   ## channel's keys/thresholds/rotation, or JIT-creates with `op.keys`.
-  var chan =
-    if op.channel in channels: channels.getOrDefault(op.channel)
-    else: defaultChannel(blockSlot, op.keys)
+  var chan = channels.getOrDefault(
+    op.channel, defaultChannel(blockSlot, op.keys))
   chan.accreditedKeys = op.keys
   chan.configurationThreshold = op.configurationThreshold
   chan.tipSequencer = 0

@@ -8,6 +8,8 @@
 {.push raises: [], gcsafe.}
 
 import
+  bearssl/rand,
+  libp2p/crypto/ed25519/ed25519,
   ../../../logos_chain/core/[types, crypto/hashing],
   ../../../logos_chain/core/mantle/
     [primitives, operations, proofs, tx_types, utxo],
@@ -76,5 +78,15 @@ func mkTransferTx*(
 
 func mkProof*(): ProofOfLeadership =
   default(ProofOfLeadership)
+
+proc mkEdKeyPair*(rng: ref HmacDrbgContext): EdKeyPair =
+  ## Random Ed25519 keypair. Caller provides the rng so all keypairs minted
+  ## within a single test share one source and remain reproducible-by-order.
+  EdKeyPair.random(rng[])
+
+func mkChannelId*(seed: byte): ChannelId =
+  var c: ChannelId
+  c[0] = seed
+  c
 
 {.pop.}

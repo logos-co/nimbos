@@ -95,29 +95,38 @@ suite "tryApplyTx — structural error paths":
         ),
         opProofs: @[],
       ) # zero proofs vs one op
-      r = s0.tryApplyTx(tx, LockedNotes.init())
+      r = s0.tryApplyTx(tx, LockedNotes.init(), slot = 0'u64)
     check r.isErr
     check r.error == InvalidProof
 
-  test "non-Transfer op → UnsupportedOp":
+  test "unsupported op (SdpDeclare) → UnsupportedOp":
+    # SDP ops aren't wired yet; the dispatcher's `else` arm still catches them.
+    # Switch this test if SDP lands.
     let
       s0 = LedgerState.fromUtxos(@[])
-      op = createChannelInscribeOp(
-        ChannelInscribePayload(
-          channelId: default(ChannelId),
-          inscription: @[],
-          parent: default(Parent),
-          signer: default(Signer),
+      op = createSdpDeclareOp(
+        SdpDeclarePayload(
+          serviceType: default(ServiceType),
+          locators: @[],
+          providerId: default(ProviderId),
+          zkId: default(ZkId),
+          lockedNoteId: default(LockedNoteId),
         )
       )
       tx = SignedMantleTx(
         tx: MantleTx(ops: @[op]),
         opProofs:
           @[
-            OpProof(kind: opfChannelInscribe, ed25519SigProof: default(Ed25519SigProof))
+            OpProof(
+              kind: opfSdpDeclare,
+              declarationProof: ZkAndEd25519SigsProof(
+                zkSig: DefaultZkSignature,
+                ed25519Sig: DefaultEd25519Signature,
+              ),
+            )
           ],
       )
-      r = s0.tryApplyTx(tx, LockedNotes.init())
+      r = s0.tryApplyTx(tx, LockedNotes.init(), slot = 0'u64)
     check r.isErr
     check r.error == UnsupportedOp
 
@@ -144,7 +153,7 @@ suite "tryApplyTx — structural error paths":
             )
           ],
       )
-      r = s0.tryApplyTx(tx, LockedNotes.init())
+      r = s0.tryApplyTx(tx, LockedNotes.init(), slot = 0'u64)
     check r.isErr
     check r.error == InvalidProof
 
@@ -234,7 +243,7 @@ suite "tryApplyTx — happy path (Rust-generated fixture)":
           OpProof(kind: opfTransfer, transferProof: loadProof(transferProofPath)),
         ],
       )
-      r = s0.tryApplyTx(tx, LockedNotes.init())
+      r = s0.tryApplyTx(tx, LockedNotes.init(), slot = 0'u64)
     check r.isOk
 
     let res = r.get
@@ -273,7 +282,7 @@ when false:
               OpProof(kind: opfTransfer, transferProof: default(ZkSigProof)),
             ],
         )
-        r = s0.tryApplyTx(tx, LockedNotes.init())
+        r = s0.tryApplyTx(tx, LockedNotes.init(), slot = 0'u64)
       check r.isOk
       let res = r.get
       check res.balance == Balance.zero
@@ -307,7 +316,7 @@ when false:
               OpProof(kind: opfChannelInscribe, ed25519SigProof: default(Ed25519SigProof)),
             ],
         )
-        r = s0.tryApplyTx(tx, LockedNotes.init())
+        r = s0.tryApplyTx(tx, LockedNotes.init(), slot = 0'u64)
       check r.isErr
       check r.error == InvalidProof
 
@@ -317,7 +326,7 @@ when false:
         input = mkUtxo(value = 100, pkSeed = 1)
         s0 = LedgerState.fromUtxos([input])
         tx = mkTransferTx([input.id], [mkNote(100, pkSeed = 2)])
-        r = s0.tryApplyTxns([tx], LockedNotes.init())
+        r = s0.tryApplyTxns([tx], LockedNotes.init(), slot = 0'u64)
       check r.isOk
       check r.get.latestUtxos.len == 1
 
@@ -327,7 +336,7 @@ when false:
         s0 = LedgerState.fromUtxos([input])
         tx = mkTransferTx([input.id], [mkNote(60, pkSeed = 2), mkNote(50, pkSeed = 3)])
           # sum 110 > input 100
-        r = s0.tryApplyTxns([tx], LockedNotes.init())
+        r = s0.tryApplyTxns([tx], LockedNotes.init(), slot = 0'u64)
       check r.isErr
       check r.error == InsufficientBalance
 
@@ -336,7 +345,7 @@ when false:
         input = mkUtxo(value = 100, pkSeed = 1)
         s0 = LedgerState.fromUtxos([input])
         tx = mkTransferTx([input.id], [mkNote(50, pkSeed = 2)]) # output 50 < input 100
-        r = s0.tryApplyTxns([tx], LockedNotes.init())
+        r = s0.tryApplyTxns([tx], LockedNotes.init(), slot = 0'u64)
       check r.isErr
       check r.error == UnbalancedTransaction
 
