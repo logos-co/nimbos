@@ -23,8 +23,9 @@ import
       pubsub, gossipsub, rpc/message, rpc/messages, peertable, pubsubpeer],
   libp2p/stream/connection,
   libp2p/services/wildcardresolverservice,
-  eth/[common/keys, async_utils],
-  eth/net/nat, eth/p2p/discoveryv5/[node, random2],
+  bearssl/rand,
+  eth/async_utils,
+  eth/net/nat,
   ./bincode,
   ../[version, conf],
   ../core/utils,
@@ -65,8 +66,6 @@ type
   LBP2PNode* = ref object of RootObj
     switch*: Switch
     pubsub: GossipSub
-    discovery: Eth2DiscoveryProtocol
-    discoveryEnabled: bool
     wantedPeers: int
     hardMaxPeers: int
     peerPool*: PeerPool[Peer, PeerId]
@@ -96,7 +95,6 @@ type
   Peer* = ref object
     network*: LBP2PNode
     peerId*: PeerId
-    discoveryId: Eth2DiscoveryId
     connectionState*: ConnectionState
     protocolStates: seq[RootRef]
     netThroughput: AverageThroughput
@@ -104,7 +102,6 @@ type
     quota: TokenBucket
     lastReqTime: Moment
     connections: int
-    enr: Opt[enr.Record]
     failedMetadataRequests: int
     lastMetadataTime: Moment
     direction: PeerType
@@ -271,9 +268,6 @@ declareCounter nbc_timeout_dials,
 declareGauge nbc_peers,
   "Number of active libp2p peers"
 
-declareCounter nbc_successful_discoveries,
-  "Number of successful discoveries"
-
 declareCounter nbc_reqresp_messages_sent,
   "Number of Req/Resp messages sent", labels = ["protocol"]
 
@@ -358,16 +352,6 @@ template networkState*(connection: Peer, Protocol: type): untyped =
 
 func peerId*(node: LBP2PNode): PeerId =
   node.switch.peerInfo.peerId
-
-func nodeId*(node: LBP2PNode): NodeId =
-  when crypto.supported(crypto.PKScheme.Secp256k1):
-    toNodeId(keys.PublicKey(node.switch.peerInfo.publicKey.skkey))
-  else:
-    raiseAssert "nodeId is unavailable without discv5 secp256k1 identity"
-
-func enrRecord*(node: LBP2PNode): Record =
-  doAssert node.discovery != nil, "discv5 is disabled"
-  node.discovery.localNode.record
 
 proc getPeer(node: LBP2PNode, peerId: PeerId): Peer =
   node.peers.withValue(peerId, peer) do:
@@ -1140,65 +1124,6 @@ proc handleIncomingStream(network: LBP2PNode,
     await noCancel conn.closeWithEOF()
     releasePeer(peer)
 
-when crypto.supported(crypto.PKScheme.Secp256k1):
-  func toPeerAddr*(r: enr.TypedRecord,
-                   proto: IpTransportProtocol): Result[PeerAddr, cstring] =
-    if not r.secp256k1.isSome:
-      return err("enr: no secp256k1 key in record")
-
-    let
-      pubKey = ? keys.PublicKey.fromRaw(r.secp256k1.get)
-      peerId = ? PeerId.init(crypto.PublicKey(
-        scheme: Secp256k1, skkey: secp.SkPublicKey(pubKey)))
-
-    var addrs = newSeq[MultiAddress]()
-
-    case proto
-    of tcpProtocol:
-      if r.ip.isSome and r.tcp.isSome:
-        let ip = IpAddress(
-          family: IpAddressFamily.IPv4,
-          address_v4: r.ip.get)
-        addrs.add MultiAddress.init(ip, tcpProtocol, Port r.tcp.get)
-
-      if r.ip6.isSome:
-        let ip = IpAddress(
-          family: IpAddressFamily.IPv6,
-          address_v6: r.ip6.get)
-        if r.tcp6.isSome:
-          addrs.add MultiAddress.init(ip, tcpProtocol, Port r.tcp6.get)
-        elif r.tcp.isSome:
-          addrs.add MultiAddress.init(ip, tcpProtocol, Port r.tcp.get)
-        else:
-          discard
-
-    of udpProtocol:
-      if r.ip.isSome and r.udp.isSome:
-        let ip = IpAddress(
-          family: IpAddressFamily.IPv4,
-          address_v4: r.ip.get)
-        addrs.add MultiAddress.init(ip, udpProtocol, Port r.udp.get)
-
-      if r.ip6.isSome:
-        let ip = IpAddress(
-          family: IpAddressFamily.IPv6,
-          address_v6: r.ip6.get)
-        if r.udp6.isSome:
-          addrs.add MultiAddress.init(ip, udpProtocol, Port r.udp6.get)
-        elif r.udp.isSome:
-          addrs.add MultiAddress.init(ip, udpProtocol, Port r.udp.get)
-        else:
-          discard
-
-    if addrs.len == 0:
-      return err("enr: no addresses in record")
-
-    ok(PeerAddr(peerId: peerId, addrs: addrs))
-else:
-  func toPeerAddr*(r: enr.TypedRecord,
-                   proto: IpTransportProtocol): Result[PeerAddr, cstring] =
-    err("discv5 peer resolution is unavailable")
-
 proc checkPeer(node: LBP2PNode, peerAddr: PeerAddr): bool =
   logScope: peer = peerAddr.peerId
   let peerId = peerAddr.peerId
@@ -1297,87 +1222,6 @@ proc enqueueBootstrapPeers(
   notice "Bootstrap enqueue pass complete",
     source, queued, skippedConnected, skippedPending, skippedSeen
 
-func toPeerAddr(node: Node): Result[PeerAddr, cstring] =
-  let nodeRecord = TypedRecord.fromRecord(node.record)
-  let peerAddr = ? nodeRecord.toPeerAddr(tcpProtocol)
-  ok(peerAddr)
-
-proc runDiscoveryLoop(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
-  debug "Starting discovery loop"
-
-  while true:
-    let
-      outgoingPeers = node.peerPool.lenCurrent({PeerType.Outgoing})
-      targetOutgoingPeers = max(node.wantedPeers div 10, 3)
-
-    if outgoingPeers < targetOutgoingPeers:
-      let discoveredNodes = await node.discovery.queryRandom(0)
-
-      let newPeers = block:
-        var np = newSeq[PeerAddr]()
-        for discNode in discoveredNodes:
-          let res = discNode.toPeerAddr()
-          if res.isErr():
-            debug "Failed to decode discovery's node address",
-                  node = discNode, errMsg = res.error
-            continue
-
-          let peerAddr = res.get()
-          if node.checkPeer(peerAddr) and
-            peerAddr.peerId notin node.connTable:
-            np.add(peerAddr)
-        np
-
-      let
-        roomCurrent = node.hardMaxPeers - len(node.peerPool)
-        peersToKick = min(newPeers.len - roomCurrent, node.hardMaxPeers div 5)
-
-      for peerAddr in newPeers:
-          # We adding to pending connections table here, but going
-          # to remove it only in `connectWorker`.
-          node.connTable.incl(peerAddr.peerId)
-          await node.connQueue.addLast(peerAddr)
-
-      debug "Discovery tick",
-            wanted_peers = node.wantedPeers,
-            current_peers = len(node.peerPool),
-            discovered_nodes = len(discoveredNodes),
-            new_peers = len(newPeers)
-
-      if len(newPeers) == 0:
-        let currentPeers = len(node.peerPool)
-        if currentPeers <= node.wantedPeers shr 2: #  25%
-          warn "Peer count low, no new peers discovered",
-            discovered_nodes = len(discoveredNodes), new_peers = newPeers,
-            current_peers = currentPeers, wanted_peers = node.wantedPeers
-
-    # Discovery `queryRandom` can have a synchronous fast path for example
-    # when no peers are in the routing table. Don't run it in continuous loop.
-    #
-    # Also, give some time to dial the discovered nodes and update stats etc
-    await sleepAsync(5.seconds)
-
-when crypto.supported(crypto.PKScheme.Secp256k1):
-  proc resolvePeer(peer: Peer) =
-    logScope: peer = peer.peerId
-    let startTime = now(chronos.Moment)
-    let nodeId =
-      block:
-        var key: PublicKey
-        discard peer.peerId.extractPublicKey(key)
-        keys.PublicKey.fromRaw(key.skkey.getBytes()).get().toNodeId()
-
-    debug "Peer's ENR recovery task started", node_id = $nodeId
-
-    peer.network.discovery.getNode(nodeId).isErrOr:
-      peer.enr = Opt.some(value.record)
-      inc(nbc_successful_discoveries)
-      let delay = now(chronos.Moment) - startTime
-      debug "Peer's ENR recovered", delay
-else:
-  proc resolvePeer(peer: Peer) {.inline.} =
-    discard
-
 proc handlePeer*(peer: Peer) {.async: (raises: [CancelledError]).} =
   let res = peer.network.peerPool.addPeerNoWait(peer, peer.direction)
   case res:
@@ -1405,8 +1249,6 @@ proc handlePeer*(peer: Peer) {.async: (raises: [CancelledError]).} =
     # Peer was added to PeerPool.
     peer.score = NewPeerScore
     peer.connectionState = ConnectionState.Connected
-    if peer.network.discoveryEnabled:
-      resolvePeer(peer)
     debug "Peer successfully connected", peer = peer,
                                          connections = peer.connections
 
@@ -1490,8 +1332,6 @@ proc onConnEvent(
 proc new(T: type LBP2PNode,
          config: LBNodeConf,
          switch: Switch, pubsub: GossipSub,
-         ip: Opt[IpAddress], tcpPort, udpPort: Opt[Port],
-         discovery: bool,
          announcedAddresses: openArray[MultiAddress],
          bootstrapPeers: openArray[PeerAddr],
          rng: ref HmacDrbgContext): T =
@@ -1513,13 +1353,6 @@ proc new(T: type LBP2PNode,
     # Its important here to create AsyncQueue with limited size, otherwise
     # it could produce HIGH cpu usage.
     connQueue: newAsyncQueue[PeerAddr](ConcurrentConnections),
-    discovery:
-      if discovery:
-        Eth2DiscoveryProtocol.new(
-          config, ip, tcpPort, udpPort, keys.PrivateKey.random(rng[]), rng)
-      else:
-        nil,
-    discoveryEnabled: discovery,
     rng: rng,
     connectTimeout: connectTimeout,
     seenThreshold: seenThreshold,
@@ -1561,14 +1394,6 @@ proc registerProtocol*(node: LBP2PNode, Proto: type, state: Proto.NetworkState) 
       msg.protocolMounter node
 
 proc startListening*(node: LBP2PNode) {.async.} =
-  if node.discoveryEnabled:
-    try:
-       node.discovery.open()
-    except TransportOsError as exc:
-      fatal "Failed to start discovery service. UDP port may be already in use",
-            exc = exc.msg
-      quit 1
-
   try:
     await node.switch.start()
   except LPError as exc:
@@ -1622,9 +1447,6 @@ proc start*(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
   else:
     notice "No libp2p bootstrap multiaddrs configured"
 
-  if node.discoveryEnabled:
-    node.discovery.start()
-    traceAsyncErrors node.runDiscoveryLoop()
   node.peerPingerHeartbeatFut = node.peerPingerHeartbeat()
   node.peerTrimmerHeartbeatFut = node.peerTrimmerHeartbeat()
   node.bootstrapHeartbeatFut = node.bootstrapHeartbeat()
@@ -1637,7 +1459,7 @@ proc stop*(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
   # append their cancelAndWait futures to this seq when non-nil, so paths like
   # startListening()+stop never enqueue heartbeat shutdown (would crash on nil).
   # seq[FutureBase] from the start plus FutureBase(...) on each add unifies
-  # switch / cancelAndWait / discovery types (inferring from switch.stop alone
+  # switch / cancelAndWait types (inferring from switch.stop alone
   # would fix a narrower element type and break add).
 
   var waitedFutures: seq[FutureBase] = @[FutureBase(node.switch.stop())]
@@ -1647,8 +1469,6 @@ proc stop*(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
     waitedFutures.add FutureBase(node.peerTrimmerHeartbeatFut.cancelAndWait())
   if not isNil(node.bootstrapHeartbeatFut):
     waitedFutures.add FutureBase(node.bootstrapHeartbeatFut.cancelAndWait())
-  if node.discoveryEnabled:
-    waitedFutures.add FutureBase(node.discovery.closeWait())
 
   let
     timeout = 5.seconds
@@ -1949,12 +1769,7 @@ proc createLBP2PNode*(
     netKeys: NetKeyPair,
 ): Result[LBP2PNode, string] =
   let
-    # Would be configurable
-    # Keep discovery's UDP port stable (see `discovery.nim`),
-    # while moving the QUIC listener to a separate UDP port.
-    #
     quicPort = config.quicPort
-    discoveryPort = config.udpPort
 
     listenAddress =
       if config.listenAddress.isSome():
@@ -1962,8 +1777,14 @@ proc createLBP2PNode*(
       else:
         getAutoAddress(Port(0)).toIpAddress()
 
-    (extIp, extQuicPort, extUdpPort) =
-      setupAddress(config.nat, listenAddress, quicPort, discoveryPort, clientId)
+    quicPorts = @[(port: quicPort, protocol: PortProtocol.UDP)]
+    (extIp, extPorts) =
+      setupAddress(config.nat, listenAddress, quicPorts, clientId)
+    extQuicPort =
+      if extPorts.len > 0 and extPorts[0].isSome:
+        Opt.some(extPorts[0].get().port)
+      else:
+        Opt.none(Port)
 
     hostAddress =
       ?quicEndPoint(listenAddress, quicPort)
@@ -2040,9 +1861,7 @@ proc createLBP2PNode*(
     return err("Cannot mount pubsub: " & exc.msg)
 
   let node = LBP2PNode.new(
-    config, switch, pubsub, extIp,
-    extQuicPort, extUdpPort,
-    discovery = config.discv5Enabled, announcedAddresses, bootstrapPeers,
+    config, switch, pubsub, announcedAddresses, bootstrapPeers,
     rng = rng,
   )
 
@@ -2056,10 +1875,6 @@ proc createLBP2PNode*(
       topic in node.validTopics
 
   ok node
-
-func announcedENR*(node: LBP2PNode): enr.Record =
-  doAssert node.discovery != nil, "discv5 is disabled"
-  node.discovery.localNode.record
 
 func shortForm*(id: NetKeyPair): string =
   $PeerId.init(id.pubkey)
