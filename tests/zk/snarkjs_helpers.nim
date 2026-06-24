@@ -15,6 +15,7 @@
 
 import
   json_serialization,
+  stew/io2,
   groth16/bn128,
   ../../logos_chain/zk/groth16/[utils, verifier]
 
@@ -47,9 +48,9 @@ proc proofJsonToBytes*(
     aBytes = unwrapComprG1(compressG1(piA))
     bBytes = unwrapComprG2(compressG2(piB))
     cBytes = unwrapComprG1(compressG1(piC))
-  for i in 0 ..< 32: bytes[i] = aBytes[i]
-  for i in 0 ..< 64: bytes[32 + i] = bBytes[i]
-  for i in 0 ..< 32: bytes[96 + i] = cBytes[i]
+  bytes[0 ..< 32] = aBytes.toOpenArray(0, 31)
+  bytes[32 ..< 96] = bBytes.toOpenArray(0, 63)
+  bytes[96 ..< 128] = cBytes.toOpenArray(0, 31)
   ok(bytes)
 
 proc publicJsonToInputs*(

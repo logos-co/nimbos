@@ -8,7 +8,7 @@
 {.push raises: [], gcsafe.}
 
 import
-  std/[options, unicode, uri],
+  std/[options, uri],
   metrics,
   results,
   chronicles, chronicles/options as chroniclesOptions,
@@ -17,9 +17,8 @@ import
   toml_serialization/std/net as confTomlNet,
   toml_serialization/std/uri as confTomlUri,
   serialization/errors,
-  stew/[io2, byteutils],
+  stew/io2,
   eth/net/nat, # TODO(logos-chain-networking): replace NatConfig/eth-net-nat with Logos-native reachability config
-  eth/enr/enr,
   json_serialization, json_serialization/std/net as jsnet,
   chronos/transports/common,
   ./deployment/deployment_settings,
@@ -30,7 +29,7 @@ from std/os import dirExists, getDataDir, `/`
 from std/strutils import parseBiggestUInt, replace
 
 export
-  uri, nat, enr,
+  uri, nat,
   enabledLogLevel,
   defs, parseCmdArg, completeCmdArg,
   confTomlDefs, confTomlNet, confTomlUri, jsnet,
@@ -76,7 +75,7 @@ type
       name: "config-file" .}: Option[InputFile]
 
     logLevel* {.
-      desc: "Sets the log level for process and topics (e.g. \"DEBUG; TRACE:discv5,libp2p; REQUIRED:none; DISABLED:none\")"
+      desc: "Sets the log level for process and topics (e.g. \"DEBUG; TRACE:libp2p; REQUIRED:none; DISABLED:none\")"
       defaultValue: "INFO"
       name: "log-level" .}: string
 
@@ -218,7 +217,7 @@ type
         name: "bootstrap-file" .}: InputFile
 
       listenAddress* {.
-        desc: "Listening address for Logos Chain libp2p and Discovery v5 traffic"
+        desc: "Listening address for Logos Chain libp2p traffic"
         defaultValueDesc: "*"
         name: "listen-address" .}: Option[IpAddress]
 
@@ -227,20 +226,10 @@ type
         defaultValue: 5001
         name: "quic-port" .}: Port
 
-      udpPort* {.
-        desc: "UDP port for discv5 peer discovery"
-        defaultValue: 5000
-        name: "udp-port" .}: Port
-
       restPort* {.
         desc: "Listening HTTP port of the REST API server"
         defaultValue: 5050
         name: "rest-port" .}: Port
-
-      discv5Enabled* {.
-        desc: "Enable discv5 peer discovery (disable for isolated libp2p tests)"
-        defaultValue: true
-        name: "discv5" .}: bool
 
       maxPeers* {.
         desc: "The target number of peers to connect to"
@@ -262,13 +251,6 @@ type
         defaultValue: NatConfig(hasExtIp: false, nat: NatAny)
         defaultValueDesc: "any"
         name: "nat" .}: NatConfig
-
-      enrAutoUpdate* {.
-        desc: "Discovery can automatically update its ENR with the IP address " &
-              "and UDP port as seen by other nodes it communicates with. " &
-              "This option allows to enable/disable this functionality"
-        defaultValue: false
-        name: "enr-auto-update" .}: bool
 
       externalBeaconApiUrl* {.
         desc: "External beacon API to use for syncing (on empty database)"
@@ -328,16 +310,6 @@ func parseCmdArg*(T: type Uri, input: string): T
   parseUri(input)
 
 func completeCmdArg*(T: type Uri, input: string): seq[string] =
-  return @[]
-
-proc parseCmdArg*(T: type enr.Record, p: string): T {.raises: [ValueError].} =
-  let res = enr.Record.fromURI(p)
-  if res.isErr:
-    raise newException(ValueError, "Invalid ENR:" & $res.error)
-
-  res.value
-
-func completeCmdArg*(T: type enr.Record, val: string): seq[string] =
   return @[]
 
 proc secretsDir*[Conf](config: Conf): string =

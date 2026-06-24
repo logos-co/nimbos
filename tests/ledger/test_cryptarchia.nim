@@ -9,15 +9,23 @@
 {.used.}
 
 import
+  std/[os, strutils],
   unittest2,
   results,
-  poseidon2/types          # `==` for F
-
-import
+  poseidon2/types,          # `==` for F
   ../../logos_chain/ledger/
-    [balance, cryptarchia_state, locked_notes, types, utxo_store, zk_verifier],
-  ../../logos_chain/core/mantle/[primitives, operations, proofs, utxo, tx_hashing],
+    [balance, cryptarchia_state, locked_notes, types, utxo_store],
+  ../../logos_chain/core/mantle/[primitives, operations, proofs, tx_hashing, utxo],
+  ../../logos_chain/zk/zksign,
+  ../zk/zksign_helpers,
   ../core/mantle/test_helpers
+
+const
+  testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
+  zksignFixtureDir = testsDir / "../fixtures/zksign"
+  fixtureVk = zksignFixtureDir / "verification_key.json"
+  fixtureProof = zksignFixtureDir / "proof.json"
+  fixturePublic = zksignFixtureDir / "public.json"
 
 suite "CryptarchiaState init":
   test "empty init has no utxos":
@@ -59,79 +67,10 @@ suite "CryptarchiaState reads":
       s = CryptarchiaState.init([u])
     check s.latestUtxos == s.utxos
 
-suite "tryApplyTransfer — happy paths":
-  test "1-in / 1-out same value":
-    let
-      input = mkUtxo(value = 100, pkSeed = 1)
-      s0 = CryptarchiaState.init([input])
-      op = TransferPayload(
-        inputs: Inputs(noteIds: @[input.id]),
-        outputs: Outputs(notes: @[mkNote(100, pkSeed = 2)]),
-      )
-      r = s0.tryApplyTransfer(
-        LockedNotes.init(),
-        op,
-        sig = default(ZkSigProof),
-        txHash = mkTxHash(),
-        verifier = mockAcceptVerifier(),
-      )
-    check r.isOk
-    
-    let (s1, balance) = r.get
-    check balance == Balance.zero
-    check s1.len == 1
-    check not s1.utxos.contains(input.id)
-
-  test "multi-input combine (2 inputs, 1 output)":
-    let
-      a = mkUtxo(value = 60, pkSeed = 1)
-      b = mkUtxo(value = 40, pkSeed = 1, opIdSeed = 1)
-      s0 = CryptarchiaState.init([a, b])
-      op = TransferPayload(
-        inputs: Inputs(noteIds: @[a.id, b.id]),
-        outputs: Outputs(notes: @[mkNote(100, pkSeed = 2)]),
-      )
-      r = s0.tryApplyTransfer(
-        LockedNotes.init(),
-        op,
-        sig = default(ZkSigProof),
-        txHash = mkTxHash(),
-        verifier = mockAcceptVerifier(),
-      )
-    check r.isOk
-   
-    let (s1, balance) = r.get
-    check balance == Balance.zero
-    check s1.len == 1
-    check not s1.utxos.contains(a.id)
-    check not s1.utxos.contains(b.id)
-
-  test "split (1 input, 3 outputs)":
-    let
-      input = mkUtxo(value = 100, pkSeed = 1)
-      s0 = CryptarchiaState.init([input])
-      op = TransferPayload(
-        inputs: Inputs(noteIds: @[input.id]),
-        outputs: Outputs(
-          notes:
-            @[mkNote(30, pkSeed = 2), mkNote(30, pkSeed = 3), mkNote(40, pkSeed = 4)]
-        ),
-      )
-      r = s0.tryApplyTransfer(
-        LockedNotes.init(),
-        op,
-        sig = default(ZkSigProof),
-        txHash = mkTxHash(),
-        verifier = mockAcceptVerifier(),
-      )
-    check r.isOk
-    
-    let (s1, balance) = r.get
-    check balance == Balance.zero
-    check s1.len == 3
-    check not s1.utxos.contains(input.id)
-
 suite "tryApplyTransfer — error paths":
+  setup:
+    check installZksignVk(fixtureVk)
+
   test "missing input → InvalidNote (three shapes)":
     let
       seeded = mkUtxo(value = 100, pkSeed = 1)
@@ -152,7 +91,6 @@ suite "tryApplyTransfer — error paths":
           op,
           sig = default(ZkSigProof),
           txHash = mkTxHash(),
-          verifier = mockAcceptVerifier(),
         )
       check r.isErr
       check r.error == InvalidNote
@@ -171,28 +109,9 @@ suite "tryApplyTransfer — error paths":
         op,
         sig = default(ZkSigProof),
         txHash = mkTxHash(),
-        verifier = mockAcceptVerifier(),
       )
     check r.isErr
     check r.error == LockedNote
-
-  test "zero-value output → ZeroValueNote":
-    let
-      input = mkUtxo(value = 100, pkSeed = 1)
-      s0 = CryptarchiaState.init([input])
-      op = TransferPayload(
-        inputs: Inputs(noteIds: @[input.id]),
-        outputs: Outputs(notes: @[mkNote(0, pkSeed = 2)]),
-      )
-      r = s0.tryApplyTransfer(
-        LockedNotes.init(),
-        op,
-        sig = default(ZkSigProof),
-        txHash = mkTxHash(),
-        verifier = mockAcceptVerifier(),
-      )
-    check r.isErr
-    check r.error == ZeroValueNote
 
   test "bad signature → InvalidProof":
     let
@@ -207,29 +126,101 @@ suite "tryApplyTransfer — error paths":
         op,
         sig = default(ZkSigProof),
         txHash = mkTxHash(),
-        verifier = mockRejectVerifier(),
       )
     check r.isErr
     check r.error == InvalidProof
 
-suite "tryApplyTransfer — balance + chain":
-  test "no outputs → balance equals full input value":
+  test "verify before VK install → VerifierNotInitialised":
+    zksign.resetVkForTesting()
     let
       input = mkUtxo(value = 100, pkSeed = 1)
       s0 = CryptarchiaState.init([input])
       op = TransferPayload(
-        inputs: Inputs(noteIds: @[input.id]), outputs: Outputs(notes: @[])
+        inputs: Inputs(noteIds: @[input.id]),
+        outputs: Outputs(notes: @[mkNote(100, pkSeed = 2)]),
       )
       r = s0.tryApplyTransfer(
         LockedNotes.init(),
         op,
         sig = default(ZkSigProof),
         txHash = mkTxHash(),
-        verifier = mockAcceptVerifier(),
       )
-    
+    check r.isErr
+    check r.error == VerifierNotInitialised
+
+suite "tryApplyTransfer — happy paths (fixture-driven)":
+  # All tests in this suite use the 1-key zksign fixture (`PK(SK=1)`-signed).
+  # Inputs are constructed with `mkUtxoWithPk(mkRealZkPubKey(1), ...)` so the
+  # collected pks vector matches what the prover signed; the fixture's msg +
+  # proof get passed verbatim.
+  var
+    signerPk: ZkPublicKey
+    sig: ZkSigProof
+    txHash: ZkHash
+
+  setup:
+    check installZksignVk(fixtureVk)
+    signerPk = mkRealZkPubKey(1)
+    sig = loadProof(fixtureProof)
+    txHash = loadTxHash(fixturePublic)
+
+  test "1-in / 1-out same value":
+    let
+      input = mkUtxoWithPk(signerPk, value = 100)
+      s0 = CryptarchiaState.init([input])
+      op = TransferPayload(
+        inputs: Inputs(noteIds: @[input.id]),
+        outputs: Outputs(notes: @[mkNote(100, pkSeed = 2)]),
+      )
+      r = s0.tryApplyTransfer(LockedNotes.init(), op, sig, txHash)
     check r.isOk
-    
+
+    let (s1, balance) = r.get
+    check balance == Balance.zero
+    check s1.len == 1
+    check not s1.utxos.contains(input.id)
+
+  test "split (1 input, 3 outputs)":
+    let
+      input = mkUtxoWithPk(signerPk, value = 100)
+      s0 = CryptarchiaState.init([input])
+      op = TransferPayload(
+        inputs: Inputs(noteIds: @[input.id]),
+        outputs: Outputs(
+          notes:
+            @[mkNote(30, pkSeed = 2), mkNote(30, pkSeed = 3), mkNote(40, pkSeed = 4)]
+        ),
+      )
+      r = s0.tryApplyTransfer(LockedNotes.init(), op, sig, txHash)
+    check r.isOk
+
+    let (s1, balance) = r.get
+    check balance == Balance.zero
+    check s1.len == 3
+    check not s1.utxos.contains(input.id)
+
+  test "zero-value output → ZeroValueNote":
+    let
+      input = mkUtxoWithPk(signerPk, value = 100)
+      s0 = CryptarchiaState.init([input])
+      op = TransferPayload(
+        inputs: Inputs(noteIds: @[input.id]),
+        outputs: Outputs(notes: @[mkNote(0, pkSeed = 2)]),
+      )
+      r = s0.tryApplyTransfer(LockedNotes.init(), op, sig, txHash)
+    check r.isErr
+    check r.error == ZeroValueNote
+
+  test "no outputs → balance equals full input value":
+    let
+      input = mkUtxoWithPk(signerPk, value = 100)
+      s0 = CryptarchiaState.init([input])
+      op = TransferPayload(
+        inputs: Inputs(noteIds: @[input.id]), outputs: Outputs(notes: @[])
+      )
+      r = s0.tryApplyTransfer(LockedNotes.init(), op, sig, txHash)
+    check r.isOk
+
     let (s1, balance) = r.get
     check balance == i128(100)
     check s1.len == 0
@@ -237,46 +228,72 @@ suite "tryApplyTransfer — balance + chain":
 
   test "outputs exceed input → returns negative balance":
     let
-      input = mkUtxo(value = 1, pkSeed = 1)
+      input = mkUtxoWithPk(signerPk, value = 1)
       s0 = CryptarchiaState.init([input])
       op = TransferPayload(
         inputs: Inputs(noteIds: @[input.id]),
         outputs: Outputs(notes: @[mkNote(1, pkSeed = 2), mkNote(1, pkSeed = 3)]),
       )
-      r = s0.tryApplyTransfer(
-        LockedNotes.init(),
-        op,
-        sig = default(ZkSigProof),
-        txHash = mkTxHash(),
-        verifier = mockAcceptVerifier(),
-      )
+      r = s0.tryApplyTransfer(LockedNotes.init(), op, sig, txHash)
     check r.isOk
-    
+
     let (s1, balance) = r.get
     check balance == i128(-1)
     check s1.len == 2
 
   test "unbalanced (input > output) returns positive balance":
     let
-      input = mkUtxo(value = 11000, pkSeed = 1)
+      input = mkUtxoWithPk(signerPk, value = 11000)
       s0 = CryptarchiaState.init([input])
       op = TransferPayload(
         inputs: Inputs(noteIds: @[input.id]),
-        outputs: Outputs(notes: @[mkNote(4000, pkSeed = 2), mkNote(3000, pkSeed = 3)]),
+        outputs:
+          Outputs(notes: @[mkNote(4000, pkSeed = 2), mkNote(3000, pkSeed = 3)]),
       )
-      r = s0.tryApplyTransfer(
-        LockedNotes.init(),
-        op,
-        sig = default(ZkSigProof),
-        txHash = mkTxHash(),
-        verifier = mockAcceptVerifier(),
-      )
+      r = s0.tryApplyTransfer(LockedNotes.init(), op, sig, txHash)
     check r.isOk
 
     let (s1, balance) = r.get
     check balance == i128(11000 - 4000 - 3000) # = 4000 surplus
     check s1.len == 2
 
+  test "parent state unchanged when child applies a transfer":
+    let
+      input = mkUtxoWithPk(signerPk, value = 100)
+      s0 = CryptarchiaState.init([input])
+      preLen = s0.len
+      preRoot = s0.root
+      op = TransferPayload(
+        inputs: Inputs(noteIds: @[input.id]),
+        outputs: Outputs(notes: @[mkNote(100, pkSeed = 2)]),
+      )
+    discard s0.tryApplyTransfer(LockedNotes.init(), op, sig, txHash)
+
+    check s0.len == preLen
+    check s0.root == preRoot
+    check s0.utxos.contains(input.id)
+
+suite "applyTransferState — multi-input":
+  test "multi-input combine (2 inputs, 1 output)":
+    let
+      a = mkUtxo(value = 60, pkSeed = 1)
+      b = mkUtxo(value = 40, pkSeed = 1, opIdSeed = 1)
+      s0 = CryptarchiaState.init([a, b])
+      op = TransferPayload(
+        inputs: Inputs(noteIds: @[a.id, b.id]),
+        outputs: Outputs(notes: @[mkNote(100, pkSeed = 2)]),
+      )
+      r = s0.applyTransferState(LockedNotes.init(), op)
+    check r.isOk
+
+    let (s1, balance, pks) = r.get
+    check balance == Balance.zero
+    check s1.len == 1
+    check not s1.utxos.contains(a.id)
+    check not s1.utxos.contains(b.id)
+    check pks.len == 2
+
+suite "applyTransferState — chain":
   test "chain of txs: tx2 spends outputs created by tx1":
     let
       input = mkUtxo(value = 100, pkSeed = 1)
@@ -285,13 +302,7 @@ suite "tryApplyTransfer — balance + chain":
         inputs: Inputs(noteIds: @[input.id]),
         outputs: Outputs(notes: @[mkNote(60, pkSeed = 2), mkNote(40, pkSeed = 3)]),
       )
-      r1 = s0.tryApplyTransfer(
-        LockedNotes.init(),
-        tx1,
-        sig = default(ZkSigProof),
-        txHash = mkTxHash(seed = 0x11),
-        verifier = mockAcceptVerifier(),
-      )
+      r1 = s0.applyTransferState(LockedNotes.init(), tx1)
     check r1.isOk
 
     let
@@ -301,7 +312,7 @@ suite "tryApplyTransfer — balance + chain":
         Utxo(opId: tx1OpId, outputIndex: 0, note: mkNote(60, pkSeed = 2))
       outUtxo1 =
         Utxo(opId: tx1OpId, outputIndex: 1, note: mkNote(40, pkSeed = 3))
-    
+
     check s1.utxos.contains(outUtxo0.id)
     check s1.utxos.contains(outUtxo1.id)
 
@@ -310,42 +321,14 @@ suite "tryApplyTransfer — balance + chain":
         inputs: Inputs(noteIds: @[outUtxo0.id, outUtxo1.id]),
         outputs: Outputs(notes: @[mkNote(100, pkSeed = 4)]),
       )
-      r2 = s1.tryApplyTransfer(
-        LockedNotes.init(),
-        tx2,
-        sig = default(ZkSigProof),
-        txHash = mkTxHash(seed = 0x22),
-        verifier = mockAcceptVerifier(),
-      )
+      r2 = s1.applyTransferState(LockedNotes.init(), tx2)
     check r2.isOk
-    
-    let (s2, balance2) = r2.get
+
+    let (s2, balance2, pks2) = r2.get
     check balance2 == Balance.zero
     check s2.len == 1
     check not s2.utxos.contains(outUtxo0.id)
     check not s2.utxos.contains(outUtxo1.id)
-
-suite "tryApplyTransfer — persistence":
-  test "parent state unchanged when child applies a transfer":
-    let
-      input = mkUtxo(value = 100, pkSeed = 1)
-      s0 = CryptarchiaState.init([input])
-      preLen = s0.len
-      preRoot = s0.root
-      op = TransferPayload(
-        inputs: Inputs(noteIds: @[input.id]),
-        outputs: Outputs(notes: @[mkNote(100, pkSeed = 2)]),
-      )
-    discard s0.tryApplyTransfer(
-      LockedNotes.init(),
-      op,
-      sig = default(ZkSigProof),
-      txHash = mkTxHash(),
-      verifier = mockAcceptVerifier(),
-    )
-    
-    check s0.len == preLen
-    check s0.root == preRoot
-    check s0.utxos.contains(input.id)
+    check pks2.len == 2
 
 {.pop.}

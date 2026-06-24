@@ -55,6 +55,19 @@ const
   DefaultZkSignature* = DefaultCompressedGroth16Proof
   DefaultEd25519Signature* = default(Ed25519Signature)
 
+let
+  KDF*: FieldElement =
+    # Domain separator for the zksign key-derivation primitive: literal bytes
+    # "KDF" interpreted as a little-endian Fr (auto-padded to 32 bytes).
+    frFromBytesLE([byte 'K', byte 'D', byte 'F']).get
+  ZeroSecretKeyPublicKey*: ZkPublicKey =
+    # PK derived from SK=0 via the zksign key-derivation primitive.
+    # Used to right-pad caller-supplied pk lists shorter than 32 entries.
+    Poseidon2Hasher.compress(KDF, default(FieldElement))
+
+proc zkPublicKeyFromSecret*(sk: FieldElement): ZkPublicKey =
+  ## Circuit-equivalent zksign key derivation: PK = Poseidon2.compress(KDF, sk).
+  Poseidon2Hasher.compress(KDF, sk)
 
 func encodeLe*[T: SomeUnsignedInt](value: T): array[sizeof(T), byte] =
   value.toBytesLE()

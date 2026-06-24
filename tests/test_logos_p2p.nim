@@ -53,7 +53,6 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
     conf.listenAddress = some(listenIp)
     conf.nat = natCfg
     conf.quicPort = 5001.Port
-    conf.discv5Enabled = true
     conf.maxPeers = 4
     conf.hardMaxPeers = some(4)
     conf.agentString = "p2p-test-node1"
@@ -63,7 +62,6 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
     # `conf2` is only used for non-listen settings (agent/maxPeers) in this test;
     # the `sw2` transport binds to `/udp/0` via `addr2` below.
     conf2.quicPort = 5001.Port
-    conf2.discv5Enabled = true
     conf2.maxPeers = 4
     conf2.hardMaxPeers = some(4)
     conf2.agentString = "p2p-test-node2"
@@ -138,7 +136,6 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
     conf.listenAddress = some(listenIp)
     conf.nat = natCfg
     conf.quicPort = 5001.Port
-    conf.discv5Enabled = true
     conf.maxPeers = 4
     conf.hardMaxPeers = some(4)
     conf.agentString = "p2p-test-node1"
@@ -185,7 +182,6 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
     conf.listenAddress = some(listenIp)
     conf.nat = natCfg
     conf.quicPort = 5001.Port
-    conf.discv5Enabled = true
     conf.maxPeers = 4
     conf.hardMaxPeers = some(4)
     conf.agentString = "p2p-test-node1"

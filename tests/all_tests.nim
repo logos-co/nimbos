@@ -44,6 +44,7 @@ import # Unit test
   ./logos_chain/sync/test_ibd,
   ./zk/test_circuits,
   ./zk/test_pol,
+  ./zk/test_zksign,
   ./zk/groth16/test_vk_json,
   ./zk/groth16/test_verifier
 
