@@ -111,8 +111,7 @@ proc tryApplyTx*(
         s.cryptarchiaLedger, lockedNotes,
         op.payload.channelDeposit, proof.channelDepositProof, txHash,
       )
-      s.mantleLedger = r.ms
-      s.cryptarchiaLedger = r.cs
+      s = LedgerState(cryptarchiaLedger: r.cs, mantleLedger: r.ms)
       balance = ?balance.checkedAdd(r.balance)
     of ChannelWithdraw:
       if proof.kind != opfChannelWithdraw:
@@ -121,8 +120,7 @@ proc tryApplyTx*(
         s.cryptarchiaLedger,
         op.payload.channelWithdraw, proof.channelWithdrawOpProof, txHash,
       )
-      s.mantleLedger = r.ms
-      s.cryptarchiaLedger = r.cs
+      s = LedgerState(cryptarchiaLedger: r.cs, mantleLedger: r.ms)
       balance = ?balance.checkedAdd(r.balance)
     else:
       return err(UnsupportedOp)
