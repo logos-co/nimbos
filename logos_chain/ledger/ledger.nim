@@ -5,22 +5,26 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-## Composite `LedgerState` wrapping `CryptarchiaState`, and the chain-wide
-## `Ledger[Id]` state-by-block-id map.
+## Composite `LedgerState` (cryptarchia + mantle sub-states) and the
+## chain-wide `Ledger[Id]` state-by-block-id map.
 
 {.push raises: [], gcsafe.}
 
 import
   std/tables,
-  ./[balance, types, cryptarchia_state, locked_notes, pol_verifier],
+  ./[
+    balance, types, cryptarchia_state, channel_state, mantle_state,
+    locked_notes, pol_verifier,
+  ],
   ../core/mantle/[tx_types, tx_hashing, operations, proofs],
   ../core/types
 
-export types, cryptarchia_state
+export types, cryptarchia_state, channel_state, mantle_state
 
 type
   LedgerState* = object
     cryptarchiaLedger*: CryptarchiaState
+    mantleLedger*: MantleState
 
   Ledger*[Id] = object
     states: Table[Id, LedgerState]
@@ -32,7 +36,10 @@ func fromUtxos*(
     config: LedgerConfig = LedgerConfig(),
 ): LedgerState =
   ## Builds a genesis-style state from the given UTXO set.
-  LedgerState(cryptarchiaLedger: CryptarchiaState.init(utxos))
+  LedgerState(
+    cryptarchiaLedger: CryptarchiaState.init(utxos),
+    mantleLedger: MantleState.init(),
+  )
 
 func latestUtxos*(s: LedgerState): lent UtxoStore =
   ## The live UTXO set.
@@ -59,9 +66,11 @@ proc tryApplyTx*(
     state: sink LedgerState,
     tx: SignedMantleTx,
     lockedNotes: LockedNotes,
+    slot: SlotNumber,
 ): Result[tuple[state: LedgerState, balance: Balance], LedgerError] =
   ## Applies one transaction; returns the new state and the tx's net balance
-  ## (sum of per-op balances).
+  ## (sum of per-op balances). `slot` is the containing block's slot —
+  ## consumed by channel ops for round-robin sequencer selection.
   if tx.tx.ops.len != tx.opProofs.len:
     return err(InvalidProof)
 
@@ -81,7 +90,39 @@ proc tryApplyTx*(
         ?s.cryptarchiaLedger.tryApplyTransfer(
           lockedNotes, op.payload.transfer, proof.transferProof, txHash
         )
-      s = LedgerState(cryptarchiaLedger: r.state)
+      s.cryptarchiaLedger = r.state
+      balance = ?balance.checkedAdd(r.balance)
+    of ChannelInscribe:
+      if proof.kind != opfChannelInscribe:
+        return err(InvalidProof)
+      s.mantleLedger = ?s.mantleLedger.tryApplyChannelInscribe(
+        op.payload.channelInscribe, proof.ed25519SigProof, txHash, slot
+      )
+    of ChannelConfig:
+      if proof.kind != opfChannelConfig:
+        return err(InvalidProof)
+      s.mantleLedger = ?s.mantleLedger.tryApplyChannelConfig(
+        op.payload.channelConfig, proof.channelConfigOpProof, txHash, slot
+      )
+    of ChannelDeposit:
+      if proof.kind != opfChannelDeposit:
+        return err(InvalidProof)
+      let r = ?s.mantleLedger.tryApplyChannelDeposit(
+        s.cryptarchiaLedger, lockedNotes,
+        op.payload.channelDeposit, proof.channelDepositProof, txHash,
+      )
+      s.mantleLedger = r.ms
+      s.cryptarchiaLedger = r.cs
+      balance = ?balance.checkedAdd(r.balance)
+    of ChannelWithdraw:
+      if proof.kind != opfChannelWithdraw:
+        return err(InvalidProof)
+      let r = ?s.mantleLedger.tryApplyChannelWithdraw(
+        s.cryptarchiaLedger,
+        op.payload.channelWithdraw, proof.channelWithdrawOpProof, txHash,
+      )
+      s.mantleLedger = r.ms
+      s.cryptarchiaLedger = r.cs
       balance = ?balance.checkedAdd(r.balance)
     else:
       return err(UnsupportedOp)
@@ -91,13 +132,14 @@ proc tryApplyTxns*(
     state: sink LedgerState,
     txs: openArray[SignedMantleTx],
     lockedNotes: LockedNotes,
+    slot: SlotNumber,
 ): Result[LedgerState, LedgerError] =
   ## Applies a block's transactions in order. Each tx must net to zero
   ## balance — otherwise returns `UnbalancedTransaction` or
   ## `InsufficientBalance`.
   var s = state
   for tx in txs:
-    let r = ?s.tryApplyTx(tx, lockedNotes)
+    let r = ?s.tryApplyTx(tx, lockedNotes, slot)
     s = r.state
     if r.balance > Balance.zero:
       return err(UnbalancedTransaction)
@@ -152,7 +194,7 @@ proc prepareUpdate*[Id](
   let
     parent = l.states.getOrDefault(parentId)
     afterHeader = ?parent.tryApplyHeader(slot, proof)
-    afterTxs = ?afterHeader.tryApplyTxns(txs, lockedNotes)
+    afterTxs = ?afterHeader.tryApplyTxns(txs, lockedNotes, slot)
   ok((id: id, state: afterTxs))
 
 {.pop.}

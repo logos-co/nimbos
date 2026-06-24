@@ -31,6 +31,13 @@ type
     InsufficientBalance ## inputs - outputs < fees
     VerifierNotInitialised ## per-circuit VK singleton wasn't installed at
       ## node startup — wiring bug, not adversarial input
+    ChannelNotFound ## ChannelDeposit/Withdraw references a missing ChannelId
+    InvalidParent ## ChannelInscribe parent doesn't match the channel's tipMessage
+    UnauthorizedSigner ## ChannelInscribe signer isn't the round-robin sequencer
+    InvalidWithdrawNonce ## ChannelWithdraw opIdNonce != channel's withdrawalNonce
+    ThresholdUnmet ## Config/Withdraw signature count != channel threshold
+    InvalidChannelConfig ## ChannelConfig has zero threshold or empty keys
+    WithdrawNonceOverflow ## ChannelWithdraw incremented withdrawalNonce past uint32
 
   LedgerConfig* = object
     ## Chain configuration. Currently empty — fields land with the modules
