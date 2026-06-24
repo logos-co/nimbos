@@ -1975,8 +1975,18 @@ proc createLBP2PNode*(
       else:
         getAutoAddress(Port(0)).toIpAddress()
 
-    (extIp, extQuicPort, extUdpPort) =
-      setupAddress(config.nat, listenAddress, quicPort, discoveryPort, clientId)
+    setupNatResult = setupAddress(
+      config.nat,
+      listenAddress,
+      @[
+        (port: quicPort, protocol: PortProtocol.TCP),
+        (port: discoveryPort, protocol: PortProtocol.UDP),
+      ],
+      clientId,
+    )
+    extIp = setupNatResult.ip
+    extQuicPort = setupNatResult.ports[0].toPort()
+    extUdpPort = setupNatResult.ports[1].toPort()
 
     hostAddress =
       ?quicEndPoint(listenAddress, quicPort)
