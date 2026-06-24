@@ -9,7 +9,7 @@
 {.used.}
 
 import
-  std/[net, strutils],
+  std/[net, sequtils, strutils],
   chronos,
   chronos/unittest2/asynctests,
   ./testutil
@@ -20,8 +20,21 @@ import
   ../logos_chain/networking/discovery,
   libp2p/switch,
   libp2p/builders,
+  libp2p/multiaddress,
   libp2p/peerid,
-  libp2p/services/wildcardresolverservice
+  libp2p/services/wildcardresolverservice,
+  libp2p/protocols/connectivity/autonatv2/types,
+  libp2p/protocols/connectivity/autonatv2/client
+
+from libp2p/protocols/connectivity/autonat/types import NetworkReachability
+
+const autonatV2DialBackProto = $AutonatV2Codec.DialBack
+
+proc autonatV2ClientOf(node: LBP2PNode): AutonatV2Client =
+  let i = node.switch.ms.handlers.findIt(it.protocol.codec == autonatV2DialBackProto)
+  if i < 0:
+    raiseAssert "AutonatV2Client not mounted on LBP2PNode"
+  AutonatV2Client(node.switch.ms.handlers[i].protocol)
 
 suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
   asyncTest "QUIC quic-v1 listen: switch binds and accepts on configured listen multiaddr":
@@ -316,13 +329,58 @@ suite "P2P stack — protocol negotiation and Identify":
     skip()
 
 suite "P2P stack — NAT and AutoNAT v2":
-  test "AutoNAT v2 client uses /libp2p/autonat/2/dial-request toward reachable peers":
-    # TODO(logos-chain-networking): implement AutoNAT v2 client coverage
-    skip()
+  asyncTest "AutoNAT v2: dial-request and dial-back prove loopback reachability":
+    ## Bootstrap only checks QUIC; AutoNAT is the dialer asking the listener to
+    ## dial-back to the dialer's advertised addrs (second QUIC session).
+    const
+      listenerPort = 5053.Port
+      dialerPort = 5054.Port
 
-  test "AutoNAT v2 server responds on /libp2p/autonat/2/dial-back when node is public":
-    # TODO(logos-chain-networking): implement AutoNAT v2 server coverage
-    skip()
+    let (confL, confD, rngL, rngD) = makeBootstrapConfs(listenerPort, dialerPort)
+
+    let listenerRes = createLBP2PNode(rngL, confL, rngL[].getRandomNetKeys())
+    check listenerRes.isOk
+    if listenerRes.isErr():
+      checkpoint("createLBP2PNode listener: " & listenerRes.error)
+      fail()
+    let listener = listenerRes.get()
+    await listener.startListening()
+
+    let
+      listenerPeerId = listener.switch.peerInfo.peerId
+      bootstrapAddr =
+        "/ip4/127.0.0.1/udp/" & $listenerPort &
+        "/quic-v1/p2p/" & $listenerPeerId
+
+    var confDial = confD
+    confDial.bootstrapNodes = @[bootstrapAddr]
+
+    let dialerRes = createLBP2PNode(rngD, confDial, rngD[].getRandomNetKeys())
+    check dialerRes.isOk
+    if dialerRes.isErr():
+      checkpoint("createLBP2PNode dialer: " & dialerRes.error)
+      await listener.stop()
+      fail()
+    let dialer = dialerRes.get()
+
+    try:
+      await dialer.startListening()
+      await dialer.start()
+
+      check await waitLibp2pConnected(dialer.switch, listenerPeerId)
+      await dialer.switch.peerInfo.update()
+
+      let testAddrs = dialer.switch.peerInfo.addrs
+      check testAddrs.len > 0
+
+      let resp = await autonatV2ClientOf(dialer).sendDialRequest(
+        listenerPeerId, testAddrs)
+      check resp.reachability == NetworkReachability.Reachable
+      check resp.dialResp.status == ResponseStatus.Ok
+      check resp.dialResp.dialStatus == Opt.some(DialStatus.Ok)
+    finally:
+      await dialer.stop()
+      await listener.stop()
 
 suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
   test "GossipSub: subscribes and publishes /logos-blockchain/mempool/1.0.0 (mainnet)":

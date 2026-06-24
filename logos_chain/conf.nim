@@ -62,6 +62,10 @@ proc defaultCircuitsDir*(): InputDir =
   InputDir(getDataDir() / "logos-blockchain-circuits" / ExpectedCircuitsVersion)
 
 type
+  LogosNetworkKind* {.pure.} = enum
+    Mainnet = "mainnet"
+    Testnet = "testnet"
+
   BNStartUpCmd* {.pure.} = enum
     lbNode ## default startup command (CLI name derived by confutils, e.g. `lb-node`)
 
@@ -87,10 +91,11 @@ type
       desc: "Specifies a path for the written JSON log file (deprecated)"
       name: "log-file" .}: Option[OutFile]
 
-    eth2Network* {.
-      desc: "The Eth2 network to join"
+    logosNetwork* {.
+      desc: "Logos Chain network: mainnet (production) or testnet (dev/test)"
+      defaultValue: Mainnet
       defaultValueDesc: "mainnet"
-      name: "network" .}: Option[string]
+      name: "network" .}: LogosNetworkKind
 
     dataDirFlag* {.
       desc: "The directory where nimbus will store all blockchain data"
@@ -346,6 +351,11 @@ template databaseDir*(config: AnyConf): string =
 
 func runAsService*(config: LBNodeConf): bool =
   config.runAsServiceFlag
+
+func autonatAllowPrivateAddresses*(config: LBNodeConf): bool =
+  ## Testnets may advertise loopback/private addresses; mainnet AutoNAT dial-back
+  ## should only prove public reachability.
+  config.logosNetwork == Testnet
 
 template writeValue*(writer: var JsonWriter,
                      value: TypedInputFile|InputFile|InputDir|OutPath|OutDir|OutFile) =

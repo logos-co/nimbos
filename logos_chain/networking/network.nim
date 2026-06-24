@@ -19,6 +19,8 @@ import
   chronos, chronos/ratelimit, chronicles, metrics,
   libp2p/[switch, peerinfo, multiaddress, multicodec, crypto/crypto,
     crypto/secp, builders],
+  libp2p/protocols/connectivity/autonatv2/server,
+  libp2p/protocols/connectivity/autonatv2/service,
   libp2p/protocols/pubsub/[
       pubsub, gossipsub, rpc/message, rpc/messages, peertable, pubsubpeer],
   libp2p/stream/connection,
@@ -1938,6 +1940,17 @@ proc newBeaconSwitch(
     .withMaxConnections(config.maxPeers)
     .withAgentVersion(config.agentString)
     .withQuicTransport()
+    # AutoNAT v2 dial-back opens a transient second session to a peer we may
+    # already be connected to (the bootstrap link). The default per-peer cap
+    # rejects that session over QUIC, so allow headroom for the dial-back.
+    .withMaxConnsPerPeer(2)
+    .withAutonatV2Server(
+      AutonatV2Config.new(allowPrivateAddresses = autonatAllowPrivateAddresses(config))
+    )
+    # Do not probe on PeerEventKind.Joined: bootstrap dials complete before the
+    # peer-pool handshake finishes, and concurrent dial-back attempts fail (QUIC
+    # EDialError).
+    .withAutonatV2(AutonatV2ServiceConfig.new(askNewConnectedPeers = false))
     .withServices(@[service])
     .build()
   except LPError as exc:
