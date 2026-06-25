@@ -68,11 +68,6 @@
 	url = https://github.com/status-im/nim-metrics.git
 	ignore = untracked
 	branch = master
-[submodule "vendor/nim-secp256k1"]
-	path = vendor/nim-secp256k1
-	url = https://github.com/status-im/nim-secp256k1.git
-	ignore = untracked
-	branch = master
 [submodule "vendor/nim-http-utils"]
 	path = vendor/nim-http-utils
 	url = https://github.com/status-im/nim-http-utils.git
