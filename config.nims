@@ -76,9 +76,6 @@ if defined(windows):
   switch("passL", "-Wl,--stack,8388608")
   # https://github.com/nim-lang/Nim/issues/4057
   --tlsEmulation:off
-  if defined(i386):
-    # set the IMAGE_FILE_LARGE_ADDRESS_AWARE flag so we can use PAE, if enabled, and access more than 2 GiB of RAM
-    switch("passL", "-Wl,--large-address-aware")
 
   # The dynamic Chronicles output currently prevents us from using colors on Windows
   # because these require direct manipulations of the stdout File object.
@@ -112,11 +109,9 @@ elif not (defined(macosx) and defined(arm64)):
   # Apple's Clang can't handle "-march=native" on M1: https://github.com/status-im/nimbus-eth2/issues/2758
   switch("passC", "-march=native")
   switch("passL", "-march=native")
-  if defined(i386) or defined(amd64):
+  if defined(windows) and defined(amd64):
     # https://gcc.gnu.org/bugzilla/show_bug.cgi?id=65782
     # ("-fno-asynchronous-unwind-tables" breaks Nim's exception raising, sometimes)
-    # For non-Windows targets, https://github.com/bitcoin-core/secp256k1/issues/1623
-    # also suggests disabling the same flag to address Ubuntu 22.04/recent AMD CPUs.
     switch("passC", "-mno-avx512f")
     switch("passL", "-mno-avx512f")
 
@@ -199,10 +194,6 @@ switch("hint", "XCannotRaiseY:off")
 # which do not support {.localPassC: "-fno-lto".}
 # Unfortunately this is filename based instead of path-based
 # Assumes GCC
-
-# Secp256k1
-# -fomit-frame-pointer for https://github.com/status-im/nimbus-eth2/issues/6324
-put("secp256k1.always", "-fno-lto -fomit-frame-pointer")
 
 # BearSSL - only RNGs
 put("aesctr_drbg.always", "-fno-lto")
