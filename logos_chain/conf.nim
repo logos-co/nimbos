@@ -247,23 +247,6 @@ type
         defaultValueDesc: "any"
         name: "nat" .}: NatConfig
 
-      externalBeaconApiUrl* {.
-        desc: "External beacon API to use for syncing (on empty database)"
-        name: "external-beacon-api-url" .}: Option[string]
-
-      syncLightClient* {.
-        desc: "Accelerate sync using light client"
-        defaultValue: true
-        name: "sync-light-client" .}: bool
-
-      genesisStateUrl* {.
-        desc: "URL for obtaining the genesis state of the network (for networks without a built-in genesis state)"
-        name: "genesis-state-url" .}: Option[Uri]
-
-      finalizedDepositTreeSnapshot* {.
-        hidden
-        name: "finalized-deposit-tree-snapshot" .}: Option[InputFile]
-
       nodeName* {.
         desc: "A name for this node that will appear in the logs. " &
               "If you set this to 'auto', a persistent automatically generated ID will be selected for each --data-dir folder"
