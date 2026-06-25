@@ -17,12 +17,11 @@ import
   stew/shims/macros,
   json_serialization, json_serialization/std/[net, sets, options],
   chronos, chronos/ratelimit, chronicles, metrics,
-  libp2p/[switch, peerinfo, multiaddress, multicodec, crypto/crypto,
-    crypto/secp, builders],
-  libp2p/protocols/connectivity/autonatv2/server,
-  libp2p/protocols/connectivity/autonatv2/service,
+  libp2p/[
+    switch, peerinfo, multiaddress, multicodec, crypto/crypto, builders],
+  libp2p/protocols/connectivity/autonatv2/[server, service],
   libp2p/protocols/pubsub/[
-      pubsub, gossipsub, rpc/message, rpc/messages, peertable, pubsubpeer],
+    pubsub, gossipsub, rpc/message, rpc/messages, peertable, pubsubpeer],
   libp2p/stream/connection,
   libp2p/services/wildcardresolverservice,
   bearssl/rand,
