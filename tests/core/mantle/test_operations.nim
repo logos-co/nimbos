@@ -37,9 +37,9 @@ suite "core/mantle/operations":
     var inscribe: ChannelInscribePayload
     var deposit: ChannelDepositPayload
     var withdraw: ChannelWithdrawPayload
-    var sdpDeclare: SdpDeclarePayload
-    var sdpWithdraw: SdpWithdrawPayload
-    var sdpActive: SdpActivePayload
+    var sdpDeclare: DeclarationMessage
+    var sdpWithdraw: WithdrawMessage
+    var sdpActive: ActiveMessage
     var leaderClaim: LeaderClaimPayload
     var channelConfig: ChannelConfigPayload
 
@@ -107,7 +107,7 @@ suite "core/mantle/operations":
       opIdNonce: 0'u32,
     )).payload.kind == ChannelWithdraw
 
-    check createSdpDeclareOp(SdpDeclarePayload(
+    check createSdpDeclareOp(DeclarationMessage(
       serviceType: default(ServiceType),
       locators: @[],
       providerId: default(ProviderId),
@@ -115,13 +115,13 @@ suite "core/mantle/operations":
       lockedNoteId: default(NoteId),
     )).opcode == OpSdpDeclare
 
-    check createSdpWithdrawOp(SdpWithdrawPayload(
+    check createSdpWithdrawOp(WithdrawMessage(
       declarationId: default(DeclarationId),
       lockedNoteId: default(NoteId),
       nonce: default(Nonce),
     )).opcode == OpSdpWithdraw
 
-    check createSdpActiveOp(SdpActivePayload(
+    check createSdpActiveOp(ActiveMessage(
       declarationId: default(DeclarationId),
       nonce: default(Nonce),
       metadata: @[],

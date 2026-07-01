@@ -9,11 +9,12 @@
 {.used.}
 
 import
-  std/sets,
+  std/[sets, tables],
   unittest2,
   libp2p/multiaddress,
   ../../../logos_chain/core/mantle/primitives,
-  ../../../logos_chain/core/sdp/state
+  ../../../logos_chain/core/sdp/state,
+  ../../../logos_chain/zk/poseidon2/hasher
 
 suite "core/sdp/state":
   test "LockedNote starts with empty declaration set":
@@ -42,5 +43,107 @@ suite "core/sdp/state":
     except AssertionDefect:
       tooLongRaised = true
     check tooLongRaised
+
+  func seedNoteId(seed: byte): NoteId =
+    var bytes: array[32, byte]
+    bytes[0] = seed
+    frFromBytesLE(bytes).get
+
+  func seedDeclId(seed: byte): DeclarationId =
+    var id: DeclarationId
+    id[0] = seed
+    id
+
+  test "stores declarations and locked notes":
+    var state = SdpState(
+      declarations: initTable[DeclarationId, DeclarationInfo](),
+      lockedNotes: initTable[NoteId, LockedNote](),
+    )
+    let declId = seedDeclId(1)
+    let noteId = seedNoteId(2)
+
+    check declId notin state.declarations
+    check getDeclaration(state, declId).isNone
+
+    var info: DeclarationInfo
+    info.service = ServiceType.bn
+    info.created = 10'u64
+    state.declarations[declId] = info
+    check declId in state.declarations
+    check getDeclaration(state, declId).get().created == 10'u64
+
+    addDeclarationToLockedNote(state, noteId, declId, 100'u64)
+    check noteId in state.lockedNotes
+    let locked = getLockedNote(state, noteId).get()
+    check locked.declarations.len == 1
+    check locked.lockedUntil == 100'u64
+
+    addDeclarationToLockedNote(state, noteId, declId, 50'u64)
+    check getLockedNote(state, noteId).get().lockedUntil == 100'u64
+
+    let otherDecl = seedDeclId(3)
+    addDeclarationToLockedNote(state, noteId, otherDecl, 200'u64)
+    check getLockedNote(state, noteId).get().lockedUntil == 200'u64
+
+    removeDeclarationFromLockedNote(state, noteId, otherDecl)
+    check noteId in state.lockedNotes
+    removeDeclarationFromLockedNote(state, noteId, declId)
+    check noteId notin state.lockedNotes
+
+    state.declarations.del(declId)
+    check declId notin state.declarations
+
+  const gcParams = ServiceParameters(
+    sessionLength: 10, lockPeriod: 1,
+    inactivityPeriod: 1, retentionPeriod: 1, timestamp: 0,
+  )
+
+  test "isDeclarationGarbage applies retention and inactivity rules":
+    var withdrawn: DeclarationInfo
+    withdrawn.service = ServiceType.bn
+    withdrawn.active = 50'u64
+    withdrawn.withdrawn = 50'u64
+    check not isDeclarationGarbage(withdrawn, gcParams, 60)
+    check isDeclarationGarbage(withdrawn, gcParams, 61)
+
+    var inactive: DeclarationInfo
+    inactive.service = ServiceType.bn
+    inactive.active = 10'u64
+    inactive.withdrawn = 0'u64
+    check not isDeclarationGarbage(inactive, gcParams, 30)
+    check isDeclarationGarbage(inactive, gcParams, 31)
+
+    var recent: DeclarationInfo
+    recent.service = ServiceType.bn
+    recent.active = 25'u64
+    recent.withdrawn = 0'u64
+    check not isDeclarationGarbage(recent, gcParams, 45)
+    check isDeclarationGarbage(recent, gcParams, 46)
+
+  test "collectGarbage removes expired declarations and cleans locked notes":
+    var state = SdpState(
+      declarations: initTable[DeclarationId, DeclarationInfo](),
+      lockedNotes: initTable[NoteId, LockedNote](),
+    )
+    var parameters = initTable[ServiceType, ServiceParameters]()
+    parameters[ServiceType.bn] = gcParams
+
+    let declId = seedDeclId(7)
+    let noteId = seedNoteId(8)
+    var info: DeclarationInfo
+    info.service = ServiceType.bn
+    info.lockedNoteId = noteId
+    info.active = 10'u64
+    info.withdrawn = 0'u64
+    state.declarations[declId] = info
+    addDeclarationToLockedNote(state, noteId, declId, 100'u64)
+
+    collectGarbage(state, parameters, 30)
+    check declId in state.declarations
+    check noteId in state.lockedNotes
+
+    collectGarbage(state, parameters, 31)
+    check declId notin state.declarations
+    check noteId notin state.lockedNotes
 
 {.pop.}

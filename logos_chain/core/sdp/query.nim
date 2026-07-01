@@ -12,7 +12,7 @@
 
 import
   results,
-  std/[options, sequtils, tables],
+  std/[sequtils, tables],
   ./[registry, state]
 
 export registry, state

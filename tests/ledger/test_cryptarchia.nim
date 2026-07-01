@@ -9,12 +9,12 @@
 {.used.}
 
 import
-  std/[os, strutils],
+  std/[os, sets, strutils],
   unittest2,
   results,
   poseidon2/types,          # `==` for F
   ../../logos_chain/ledger/
-    [balance, cryptarchia_state, locked_notes, types, utxo_store],
+    [balance, cryptarchia_state, types, utxo_store],
   ../../logos_chain/core/mantle/[primitives, operations, proofs, tx_hashing, utxo],
   ../../logos_chain/zk/zksign,
   ../zk/zksign_helpers,
@@ -87,7 +87,7 @@ suite "tryApplyTransfer — error paths":
           outputs: Outputs(notes: @[mkNote(50, pkSeed = 2)]),
         )
         r = s0.tryApplyTransfer(
-          LockedNotes.init(),
+          initHashSet[NoteId](),
           op,
           sig = default(ZkSigProof),
           txHash = mkTxHash(),
@@ -99,17 +99,18 @@ suite "tryApplyTransfer — error paths":
     let
       input = mkUtxo(value = 100, pkSeed = 1)
       s0 = CryptarchiaState.init([input])
-      locked = LockedNotes.init([input.id])
       op = TransferPayload(
         inputs: Inputs(noteIds: @[input.id]),
         outputs: Outputs(notes: @[mkNote(100, pkSeed = 2)]),
       )
-      r = s0.tryApplyTransfer(
-        locked,
-        op,
-        sig = default(ZkSigProof),
-        txHash = mkTxHash(),
-      )
+    var locked = initHashSet[NoteId]()
+    locked.incl(input.id)
+    let r = s0.tryApplyTransfer(
+      locked,
+      op,
+      sig = default(ZkSigProof),
+      txHash = mkTxHash(),
+    )
     check r.isErr
     check r.error == LockedNote
 
@@ -122,7 +123,7 @@ suite "tryApplyTransfer — error paths":
         outputs: Outputs(notes: @[mkNote(100, pkSeed = 2)]),
       )
       r = s0.tryApplyTransfer(
-        LockedNotes.init(),
+        initHashSet[NoteId](),
         op,
         sig = default(ZkSigProof),
         txHash = mkTxHash(),
@@ -140,7 +141,7 @@ suite "tryApplyTransfer — error paths":
         outputs: Outputs(notes: @[mkNote(100, pkSeed = 2)]),
       )
       r = s0.tryApplyTransfer(
-        LockedNotes.init(),
+        initHashSet[NoteId](),
         op,
         sig = default(ZkSigProof),
         txHash = mkTxHash(),
@@ -172,7 +173,7 @@ suite "tryApplyTransfer — happy paths (fixture-driven)":
         inputs: Inputs(noteIds: @[input.id]),
         outputs: Outputs(notes: @[mkNote(100, pkSeed = 2)]),
       )
-      r = s0.tryApplyTransfer(LockedNotes.init(), op, sig, txHash)
+      r = s0.tryApplyTransfer(initHashSet[NoteId](), op, sig, txHash)
     check r.isOk
 
     let (s1, balance) = r.get
@@ -191,7 +192,7 @@ suite "tryApplyTransfer — happy paths (fixture-driven)":
             @[mkNote(30, pkSeed = 2), mkNote(30, pkSeed = 3), mkNote(40, pkSeed = 4)]
         ),
       )
-      r = s0.tryApplyTransfer(LockedNotes.init(), op, sig, txHash)
+      r = s0.tryApplyTransfer(initHashSet[NoteId](), op, sig, txHash)
     check r.isOk
 
     let (s1, balance) = r.get
@@ -207,7 +208,7 @@ suite "tryApplyTransfer — happy paths (fixture-driven)":
         inputs: Inputs(noteIds: @[input.id]),
         outputs: Outputs(notes: @[mkNote(0, pkSeed = 2)]),
       )
-      r = s0.tryApplyTransfer(LockedNotes.init(), op, sig, txHash)
+      r = s0.tryApplyTransfer(initHashSet[NoteId](), op, sig, txHash)
     check r.isErr
     check r.error == ZeroValueNote
 
@@ -218,7 +219,7 @@ suite "tryApplyTransfer — happy paths (fixture-driven)":
       op = TransferPayload(
         inputs: Inputs(noteIds: @[input.id]), outputs: Outputs(notes: @[])
       )
-      r = s0.tryApplyTransfer(LockedNotes.init(), op, sig, txHash)
+      r = s0.tryApplyTransfer(initHashSet[NoteId](), op, sig, txHash)
     check r.isOk
 
     let (s1, balance) = r.get
@@ -234,7 +235,7 @@ suite "tryApplyTransfer — happy paths (fixture-driven)":
         inputs: Inputs(noteIds: @[input.id]),
         outputs: Outputs(notes: @[mkNote(1, pkSeed = 2), mkNote(1, pkSeed = 3)]),
       )
-      r = s0.tryApplyTransfer(LockedNotes.init(), op, sig, txHash)
+      r = s0.tryApplyTransfer(initHashSet[NoteId](), op, sig, txHash)
     check r.isOk
 
     let (s1, balance) = r.get
@@ -250,7 +251,7 @@ suite "tryApplyTransfer — happy paths (fixture-driven)":
         outputs:
           Outputs(notes: @[mkNote(4000, pkSeed = 2), mkNote(3000, pkSeed = 3)]),
       )
-      r = s0.tryApplyTransfer(LockedNotes.init(), op, sig, txHash)
+      r = s0.tryApplyTransfer(initHashSet[NoteId](), op, sig, txHash)
     check r.isOk
 
     let (s1, balance) = r.get
@@ -267,7 +268,7 @@ suite "tryApplyTransfer — happy paths (fixture-driven)":
         inputs: Inputs(noteIds: @[input.id]),
         outputs: Outputs(notes: @[mkNote(100, pkSeed = 2)]),
       )
-    discard s0.tryApplyTransfer(LockedNotes.init(), op, sig, txHash)
+    discard s0.tryApplyTransfer(initHashSet[NoteId](), op, sig, txHash)
 
     check s0.len == preLen
     check s0.root == preRoot
@@ -283,7 +284,7 @@ suite "applyTransferState — multi-input":
         inputs: Inputs(noteIds: @[a.id, b.id]),
         outputs: Outputs(notes: @[mkNote(100, pkSeed = 2)]),
       )
-      r = s0.applyTransferState(LockedNotes.init(), op)
+      r = s0.applyTransferState(initHashSet[NoteId](), op)
     check r.isOk
 
     let (s1, balance, pks) = r.get
@@ -302,7 +303,7 @@ suite "applyTransferState — chain":
         inputs: Inputs(noteIds: @[input.id]),
         outputs: Outputs(notes: @[mkNote(60, pkSeed = 2), mkNote(40, pkSeed = 3)]),
       )
-      r1 = s0.applyTransferState(LockedNotes.init(), tx1)
+      r1 = s0.applyTransferState(initHashSet[NoteId](), tx1)
     check r1.isOk
 
     let
@@ -321,7 +322,7 @@ suite "applyTransferState — chain":
         inputs: Inputs(noteIds: @[outUtxo0.id, outUtxo1.id]),
         outputs: Outputs(notes: @[mkNote(100, pkSeed = 4)]),
       )
-      r2 = s1.applyTransferState(LockedNotes.init(), tx2)
+      r2 = s1.applyTransferState(initHashSet[NoteId](), tx2)
     check r2.isOk
 
     let (s2, balance2, pks2) = r2.get
