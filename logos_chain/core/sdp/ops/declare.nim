@@ -44,6 +44,7 @@ proc validateSdpDeclare(
     minStake: MinStake,
     utxos: UtxoStore,
     state: SdpState,
+    genesis: bool = false,
 ): Result[DeclarationId, LedgerError] =
   ## Validates a ``DeclarationMessage`` per SDP Declare rules. Returns the
   ## derived ``declaration_id`` on success. A new declaration starts with
@@ -53,9 +54,10 @@ proc validateSdpDeclare(
     return err(LockedNoteNotFound)
   let note = utxo.note
 
-  ?verifySdpDeclareProofs(
-    declaration, proof, txHash, note.zkPublicKey,
-  )
+  if not genesis:
+    ?verifySdpDeclareProofs(
+      declaration, proof, txHash, note.zkPublicKey,
+    )
 
   let declarationId = declarationId(declaration)
   if declarationId in state.declarations:
@@ -81,11 +83,12 @@ proc tryApplySdpDeclare*(
     txHash: ZkHash,
     utxos: UtxoStore,
     blockHeight: BlockNumber,
+    genesis: bool = false,
 ): Result[void, LedgerError] =
   let minStake = getMinStakeAt(registry, blockHeight).valueOr:
     return err(MinStakeNotFound)
   let declarationId = ?validateSdpDeclare(
-    declaration, proof, txHash, minStake, utxos, registry.state,
+    declaration, proof, txHash, minStake, utxos, registry.state, genesis,
   )
   let params = getParametersAt(
     registry, declaration.serviceType, blockHeight,

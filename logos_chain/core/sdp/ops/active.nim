@@ -41,6 +41,7 @@ proc validateSdpActive(
     proof: ZkSigProof,
     txHash: Hash32,
     state: SdpState,
+    genesis: bool = false,
 ): Result[void, LedgerError] =
   ## Validates an ``ActiveMessage`` per SDP Active rules (excluding
   ## service-specific activity logic, which runs at apply time).
@@ -48,7 +49,8 @@ proc validateSdpActive(
   ?checkNotWithdrawn(declaration)
   ?checkNonceMonotonic(declaration, active.nonce)
 
-  ?verifyZkSig(proof, txHash, @[declaration.zkId])
+  if not genesis:
+    ?verifyZkSig(proof, txHash, @[declaration.zkId])
 
   ok()
 
@@ -58,8 +60,9 @@ proc tryApplySdpActive*(
     proof: ZkSigProof,
     txHash: Hash32,
     blockHeight: BlockNumber,
+    genesis: bool = false,
 ): Result[void, LedgerError] =
-  ?validateSdpActive(active, proof, txHash, registry.state)
+  ?validateSdpActive(active, proof, txHash, registry.state, genesis)
   let declaration = registry.state.declarations.getOrDefault(active.declarationId)
   let params = getParametersAt(
     registry, declaration.service, blockHeight,

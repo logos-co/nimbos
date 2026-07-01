@@ -28,6 +28,7 @@ proc validateSdpWithdraw(
     utxos: UtxoStore,
     state: SdpState,
     blockHeight: BlockNumber,
+    genesis: bool = false,
 ): Result[void, LedgerError] =
   ## Validates a ``WithdrawMessage`` per SDP Withdraw rules.
   let utxo = utxos.get(withdraw.lockedNoteId).valueOr:
@@ -46,7 +47,8 @@ proc validateSdpWithdraw(
   if withdraw.lockedNoteId != declareInfo.lockedNoteId:
     return err(LockedNoteIdMismatch)
 
-  ?verifyZkSig(proof, txHash, @[note.zkPublicKey, declareInfo.zkId])
+  if not genesis:
+    ?verifyZkSig(proof, txHash, @[note.zkPublicKey, declareInfo.zkId])
   ?checkNotWithdrawn(declareInfo)
   ?checkNonceMonotonic(declareInfo, withdraw.nonce)
 
@@ -59,9 +61,10 @@ proc tryApplySdpWithdraw*(
     txHash: ZkHash,
     utxos: UtxoStore,
     blockHeight: BlockNumber,
+    genesis: bool = false,
 ): Result[void, LedgerError] =
   ?validateSdpWithdraw(
-    withdraw, proof, txHash, utxos, registry.state, blockHeight,
+    withdraw, proof, txHash, utxos, registry.state, blockHeight, genesis,
   )
   var declaration = registry.state.declarations.getOrDefault(withdraw.declarationId)
   declaration.nonce = withdraw.nonce

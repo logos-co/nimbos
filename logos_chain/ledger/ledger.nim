@@ -65,9 +65,11 @@ proc tryApplyTx*(
     state: sink LedgerState,
     tx: SignedMantleTx,
     blockHeight: BlockNumber,
+    genesis: bool = false,
 ): Result[tuple[state: LedgerState, balance: Balance], LedgerError] =
   ## Applies one transaction; returns the new state and the tx's net balance
-  ## (sum of per-op balances).
+  ## (sum of per-op balances). When ``genesis`` is true, ZK proofs are not
+  ## checked (trusted deployment proofs).
   if tx.tx.ops.len != tx.opProofs.len:
     return err(InvalidProof)
 
@@ -86,7 +88,7 @@ proc tryApplyTx*(
       let r =
         ?s.cryptarchiaLedger.tryApplyTransfer(
           getLockedNotes(s.sdp.state),
-          op.payload.transfer, proof.transferProof, txHash
+          op.payload.transfer, proof.transferProof, txHash, genesis,
         )
       s.cryptarchiaLedger = r.state
       balance = ?balance.checkedAdd(r.balance)
@@ -100,6 +102,7 @@ proc tryApplyTx*(
         txHash,
         s.cryptarchiaLedger.latestUtxos,
         blockHeight,
+        genesis,
       )
     of SdpWithdraw:
       if proof.kind != opfSdpWithdraw:
@@ -111,6 +114,7 @@ proc tryApplyTx*(
         txHash,
         s.cryptarchiaLedger.latestUtxos,
         blockHeight,
+        genesis,
       )
     of SdpActive:
       if proof.kind != opfSdpActive:
@@ -121,6 +125,7 @@ proc tryApplyTx*(
         proof.sdpActiveProof,
         txHash,
         blockHeight,
+        genesis,
       )
     else:
       return err(UnsupportedOp)
@@ -130,14 +135,18 @@ proc tryApplyTxns*(
     state: sink LedgerState,
     txs: openArray[SignedMantleTx],
     blockHeight: BlockNumber,
+    genesis: bool = false,
 ): Result[LedgerState, LedgerError] =
   ## Applies a block's transactions in order. Each tx must net to zero
   ## balance — otherwise returns `UnbalancedTransaction` or
-  ## `InsufficientBalance`.
+  ## `InsufficientBalance`. When ``genesis`` is true, balance checks are
+  ## skipped (trusted genesis mints need not balance).
   var s = state
   for tx in txs:
-    let r = ?s.tryApplyTx(tx, blockHeight)
+    let r = ?s.tryApplyTx(tx, blockHeight, genesis)
     s = r.state
+    if genesis:
+      continue
     if r.balance > Balance.zero:
       return err(UnbalancedTransaction)
     if r.balance < Balance.zero:
@@ -191,11 +200,12 @@ proc fromGenesis*(
     genesisTxs: openArray[SignedMantleTx],
 ): Result[LedgerState, LedgerError] =
   ## Builds genesis ledger state by applying genesis transactions at height 0.
+  ## Genesis proofs are trusted from deployment settings and are not verified.
   var state = LedgerState(
     cryptarchiaLedger: CryptarchiaState.init(),
     sdp: sdp,
   )
-  state = ?state.tryApplyTxns(genesisTxs, blockHeight = 0'u64)
+  state = ?state.tryApplyTxns(genesisTxs, blockHeight = 0'u64, genesis = true)
   onBlockApplied(state.sdp, previousBlockNumber = 0'u64, blockNumber = 0'u64)
   ok(state)
 

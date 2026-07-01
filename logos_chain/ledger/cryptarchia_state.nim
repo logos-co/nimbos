@@ -91,13 +91,15 @@ proc tryApplyTransfer*(
     op: TransferPayload,
     sig: ZkSigProof,
     txHash: ZkHash,
+    genesis: bool = false,
 ): Result[tuple[state: CryptarchiaState, balance: Balance], LedgerError] =
-  ## Applies a `TransferPayload` to the cryptarchia state and verifies the
-  ## ZkSig over the collected input pks. Returns
+  ## Applies a `TransferPayload` to the cryptarchia state. When ``genesis``
+  ## is false, verifies the ZkSig over the collected input pks. Returns
   ## `(new_state, sum(inputs) − sum(outputs))`. The returned balance may be
   ## positive (surplus → fees), zero (balanced), or negative (deficit).
   let r = ?s.applyTransferState(lockedNoteIds, op)
-  ?verifyZkSig(sig, txHash, r.pks)
+  if not genesis:
+    ?verifyZkSig(sig, txHash, r.pks)
   ok((r.state, r.balance))
 
 {.pop.}
