@@ -125,7 +125,7 @@ proc init*(
 
   let network = createLBP2PNode(
     rng,
-    config,
+    networkConfig(config),
     rng[].getRandomNetKeys(),
   ).valueOr:
     error "Failed to initialize node", err = error

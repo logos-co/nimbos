@@ -61,6 +61,10 @@ proc defaultCircuitsDir*(): InputDir =
   InputDir(getDataDir() / "logos-blockchain-circuits" / ExpectedCircuitsVersion)
 
 type
+  LogosNetworkKind* {.pure.} = enum
+    Mainnet = "mainnet"
+    Testnet = "testnet"
+
   BNStartUpCmd* {.pure.} = enum
     lbNode ## default startup command (CLI name derived by confutils, e.g. `lb-node`)
 
@@ -86,10 +90,11 @@ type
       desc: "Specifies a path for the written JSON log file (deprecated)"
       name: "log-file" .}: Option[OutFile]
 
-    eth2Network* {.
-      desc: "The Eth2 network to join"
+    logosNetwork* {.
+      desc: "Logos Chain network: mainnet (production) or testnet (dev/test)"
+      defaultValue: Mainnet
       defaultValueDesc: "mainnet"
-      name: "network" .}: Option[string]
+      name: "network" .}: LogosNetworkKind
 
     dataDirFlag* {.
       desc: "The directory where nimbus will store all blockchain data"
@@ -281,6 +286,19 @@ type
         defaultValueDesc: "<platform data>/logos-blockchain-circuits/<version>"
         name: "circuits-dir" .}: InputDir
 
+  ## Networking settings extracted from ``LBNodeConf`` at node startup and passed
+  ## to the libp2p stack without threading the full CLI config object.
+  NetworkConfig* = object
+    listenAddress*: Option[IpAddress]
+    quicPort*: Port
+    nat*: NatConfig
+    maxPeers*: int
+    hardMaxPeers*: Option[int]
+    agentString*: string
+    autonatAllowPrivateAddresses*: bool
+    bootstrapNodes*: seq[string]
+    bootstrapNodesFile*: InputFile
+
   AnyConf* = LBNodeConf
 
 func parseCmdArg*(T: type Uri, input: string): T
@@ -301,6 +319,21 @@ template databaseDir*(config: AnyConf): string =
 
 func runAsService*(config: LBNodeConf): bool =
   config.runAsServiceFlag
+
+proc networkConfig*(config: LBNodeConf): NetworkConfig =
+  NetworkConfig(
+    listenAddress: config.listenAddress,
+    quicPort: config.quicPort,
+    nat: config.nat,
+    maxPeers: config.maxPeers,
+    hardMaxPeers: config.hardMaxPeers,
+    agentString: config.agentString,
+    # Testnets may advertise loopback/private addresses; mainnet dial-back should
+    # only prove public reachability.
+    autonatAllowPrivateAddresses: config.logosNetwork == Testnet,
+    bootstrapNodes: config.bootstrapNodes,
+    bootstrapNodesFile: config.bootstrapNodesFile,
+  )
 
 template writeValue*(writer: var JsonWriter,
                      value: TypedInputFile|InputFile|InputDir|OutPath|OutDir|OutFile) =

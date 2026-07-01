@@ -131,7 +131,7 @@ proc waitLibp2pConnected*(sw: Switch, remote: PeerId): Future[bool] {.async.} =
   false
 
 proc makeBootstrapConfs*(listenerPort, dialerPort: Port): tuple[
-    confL: LBNodeConf, confD: LBNodeConf,
+    confL: NetworkConfig, confD: NetworkConfig,
     rngL: ref HmacDrbgContext, rngD: ref HmacDrbgContext] =
   # TODO(logos-chain-networking): remove NatConfig dependency from test helpers once
   # networking no longer relies on eth/net/nat-config style plumbing.
@@ -139,26 +139,56 @@ proc makeBootstrapConfs*(listenerPort, dialerPort: Port): tuple[
   let rngL = HmacDrbgContext.new()
   let rngD = HmacDrbgContext.new()
   (
-    confL: LBNodeConf(
-      cmd: BNStartUpCmd.lbNode,
+    confL: NetworkConfig(
       listenAddress: some(TestLoopbackIp),
       nat: natCfg,
       quicPort: listenerPort,
       maxPeers: 8,
       hardMaxPeers: some(8),
       agentString: "p2p-bootstrap-listener",
+      autonatAllowPrivateAddresses: true,
     ),
-    confD: LBNodeConf(
-      cmd: BNStartUpCmd.lbNode,
+    confD: NetworkConfig(
       listenAddress: some(TestLoopbackIp),
       nat: natCfg,
       quicPort: dialerPort,
       maxPeers: 8,
       hardMaxPeers: some(8),
       agentString: "p2p-bootstrap-dialer",
+      autonatAllowPrivateAddresses: true,
     ),
     rngL: rngL,
     rngD: rngD,
+  )
+
+type BootstrapPeers* = object
+  listener*, dialer*: LBP2PNode
+  listenerPeerId*: PeerId
+
+proc createBootstrapPeers*(
+    listenerPort, dialerPort: Port,
+): Future[BootstrapPeers] {.async.} =
+  let (confL, confD, rngL, rngD) = makeBootstrapConfs(listenerPort, dialerPort)
+
+  let listener = createLBP2PNode(rngL, confL, rngL[].getRandomNetKeys()).valueOr:
+    fail("createLBP2PNode listener: " & $error)
+  await listener.startListening()
+
+  let listenerPeerId = listener.switch.peerInfo.peerId
+  var confDial = confD
+  confDial.bootstrapNodes = @[
+    "/ip4/127.0.0.1/udp/" & $listenerPort &
+    "/quic-v1/p2p/" & $listenerPeerId
+  ]
+
+  let dialer = createLBP2PNode(rngD, confDial, rngD[].getRandomNetKeys()).valueOr:
+    await listener.stop()
+    fail("createLBP2PNode dialer: " & $error)
+
+  BootstrapPeers(
+    listener: listener,
+    dialer: dialer,
+    listenerPeerId: listenerPeerId,
   )
 
 addOutputFormatter(new TimingCollector)
