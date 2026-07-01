@@ -27,7 +27,7 @@ const TestSecurityParam* = 1'u64
 func testSdpConfig*(): deploy.SdpConfig =
   deploy.SdpConfig(
     bn: deploy.BnServiceParams(
-      lockPeriod: 5, inactivityPeriod: 1, retentionPeriod: 1, timestamp: 0,
+      lockPeriod: 5, inactivityPeriod: 1, retentionPeriod: 1, epoch: 0,
     ),
     minStake: deploy.MinStake(threshold: 100, timestamp: 0),
   )

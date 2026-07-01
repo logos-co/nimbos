@@ -45,13 +45,13 @@ func init*(
     securityParam: uint64,
 ): T =
   ## Seed service parameters and minimum stake from deployment settings.
-  let bnDefaults = defaultBnServiceParameters(sdpConfig.bn.timestamp.uint64)
+  let bnDefaults = defaultBnServiceParameters(sdpConfig.bn.epoch.uint64)
   let bnParams = ServiceParameters(
     sessionLength: bnDefaults.sessionLength,
     lockPeriod: sdpConfig.bn.lockPeriod.uint64,
     inactivityPeriod: sdpConfig.bn.inactivityPeriod.uint64,
     retentionPeriod: sdpConfig.bn.retentionPeriod.uint64,
-    timestamp: sdpConfig.bn.timestamp.uint64,
+    timestamp: sdpConfig.bn.epoch.uint64,
   )
   validateSessionLength(bnParams, securityParam)
   T(

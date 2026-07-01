@@ -236,10 +236,10 @@ suite "deployment-settings":
       mt = yamlGetPathNode(tx0, ["mantle_tx"]).get()
       ops = yamlGetPathNode(mt, ["ops"]).get()
     check ops.kind == ySequence
-    check ops.elems.len == 6
+    check ops.elems.len == 3
     let proofs = yamlGetPathNode(tx0, ["ops_proofs"]).get()
     check proofs.kind == ySequence
-    check proofs.elems.len == 6
+    check proofs.elems.len == 3
 
   test "loadDeploymentSettings validates canonical YAML":
     var c = LBNodeConf(cmd: BNStartUpCmd.lbNode)

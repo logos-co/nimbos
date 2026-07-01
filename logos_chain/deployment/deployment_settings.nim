@@ -30,7 +30,6 @@ export
 type
   BlendSchedulerCover* = object
     messageFrequencyPerRound*: float
-    intervalsForSafetyBuffer*: int
 
   BlendSchedulerDelayer* = object
     maximumReleaseDelayInRounds*: int
@@ -73,7 +72,7 @@ type
     lockPeriod*: int
     inactivityPeriod*: int
     retentionPeriod*: int
-    timestamp*: int
+    epoch*: int
 
   MinStake* = object
     threshold*: int
@@ -123,7 +122,6 @@ func validateDeploymentSettingsStructure(root: YamlNode): Result[void, string] =
   needPath(["blend", "core", "normalization_constant"])
   needPath(["blend", "core", "activity_threshold_sensitivity"])
   needPath(["blend", "core", "scheduler", "cover", "message_frequency_per_round"])
-  needPath(["blend", "core", "scheduler", "cover", "intervals_for_safety_buffer"])
   needPath(["blend", "core", "scheduler", "delayer", "maximum_release_delay_in_rounds"])
   needPath(["network", "kademlia_protocol_name"])
   needPath(["network", "identify_protocol_name"])
@@ -135,10 +133,12 @@ func validateDeploymentSettingsStructure(root: YamlNode): Result[void, string] =
   needPath(["cryptarchia", "slot_activation_coeff", "numerator"])
   needPath(["cryptarchia", "slot_activation_coeff", "denominator"])
   needPath(["cryptarchia", "learning_rate"])
-  needPath(["cryptarchia", "sdp_config", "service_params", "BN", "lock_period"])
   needPath(["cryptarchia", "sdp_config", "service_params", "BN", "inactivity_period"])
   needPath(["cryptarchia", "sdp_config", "service_params", "BN", "retention_period"])
-  needPath(["cryptarchia", "sdp_config", "service_params", "BN", "timestamp"])
+  let bnNode = yamlGetPathNode(root, ["cryptarchia", "sdp_config", "service_params", "BN"]).valueOr:
+    return err("deployment-settings: missing or invalid path: cryptarchia.sdp_config.service_params.BN")
+  if yamlGetPathNode(bnNode, ["epoch"]).isNone and yamlGetPathNode(bnNode, ["timestamp"]).isNone:
+    return err("deployment-settings: missing or invalid path: cryptarchia.sdp_config.service_params.BN.epoch")
   needPath(["cryptarchia", "sdp_config", "min_stake", "threshold"])
   needPath(["cryptarchia", "sdp_config", "min_stake", "timestamp"])
   needPath(["cryptarchia", "gossipsub_protocol"])
@@ -147,6 +147,26 @@ func validateDeploymentSettingsStructure(root: YamlNode): Result[void, string] =
   needPath(["time", "slot_duration"])
   needPath(["mempool", "pubsub_topic"])
   ok()
+
+func reqBnServiceParams(root: YamlNode): Result[BnServiceParams, string] =
+  let lockPeriod =
+    if yamlGetPathNode(root, ["cryptarchia", "sdp_config", "service_params", "BN", "lock_period"]).isSome:
+      ? reqInt(root, ["cryptarchia", "sdp_config", "service_params", "BN", "lock_period"])
+    else:
+      1
+  let epoch =
+    if yamlGetPathNode(root, ["cryptarchia", "sdp_config", "service_params", "BN", "epoch"]).isSome:
+      ? reqInt(root, ["cryptarchia", "sdp_config", "service_params", "BN", "epoch"])
+    else:
+      ? reqInt(root, ["cryptarchia", "sdp_config", "service_params", "BN", "timestamp"])
+  ok(BnServiceParams(
+    lockPeriod: lockPeriod,
+    inactivityPeriod: ? reqInt(
+      root, ["cryptarchia", "sdp_config", "service_params", "BN", "inactivity_period"]),
+    retentionPeriod: ? reqInt(
+      root, ["cryptarchia", "sdp_config", "service_params", "BN", "retention_period"]),
+    epoch: epoch,
+  ))
 
 func deploymentSettingsFromYaml(root: YamlNode): Result[DeploymentSettings, string] =
   let parsedGenesis = ? parseDeploymentGenesisState(root)
@@ -163,8 +183,6 @@ func deploymentSettingsFromYaml(root: YamlNode): Result[DeploymentSettings, stri
           cover: BlendSchedulerCover(
             messageFrequencyPerRound: ? reqFloat(
               root, ["blend", "core", "scheduler", "cover", "message_frequency_per_round"]),
-            intervalsForSafetyBuffer: ? reqInt(
-              root, ["blend", "core", "scheduler", "cover", "intervals_for_safety_buffer"])
           ),
           delayer: BlendSchedulerDelayer(
             maximumReleaseDelayInRounds: ? reqInt(
@@ -197,12 +215,7 @@ func deploymentSettingsFromYaml(root: YamlNode): Result[DeploymentSettings, stri
       ),
       learningRate: ? reqFloat(root, ["cryptarchia", "learning_rate"]),
       sdpConfig: SdpConfig(
-        bn: BnServiceParams(
-          lockPeriod: ? reqInt(root, ["cryptarchia", "sdp_config", "service_params", "BN", "lock_period"]),
-          inactivityPeriod: ? reqInt(root, ["cryptarchia", "sdp_config", "service_params", "BN", "inactivity_period"]),
-          retentionPeriod: ? reqInt(root, ["cryptarchia", "sdp_config", "service_params", "BN", "retention_period"]),
-          timestamp: ? reqInt(root, ["cryptarchia", "sdp_config", "service_params", "BN", "timestamp"])
-        ),
+        bn: ? reqBnServiceParams(root),
         minStake: MinStake(
           threshold: ? reqInt(root, ["cryptarchia", "sdp_config", "min_stake", "threshold"]),
           timestamp: ? reqInt(root, ["cryptarchia", "sdp_config", "min_stake", "timestamp"])
@@ -238,8 +251,6 @@ func validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
   need(ds.blend.core.activityThresholdSensitivity > 0, "blend.core.activity_threshold_sensitivity must be > 0")
   need(ds.blend.core.scheduler.cover.messageFrequencyPerRound > 0.0,
     "blend.core.scheduler.cover.message_frequency_per_round must be > 0")
-  need(ds.blend.core.scheduler.cover.intervalsForSafetyBuffer > 0,
-    "blend.core.scheduler.cover.intervals_for_safety_buffer must be > 0")
   need(ds.blend.core.scheduler.delayer.maximumReleaseDelayInRounds > 0,
     "blend.core.scheduler.delayer.maximum_release_delay_in_rounds must be > 0")
 
@@ -261,8 +272,8 @@ func validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
     "cryptarchia.sdp_config.service_params.BN.inactivity_period must be > 0")
   need(ds.cryptarchia.sdpConfig.bn.retentionPeriod > 0,
     "cryptarchia.sdp_config.service_params.BN.retention_period must be > 0")
-  need(ds.cryptarchia.sdpConfig.bn.timestamp >= 0,
-    "cryptarchia.sdp_config.service_params.BN.timestamp must be >= 0")
+  need(ds.cryptarchia.sdpConfig.bn.epoch >= 0,
+    "cryptarchia.sdp_config.service_params.BN.epoch must be >= 0")
   need(ds.cryptarchia.sdpConfig.minStake.threshold > 0,
     "cryptarchia.sdp_config.min_stake.threshold must be > 0")
   need(ds.cryptarchia.sdpConfig.minStake.timestamp >= 0,
