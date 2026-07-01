@@ -7,18 +7,12 @@
 
 ## `MantleState` bundles all Mantle-side sub-states under one composite:
 ## `channels` now, SDP and leader sub-states in later PRs.
-##
-## The validate-then-apply composition for Inscribe/Config/Withdraw lives
-## here; the channel_state primitives are the building blocks. Deposit uses
-## the apply-then-verify pattern (zkSig verify consumes pks collected
-## during UTXO removal — same as cryptarchia's Transfer).
 
 {.push raises: [], gcsafe.}
 
 import
-  std/tables,
   results,
-  ./[balance, channel_state, cryptarchia_state, locked_notes, types],
+  ./[channel_state, cryptarchia_state, locked_notes, types],
   ../core/mantle/[primitives, operations, proofs]
 
 export channel_state
@@ -28,10 +22,10 @@ type
     channels*: ChannelStore
 
 func init*(_: typedesc[MantleState]): MantleState =
-  MantleState(channels: initTable[ChannelId, ChannelState]())
+  MantleState(channels: HashTrieMap[ChannelId, ChannelState].init())
 
 func tryApplyChannelInscribe*(
-    ms: sink MantleState,
+    ms: MantleState,
     op: ChannelInscribePayload,
     sig: Ed25519Signature,
     txHash: Hash32,
@@ -42,7 +36,7 @@ func tryApplyChannelInscribe*(
   ok(MantleState(channels: applyChannelInscribe(ms.channels, op, blockSlot)))
 
 func tryApplyChannelConfig*(
-    ms: sink MantleState,
+    ms: MantleState,
     op: ChannelConfigPayload,
     proof: ChannelWithdrawOpProof,
     txHash: Hash32,
@@ -53,38 +47,31 @@ func tryApplyChannelConfig*(
   ok(MantleState(channels: applyChannelConfig(ms.channels, op, blockSlot)))
 
 proc tryApplyChannelDeposit*(
-    ms: sink MantleState,
-    cs: sink CryptarchiaState,
+    ms: MantleState,
+    cs: CryptarchiaState,
     lockedNotes: LockedNotes,
     op: ChannelDepositPayload,
     sig: ZkSigProof,
     txHash: Hash32,
-): Result[
-    tuple[ms: MantleState, cs: CryptarchiaState, balance: Balance],
-    LedgerError,
-] =
-  ## ChannelDeposit crosses ledgers — input UTXOs consumed, channel balance
-  ## credited. Apply-then-verify pattern (matches cryptarchia's Transfer):
-  ## the zkSig verify uses `pks` collected during UTXO removal.
-  let r = ?tryApplyChannelDeposit(
-    ms.channels, cs, lockedNotes, op, sig, txHash)
-  ok((MantleState(channels: r.channels), r.cs, r.balance))
+): Result[tuple[ms: MantleState, cs: CryptarchiaState], LedgerError] =
+  ## ChannelDeposit — consumes input UTXOs from cryptarchia and credits the
+  ## channel balance. Validate-then-apply.
+  ?validateChannelDeposit(ms.channels, cs, lockedNotes, op, sig, txHash)
+  let (newChans, newCs) = ?applyChannelDeposit(ms.channels, cs, op)
+  ok((MantleState(channels: newChans), newCs))
 
 func tryApplyChannelWithdraw*(
-    ms: sink MantleState,
-    cs: sink CryptarchiaState,
+    ms: MantleState,
+    cs: CryptarchiaState,
     op: ChannelWithdrawPayload,
     proof: ChannelWithdrawOpProof,
     txHash: Hash32,
-): Result[
-    tuple[ms: MantleState, cs: CryptarchiaState, balance: Balance],
-    LedgerError,
-] =
+): Result[tuple[ms: MantleState, cs: CryptarchiaState], LedgerError] =
   ## ChannelWithdraw crosses ledgers — channel balance drained, output
   ## UTXOs inserted. Validate-then-apply; validate returns outflow.
   let
     outflow = ?validateChannelWithdraw(ms.channels, op, proof, txHash)
     (newChans, newCs) = applyChannelWithdraw(ms.channels, cs, op, outflow)
-  ok((MantleState(channels: newChans), newCs, outflow))
+  ok((MantleState(channels: newChans), newCs))
 
 {.pop.}

@@ -68,9 +68,9 @@ proc tryApplyTx*(
     lockedNotes: LockedNotes,
     slot: SlotNumber,
 ): Result[tuple[state: LedgerState, balance: Balance], LedgerError] =
-  ## Applies one transaction; returns the new state and the tx's net balance
-  ## (sum of per-op balances). `slot` is the containing block's slot —
-  ## consumed by channel ops for round-robin sequencer selection.
+  ## Applies one transaction and returns the new state and the Transfer-only
+  ## balance delta. `slot` is passed to channel ops for round-robin sequencer
+  ## selection.
   if tx.tx.ops.len != tx.opProofs.len:
     return err(InvalidProof)
 
@@ -112,7 +112,6 @@ proc tryApplyTx*(
         op.payload.channelDeposit, proof.channelDepositProof, txHash,
       )
       s = LedgerState(cryptarchiaLedger: r.cs, mantleLedger: r.ms)
-      balance = ?balance.checkedAdd(r.balance)
     of ChannelWithdraw:
       if proof.kind != opfChannelWithdraw:
         return err(InvalidProof)
@@ -121,7 +120,6 @@ proc tryApplyTx*(
         op.payload.channelWithdraw, proof.channelWithdrawOpProof, txHash,
       )
       s = LedgerState(cryptarchiaLedger: r.cs, mantleLedger: r.ms)
-      balance = ?balance.checkedAdd(r.balance)
     else:
       return err(UnsupportedOp)
   ok((state: s, balance: balance))

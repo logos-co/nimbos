@@ -9,7 +9,6 @@
 {.used.}
 
 import
-  std/tables,
   unittest2,
   results,
   bearssl/rand,
@@ -93,6 +92,36 @@ suite "MantleState.tryApplyChannelConfig — JIT creation":
         keys: @[],
         configurationThreshold: 1,
         withdrawThreshold: 1,
+      )
+      r = MantleState.init().tryApplyChannelConfig(
+        op, ChannelWithdrawOpProof(), mkTxHash(), blockSlot = 0'u64)
+    check r.error == InvalidChannelConfig
+
+  test "configurationThreshold > keys.len → InvalidChannelConfig":
+    let
+      rng = HmacDrbgContext.new()
+      kp1 = mkEdKeyPair(rng)
+      kp2 = mkEdKeyPair(rng)
+      op = ChannelConfigPayload(
+        channel: mkChannelId(5),
+        keys: @[kp1.pubkey, kp2.pubkey],
+        configurationThreshold: 3,
+        withdrawThreshold: 1,
+      )
+      r = MantleState.init().tryApplyChannelConfig(
+        op, ChannelWithdrawOpProof(), mkTxHash(), blockSlot = 0'u64)
+    check r.error == InvalidChannelConfig
+
+  test "withdrawThreshold > keys.len → InvalidChannelConfig":
+    let
+      rng = HmacDrbgContext.new()
+      kp1 = mkEdKeyPair(rng)
+      kp2 = mkEdKeyPair(rng)
+      op = ChannelConfigPayload(
+        channel: mkChannelId(6),
+        keys: @[kp1.pubkey, kp2.pubkey],
+        configurationThreshold: 1,
+        withdrawThreshold: 3,
       )
       r = MantleState.init().tryApplyChannelConfig(
         op, ChannelWithdrawOpProof(), mkTxHash(), blockSlot = 0'u64)

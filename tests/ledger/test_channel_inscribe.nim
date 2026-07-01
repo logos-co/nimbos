@@ -9,7 +9,6 @@
 {.used.}
 
 import
-  std/tables,
   unittest2,
   results,
   bearssl/rand,

@@ -9,11 +9,11 @@
 {.used.}
 
 import
-  std/[os, strutils, tables],
+  std/[os, strutils],
   unittest2,
   results,
   ../../logos_chain/ledger/
-    [balance, channel_state, cryptarchia_state, locked_notes, mantle_state, types],
+    [channel_state, cryptarchia_state, locked_notes, mantle_state, types],
   ../../logos_chain/core/mantle/[primitives, operations, proofs],
   ../../logos_chain/zk/zksign,
   ../zk/[snarkjs_helpers, zksign_helpers],
@@ -27,21 +27,23 @@ const
   fixturePublic = zksignFixtureDir / "public.json"
 
 proc mkChanStore(cid: ChannelId, balance = TokenValue(0)): ChannelStore =
-  result = initTable[ChannelId, ChannelState]()
-  result[cid] = ChannelState(
-    accreditedKeys: @[],
-    configurationThreshold: 1,
-    withdrawThreshold: 1,
-    balance: balance,
-    withdrawalNonce: 0,
+  HashTrieMap[ChannelId, ChannelState].init().insert(
+    cid,
+    ChannelState(
+      accreditedKeys: @[],
+      configurationThreshold: 1,
+      withdrawThreshold: 1,
+      balance: balance,
+      withdrawalNonce: 0,
+    ),
   )
 
 proc mkMantle(cid: ChannelId, balance = TokenValue(0)): MantleState =
   MantleState(channels: mkChanStore(cid, balance))
 
-suite "applyChannelDepositState — pure state transitions (no verify)":
-  # Pure structural pass stays at primitive level — lets the error suite
-  # run without VK install.
+suite "validateChannelDeposit — structural checks (no VK)":
+  # These paths all short-circuit before sig verify, so a default sig is
+  # enough. VK install is only needed for the happy-path suite below.
   test "channel doesn't exist → ChannelNotFound":
     let
       cid = mkChannelId(1)
@@ -53,24 +55,42 @@ suite "applyChannelDepositState — pure state transitions (no verify)":
         inputs: @[input.id],
         metadata: @[],
       )
-      r = applyChannelDepositState(chans, cs, LockedNotes.init(), op)
+      r = validateChannelDeposit(
+        chans, cs, LockedNotes.init(), op,
+        default(ZkSigProof), mkTxHash())
     check r.error == ChannelNotFound
+
+  test "duplicate input NoteId → DoubleSpend":
+    let
+      cid = mkChannelId(2)
+      chans = mkChanStore(cid)
+      input = mkUtxo(value = 100, pkSeed = 1)
+      cs = CryptarchiaState.init([input])
+      op = ChannelDepositPayload(
+        channel: cid, inputs: @[input.id, input.id], metadata: @[],
+      )
+      r = validateChannelDeposit(
+        chans, cs, LockedNotes.init(), op,
+        default(ZkSigProof), mkTxHash())
+    check r.error == DoubleSpend
 
   test "missing input UTXO → InvalidNote":
     let
-      cid = mkChannelId(2)
+      cid = mkChannelId(3)
       chans = mkChanStore(cid)
       missing = mkUtxo(value = 1, pkSeed = 7)
       cs = CryptarchiaState.init()
       op = ChannelDepositPayload(
         channel: cid, inputs: @[missing.id], metadata: @[],
       )
-      r = applyChannelDepositState(chans, cs, LockedNotes.init(), op)
+      r = validateChannelDeposit(
+        chans, cs, LockedNotes.init(), op,
+        default(ZkSigProof), mkTxHash())
     check r.error == InvalidNote
 
   test "locked input → LockedNote":
     let
-      cid = mkChannelId(3)
+      cid = mkChannelId(4)
       chans = mkChanStore(cid)
       input = mkUtxo(value = 100, pkSeed = 1)
       cs = CryptarchiaState.init([input])
@@ -78,43 +98,44 @@ suite "applyChannelDepositState — pure state transitions (no verify)":
       op = ChannelDepositPayload(
         channel: cid, inputs: @[input.id], metadata: @[],
       )
-      r = applyChannelDepositState(chans, cs, locked, op)
+      r = validateChannelDeposit(
+        chans, cs, locked, op,
+        default(ZkSigProof), mkTxHash())
     check r.error == LockedNote
 
-  test "happy: inputs consumed, channel balance credited, net is -inflow":
+suite "applyChannelDeposit — mutation and overflow (no verify)":
+  test "happy: inputs consumed, channel balance credited":
     let
-      cid = mkChannelId(4)
+      cid = mkChannelId(5)
       chans = mkChanStore(cid)
       input = mkUtxo(value = 100, pkSeed = 1)
       cs = CryptarchiaState.init([input])
       op = ChannelDepositPayload(
         channel: cid, inputs: @[input.id], metadata: @[],
       )
-      r = applyChannelDepositState(chans, cs, LockedNotes.init(), op)
+      r = applyChannelDeposit(chans, cs, op)
     check r.isOk
-    let (newChans, newCs, balance, pks) = r.get
+    let (newChans, newCs) = r.get
     check newCs.len == 0
     check newChans.getOrDefault(cid).balance == 100
-    check balance == i128(-100)
-    check pks.len == 1
 
   test "balance overflow on channel credit → BalanceOverflow":
     let
-      cid = mkChannelId(5)
+      cid = mkChannelId(6)
       chans = mkChanStore(cid, balance = high(uint64) - 50)
       input = mkUtxo(value = 100, pkSeed = 1)
       cs = CryptarchiaState.init([input])
       op = ChannelDepositPayload(
         channel: cid, inputs: @[input.id], metadata: @[],
       )
-      r = applyChannelDepositState(chans, cs, LockedNotes.init(), op)
+      r = applyChannelDeposit(chans, cs, op)
     check r.error == BalanceOverflow
 
 suite "MantleState.tryApplyChannelDeposit — verify wrapper (fixture-driven)":
   test "verify before VK install → VerifierNotInitialised":
     zksign.resetVkForTesting()
     let
-      cid = mkChannelId(6)
+      cid = mkChannelId(7)
       m = mkMantle(cid)
       input = mkUtxo(value = 100, pkSeed = 1)
       cs = CryptarchiaState.init([input])
@@ -129,7 +150,7 @@ suite "MantleState.tryApplyChannelDeposit — verify wrapper (fixture-driven)":
   test "bad signature → InvalidProof":
     check installZksignVk(fixtureVk)
     let
-      cid = mkChannelId(7)
+      cid = mkChannelId(8)
       m = mkMantle(cid)
       input = mkUtxo(value = 100, pkSeed = 1)
       cs = CryptarchiaState.init([input])
@@ -146,7 +167,7 @@ suite "MantleState.tryApplyChannelDeposit — verify wrapper (fixture-driven)":
     let
       sig = loadProof(fixtureProof)
       txHash = loadTxHash(fixturePublic)
-      cid = mkChannelId(8)
+      cid = mkChannelId(9)
       m = mkMantle(cid)
       input = mkUtxoWithPk(mkRealZkPubKey(1), value = 100)
       cs = CryptarchiaState.init([input])
@@ -155,9 +176,8 @@ suite "MantleState.tryApplyChannelDeposit — verify wrapper (fixture-driven)":
       )
       r = m.tryApplyChannelDeposit(cs, LockedNotes.init(), op, sig, txHash)
     check r.isOk
-    let (newMs, newCs, balance) = r.get
+    let (newMs, newCs) = r.get
     check newMs.channels.getOrDefault(cid).balance == 100
     check newCs.len == 0
-    check balance == i128(-100)
 
 {.pop.}

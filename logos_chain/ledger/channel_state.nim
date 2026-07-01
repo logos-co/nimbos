@@ -8,29 +8,20 @@
 ## `ChannelState` + `ChannelStore`, and the four channel op apply procs.
 ## Spec: [v1.5.0 Mantle](https://nomos-tech.notion.site/1-5-0-Mantle-33d261aa09df8051b0d0cd4d5ddade85)
 ## Channel Operations section.
-##
-## Inscribe, Config and Withdraw are split into `validateChannelX` (read-only)
-## and `applyChannelX` (sink-receiving, cannot fail if validate passed) procs.
-## Deposit follows the `applyTransferState` / `tryApplyTransfer`
-## apply-then-verify pattern from cryptarchia_state.nim because its zkSig
-## verify consumes pks collected during UTXO removal — splitting would
-## require two passes over the inputs.
-##
-## The validate-then-apply composition lives on `MantleState` (the
-## consumer); these primitives are the building blocks.
 
 {.push raises: [], gcsafe.}
 
 import
-  std/tables,
+  std/sets,
   results,
   libp2p/crypto/ed25519/ed25519,
-  ./[balance, types, cryptarchia_state, locked_notes],
+  ./[types, cryptarchia_state, locked_notes, value],
   ../core/[utils],
   ../core/mantle/[primitives, operations, proofs, tx_hashing, utxo],
+  ../utils/hash_trie_map,
   ../zk/zksign
 
-export tables, balance
+export hash_trie_map
 
 type
   ChannelState* = object
@@ -46,19 +37,18 @@ type
     withdrawalNonce*: uint32
     withdrawThreshold*: WithdrawThreshold
 
-  ChannelStore* = Table[ChannelId, ChannelState]
+  ChannelStore* = HashTrieMap[ChannelId, ChannelState]
 
 func saturatingSub(a, b: SlotNumber): SlotNumber =
-  # Matches Rust's `Slot::saturating_sub` (commit 8abfef258). Defensive
-  # against `tip_slot > block_slot`, which shouldn't happen under normal
-  # consensus but is cheaper to guard than to debug if it ever does.
+  # Defensive against `tip_slot > block_slot`, which shouldn't happen under
+  # normal consensus but is cheaper to guard than to debug if it ever does.
   if a >= b: a - b else: 0
 
 func defaultChannel*(
     blockSlot: SlotNumber, keys: openArray[Ed25519PublicKey]
 ): ChannelState =
-  ## Spec `default_channel`: thresholds = 1, no rotation, no liveness
-  ## timeout, zero balance. The JIT factory for a brand-new channel.
+  ## Factory for a brand-new channel: thresholds = 1, no rotation, no
+  ## liveness timeout, zero balance.
   ChannelState(
     accreditedKeys: @keys,
     configurationThreshold: 1,
@@ -76,8 +66,9 @@ func defaultChannel*(
 func roundRobin*(
     blockSlot: SlotNumber, chan: ChannelState
 ): tuple[index: ChannelKeyIndex, startingSlot: SlotNumber] =
-  ## Spec `round_robin`. Timeout rotation (skip past silent sequencers) wins
-  ## over scheduled-rotation; both zero → current sequencer holds.
+  ## Returns the current sequencer index and its starting slot. Timeout
+  ## rotation (skip past silent sequencers) wins over scheduled rotation;
+  ## when both are zero, the current sequencer holds.
   let
     elapsed = saturatingSub(blockSlot, chan.tipSlot)
     duration = saturatingSub(blockSlot, chan.tipSequencerStartingSlot)
@@ -107,8 +98,8 @@ func verifyChannelMultiSig(
     threshold: uint16,
     txHash: Hash32,
 ): Result[void, LedgerError] =
-  # Assumes `signatures.len == indexes.len` and strict-increasing indexes —
-  # both enforced by the codec at decode time.
+  doAssert proof.signatures.len == proof.indexes.len,
+    "ChannelWithdrawOpProof: signatures and indexes length mismatch"
   if proof.signatures.len != int(threshold):
     return err(ThresholdUnmet)
   for i in 0 ..< proof.signatures.len:
@@ -145,21 +136,21 @@ func validateChannelInscribe*(
   ok()
 
 func applyChannelInscribe*(
-    channels: sink ChannelStore,
+    channels: ChannelStore,
     op: ChannelInscribePayload,
     blockSlot: SlotNumber,
 ): ChannelStore =
   ## Mutation only; assumes `validateChannelInscribe` passed. JIT-creates
   ## the channel if absent, then advances sequencer + tipMessage + tipSlot.
-  var chan = channels.getOrDefault(
-    op.channelId, defaultChannel(blockSlot, [op.signer]))
+  var chan =
+    if op.channelId in channels: channels.getOrDefault(op.channelId)
+    else: defaultChannel(blockSlot, [op.signer])
   let (newSeq, newStart) = roundRobin(blockSlot, chan)
   chan.tipSequencer = newSeq
   chan.tipSequencerStartingSlot = newStart
   chan.tipMessage = opId(op)
   chan.tipSlot = blockSlot
-  channels[op.channelId] = chan
-  channels
+  channels.insert(op.channelId, chan)
 
 func validateChannelConfig*(
     channels: ChannelStore,
@@ -169,9 +160,17 @@ func validateChannelConfig*(
 ): Result[void, LedgerError] =
   ## Read-only checks for ChannelConfig. Validates well-formedness, and if
   ## the channel exists, verifies `configuration_threshold` signatures from
-  ## current accredited keys. JIT-create path requires no signature
-  ## (spec/Rust gap).
-  if op.configurationThreshold == 0 or op.withdrawThreshold == 0 or op.keys.len == 0:
+  ## current accredited keys. On the JIT-create path (channel doesn't exist
+  ## yet) no signature is required — there are no accredited keys to
+  ## authenticate against.
+  if op.keys.len == 0:
+    return err(InvalidChannelConfig)
+  # A threshold larger than `keys.len` can never be met — the resulting
+  # channel would be permanently unreconfigurable and its funds unwithdrawable.
+  if op.configurationThreshold == 0 or
+      op.configurationThreshold.int > op.keys.len:
+    return err(InvalidChannelConfig)
+  if op.withdrawThreshold == 0 or op.withdrawThreshold.int > op.keys.len:
     return err(InvalidChannelConfig)
 
   if op.channel in channels:
@@ -181,14 +180,15 @@ func validateChannelConfig*(
   ok()
 
 func applyChannelConfig*(
-    channels: sink ChannelStore,
+    channels: ChannelStore,
     op: ChannelConfigPayload,
     blockSlot: SlotNumber,
 ): ChannelStore =
   ## Mutation only; assumes `validateChannelConfig` passed. Overwrites the
   ## channel's keys/thresholds/rotation, or JIT-creates with `op.keys`.
-  var chan = channels.getOrDefault(
-    op.channel, defaultChannel(blockSlot, op.keys))
+  var chan =
+    if op.channel in channels: channels.getOrDefault(op.channel)
+    else: defaultChannel(blockSlot, op.keys)
   chan.accreditedKeys = op.keys
   chan.configurationThreshold = op.configurationThreshold
   chan.tipSequencer = 0
@@ -198,122 +198,114 @@ func applyChannelConfig*(
   chan.withdrawThreshold = op.withdrawThreshold
   chan.tipSlot = blockSlot
   chan.tipMessage = opId(op)
-  channels[op.channel] = chan
-  channels
+  channels.insert(op.channel, chan)
 
-func applyChannelDepositState*(
-    channels: sink ChannelStore,
-    cs: sink CryptarchiaState,
-    lockedNotes: LockedNotes,
-    op: ChannelDepositPayload,
-): Result[
-    tuple[
-      channels: ChannelStore,
-      cs: CryptarchiaState,
-      balance: Balance,
-      pks: seq[ZkPublicKey],
-    ],
-    LedgerError,
-] =
-  ## Pure state transition for ChannelDeposit. Removes inputs from UTXOs,
-  ## accumulates ZkPublicKeys + total input value, credits the channel
-  ## balance. Caller verifies the zkSig over the returned pks.
-  ## Returned tx-balance contribution is negative (inputs consumed, no UTXO
-  ## outputs from this op).
-  if op.channel notin channels:
-    return err(ChannelNotFound)
-
-  var
-    inflow = Balance.zero
-    pks = newSeqOfCap[ZkPublicKey](op.inputs.len)
-  for inputId in op.inputs:
-    if lockedNotes.contains(inputId):
-      return err(LockedNote)
-    let (newStore, removedUtxo) = cs.utxos.remove(inputId).valueOr:
-      return err(InvalidNote)
-    cs = CryptarchiaState(utxos: newStore)
-    inflow = ?inflow.checkedAdd(i128(removedUtxo.note.value))
-    pks.add(removedUtxo.note.zkPublicKey)
-
-  # Spec uses raw `+=`; Rust uses checked_add → BalanceOverflow. Match Rust.
-  var chan = channels.getOrDefault(op.channel)
-  if inflow > i128(TokenValue.high - chan.balance):
-    return err(BalanceOverflow)
-  chan.balance += inflow.truncate(uint64)
-  channels[op.channel] = chan
-
-  let net = ?Balance.zero.checkedSub(inflow)
-  ok((channels, cs, net, pks))
-
-proc tryApplyChannelDeposit*(
-    channels: sink ChannelStore,
-    cs: sink CryptarchiaState,
+proc validateChannelDeposit*(
+    channels: ChannelStore,
+    cs: CryptarchiaState,
     lockedNotes: LockedNotes,
     op: ChannelDepositPayload,
     sig: ZkSigProof,
     txHash: Hash32,
-): Result[
-    tuple[channels: ChannelStore, cs: CryptarchiaState, balance: Balance],
-    LedgerError,
-] =
+): Result[void, LedgerError] =
+  ## Read-only checks for ChannelDeposit. The channel must exist; each input
+  ## must be unique, unlocked, and present in the ledger; the zkSig must
+  ## verify. Overflow catches live in apply.
+  if op.channel notin channels:
+    return err(ChannelNotFound)
+
+  # Otherwise the second occurrence would surface as InvalidNote (removed
+  # by the first lookup) — semantically misleading.
+  var seen: HashSet[NoteId]
+  for inputId in op.inputs:
+    if seen.containsOrIncl(inputId):
+      return err(DoubleSpend)
+
+  var pks = newSeqOfCap[ZkPublicKey](op.inputs.len)
+  for inputId in op.inputs:
+    if lockedNotes.contains(inputId):
+      return err(LockedNote)
+    let utxo = cs.utxos.get(inputId).valueOr:
+      return err(InvalidNote)
+    pks.add(utxo.note.zkPublicKey)
+
   let
-    r = ?applyChannelDepositState(channels, cs, lockedNotes, op)
-    input = zksignInput(r.pks, frFromBytesLEModOrder(txHash)).valueOr:
+    input = zksignInput(pks, frFromBytesLEModOrder(txHash)).valueOr:
       return err(InvalidProof)
     verified = zksign.verify(sig, input).valueOr:
       return err(VerifierNotInitialised)
   if not verified:
     return err(InvalidProof)
+  ok()
 
-  ok((r.channels, r.cs, r.balance))
+func applyChannelDeposit*(
+    channels: ChannelStore,
+    cs: CryptarchiaState,
+    op: ChannelDepositPayload,
+): Result[tuple[channels: ChannelStore, cs: CryptarchiaState], LedgerError] =
+  ## Removes inputs from the ledger and credits the channel balance.
+  ## Returns `BalanceOverflow` if the inflow sum or the credited channel
+  ## balance overflows. Assumes `validateChannelDeposit` passed.
+  var
+    newCs = cs
+    inflow: TokenValue = 0
+  for inputId in op.inputs:
+    let (newStore, removedUtxo) = newCs.utxos.remove(inputId).valueOr:
+      return err(InvalidNote)  # unreachable if validate passed
+    newCs = CryptarchiaState(utxos: newStore)
+    inflow = ?inflow.checkedAdd(removedUtxo.note.value)
+
+  var chan = channels.getOrDefault(op.channel)
+  chan.balance = ?chan.balance.checkedAdd(inflow)
+  ok((channels.insert(op.channel, chan), newCs))
 
 func validateChannelWithdraw*(
     channels: ChannelStore,
     op: ChannelWithdrawPayload,
     proof: ChannelWithdrawOpProof,
     txHash: Hash32,
-): Result[Balance, LedgerError] =
+): Result[TokenValue, LedgerError] =
   ## Read-only checks for ChannelWithdraw. Returns the validated outflow
   ## (sum of output values) so apply doesn't recompute. Catches all error
   ## variants up front including `WithdrawNonceOverflow`.
   if op.channel notin channels:
     return err(ChannelNotFound)
 
-  var outflow = Balance.zero
+  var outflow: TokenValue = 0
   for outNote in op.outputs:
     if outNote.value == 0:
       return err(ZeroValueNote)
-    outflow = ?outflow.checkedAdd(i128(outNote.value))
+    outflow = ?outflow.checkedAdd(outNote.value)
 
   let chan = channels.getOrDefault(op.channel)
   if chan.withdrawalNonce != op.opIdNonce:
     return err(InvalidWithdrawNonce)
   if chan.withdrawalNonce == high(uint32):
     return err(WithdrawNonceOverflow)
-  if outflow > i128(chan.balance):
+  if outflow > chan.balance:
     return err(InsufficientBalance)
   ?verifyChannelMultiSig(
     proof, chan.accreditedKeys, chan.withdrawThreshold, txHash)
   ok(outflow)
 
 func applyChannelWithdraw*(
-    channels: sink ChannelStore,
-    cs: sink CryptarchiaState,
+    channels: ChannelStore,
+    cs: CryptarchiaState,
     op: ChannelWithdrawPayload,
-    outflow: Balance,
+    outflow: TokenValue,
 ): tuple[channels: ChannelStore, cs: CryptarchiaState] =
   ## Mutation only; assumes `validateChannelWithdraw` passed. Drains the
   ## channel balance, bumps the withdraw nonce, and inserts the output
   ## UTXOs.
   var chan = channels.getOrDefault(op.channel)
-  chan.balance -= outflow.truncate(uint64)
+  chan.balance -= outflow
   chan.withdrawalNonce += 1
-  channels[op.channel] = chan
 
+  var newCs = cs
   let withdrawOpId = opId(op)
   for i, outNote in op.outputs:
     let u = Utxo(opId: withdrawOpId, outputIndex: uint64(i), note: outNote)
-    cs = CryptarchiaState(utxos: cs.utxos.insert(u.id, u).store)
-  (channels, cs)
+    newCs = CryptarchiaState(utxos: newCs.utxos.insert(u.id, u).store)
+  (channels.insert(op.channel, chan), newCs)
 
 {.pop.}

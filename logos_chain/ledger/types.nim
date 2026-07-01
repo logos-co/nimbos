@@ -23,6 +23,7 @@ type
     ParentNotFound ## prepareUpdate's parent_id is not in the map
     InvalidNote ## input NoteId not in UtxoStore
     LockedNote ## input NoteId is in LockedNotes
+    DoubleSpend ## same NoteId appears twice within a single op's inputs
     ZeroValueNote ## output Note has value == 0
     InvalidProof ## ZK multi-sig or leader-proof verify failed
     BalanceOverflow ## Int128 add/sub overflowed during balance math

@@ -9,13 +9,12 @@
 {.used.}
 
 import
-  std/tables,
   unittest2,
   results,
   bearssl/rand,
   libp2p/crypto/ed25519/ed25519,
   ../../logos_chain/ledger/
-    [balance, channel_state, cryptarchia_state, mantle_state, types],
+    [channel_state, cryptarchia_state, mantle_state, types],
   ../../logos_chain/core/mantle/[primitives, operations, proofs],
   ../core/mantle/test_helpers
 
@@ -26,15 +25,18 @@ proc seedMantle(
     withdrawalNonce = uint32(0),
     withdrawThreshold = WithdrawThreshold(2),
 ): MantleState =
-  var chans = initTable[ChannelId, ChannelState]()
-  chans[cid] = ChannelState(
-    accreditedKeys: @keys,
-    configurationThreshold: 2,
-    withdrawThreshold: withdrawThreshold,
-    balance: balance,
-    withdrawalNonce: withdrawalNonce,
+  MantleState(
+    channels: HashTrieMap[ChannelId, ChannelState].init().insert(
+      cid,
+      ChannelState(
+        accreditedKeys: @keys,
+        configurationThreshold: 2,
+        withdrawThreshold: withdrawThreshold,
+        balance: balance,
+        withdrawalNonce: withdrawalNonce,
+      ),
+    )
   )
-  MantleState(channels: chans)
 
 suite "MantleState.tryApplyChannelWithdraw":
   test "happy path: 2-of-2 signatures, balance drains, nonce bumps":
@@ -57,12 +59,11 @@ suite "MantleState.tryApplyChannelWithdraw":
       )
       r = m.tryApplyChannelWithdraw(cs, op, proof, txHash)
     check r.isOk
-    let (newMs, newCs, balance) = r.get
+    let (newMs, newCs) = r.get
     let chan = newMs.channels.getOrDefault(cid)
     check chan.balance == 300
     check chan.withdrawalNonce == 1
     check newCs.len == 1
-    check balance == i128(200)
 
   test "channel doesn't exist → ChannelNotFound":
     let
