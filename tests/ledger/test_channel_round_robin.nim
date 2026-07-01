@@ -10,7 +10,6 @@
 
 import
   unittest2,
-  libp2p/crypto/ed25519/ed25519,
   ../../logos_chain/ledger/channel_state,
   ../../logos_chain/core/mantle/primitives
 
