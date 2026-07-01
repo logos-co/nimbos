@@ -12,9 +12,9 @@
 import results
 
 import
-  ./[balance, types, locked_notes, utxo_store],
-  ../core/mantle/[primitives, operations, proofs, utxo, tx_hashing],
-  ../zk/zksign
+  ./[balance, types, utxo_store, zksig_verify],
+  std/sets,
+  ../core/mantle/[primitives, operations, proofs, utxo, tx_hashing]
 
 export types, utxo, primitives, utxo_store
 
@@ -53,7 +53,7 @@ func `==`*(a, b: CryptarchiaState): bool =
 
 func applyTransferState*(
     s: sink CryptarchiaState,
-    lockedNotes: LockedNotes,
+    lockedNoteIds: HashSet[NoteId],
     op: TransferPayload,
 ): Result[
   tuple[state: CryptarchiaState, balance: Balance, pks: seq[ZkPublicKey]],
@@ -67,7 +67,7 @@ func applyTransferState*(
     pks = newSeqOfCap[ZkPublicKey](op.inputs.noteIds.len)
 
   for inputId in op.inputs.noteIds:
-    if lockedNotes.contains(inputId):
+    if inputId in lockedNoteIds:
       return err(LockedNote)
     let (newStore, removedUtxo) = s.utxos.remove(inputId).valueOr:
       return err(InvalidNote)
@@ -87,7 +87,7 @@ func applyTransferState*(
 
 proc tryApplyTransfer*(
     s: sink CryptarchiaState,
-    lockedNotes: LockedNotes,
+    lockedNoteIds: HashSet[NoteId],
     op: TransferPayload,
     sig: ZkSigProof,
     txHash: ZkHash,
@@ -96,18 +96,8 @@ proc tryApplyTransfer*(
   ## ZkSig over the collected input pks. Returns
   ## `(new_state, sum(inputs) − sum(outputs))`. The returned balance may be
   ## positive (surplus → fees), zero (balanced), or negative (deficit).
-  let r = ?s.applyTransferState(lockedNotes, op)
-
-  # `txHash` is a Blake2b-256 digest that may exceed the BN254 field order;
-  # reduce mod p so the prover and verifier agree on the signed Fr.
-  let msgFr = frFromBytesLEModOrder(txHash)
-  let input = zksignInput(r.pks, msgFr).valueOr:
-    return err(InvalidProof)
-  let verified = zksign.verify(sig, input).valueOr:
-    return err(VerifierNotInitialised)
-  if not verified:
-    return err(InvalidProof)
-
+  let r = ?s.applyTransferState(lockedNoteIds, op)
+  ?verifyZkSig(sig, txHash, r.pks)
   ok((r.state, r.balance))
 
 {.pop.}

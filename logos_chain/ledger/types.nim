@@ -22,7 +22,7 @@ type
     ## that emit them.
     ParentNotFound ## prepareUpdate's parent_id is not in the map
     InvalidNote ## input NoteId not in UtxoStore
-    LockedNote ## input NoteId is in LockedNotes
+    LockedNote ## input NoteId is locked by SDP collateral
     ZeroValueNote ## output Note has value == 0
     InvalidProof ## ZK multi-sig or leader-proof verify failed
     BalanceOverflow ## Int128 add/sub overflowed during balance math
@@ -31,6 +31,22 @@ type
     InsufficientBalance ## inputs - outputs < fees
     VerifierNotInitialised ## per-circuit VK singleton wasn't installed at
       ## node startup — wiring bug, not adversarial input
+    # SDP (Service Declaration Protocol)
+    TooManyLocators
+    InvalidLocator
+    DuplicateDeclaration
+    LockedNoteNotFound
+    InsufficientStake
+    LockedNoteServiceConflict
+    MissingServiceParameters
+    MinStakeNotFound
+    DeclarationNotFound
+    AlreadyWithdrawn
+    InvalidNonce
+    LockedNoteIdMismatch
+    DeclarationNotInLockedNote
+    LockPeriodActive
+    ActivityRejected
 
   LedgerConfig* = object
     ## Chain configuration. Currently empty — fields land with the modules

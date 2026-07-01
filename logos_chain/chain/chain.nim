@@ -13,6 +13,7 @@ import
   results,
   ../core/[types, local_tree],
   ../deployment/deployment_settings,
+  ../ledger/ledger,
   ./genesis
 
 export genesis, local_tree
@@ -21,15 +22,24 @@ type
   Chain* = object
     genesisBlock*: Block
     localTree*: LocalTree
+    ledger*: Ledger[BlockId]
 
-func init*(T: type Chain, genesisBlock: Block, latestImmutableHeight: uint64 = 0): T =
+func init*(T: type Chain, genesisBlock: Block, ledger: Ledger[BlockId], latestImmutableHeight: uint64 = 0): T =
   T(
     genesisBlock: genesisBlock,
     localTree: newLocalTree(genesisBlock, latestImmutableHeight),
+    ledger: ledger,
   )
 
-func init*(T: type Chain, settings: DeploymentSettings): Result[T, string] =
+proc init*(T: type Chain, settings: DeploymentSettings): Result[T, string] =
   let genesisBlock = createGenesisBlock(settings.cryptarchia.genesisState.signedMantleTx)
-  ok(T.init(genesisBlock))
+  let sdp = SdpRegistry.init(
+    settings.cryptarchia.sdpConfig,
+    settings.cryptarchia.securityParam.uint64,
+  )
+  let genesisState = LedgerState.fromGenesis(sdp, genesisBlock.txs).valueOr:
+    return err("chain: failed to apply genesis block: " & $error)
+  let ledger = Ledger[BlockId].init(blockId(genesisBlock.header), genesisState)
+  ok(T.init(genesisBlock, ledger))
 
 {.pop.}

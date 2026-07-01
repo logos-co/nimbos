@@ -245,6 +245,12 @@ func encodeServiceType*(value: ServiceType): byte =
   ## ServiceType = Byte ; 0 = BN
   encodeByte(byte(ord(value)))
 
+func isValidLocator*(locator: Locator): bool =
+  locator.data().buffer.len <= MaxLocatorMultiaddrBytes
+
+func validateLocator*(locator: Locator) =
+  doAssert isValidLocator(locator)
+
 func encodeLocatorCount*(value: byte): byte =
   ## LocatorCount = Byte
   encodeByte(value)
@@ -255,6 +261,15 @@ func encodeLocator*(value: Locator): seq[byte] =
   doAssert locatorBytes.len <= MaxLocatorMultiaddrBytes,
     "Locator exceeds max multiaddr byte length"
   encodeU16LeLenPrefixed(locatorBytes)
+
+func encodeLocators*(locators: openArray[Locator]): seq[byte] =
+  ## Locators = LocatorCount *Locator
+  doAssert locators.len <= MaxSdpLocators,
+    "Locators: LocatorCount exceeds max supported locators"
+  var res = @[encodeLocatorCount(byte(locators.len))]
+  for locator in locators:
+    res.add(encodeLocator(locator))
+  res
 
 func slotToFr*(slot: SlotNumber): FieldElement =
   ## Convert a ``SlotNumber`` to a BN254 field element via 8-byte

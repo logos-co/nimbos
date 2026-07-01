@@ -342,7 +342,7 @@ func parseGenesisOpPayload(
         return err("deployment-settings: invalid multiaddr at " &
           path & ".locators[" & $i & "]: " & error)
       locators.add(locator)
-    ok(createSdpDeclareOp(SdpDeclarePayload(
+    ok(createSdpDeclareOp(DeclarationMessage(
       serviceType: serviceType,
       locators: locators,
       providerId: ? parseEd25519PublicKeyNode(providerIdNode, path & ".provider_id"),

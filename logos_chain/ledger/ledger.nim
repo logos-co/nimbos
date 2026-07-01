@@ -11,16 +11,19 @@
 {.push raises: [], gcsafe.}
 
 import
-  std/tables,
-  ./[balance, types, cryptarchia_state, locked_notes, pol_verifier],
+  results,
+  std/[options, tables],
+  ./[balance, types, cryptarchia_state, pol_verifier],
   ../core/mantle/[tx_types, tx_hashing, operations, proofs],
+  ../core/sdp/[registry, ops],
   ../core/types
 
-export types, cryptarchia_state
+export types, cryptarchia_state, registry
 
 type
   LedgerState* = object
     cryptarchiaLedger*: CryptarchiaState
+    sdp*: SdpRegistry
 
   Ledger*[Id] = object
     states: Table[Id, LedgerState]
@@ -29,10 +32,13 @@ type
 func fromUtxos*(
     _: typedesc[LedgerState],
     utxos: openArray[Utxo],
-    config: LedgerConfig = LedgerConfig(),
+    sdp: sink SdpRegistry,
 ): LedgerState =
-  ## Builds a genesis-style state from the given UTXO set.
-  LedgerState(cryptarchiaLedger: CryptarchiaState.init(utxos))
+  ## Builds a genesis-style state from the given UTXO set and SDP registry.
+  LedgerState(
+    cryptarchiaLedger: CryptarchiaState.init(utxos),
+    sdp: sdp,
+  )
 
 func latestUtxos*(s: LedgerState): lent UtxoStore =
   ## The live UTXO set.
@@ -58,7 +64,7 @@ proc tryApplyHeader*(
 proc tryApplyTx*(
     state: sink LedgerState,
     tx: SignedMantleTx,
-    lockedNotes: LockedNotes,
+    blockHeight: BlockNumber,
 ): Result[tuple[state: LedgerState, balance: Balance], LedgerError] =
   ## Applies one transaction; returns the new state and the tx's net balance
   ## (sum of per-op balances).
@@ -79,10 +85,43 @@ proc tryApplyTx*(
         return err(InvalidProof)
       let r =
         ?s.cryptarchiaLedger.tryApplyTransfer(
-          lockedNotes, op.payload.transfer, proof.transferProof, txHash
+          getLockedNotes(s.sdp.state),
+          op.payload.transfer, proof.transferProof, txHash
         )
-      s = LedgerState(cryptarchiaLedger: r.state)
+      s.cryptarchiaLedger = r.state
       balance = ?balance.checkedAdd(r.balance)
+    of SdpDeclare:
+      if proof.kind != opfSdpDeclare:
+        return err(InvalidProof)
+      ?tryApplySdpDeclare(
+        s.sdp,
+        op.payload.sdpDeclare,
+        proof.declarationProof,
+        txHash,
+        s.cryptarchiaLedger.latestUtxos,
+        blockHeight,
+      )
+    of SdpWithdraw:
+      if proof.kind != opfSdpWithdraw:
+        return err(InvalidProof)
+      ?tryApplySdpWithdraw(
+        s.sdp,
+        op.payload.sdpWithdraw,
+        proof.sdpWithdrawProof,
+        txHash,
+        s.cryptarchiaLedger.latestUtxos,
+        blockHeight,
+      )
+    of SdpActive:
+      if proof.kind != opfSdpActive:
+        return err(InvalidProof)
+      ?tryApplySdpActive(
+        s.sdp,
+        op.payload.sdpActive,
+        proof.sdpActiveProof,
+        txHash,
+        blockHeight,
+      )
     else:
       return err(UnsupportedOp)
   ok((state: s, balance: balance))
@@ -90,14 +129,14 @@ proc tryApplyTx*(
 proc tryApplyTxns*(
     state: sink LedgerState,
     txs: openArray[SignedMantleTx],
-    lockedNotes: LockedNotes,
+    blockHeight: BlockNumber,
 ): Result[LedgerState, LedgerError] =
   ## Applies a block's transactions in order. Each tx must net to zero
   ## balance — otherwise returns `UnbalancedTransaction` or
   ## `InsufficientBalance`.
   var s = state
   for tx in txs:
-    let r = ?s.tryApplyTx(tx, lockedNotes)
+    let r = ?s.tryApplyTx(tx, blockHeight)
     s = r.state
     if r.balance > Balance.zero:
       return err(UnbalancedTransaction)
@@ -127,7 +166,16 @@ func state*[Id](l: Ledger[Id], id: Id): Opt[LedgerState] =
 func config*[Id](l: Ledger[Id]): lent LedgerConfig =
   l.config
 
-func commitUpdate*[Id](l: var Ledger[Id], id: Id, state: LedgerState) =
+proc commitUpdate*[Id](
+    l: var Ledger[Id],
+    id: Id,
+    blockHeight: BlockNumber,
+    state: sink LedgerState,
+) =
+  ## Installs ``state`` at ``id`` and runs per-block SDP housekeeping (GC,
+  ## session snapshots) once the block is accepted.
+  let parentHeight = if blockHeight > 0: blockHeight - 1 else: 0'u64
+  onBlockApplied(state.sdp, parentHeight, blockHeight)
   l.states[id] = state
 
 func pruneStateAt*[Id](l: var Ledger[Id], id: Id): bool =
@@ -137,22 +185,37 @@ func pruneStateAt*[Id](l: var Ledger[Id], id: Id): bool =
   else:
     false
 
+proc fromGenesis*(
+    _: typedesc[LedgerState],
+    sdp: sink SdpRegistry,
+    genesisTxs: openArray[SignedMantleTx],
+): Result[LedgerState, LedgerError] =
+  ## Builds genesis ledger state by applying genesis transactions at height 0.
+  var state = LedgerState(
+    cryptarchiaLedger: CryptarchiaState.init(),
+    sdp: sdp,
+  )
+  state = ?state.tryApplyTxns(genesisTxs, blockHeight = 0'u64)
+  onBlockApplied(state.sdp, previousBlockNumber = 0'u64, blockNumber = 0'u64)
+  ok(state)
+
 proc prepareUpdate*[Id](
     l: Ledger[Id],
     id, parentId: Id,
     slot: SlotNumber,
     proof: ProofOfLeadership,
     txs: openArray[SignedMantleTx],
-    lockedNotes: LockedNotes,
+    blockHeight: BlockNumber,
 ): Result[tuple[id: Id, state: LedgerState], LedgerError] =
   ## Validates a block's header + transactions against the parent state.
-  ## Caller invokes `commitUpdate` to install the result, or drops it to reject.
+  ## Caller invokes `commitUpdate` to install the result and run SDP
+  ## block-boundary updates, or drops it to reject.
   if parentId notin l.states:
     return err(ParentNotFound)
   let
     parent = l.states.getOrDefault(parentId)
     afterHeader = ?parent.tryApplyHeader(slot, proof)
-    afterTxs = ?afterHeader.tryApplyTxns(txs, lockedNotes)
+    afterTxs = ?afterHeader.tryApplyTxns(txs, blockHeight)
   ok((id: id, state: afterTxs))
 
 {.pop.}
