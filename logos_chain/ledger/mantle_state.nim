@@ -67,11 +67,10 @@ func tryApplyChannelWithdraw*(
     proof: ChannelWithdrawOpProof,
     txHash: Hash32,
 ): Result[tuple[ms: MantleState, cs: CryptarchiaState], LedgerError] =
-  ## ChannelWithdraw crosses ledgers — channel balance drained, output
-  ## UTXOs inserted. Validate-then-apply; validate returns outflow.
-  let
-    outflow = ?validateChannelWithdraw(ms.channels, op, proof, txHash)
-    (newChans, newCs) = applyChannelWithdraw(ms.channels, cs, op, outflow)
+  ## ChannelWithdraw — drains the channel balance and inserts output UTXOs
+  ## into cryptarchia. Validate-then-apply.
+  ?validateChannelWithdraw(ms.channels, op, proof, txHash)
+  let (newChans, newCs) = applyChannelWithdraw(ms.channels, cs, op)
   ok((MantleState(channels: newChans), newCs))
 
 {.pop.}

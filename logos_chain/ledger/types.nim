@@ -26,10 +26,10 @@ type
     DoubleSpend ## same NoteId appears twice within a single op's inputs
     ZeroValueNote ## output Note has value == 0
     InvalidProof ## ZK multi-sig or leader-proof verify failed
-    BalanceOverflow ## Int128 add/sub overflowed during balance math
+    BalanceOverflow ## add/sub overflowed during balance math
     UnsupportedOp ## Op kind not yet wired in this ledger version
     UnbalancedTransaction ## inputs - outputs > fees
-    InsufficientBalance ## inputs - outputs < fees
+    InsufficientBalance ## not enough balance for the requested debit
     VerifierNotInitialised ## per-circuit VK singleton wasn't installed at
       ## node startup — wiring bug, not adversarial input
     ChannelNotFound ## ChannelDeposit/Withdraw references a missing ChannelId

@@ -68,9 +68,8 @@ proc tryApplyTx*(
     lockedNotes: LockedNotes,
     slot: SlotNumber,
 ): Result[tuple[state: LedgerState, balance: Balance], LedgerError] =
-  ## Applies one transaction and returns the new state and the Transfer-only
-  ## balance delta. `slot` is passed to channel ops for round-robin sequencer
-  ## selection.
+  ## Applies one transaction. Returns the new state and Transfer-only
+  ## balance delta. `slot` is used by channel ops for sequencer rotation.
   if tx.tx.ops.len != tx.opProofs.len:
     return err(InvalidProof)
 
