@@ -42,6 +42,7 @@ import # Unit test
   ./ledger/test_channel_config,
   ./ledger/test_channel_deposit,
   ./ledger/test_channel_withdraw,
+  ./ledger/test_channel_round_robin,
   ./ledger/test_pol_verifier,
   ./logos_chain/sync/test_framing,
   ./logos_chain/sync/test_types,

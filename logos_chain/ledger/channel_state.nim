@@ -49,7 +49,7 @@ func checkedAdd(a, b: TokenValue): Result[TokenValue, LedgerError] =
   let (res, didOverflow) = overflowingAdd(a, b)
   if didOverflow: err(BalanceOverflow) else: ok(res)
 
-func defaultChannel*(
+func default_channel*(
     blockSlot: SlotNumber, keys: openArray[Ed25519PublicKey]
 ): ChannelState =
   ## Factory for a brand-new channel: thresholds = 1, no rotation, no
@@ -68,7 +68,7 @@ func defaultChannel*(
     withdrawThreshold: 1,
   )
 
-func roundRobin*(
+func round_robin*(
     blockSlot: SlotNumber, chan: ChannelState
 ): tuple[index: ChannelKeyIndex, startingSlot: SlotNumber] =
   ## Returns the current sequencer index and its starting slot. Timeout
@@ -131,7 +131,7 @@ func validateChannelInscribe*(
     let chan = chanOpt.get
     if op.parent != chan.tipMessage:
       return err(InvalidParent)
-    let (idx, _) = roundRobin(blockSlot, chan)
+    let (idx, _) = round_robin(blockSlot, chan)
     if op.signer != chan.accreditedKeys[idx]:
       return err(UnauthorizedSigner)
   elif op.parent != static(default(Hash32)):
@@ -149,8 +149,8 @@ func applyChannelInscribe*(
   ## Mutation only; assumes `validateChannelInscribe` passed. JIT-creates
   ## the channel if absent, then advances sequencer + tipMessage + tipSlot.
   var chan = channels.get(op.channelId).valueOr:
-    defaultChannel(blockSlot, [op.signer])
-  let (newSeq, newStart) = roundRobin(blockSlot, chan)
+    default_channel(blockSlot, [op.signer])
+  let (newSeq, newStart) = round_robin(blockSlot, chan)
   chan.tipSequencer = newSeq
   chan.tipSequencerStartingSlot = newStart
   chan.tipMessage = opId(op)
@@ -193,7 +193,7 @@ func applyChannelConfig*(
   ## Mutation only; assumes `validateChannelConfig` passed. Overwrites the
   ## channel's keys/thresholds/rotation, or JIT-creates with `op.keys`.
   var chan = channels.get(op.channel).valueOr:
-    defaultChannel(blockSlot, op.keys)
+    default_channel(blockSlot, op.keys)
   chan.accreditedKeys = op.keys
   chan.configurationThreshold = op.configurationThreshold
   chan.tipSequencer = 0
