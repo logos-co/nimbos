@@ -10,11 +10,11 @@
 
 import
   std/[os, strutils],
-  unittest2,
   stew/io2,
   ../../logos_chain/core/mantle/[tx_types, tx_hashing],
   ../../logos_chain/chain/chain,
-  ../../logos_chain/deployment/deployment_settings
+  ../../logos_chain/deployment/deployment_settings,
+  ../testutil
 
 const testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
 const deploymentSettingsPath = testsDir / "../../config/deployment-settings.yaml"
@@ -32,21 +32,17 @@ suite "chain/genesis":
     check b.signature == DefaultEd25519Signature
 
   test "createGenesisBlock builds expected header/envelope from deployment settings":
-    let
-      text = readAllChars(deploymentSettingsPath).valueOr:
-        check false
-        return
-      ds = parseDeploymentSettings(text).valueOr:
-        check false
-        return
-    check validateDeploymentSettings(ds).isOk
+    let text = readAllChars(deploymentSettingsPath).valueOr:
+      fail "could not read deployment settings"
+    let ds = parseDeploymentSettings(text).valueOr:
+      fail "could not parse deployment settings"
+    require validateDeploymentSettings(ds).isOk
 
     let
       gstate = ds.cryptarchia.genesisState
       genesisTx = gstate.signedMantleTx
       testChain = Chain.init(ds).valueOr:
-        check false
-        return
+        fail "Chain.init: " & $error
       gb = testChain.genesisBlock
 
     check gb.txs.len == 1
@@ -63,14 +59,11 @@ suite "chain/genesis":
     check gb.signature == gstate.blockSignature
 
   test "createGenesisBlock from signedMantleTx matches deployment genesisState envelope":
-    let
-      text = readAllChars(deploymentSettingsPath).valueOr:
-        check false
-        return
-      ds = parseDeploymentSettings(text).valueOr:
-        check false
-        return
-    check validateDeploymentSettings(ds).isOk
+    let text = readAllChars(deploymentSettingsPath).valueOr:
+      fail "could not read deployment settings"
+    let ds = parseDeploymentSettings(text).valueOr:
+      fail "could not parse deployment settings"
+    require validateDeploymentSettings(ds).isOk
 
     let
       gstate = ds.cryptarchia.genesisState
