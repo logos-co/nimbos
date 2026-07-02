@@ -26,6 +26,9 @@ suite "zk/circuits — path derivations":
   test "polVerificationKeyPath joins <dir>/pol/verification_key.json":
     check polVerificationKeyPath("/foo") == "/foo" / "pol" / "verification_key.json"
 
+  test "zksignVerificationKeyPath joins <dir>/signature/verification_key.json":
+    check zksignVerificationKeyPath("/foo") == "/foo" / "signature" / "verification_key.json"
+
 suite "zk/circuits — verifyCircuitsVersion":
   test "rejects missing dir":
     let r = verifyCircuitsVersion(uniqueTmpDir("missing-dir"))
