@@ -127,6 +127,14 @@ proc tryApplyTx*(
         blockHeight,
         genesis,
       )
+    of ChannelInscribe:
+      # Temporary: genesis deployment settings include channel_inscribe; skip
+      # until ChannelInscribe ledger support lands.
+      if not genesis:
+        return err(UnsupportedOp)
+      if proof.kind != opfChannelInscribe:
+        return err(InvalidProof)
+      discard
     else:
       return err(UnsupportedOp)
   ok((state: s, balance: balance))
