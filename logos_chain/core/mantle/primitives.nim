@@ -248,9 +248,6 @@ func encodeServiceType*(value: ServiceType): byte =
 func isValidLocator*(locator: Locator): bool =
   locator.data().buffer.len <= MaxLocatorMultiaddrBytes
 
-func validateLocator*(locator: Locator) =
-  doAssert isValidLocator(locator)
-
 func encodeLocatorCount*(value: byte): byte =
   ## LocatorCount = Byte
   encodeByte(value)

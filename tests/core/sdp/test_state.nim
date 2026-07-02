@@ -29,7 +29,7 @@ suite "core/sdp/state":
 
   test "validateLocator accepts valid locator and rejects oversized ones":
     let good = MultiAddress.init("/ip4/127.0.0.1/tcp/30303").tryGet()
-    validateLocator(good)
+    check isValidLocator(good)
 
     check MultiAddress.init("not-a-multiaddr").isErr
 
@@ -37,12 +37,7 @@ suite "core/sdp/state":
     while MultiAddress.init(longMaStr).tryGet().data().buffer.len <= MaxLocatorMultiaddrBytes:
       longMaStr &= "/ip4/1.1.1.1"
     let tooLong = MultiAddress.init(longMaStr).tryGet()
-    var tooLongRaised = false
-    try:
-      validateLocator(tooLong)
-    except AssertionDefect:
-      tooLongRaised = true
-    check tooLongRaised
+    check not isValidLocator(tooLong)
 
   func seedNoteId(seed: byte): NoteId =
     var bytes: array[32, byte]
