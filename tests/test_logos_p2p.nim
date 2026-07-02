@@ -37,8 +37,6 @@ proc autonatV2ClientOf(node: LBP2PNode): AutonatV2Client =
 
 suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
   asyncTest "QUIC quic-v1 listen: switch binds and accepts on configured listen multiaddr":
-    const expectedQuicPort = 5001
-
     let
       listenIp = parseIpAddress("127.0.0.1")
       natCfg = NatConfig(hasExtIp: true, extIp: listenIp)
@@ -49,10 +47,14 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
       net1: NetworkConfig
       net2: NetworkConfig
 
+    let
+      quicPort = firstIdlePort()
+      dialerPort = firstIdlePort(Port(uint16(quicPort) + 1))
+
     net1 = NetworkConfig(
       listenAddress: some(listenIp),
       nat: natCfg,
-      quicPort: 5001.Port,
+      quicPort: quicPort,
       maxPeers: 4,
       hardMaxPeers: some(4),
       agentString: "p2p-test-node1",
@@ -62,8 +64,8 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
       listenAddress: some(listenIp),
       nat: natCfg,
       # `net2` is only used for non-listen settings (agent/maxPeers) in this test;
-      # the `sw2` transport binds to `/udp/0` via `addr2` below.
-      quicPort: 5001.Port,
+      # the `sw2` transport binds to an idle loopback QUIC port via `addr2` below.
+      quicPort: dialerPort,
       maxPeers: 4,
       hardMaxPeers: some(4),
       agentString: "p2p-test-node2",
@@ -73,13 +75,14 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
       fail("createLBP2PNode failed: " & $error)
 
     await node1.startListening()
+    check boundQuicUdpPort(node1) == quicPort
     # Keep startup/stop scoped so sockets are released promptly.
     let fullAddrs = node1.switch.peerInfo.fullAddrs().valueOr:
       fail("peerInfo.fullAddrs failed: " & $error)
     var advertisedQuicFound = false
     for ma in fullAddrs:
       let s = $ma
-      if s.contains("/udp/" & $expectedQuicPort & "/quic-v1"):
+      if s.contains("/udp/" & $quicPort & "/quic-v1"):
         advertisedQuicFound = true
         break
     check advertisedQuicFound
@@ -89,8 +92,7 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
       # Create a plain libp2p switch (not LBNode) that uses QUIC transport.
       let
         keys2 = rng2[].getRandomNetKeys()
-        addr2 =
-          MultiAddress.init("/ip4/127.0.0.1/udp/0/quic-v1").tryGet()
+        addr2 = MultiAddress.init(loopbackQuicMultiAddr(dialerPort)).tryGet()
 
       var sb = SwitchBuilder.new()
       sb = sb.withPrivateKey(keys2.seckey)
@@ -121,16 +123,17 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
     let
       listenIp = parseIpAddress("127.0.0.1")
       natCfg = NatConfig(hasExtIp: true, extIp: listenIp)
-      expectedPort = 5001
 
     var
       rng = HmacDrbgContext.new()
       net: NetworkConfig
 
+    let quicPort = firstIdlePort()
+
     net = NetworkConfig(
       listenAddress: some(listenIp),
       nat: natCfg,
-      quicPort: 5001.Port,
+      quicPort: quicPort,
       maxPeers: 4,
       hardMaxPeers: some(4),
       agentString: "p2p-test-node1",
@@ -140,12 +143,13 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
       fail("createLBP2PNode failed: " & $error)
 
     await node.startListening()
+    check boundQuicUdpPort(node) == quicPort
     # Ensure clean shutdown even if assertions fail.
     try:
       let
         peerIdStr = $node.switch.peerInfo.peerId
         expectedNeedle =
-          "/udp/" & $expectedPort & "/quic-v1/p2p/" & peerIdStr
+          "/udp/" & $quicPort & "/quic-v1/p2p/" & peerIdStr
 
         fullAddrs = node.switch.peerInfo.fullAddrs().valueOr:
           fail("peerInfo.fullAddrs failed: " & $error)
@@ -170,10 +174,12 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
       rng = HmacDrbgContext.new()
       net: NetworkConfig
 
+    let quicPort = firstIdlePort()
+
     net = NetworkConfig(
       listenAddress: some(listenIp),
       nat: natCfg,
-      quicPort: 5001.Port,
+      quicPort: quicPort,
       maxPeers: 4,
       hardMaxPeers: some(4),
       agentString: "p2p-test-node1",
@@ -187,11 +193,7 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
 
 suite "P2P stack — bootstrap and discovery":
   asyncTest "Bootstrap dial: node connects from /ip4/.../udp/.../p2p/{peerId} bootstrap multiaddr":
-    const
-      listenerPort = 5001.Port
-      dialerPort = 5002.Port
-
-    let peers = await createBootstrapPeers(listenerPort, dialerPort)
+    let peers = await createBootstrapPeers()
     try:
       await peers.dialer.start()
 
@@ -210,19 +212,16 @@ suite "P2P stack — bootstrap and discovery":
       keys = rng[].getRandomNetKeys()
       peerId = PeerId.init(keys.seckey).valueOr:
         fail("PeerId.init failed: " & $error)
+      dnsPort = firstIdlePort()
       dnsBootstrap =
-        "/dns4/localhost/udp/5011/quic-v1/p2p/" & $peerId
+        "/dns4/localhost/udp/" & $dnsPort & "/quic-v1/p2p/" & $peerId
     discard parseBootstrapAddress(dnsBootstrap).valueOr:
       fail("parseBootstrapAddress failed: " & $error)
 
   asyncTest "After bootstrap: libp2p QUIC session stays up (decentralized DHT deferred)":
     ## Peer pool admission still depends on Eth2-style protocol handshakes; we
     ## assert libp2p-level connectivity from the bootstrap multiaddr path.
-    const
-      listenerPort = 5021.Port
-      dialerPort = 5022.Port
-
-    let peers = await createBootstrapPeers(listenerPort, dialerPort)
+    let peers = await createBootstrapPeers()
     try:
       await peers.dialer.start()
 
@@ -264,11 +263,7 @@ suite "P2P stack — NAT and AutoNAT v2":
   asyncTest "AutoNAT v2: dial-request and dial-back prove loopback reachability":
     ## Bootstrap only checks QUIC; AutoNAT is the dialer asking the listener to
     ## dial-back to the dialer's advertised addrs (second QUIC session).
-    const
-      listenerPort = 5053.Port
-      dialerPort = 5054.Port
-
-    let peers = await createBootstrapPeers(listenerPort, dialerPort)
+    let peers = await createBootstrapPeers()
     try:
       await peers.dialer.startListening()
       await peers.dialer.start()
