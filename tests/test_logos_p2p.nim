@@ -56,16 +56,16 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
       agentString: "p2p-test-node2",
     )
 
-    let (node1, quicPort) = await startLBP2PNodeListening(
+    let node1 = await startLBP2PNodeListening(
       rng1, net1, rng1[].getRandomNetKeys(),
     )
     # Keep startup/stop scoped so sockets are released promptly.
+    let listenMa = $node1.switch.peerInfo.listenAddrs[0]
     let fullAddrs = node1.switch.peerInfo.fullAddrs().valueOr:
       fail("peerInfo.fullAddrs failed: " & $error)
     var advertisedQuicFound = false
     for ma in fullAddrs:
-      let s = $ma
-      if s.contains("/udp/" & $quicPort & "/quic-v1"):
+      if ($ma).contains(listenMa):
         advertisedQuicFound = true
         break
     check advertisedQuicFound
@@ -115,23 +115,21 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
       agentString: "p2p-test-node1",
     )
 
-    let (node, quicPort) = await startLBP2PNodeListening(
+    let node = await startLBP2PNodeListening(
       rng, net, rng[].getRandomNetKeys(),
     )
     # Ensure clean shutdown even if assertions fail.
     try:
       let
         peerIdStr = $node.switch.peerInfo.peerId
-        expectedNeedle =
-          "/udp/" & $quicPort & "/quic-v1/p2p/" & peerIdStr
-
+        listenMa = $node.switch.peerInfo.listenAddrs[0]
         fullAddrs = node.switch.peerInfo.fullAddrs().valueOr:
           fail("peerInfo.fullAddrs failed: " & $error)
 
       var found = false
       for ma in fullAddrs:
         let s = $ma
-        if s.contains(expectedNeedle):
+        if s.contains(listenMa) and s.contains("/p2p/" & peerIdStr):
           found = true
           break
 
@@ -155,7 +153,7 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
       agentString: "p2p-test-node1",
     )
 
-    let (node, _) = await startLBP2PNodeListening(
+    let node = await startLBP2PNodeListening(
       rng, net, rng[].getRandomNetKeys(),
     )
     await node.stop()
