@@ -13,7 +13,7 @@ import
   chronos/unittest2/asynctests,
   unittest2,
   bincode,
-  libp2p/switch,
+  libp2p/[switch, builders, errors, multiaddress],
   ../../../logos_chain/networking/network,
   ../../../logos_chain/core/[types, local_tree],
   ../../../logos_chain/chain/[genesis, chain],
@@ -21,6 +21,14 @@ import
   ./helpers,
   ../../testutil
 from ../../../logos_chain/core/mantle/primitives import SlotNumber
+
+proc startQuicTestSwitch(): Future[Switch] {.async.} =
+  let sw = newStandardSwitch(
+    addrs = MultiAddress.init(loopbackQuicMultiAddr(TestQuicAnyPort)).tryGet(),
+    transport = TransportType.QUIC,
+  )
+  await sw.start()
+  sw
 
 proc runLbp2pIbdSyncTest(extraBlocks: int) {.async.} =
   let
@@ -132,14 +140,12 @@ suite "sync/initial_block_download (download blocks)":
       clientChain = Chain.init(genesis)
       req = DownloadBlocksRequest(
         targetBlock: b1id, knownBlocks: buildKnownBlocks(clientChain.localTree))
-      server = newQuicTestSwitch()
+      server = await startQuicTestSwitch()
     let serverSyncer = Syncer.init(server, serverChain, testChainSyncProtocol)
     mountCryptarchiaSyncHandler(serverSyncer)
-    let client = newQuicTestSwitch()
+    let client = await startQuicTestSwitch()
     let clientSyncer = Syncer.init(client, clientChain, testChainSyncProtocol)
 
-    await server.start()
-    await client.start()
     try:
       await client.connect(server.peerInfo.peerId, server.peerInfo.addrs, forceDial = true)
 
@@ -163,14 +169,12 @@ suite "sync/initial_block_download (GetTip)":
       genesis = createGenesisBlock(sm)
     var serverChain = Chain.init(genesis)
     let
-      server = newQuicTestSwitch()
+      server = await startQuicTestSwitch()
     let serverSyncer = Syncer.init(server, serverChain, testChainSyncProtocol)
     mountCryptarchiaSyncHandler(serverSyncer)
-    let client = newQuicTestSwitch()
+    let client = await startQuicTestSwitch()
     let clientSyncer = Syncer.init(client, Chain.init(genesis), testChainSyncProtocol)
 
-    await server.start()
-    await client.start()
     try:
       await client.connect(server.peerInfo.peerId, server.peerInfo.addrs, forceDial = true)
 
@@ -193,7 +197,10 @@ suite "sync/initial_block_download (IBD requester loop)":
     let
       sm = minimalSignedTx()
       genesis = createGenesisBlock(sm)
-      sw = newQuicTestSwitch()
+      sw = try:
+        newStandardSwitch(transport = TransportType.QUIC)
+      except LPError as exc:
+        fail("newStandardSwitch: " & exc.msg)
     let clientSyncer = Syncer.init(sw, Chain.init(genesis), testChainSyncProtocol)
     await initialBlockDownload(clientSyncer, @[])
 
@@ -201,16 +208,14 @@ suite "sync/initial_block_download (IBD requester loop)":
     let
       sm = minimalSignedTx()
       genesis = createGenesisBlock(sm)
-      server = newQuicTestSwitch()
+      server = await startQuicTestSwitch()
     var serverChain = Chain.init(genesis)
     var clientChain = Chain.init(genesis)
     let serverSyncer = Syncer.init(server, serverChain, testChainSyncProtocol)
     mountCryptarchiaSyncHandler(serverSyncer)
-    let client = newQuicTestSwitch()
+    let client = await startQuicTestSwitch()
     let clientSyncer = Syncer.init(client, clientChain, testChainSyncProtocol)
 
-    await server.start()
-    await client.start()
     try:
       await client.connect(server.peerInfo.peerId, server.peerInfo.addrs, forceDial = true)
       await initialBlockDownload(clientSyncer, @[server.peerInfo.peerId])
@@ -230,12 +235,10 @@ suite "sync/initial_block_download (IBD requester loop)":
 
     let
       clientChain = Chain.init(genesis)
-      server = newQuicTestSwitch()
-      client = newQuicTestSwitch()
+      server = await startQuicTestSwitch()
+      client = await startQuicTestSwitch()
     let clientSyncer = Syncer.init(client, clientChain, testChainSyncProtocol)
 
-    await server.start()
-    await client.start()
     try:
       await client.connect(server.peerInfo.peerId, server.peerInfo.addrs, forceDial = true)
       var raised = false
@@ -261,14 +264,12 @@ suite "sync/initial_block_download (IBD requester loop)":
 
     let
       clientChain = Chain.init(genesis)
-      server = newQuicTestSwitch()
+      server = await startQuicTestSwitch()
     let serverSyncer = Syncer.init(server, serverChain, testChainSyncProtocol)
     mountCryptarchiaSyncHandler(serverSyncer)
-    let client = newQuicTestSwitch()
+    let client = await startQuicTestSwitch()
     let clientSyncer = Syncer.init(client, clientChain, testChainSyncProtocol)
 
-    await server.start()
-    await client.start()
     try:
       await client.connect(server.peerInfo.peerId, server.peerInfo.addrs, forceDial = true)
       await initialBlockDownload(clientSyncer, @[server.peerInfo.peerId])

@@ -11,7 +11,6 @@ import
   std/sequtils,
   results,
   bincode,
-  libp2p/builders,
   stew/byteutils as byteutils,
   ../../testutil,
   ../../../logos_chain/core/[types, local_tree],
@@ -20,14 +19,6 @@ from ../../../logos_chain/core/mantle/primitives import SlotNumber
 from ../../../logos_chain/core/mantle/tx_types import SignedMantleTx, encodeSignedMantleTx
 
 const testChainSyncProtocol* = "/logos-blockchain-testnet-v0.1.2/chainsync/1.0.0"
-
-proc newQuicTestSwitch*(): Switch =
-  try:
-    newStandardSwitch(
-      addrs = idleLoopbackQuicMultiAddr(),
-      transport = TransportType.QUIC)
-  except CatchableError as exc:
-    fail("newQuicTestSwitch: " & exc.msg)
 
 func exampleBlockId*(fill: byte): BlockId =
   var id: BlockId

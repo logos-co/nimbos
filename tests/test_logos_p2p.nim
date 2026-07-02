@@ -12,19 +12,12 @@ import
   std/[net, sequtils, strutils],
   chronos,
   chronos/unittest2/asynctests,
-  ./testutil
-
-import
-  ../logos_chain/conf,
-  ../logos_chain/networking/network,
-  ../logos_chain/networking/discovery,
-  libp2p/switch,
-  libp2p/builders,
-  libp2p/multiaddress,
-  libp2p/peerid,
+  libp2p/[switch, builders, multiaddress, peerid],
   libp2p/services/wildcardresolverservice,
-  libp2p/protocols/connectivity/autonatv2/types,
-  libp2p/protocols/connectivity/autonatv2/client
+  libp2p/protocols/connectivity/autonatv2/[types, client],
+  ./testutil,
+  ../logos_chain/conf,
+  ../logos_chain/networking/[network, discovery]
 
 from libp2p/protocols/connectivity/autonat/types import NetworkReachability
 
@@ -44,38 +37,28 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
     var
       rng1 = HmacDrbgContext.new()
       rng2 = HmacDrbgContext.new()
-      net1: NetworkConfig
-      net2: NetworkConfig
 
-    let
-      quicPort = firstIdlePort()
-      dialerPort = firstIdlePort(Port(uint16(quicPort) + 1))
-
-    net1 = NetworkConfig(
+    let net1 = NetworkConfig(
       listenAddress: some(listenIp),
       nat: natCfg,
-      quicPort: quicPort,
+      quicPort: TestQuicAnyPort,
       maxPeers: 4,
       hardMaxPeers: some(4),
       agentString: "p2p-test-node1",
     )
 
-    net2 = NetworkConfig(
+    let net2 = NetworkConfig(
       listenAddress: some(listenIp),
       nat: natCfg,
-      # `net2` is only used for non-listen settings (agent/maxPeers) in this test;
-      # the `sw2` transport binds to an idle loopback QUIC port via `addr2` below.
-      quicPort: dialerPort,
+      quicPort: TestQuicAnyPort,
       maxPeers: 4,
       hardMaxPeers: some(4),
       agentString: "p2p-test-node2",
     )
 
-    let node1 = createLBP2PNode(rng1, net1, rng1[].getRandomNetKeys()).valueOr:
-      fail("createLBP2PNode failed: " & $error)
-
-    await node1.startListening()
-    check boundQuicUdpPort(node1) == quicPort
+    let (node1, quicPort) = await startLBP2PNodeListening(
+      rng1, net1, rng1[].getRandomNetKeys(),
+    )
     # Keep startup/stop scoped so sockets are released promptly.
     let fullAddrs = node1.switch.peerInfo.fullAddrs().valueOr:
       fail("peerInfo.fullAddrs failed: " & $error)
@@ -90,13 +73,11 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
     var sw2: Switch = nil
     try:
       # Create a plain libp2p switch (not LBNode) that uses QUIC transport.
-      let
-        keys2 = rng2[].getRandomNetKeys()
-        addr2 = MultiAddress.init(loopbackQuicMultiAddr(dialerPort)).tryGet()
-
+      let keys2 = rng2[].getRandomNetKeys()
+      let listenAddr = MultiAddress.init(loopbackQuicMultiAddr(TestQuicAnyPort)).tryGet()
       var sb = SwitchBuilder.new()
       sb = sb.withPrivateKey(keys2.seckey)
-      sb = sb.withAddress(addr2)
+      sb = sb.withAddress(listenAddr)
       sb = sb.withRng(rng2)
       sb = sb.withNoise()
       sb = sb.withQuicTransport()
@@ -104,7 +85,6 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
       sb = sb.withAgentVersion(net2.agentString)
       let svc: Service = WildcardAddressResolverService.new()
       sb = sb.withServices(@[svc])
-
       sw2 = sb.build()
       await sw2.start()
 
@@ -124,26 +104,20 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
       listenIp = parseIpAddress("127.0.0.1")
       natCfg = NatConfig(hasExtIp: true, extIp: listenIp)
 
-    var
-      rng = HmacDrbgContext.new()
-      net: NetworkConfig
+    var rng = HmacDrbgContext.new()
 
-    let quicPort = firstIdlePort()
-
-    net = NetworkConfig(
+    let net = NetworkConfig(
       listenAddress: some(listenIp),
       nat: natCfg,
-      quicPort: quicPort,
+      quicPort: TestQuicAnyPort,
       maxPeers: 4,
       hardMaxPeers: some(4),
       agentString: "p2p-test-node1",
     )
 
-    let node = createLBP2PNode(rng, net, rng[].getRandomNetKeys()).valueOr:
-      fail("createLBP2PNode failed: " & $error)
-
-    await node.startListening()
-    check boundQuicUdpPort(node) == quicPort
+    let (node, quicPort) = await startLBP2PNodeListening(
+      rng, net, rng[].getRandomNetKeys(),
+    )
     # Ensure clean shutdown even if assertions fail.
     try:
       let
@@ -170,25 +144,20 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
       listenIp = parseIpAddress("127.0.0.1")
       natCfg = NatConfig(hasExtIp: true, extIp: listenIp)
 
-    var
-      rng = HmacDrbgContext.new()
-      net: NetworkConfig
+    var rng = HmacDrbgContext.new()
 
-    let quicPort = firstIdlePort()
-
-    net = NetworkConfig(
+    let net = NetworkConfig(
       listenAddress: some(listenIp),
       nat: natCfg,
-      quicPort: quicPort,
+      quicPort: TestQuicAnyPort,
       maxPeers: 4,
       hardMaxPeers: some(4),
       agentString: "p2p-test-node1",
     )
 
-    let node = createLBP2PNode(rng, net, rng[].getRandomNetKeys()).valueOr:
-      fail("createLBP2PNode failed: " & $error)
-
-    await node.startListening()
+    let (node, _) = await startLBP2PNodeListening(
+      rng, net, rng[].getRandomNetKeys(),
+    )
     await node.stop()
 
 suite "P2P stack — bootstrap and discovery":
@@ -212,7 +181,7 @@ suite "P2P stack — bootstrap and discovery":
       keys = rng[].getRandomNetKeys()
       peerId = PeerId.init(keys.seckey).valueOr:
         fail("PeerId.init failed: " & $error)
-      dnsPort = firstIdlePort()
+      dnsPort = Port(5011)
       dnsBootstrap =
         "/dns4/localhost/udp/" & $dnsPort & "/quic-v1/p2p/" & $peerId
     discard parseBootstrapAddress(dnsBootstrap).valueOr:

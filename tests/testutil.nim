@@ -8,7 +8,7 @@
 {.push raises: [].}
 
 import
-  std/[net, nativesockets, strutils, times],
+  std/[net, strutils, times],
   chronos,
   libp2p/[switch, peerid, multiaddress, multicodec],
   testutils/markdown_reports,
@@ -78,42 +78,10 @@ proc summarizeLongTests*(name: string) =
     raiseAssert getCurrentExceptionMsg()
 
 const TestLoopbackIp* = parseIpAddress("127.0.0.1")
-const TestQuicPortBase* = 5001.Port
-const TestQuicPortScanLimit* = 200
-
-var testPortCursor = uint16(TestQuicPortBase)
-
-proc isUdpPortIdle(ip: IpAddress, port: Port): bool =
-  try:
-    var sock = newSocket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)
-    defer:
-      sock.close()
-    sock.setSockOpt(OptReuseAddr, true)
-    sock.bindAddr(port = port, address = $ip)
-    true
-  except CatchableError:
-    false
-
-proc firstIdlePort*(startPort: Port = TestQuicPortBase): Port =
-  ## Return the first UDP port on ``TestLoopbackIp`` that can be bound,
-  ## scanning upward from ``max(startPort, testPortCursor)``.
-  var candidate = max(uint16(startPort), testPortCursor)
-  for _ in 0 ..< TestQuicPortScanLimit:
-    let port = Port(candidate)
-    if isUdpPortIdle(TestLoopbackIp, port):
-      testPortCursor = candidate + 1
-      return port
-    candidate.inc
-  fail("no idle QUIC test port found from " & $startPort)
+const TestQuicAnyPort* = Port(0)
 
 template loopbackQuicMultiAddr*(port: Port): string =
   "/ip4/" & $TestLoopbackIp & "/udp/" & $port & "/quic-v1"
-
-proc idleLoopbackQuicMultiAddr*(): MultiAddress =
-  try:
-    MultiAddress.init(loopbackQuicMultiAddr(firstIdlePort())).tryGet()
-  except CatchableError as exc:
-    fail("loopback quic multiaddr: " & exc.msg)
 
 proc udpPortFromMultiAddr*(ma: MultiAddress): Port =
   let s = $ma
@@ -131,17 +99,27 @@ proc udpPortFromMultiAddr*(ma: MultiAddress): Port =
     fail("invalid udp port in multiaddr: " & s)
   Port(portNum)
 
-proc boundQuicUdpPort*(node: LBP2PNode): Port =
-  let pi = node.switch.peerInfo
-  if pi.listenAddrs.len > 0:
-    return udpPortFromMultiAddr(pi.listenAddrs[0])
-  if pi.addrs.len > 0:
-    return udpPortFromMultiAddr(pi.addrs[0])
-  let full = pi.fullAddrs().valueOr:
-    fail("fullAddrs failed: " & error)
-  if full.len == 0:
-    fail("no listen addrs on node")
-  udpPortFromMultiAddr(full[0])
+proc boundQuicUdpPort*(sw: Switch): Port =
+  let pi = sw.peerInfo
+  if pi.listenAddrs.len == 0:
+    fail("no listen addrs on switch")
+  let port = udpPortFromMultiAddr(pi.listenAddrs[0])
+  if port == TestQuicAnyPort:
+    fail("switch still bound to ephemeral port 0")
+  port
+
+proc startLBP2PNodeListening*(
+    rng: ref HmacDrbgContext,
+    conf: NetworkConfig,
+    keys: NetKeyPair,
+): Future[(LBP2PNode, Port)] {.async.} =
+  ## Create and start a node; the kernel assigns a free loopback QUIC port.
+  var nodeConf = conf
+  nodeConf.quicPort = TestQuicAnyPort
+  let node = createLBP2PNode(rng, nodeConf, keys).valueOr:
+    fail("createLBP2PNode failed: " & $error)
+  await node.switch.start()
+  (node, boundQuicUdpPort(node.switch))
 
 func minimalSignedTx*(): SignedMantleTx =
   SignedMantleTx(
@@ -194,60 +172,43 @@ proc waitLibp2pConnected*(sw: Switch, remote: PeerId): Future[bool] {.async.} =
     await sleepAsync(chronos.milliseconds(100))
   false
 
-proc makeBootstrapConfs*(listenerPort, dialerPort: Port): tuple[
-    confL: NetworkConfig, confD: NetworkConfig,
-    rngL: ref HmacDrbgContext, rngD: ref HmacDrbgContext] =
-  # TODO(logos-chain-networking): remove NatConfig dependency from test helpers once
-  # networking no longer relies on eth/net/nat-config style plumbing.
-  let natCfg = NatConfig(hasExtIp: true, extIp: TestLoopbackIp)
-  let rngL = HmacDrbgContext.new()
-  let rngD = HmacDrbgContext.new()
-  (
-    confL: NetworkConfig(
-      listenAddress: some(TestLoopbackIp),
-      nat: natCfg,
-      quicPort: listenerPort,
-      maxPeers: 8,
-      hardMaxPeers: some(8),
-      agentString: "p2p-bootstrap-listener",
-      autonatAllowPrivateAddresses: true,
-    ),
-    confD: NetworkConfig(
-      listenAddress: some(TestLoopbackIp),
-      nat: natCfg,
-      quicPort: dialerPort,
-      maxPeers: 8,
-      hardMaxPeers: some(8),
-      agentString: "p2p-bootstrap-dialer",
-      autonatAllowPrivateAddresses: true,
-    ),
-    rngL: rngL,
-    rngD: rngD,
-  )
-
 type BootstrapPeers* = object
   listener*, dialer*: LBP2PNode
   listenerPeerId*: PeerId
 
 proc createBootstrapPeers*(): Future[BootstrapPeers] {.async.} =
-  let
-    listenerPort = firstIdlePort()
-    dialerPort = firstIdlePort(Port(uint16(listenerPort) + 1))
-    (confL, confD, rngL, rngD) = makeBootstrapConfs(listenerPort, dialerPort)
-
-  let listener = createLBP2PNode(rngL, confL, rngL[].getRandomNetKeys()).valueOr:
-    fail("createLBP2PNode listener: " & $error)
-  await listener.startListening()
+  let natCfg = NatConfig(hasExtIp: true, extIp: TestLoopbackIp)
+  let rngL = HmacDrbgContext.new()
+  let rngD = HmacDrbgContext.new()
+  let listenerConf = NetworkConfig(
+    listenAddress: some(TestLoopbackIp),
+    nat: natCfg,
+    quicPort: TestQuicAnyPort,
+    maxPeers: 8,
+    hardMaxPeers: some(8),
+    agentString: "p2p-bootstrap-listener",
+    autonatAllowPrivateAddresses: true,
+  )
+  let (listener, listenerPort) = await startLBP2PNodeListening(
+    rngL, listenerConf, rngL[].getRandomNetKeys(),
+  )
 
   let listenerPeerId = listener.switch.peerInfo.peerId
-  var confDial = confD
-  confDial.bootstrapNodes = @[
-    loopbackQuicMultiAddr(listenerPort) & "/p2p/" & $listenerPeerId
-  ]
-
-  let dialer = createLBP2PNode(rngD, confDial, rngD[].getRandomNetKeys()).valueOr:
-    await listener.stop()
-    fail("createLBP2PNode dialer: " & $error)
+  let dialerConf = NetworkConfig(
+    listenAddress: some(TestLoopbackIp),
+    nat: natCfg,
+    quicPort: TestQuicAnyPort,
+    maxPeers: 8,
+    hardMaxPeers: some(8),
+    agentString: "p2p-bootstrap-dialer",
+    autonatAllowPrivateAddresses: true,
+    bootstrapNodes: @[
+      loopbackQuicMultiAddr(listenerPort) & "/p2p/" & $listenerPeerId
+    ],
+  )
+  let (dialer, _) = await startLBP2PNodeListening(
+    rngD, dialerConf, rngD[].getRandomNetKeys(),
+  )
 
   BootstrapPeers(
     listener: listener,
