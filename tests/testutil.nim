@@ -77,13 +77,13 @@ proc summarizeLongTests*(name: string) =
   except IOError, OSError, ValueError:
     raiseAssert getCurrentExceptionMsg()
 
-const TestLoopbackIp* = parseIpAddress("127.0.0.1")
+const TestLoopbackIp = parseIpAddress("127.0.0.1")
 const TestQuicAnyPort* = Port(0)
 
 template loopbackQuicMultiAddr*(port: Port): string =
   "/ip4/" & $TestLoopbackIp & "/udp/" & $port & "/quic-v1"
 
-proc udpPortFromMultiAddr*(ma: MultiAddress): Port =
+proc udpPortFromMultiAddr(ma: MultiAddress): Port =
   let s = $ma
   const needle = "/udp/"
   let i = s.find(needle)
@@ -99,7 +99,7 @@ proc udpPortFromMultiAddr*(ma: MultiAddress): Port =
     fail("invalid udp port in multiaddr: " & s)
   Port(portNum)
 
-proc boundQuicUdpPort*(sw: Switch): Port =
+proc boundQuicUdpPort(sw: Switch): Port =
   let pi = sw.peerInfo
   if pi.listenAddrs.len == 0:
     fail("no listen addrs on switch")
