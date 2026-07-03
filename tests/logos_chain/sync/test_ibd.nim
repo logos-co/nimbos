@@ -23,10 +23,12 @@ import
 from ../../../logos_chain/core/mantle/primitives import SlotNumber
 
 proc startQuicTestSwitch(): Future[Switch] {.async.} =
-  let sw = newStandardSwitch(
-    addrs = MultiAddress.init(loopbackQuicMultiAddr(TestQuicAnyPort)).tryGet(),
-    transport = TransportType.QUIC,
-  )
+  let sw = SwitchBuilder
+    .new()
+    .withRng(newRng())
+    .withAddress(MultiAddress.init("/ip4/127.0.0.1/udp/0/quic-v1").tryGet())
+    .withQuicTransport()
+    .build()
   await sw.start()
   sw
 
@@ -198,7 +200,12 @@ suite "sync/initial_block_download (IBD requester loop)":
       sm = minimalSignedTx()
       genesis = createGenesisBlock(sm)
       sw = try:
-        newStandardSwitch(transport = TransportType.QUIC)
+        SwitchBuilder
+          .new()
+          .withRng(newRng())
+          .withAddress(MultiAddress.init("/ip4/127.0.0.1/udp/0/quic-v1").tryGet())
+          .withQuicTransport()
+          .build()
       except LPError as exc:
         fail("newStandardSwitch: " & exc.msg)
     let clientSyncer = Syncer.init(sw, Chain.init(genesis), testChainSyncProtocol)

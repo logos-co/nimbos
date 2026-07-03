@@ -9,6 +9,7 @@
 
 import
   std/[net, strutils, times],
+  bearssl/rand,
   chronos,
   libp2p/[switch, peerid],
   testutils/markdown_reports,
@@ -169,7 +170,7 @@ proc createBootstrapPeers*(): Future[BootstrapPeers] {.async.} =
     autonatAllowPrivateAddresses: true,
   )
   let listener = await startLBP2PNodeListening(
-    rngL, listenerConf, rngL[].getRandomNetKeys(),
+    rngL, listenerConf, rngL.getRandomNetKeys(),
   )
 
   let listenerPeerId = listener.switch.peerInfo.peerId
@@ -188,7 +189,7 @@ proc createBootstrapPeers*(): Future[BootstrapPeers] {.async.} =
     bootstrapNodes: @[$listenerBootstrap[0]],
   )
   let dialer = await startLBP2PNodeListening(
-    rngD, dialerConf, rngD[].getRandomNetKeys(),
+    rngD, dialerConf, rngD.getRandomNetKeys(),
   )
 
   BootstrapPeers(

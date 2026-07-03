@@ -10,10 +10,10 @@
 
 import
   std/[net, sequtils, strutils],
+  bearssl/rand,
   chronos,
   chronos/unittest2/asynctests,
   libp2p/[switch, builders, multiaddress, peerid],
-  libp2p/services/wildcardresolverservice,
   libp2p/protocols/connectivity/autonatv2/[types, client],
   ./testutil,
   ../logos_chain/conf,
@@ -32,7 +32,7 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
   asyncTest "QUIC quic-v1 listen: switch binds and accepts on configured listen multiaddr":
     let
       listenIp = parseIpAddress("127.0.0.1")
-      natCfg = NatConfig(hasExtIp: true, extIp: listenIp)
+      natCfg = nat.NatConfig(hasExtIp: true, extIp: listenIp)
 
     var
       rng1 = HmacDrbgContext.new()
@@ -57,7 +57,7 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
     )
 
     let node1 = await startLBP2PNodeListening(
-      rng1, net1, rng1[].getRandomNetKeys(),
+      rng1, net1, rng1.getRandomNetKeys(),
     )
     # Keep startup/stop scoped so sockets are released promptly.
     let listenMa = $node1.switch.peerInfo.listenAddrs[0]
@@ -73,18 +73,17 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
     var sw2: Switch = nil
     try:
       # Create a plain libp2p switch (not LBNode) that uses QUIC transport.
-      let keys2 = rng2[].getRandomNetKeys()
+      let keys2 = rng2.getRandomNetKeys()
       let listenAddr = MultiAddress.init(loopbackQuicMultiAddr(TestQuicAnyPort)).tryGet()
       var sb = SwitchBuilder.new()
       sb = sb.withPrivateKey(keys2.seckey)
       sb = sb.withAddress(listenAddr)
-      sb = sb.withRng(rng2)
+      sb = sb.withWildcardResolver()
+      sb = sb.withRng(newBearSslRng(rng2))
       sb = sb.withNoise()
       sb = sb.withQuicTransport()
       sb = sb.withMaxConnections(net2.maxPeers)
       sb = sb.withAgentVersion(net2.agentString)
-      let svc: Service = WildcardAddressResolverService.new()
-      sb = sb.withServices(@[svc])
       sw2 = sb.build()
       await sw2.start()
 
@@ -102,7 +101,7 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
   asyncTest "Public advertisement: reachable multiaddr matches /{ip}/udp/{port}/quic-v1/p2p/{peer_id}":
     let
       listenIp = parseIpAddress("127.0.0.1")
-      natCfg = NatConfig(hasExtIp: true, extIp: listenIp)
+      natCfg = nat.NatConfig(hasExtIp: true, extIp: listenIp)
 
     var rng = HmacDrbgContext.new()
 
@@ -116,7 +115,7 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
     )
 
     let node = await startLBP2PNodeListening(
-      rng, net, rng[].getRandomNetKeys(),
+      rng, net, rng.getRandomNetKeys(),
     )
     # Ensure clean shutdown even if assertions fail.
     try:
@@ -140,7 +139,7 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
   asyncTest "Lifecycle: network start and stop release listeners and pending dials cleanly":
     let
       listenIp = parseIpAddress("127.0.0.1")
-      natCfg = NatConfig(hasExtIp: true, extIp: listenIp)
+      natCfg = nat.NatConfig(hasExtIp: true, extIp: listenIp)
 
     var rng = HmacDrbgContext.new()
 
@@ -154,7 +153,7 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
     )
 
     let node = await startLBP2PNodeListening(
-      rng, net, rng[].getRandomNetKeys(),
+      rng, net, rng.getRandomNetKeys(),
     )
     await node.stop()
 
@@ -176,7 +175,7 @@ suite "P2P stack — bootstrap and discovery":
     ## the dial path. This validates Logos Chain bootstrap string parsing for DNS.
     var rng = HmacDrbgContext.new()
     let
-      keys = rng[].getRandomNetKeys()
+      keys = rng.getRandomNetKeys()
       peerId = PeerId.init(keys.seckey).valueOr:
         fail("PeerId.init failed: " & $error)
       dnsPort = Port(5011)

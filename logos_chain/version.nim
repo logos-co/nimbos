@@ -10,14 +10,15 @@
 ## This module implements the version tagging details of all binaries included
 ## in the Nimbus release process (i.e. beacon_node, validator_client, etc)
 
-import std/[os, strutils], ./buildinfo
+import ./buildinfo
+
+from std/os import AltSep, DirSep
+from std/strutils import rsplit, strip
 
 const
-  versionMajor* = 25
-  versionMinor* = 12
-  versionBuild* = 0
-
-  versionBlob* = "stateofus" # Single word - ends up in the default graffiti
+  versionMajor* = 0
+  versionMinor* = 0
+  versionBuild* = 1
 
   sourcePath = currentSourcePath.rsplit({DirSep, AltSep}, 1)[0]
   gitRevision* = strip(generateGitRevision(sourcePath))[0..5]
@@ -25,7 +26,7 @@ const
   versionAsStr* =
     $versionMajor & "." & $versionMinor & "." & $versionBuild
 
-  fullVersionStr* = "v" & versionAsStr & "-" & gitRevision & "-" & versionBlob
+  fullVersionStr* = "v" & versionAsStr & "-" & gitRevision
 
   nimbusAgentStr* = "Nimbus/" & fullVersionStr
 
