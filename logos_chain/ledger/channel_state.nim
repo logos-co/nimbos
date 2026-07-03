@@ -107,8 +107,7 @@ func verifyChannelMultiSig(
     "ChannelWithdrawOpProof: signatures and indexes length mismatch"
   if proof.signatures.len != int(threshold):
     return err(ThresholdUnmet)
-  for i in 0 ..< proof.signatures.len:
-    let idx = proof.indexes[i]
+  for i, idx in proof.indexes:
     if int(idx) >= keys.len:
       return err(InvalidProof)
     if not verify(proof.signatures[i], txHash, keys[idx]):
@@ -134,7 +133,7 @@ func validateChannelInscribe*(
     let (idx, _) = round_robin(blockSlot, chan)
     if op.signer != chan.accreditedKeys[idx]:
       return err(UnauthorizedSigner)
-  elif op.parent != static(default(Hash32)):
+  elif not op.parent.isZero:
     return err(InvalidParent)
 
   if not verify(sig, txHash, op.signer):
@@ -178,11 +177,9 @@ func validateChannelConfig*(
   if op.withdrawThreshold == 0 or op.withdrawThreshold.int > op.keys.len:
     return err(InvalidChannelConfig)
 
-  let chanOpt = channels.get(op.channel)
-  if chanOpt.isSome:
-    let chan = chanOpt.get
+  channels.get(op.channel).isErrOr:
     ?verifyChannelMultiSig(
-      proof, chan.accreditedKeys, chan.configurationThreshold, txHash)
+      proof, value.accreditedKeys, value.configurationThreshold, txHash)
   ok()
 
 func applyChannelConfig*(
