@@ -7,7 +7,7 @@
 	path = vendor/nim-libp2p
 	url = https://github.com/vacp2p/nim-libp2p.git
 	ignore = untracked
-	branch = master
+	branch = release/v2.1.2
 [submodule "vendor/nimbus-build-system"]
 	path = vendor/nimbus-build-system
 	url = https://github.com/status-im/nimbus-build-system.git
@@ -155,5 +155,15 @@
 [submodule "vendor/nim-zlib"]
 	path = vendor/nim-zlib
 	url = https://github.com/status-im/nim-zlib
+	ignore = untracked
+	branch = master
+[submodule "vendor/nim-boringssl"]
+	path = vendor/nim-boringssl
+	url = https://github.com/vacp2p/nim-boringssl.git
+	ignore = untracked
+	branch = master
+[submodule "vendor/nim-protobuf-serialization"]
+	path = vendor/nim-protobuf-serialization
+	url = https://github.com/status-im/nim-protobuf-serialization
 	ignore = untracked
 	branch = master
