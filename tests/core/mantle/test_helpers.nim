@@ -15,6 +15,8 @@ import
     [primitives, operations, proofs, tx_types, utxo],
   ../../../logos_chain/zk/poseidon2/hasher
 
+from libp2p/crypto/rng import newBearSslRng
+
 type TestId* = BlockId
 
 func mkZkPubKey(seed: byte): ZkPublicKey =
@@ -82,7 +84,7 @@ func mkProof*(): ProofOfLeadership =
 proc mkEdKeyPair*(rng: ref HmacDrbgContext): EdKeyPair =
   ## Random Ed25519 keypair. Caller provides the rng so all keypairs minted
   ## within a single test share one source and remain reproducible-by-order.
-  EdKeyPair.random(rng[])
+  EdKeyPair.random(newBearSslRng(rng))
 
 func mkChannelId*(seed: byte): ChannelId =
   var c: ChannelId
