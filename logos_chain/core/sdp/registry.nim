@@ -5,7 +5,6 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-## SDP validator registry: live declaration state, query index, and parameters.
 ## Spec: [1.0.0 Service Declaration Protocol](https://nomos-tech.notion.site/1-0-0-Service-Declaration-Protocol-1fd261aa09df819ca9f8eb2bdfd4ec1d)
 
 {.push raises: [], gcsafe.}
@@ -34,7 +33,7 @@ type
     params*: SdpParams
 
 func validateSessionLength*(params: ServiceParameters, securityParam: uint64) =
-  ## ``session_length`` must be at least ``k`` (consensus finality / security param).
+  ## ``session_length`` must be at least ``k`` (security param).
   doAssert params.sessionLength > 0, "session_length must be > 0"
   doAssert params.sessionLength >= securityParam,
     "session_length must be >= consensus finality parameter k"
@@ -44,7 +43,6 @@ func init*(
     sdpConfig: deploy.SdpConfig,
     securityParam: uint64,
 ): T =
-  ## Seed service parameters and minimum stake from deployment settings.
   let bnDefaults = defaultBnServiceParameters(sdpConfig.bn.epoch.uint64)
   let bnParams = ServiceParameters(
     sessionLength: bnDefaults.sessionLength,
@@ -77,8 +75,6 @@ func onBlockApplied*(
     previousBlockNumber: BlockNumber,
     blockNumber: BlockNumber,
 ) =
-  ## Run garbage collection and snapshot declaration state for each service
-  ## that advances to a new session.
   collectGarbage(registry.state, registry.params.parameters, blockNumber)
   for service, params in registry.params.parameters.pairs:
     if params.timestamp > blockNumber:
@@ -122,8 +118,6 @@ func getParametersAt*(
     service: ServiceType,
     timestamp: BlockNumber,
 ): Opt[ServiceParameters] =
-  ## Returns ``ServiceParameters`` for ``service`` when set at or before
-  ## ``timestamp``.
   if service notin registry.params.parameters:
     return Opt.none(ServiceParameters)
   let params = registry.params.parameters.getOrDefault(service)
@@ -142,7 +136,6 @@ func getMinStakeAt*(
     registry: SdpRegistry,
     timestamp: BlockNumber,
 ): Opt[sdpTypes.MinStake] =
-  ## Returns the latest ``MinStake`` with ``timestamp <=`` the query height.
   var best = Opt.none(sdpTypes.MinStake)
   for entry in registry.params.stakeThresholds:
     if entry.timestamp <= timestamp:

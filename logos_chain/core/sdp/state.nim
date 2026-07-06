@@ -37,7 +37,6 @@ func getLockedNote*(state: SdpState, id: NoteId): Opt[LockedNote] =
     Opt.some(state.lockedNotes.getOrDefault(id))
 
 func getLockedNotes*(state: SdpState): HashSet[NoteId] =
-  ## Note ids that currently hold at least one SDP declaration.
   var ids: HashSet[NoteId]
   for noteId, note in state.lockedNotes.pairs:
     if note.declarations.len > 0:
@@ -84,8 +83,6 @@ func isDeclarationGarbage*(
     params: ServiceParameters,
     blockHeight: BlockNumber,
 ): bool =
-  ## Returns whether ``info`` may be removed by garbage collection at
-  ## ``blockHeight`` per SDP § Garbage Collection.
   let sessionLen = params.sessionLength
   if info.withdrawn != 0:
     let retentionBlocks = params.retentionPeriod * sessionLen
@@ -100,7 +97,6 @@ func collectGarbage*(
     parameters: Table[ServiceType, ServiceParameters],
     blockHeight: BlockNumber,
 ) =
-  ## Remove ``DeclarationInfo`` entries past retention or inactivity windows.
   let toRemove = mapIt(
     filterIt(toSeq(state.declarations.pairs),
       it[1].service in parameters and

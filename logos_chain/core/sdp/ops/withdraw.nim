@@ -5,7 +5,6 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-## SDP Withdraw validation and application.
 ## Spec: [1.0.0 Service Declaration Protocol](https://nomos-tech.notion.site/1-0-0-Service-Declaration-Protocol-1fd261aa09df819ca9f8eb2bdfd4ec1d)
 
 {.push raises: [], gcsafe.}
@@ -30,7 +29,6 @@ proc validateSdpWithdraw(
     blockHeight: BlockNumber,
     genesis: bool = false,
 ): Result[void, LedgerError] =
-  ## Validates a ``WithdrawMessage`` per SDP Withdraw rules.
   let utxo = utxos.get(withdraw.lockedNoteId).valueOr:
     return err(LockedNoteNotFound)
   let note = utxo.note

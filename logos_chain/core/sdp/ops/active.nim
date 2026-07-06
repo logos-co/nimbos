@@ -26,8 +26,6 @@ func evaluateSdpActivity*(
     blockHeight: BlockNumber,
     params: ServiceParameters,
 ): bool =
-  ## Service-specific activity logic. Returns whether the active message is
-  ## approved. BN accepts any metadata for now.
   discard declaration
   discard metadata
   discard blockHeight
@@ -43,8 +41,6 @@ proc validateSdpActive(
     state: SdpState,
     genesis: bool = false,
 ): Result[void, LedgerError] =
-  ## Validates an ``ActiveMessage`` per SDP Active rules (excluding
-  ## service-specific activity logic, which runs at apply time).
   let declaration = ?loadDeclaration(state, active.declarationId)
   ?checkNotWithdrawn(declaration)
   ?checkNonceMonotonic(declaration, active.nonce)

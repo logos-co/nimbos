@@ -28,9 +28,6 @@ proc verifySdpDeclareProofs*(
     txHash: ZkHash,
     noteZkPublicKey: ZkPublicKey,
 ): Result[void, LedgerError] =
-  ## Per SDP Declare § ownership:
-  ## - ``provider_id`` Ed25519 signature over the mantle tx hash
-  ## - ZkSig over ``txHash`` with ``[note.public_key, declaration.zk_id]``
   if not verify(
     proof.ed25519Sig, txHash, declaration.providerId,
   ):
@@ -46,10 +43,6 @@ proc validateSdpDeclare(
     state: SdpState,
     genesis: bool = false,
 ): Result[DeclarationId, LedgerError] =
-  ## Validates a ``DeclarationMessage`` per SDP Declare rules. Returns the
-  ## derived ``declaration_id`` on success. A new declaration starts with
-  ## ``nonce = 0`` in storage; monotonic nonce applies to later active /
-  ## withdraw messages.
   let utxo = utxos.get(declaration.lockedNoteId).valueOr:
     return err(LockedNoteNotFound)
   let note = utxo.note
@@ -94,7 +87,6 @@ proc tryApplySdpDeclare*(
     registry, declaration.serviceType, blockHeight,
   ).valueOr:
     return err(MissingServiceParameters)
-  # SDP Declare § execution: update locked note, then store declaration.
   addDeclarationToLockedNote(
     registry.state,
     declaration.lockedNoteId,

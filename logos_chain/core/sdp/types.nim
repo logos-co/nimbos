@@ -51,8 +51,6 @@ type
     nonce*: Nonce
 
 func defaultBnServiceParameters*(timestamp: BlockNumber = 0): ServiceParameters =
-  ## Default Blend Network ``ServiceParameters`` (SDP § Default Service Parameters).
-  ## Session length is one epoch (21600 blocks).
   ServiceParameters(
     sessionLength: 21600'u64,
     lockPeriod: 1'u64,
