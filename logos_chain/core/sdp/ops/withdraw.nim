@@ -11,7 +11,7 @@
 
 import
   results,
-  std/[sets, tables],
+  std/sets,
   ./util,
   ../[registry, state],
   ../../crypto/types,
@@ -67,9 +67,10 @@ proc tryApplySdpWithdraw*(
   var declaration = registry.state.declarations.getOrDefault(withdraw.declarationId)
   declaration.nonce = withdraw.nonce
   declaration.withdrawn = blockHeight
-  registry.state.declarations[withdraw.declarationId] = declaration
-  removeDeclarationFromLockedNote(
-    registry.state, withdraw.lockedNoteId, withdraw.declarationId,
+  registry.state = removeDeclarationFromLockedNote(
+    insertDeclaration(registry.state, withdraw.declarationId, declaration),
+    withdraw.lockedNoteId,
+    withdraw.declarationId,
   )
   indexEvent(
     registry,

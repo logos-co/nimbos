@@ -9,7 +9,6 @@
 
 import
   results,
-  std/tables,
   libp2p/[crypto/ed25519/ed25519, multiaddress],
   ../../../logos_chain/core/sdp/ops/util,
   ../../../logos_chain/core/sdp/[registry, state, ops],
@@ -54,22 +53,25 @@ proc installTestDeclaration*(
   let params = getParametersAt(registry, declaration.serviceType, blockHeight).valueOr:
     defaultBnServiceParameters()
   let lockPeriod = params.lockPeriod
-  addDeclarationToLockedNote(
-    registry.state,
-    declaration.lockedNoteId,
+  registry.state = insertDeclaration(
+    addDeclarationToLockedNote(
+      registry.state,
+      declaration.lockedNoteId,
+      declarationId,
+      blockHeight + lockPeriod,
+    ),
     declarationId,
-    blockHeight + lockPeriod,
-  )
-  registry.state.declarations[declarationId] = DeclarationInfo(
-    service: declaration.serviceType,
-    locators: declaration.locators,
-    providerId: declaration.providerId,
-    zkId: declaration.zkId,
-    lockedNoteId: declaration.lockedNoteId,
-    created: blockHeight,
-    active: blockHeight,
-    withdrawn: 0'u64,
-    nonce: 0'u64,
+    DeclarationInfo(
+      service: declaration.serviceType,
+      locators: declaration.locators,
+      providerId: declaration.providerId,
+      zkId: declaration.zkId,
+      lockedNoteId: declaration.lockedNoteId,
+      created: blockHeight,
+      active: blockHeight,
+      withdrawn: 0'u64,
+      nonce: 0'u64,
+    ),
   )
   indexEvent(
     registry, EventType.created, declaration.serviceType, blockHeight, declarationId,
@@ -84,7 +86,9 @@ proc installTestActive*(
   var updated = registry.state.declarations.getOrDefault(active.declarationId)
   updated.nonce = active.nonce
   updated.active = blockHeight
-  registry.state.declarations[active.declarationId] = updated
+  registry.state = insertDeclaration(
+    registry.state, active.declarationId, updated,
+  )
   indexEvent(
     registry, EventType.active, updated.service, blockHeight, active.declarationId,
   )
@@ -97,9 +101,10 @@ proc installTestWithdraw*(
   var declaration = registry.state.declarations.getOrDefault(withdraw.declarationId)
   declaration.nonce = withdraw.nonce
   declaration.withdrawn = blockHeight
-  registry.state.declarations[withdraw.declarationId] = declaration
-  removeDeclarationFromLockedNote(
-    registry.state, withdraw.lockedNoteId, withdraw.declarationId,
+  registry.state = removeDeclarationFromLockedNote(
+    insertDeclaration(registry.state, withdraw.declarationId, declaration),
+    withdraw.lockedNoteId,
+    withdraw.declarationId,
   )
   indexEvent(
     registry,

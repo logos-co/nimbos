@@ -12,7 +12,7 @@
 
 import
   results,
-  std/[sequtils, tables],
+  std/sequtils,
   libp2p/crypto/ed25519/ed25519,
   ./util,
   ../[registry, state],
@@ -87,22 +87,25 @@ proc tryApplySdpDeclare*(
     registry, declaration.serviceType, blockHeight,
   ).valueOr:
     return err(MissingServiceParameters)
-  addDeclarationToLockedNote(
-    registry.state,
-    declaration.lockedNoteId,
+  registry.state = insertDeclaration(
+    addDeclarationToLockedNote(
+      registry.state,
+      declaration.lockedNoteId,
+      declarationId,
+      blockHeight + params.lockPeriod,
+    ),
     declarationId,
-    blockHeight + params.lockPeriod,
-  )
-  registry.state.declarations[declarationId] = DeclarationInfo(
-    service: declaration.serviceType,
-    locators: declaration.locators,
-    providerId: declaration.providerId,
-    zkId: declaration.zkId,
-    lockedNoteId: declaration.lockedNoteId,
-    created: blockHeight,
-    active: blockHeight,
-    withdrawn: 0'u64,
-    nonce: 0'u64,
+    DeclarationInfo(
+      service: declaration.serviceType,
+      locators: declaration.locators,
+      providerId: declaration.providerId,
+      zkId: declaration.zkId,
+      lockedNoteId: declaration.lockedNoteId,
+      created: blockHeight,
+      active: blockHeight,
+      withdrawn: 0'u64,
+      nonce: 0'u64,
+    ),
   )
   indexEvent(
     registry,

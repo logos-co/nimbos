@@ -53,10 +53,7 @@ func init*(
   )
   validateSessionLength(bnParams, securityParam)
   T(
-    state: SdpState(
-      declarations: initTable[DeclarationId, DeclarationInfo](),
-      lockedNotes: initTable[NoteId, LockedNote](),
-    ),
+    state: SdpState.init(),
     index: SdpIndex(
       events: initTable[EventType, Table[ServiceType, Table[BlockNumber, seq[DeclarationId]]]](),
       sessions: initTable[ServiceType, Table[uint64, SdpState]](),
@@ -75,7 +72,9 @@ func onBlockApplied*(
     previousBlockNumber: BlockNumber,
     blockNumber: BlockNumber,
 ) =
-  collectGarbage(registry.state, registry.params.parameters, blockNumber)
+  registry.state = collectGarbage(
+    registry.state, registry.params.parameters, blockNumber,
+  )
   for service, params in registry.params.parameters.pairs:
     if params.timestamp > blockNumber:
       continue

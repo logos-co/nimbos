@@ -50,10 +50,7 @@ suite "core/sdp/state":
     id
 
   test "stores declarations and locked notes":
-    var state = SdpState(
-      declarations: initTable[DeclarationId, DeclarationInfo](),
-      lockedNotes: initTable[NoteId, LockedNote](),
-    )
+    var state = SdpState.init()
     let declId = seedDeclId(1)
     let noteId = seedNoteId(2)
 
@@ -63,29 +60,29 @@ suite "core/sdp/state":
     var info: DeclarationInfo
     info.service = ServiceType.bn
     info.created = 10'u64
-    state.declarations[declId] = info
+    state = insertDeclaration(state, declId, info)
     check declId in state.declarations
     check getDeclaration(state, declId).get().created == 10'u64
 
-    addDeclarationToLockedNote(state, noteId, declId, 100'u64)
+    state = addDeclarationToLockedNote(state, noteId, declId, 100'u64)
     check noteId in state.lockedNotes
     let locked = getLockedNote(state, noteId).get()
     check locked.declarations.len == 1
     check locked.lockedUntil == 100'u64
 
-    addDeclarationToLockedNote(state, noteId, declId, 50'u64)
+    state = addDeclarationToLockedNote(state, noteId, declId, 50'u64)
     check getLockedNote(state, noteId).get().lockedUntil == 100'u64
 
     let otherDecl = seedDeclId(3)
-    addDeclarationToLockedNote(state, noteId, otherDecl, 200'u64)
+    state = addDeclarationToLockedNote(state, noteId, otherDecl, 200'u64)
     check getLockedNote(state, noteId).get().lockedUntil == 200'u64
 
-    removeDeclarationFromLockedNote(state, noteId, otherDecl)
+    state = removeDeclarationFromLockedNote(state, noteId, otherDecl)
     check noteId in state.lockedNotes
-    removeDeclarationFromLockedNote(state, noteId, declId)
+    state = removeDeclarationFromLockedNote(state, noteId, declId)
     check noteId notin state.lockedNotes
 
-    state.declarations.del(declId)
+    state = removeDeclaration(state, declId)
     check declId notin state.declarations
 
   const gcParams = ServiceParameters(
@@ -116,10 +113,7 @@ suite "core/sdp/state":
     check isDeclarationGarbage(recent, gcParams, 46)
 
   test "collectGarbage removes expired declarations and cleans locked notes":
-    var state = SdpState(
-      declarations: initTable[DeclarationId, DeclarationInfo](),
-      lockedNotes: initTable[NoteId, LockedNote](),
-    )
+    var state = SdpState.init()
     var parameters = initTable[ServiceType, ServiceParameters]()
     parameters[ServiceType.bn] = gcParams
 
@@ -130,14 +124,14 @@ suite "core/sdp/state":
     info.lockedNoteId = noteId
     info.active = 10'u64
     info.withdrawn = 0'u64
-    state.declarations[declId] = info
-    addDeclarationToLockedNote(state, noteId, declId, 100'u64)
+    state = insertDeclaration(state, declId, info)
+    state = addDeclarationToLockedNote(state, noteId, declId, 100'u64)
 
-    collectGarbage(state, parameters, 30)
+    state = collectGarbage(state, parameters, 30)
     check declId in state.declarations
     check noteId in state.lockedNotes
 
-    collectGarbage(state, parameters, 31)
+    state = collectGarbage(state, parameters, 31)
     check declId notin state.declarations
     check noteId notin state.lockedNotes
 

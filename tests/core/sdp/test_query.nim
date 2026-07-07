@@ -82,7 +82,7 @@ suite "core/sdp/query":
       zkId: utxo.note.zkPublicKey,
     )
     let declId = installTestDeclaration(registry, declaration, 10)
-    collectGarbage(registry.state, registry.params.parameters, 31)
+    registry.state = collectGarbage(registry.state, registry.params.parameters, 31)
 
     check getDeclarationInfo(registry, finalizedHeight = 31, declId).error == RetentionExpired
     check getAllDeclarationInfo(registry, finalizedHeight = 31, 10).error == RetentionExpired

@@ -13,28 +13,32 @@
 import
   results,
   std/[sequtils, sets, tables],
-  ./types
+  ./types,
+  ../../utils/hash_trie_map
 
-export types
+export types, hash_trie_map
 
 type
   SdpState* = object
-    declarations*: Table[DeclarationId, DeclarationInfo]
-    lockedNotes*: Table[NoteId, LockedNote]
+    declarations*: HashTrieMap[DeclarationId, DeclarationInfo]
+    lockedNotes*: HashTrieMap[NoteId, LockedNote]
+
+func init*(_: typedesc[SdpState]): SdpState =
+  SdpState(
+    declarations: HashTrieMap[DeclarationId, DeclarationInfo].init(),
+    lockedNotes: HashTrieMap[NoteId, LockedNote].init(),
+  )
+
+func `==`*(a, b: SdpState): bool =
+  a.declarations == b.declarations and a.lockedNotes == b.lockedNotes
 
 func getDeclaration*(
     state: SdpState, id: DeclarationId,
 ): Opt[DeclarationInfo] =
-  if id notin state.declarations:
-    Opt.none(DeclarationInfo)
-  else:
-    Opt.some(state.declarations.getOrDefault(id))
+  state.declarations.get(id)
 
 func getLockedNote*(state: SdpState, id: NoteId): Opt[LockedNote] =
-  if id notin state.lockedNotes:
-    Opt.none(LockedNote)
-  else:
-    Opt.some(state.lockedNotes.getOrDefault(id))
+  state.lockedNotes.get(id)
 
 func getLockedNotes*(state: SdpState): HashSet[NoteId] =
   var ids: HashSet[NoteId]
@@ -53,30 +57,47 @@ func lockedNoteHasService*(
       let info = getDeclaration(state, it)
       info.isSome and info.get().service == service
 
+func insertDeclaration*(
+    state: sink SdpState,
+    id: DeclarationId,
+    info: sink DeclarationInfo,
+): SdpState =
+  state.declarations = state.declarations.insert(id, info)
+  state
+
+func removeDeclaration*(
+    state: sink SdpState,
+    id: DeclarationId,
+): SdpState =
+  state.declarations = state.declarations.remove(id)
+  state
+
 func addDeclarationToLockedNote*(
-    state: var SdpState,
+    state: sink SdpState,
     noteId: NoteId,
     declId: DeclarationId,
     lockedUntil: BlockNumber,
-) =
-  var note = state.lockedNotes.mgetOrPut(noteId, LockedNote())
+): SdpState =
+  var note = state.lockedNotes.getOrDefault(noteId)
   note.declarations.incl(declId)
   note.lockedUntil = max(lockedUntil, note.lockedUntil)
-  state.lockedNotes[noteId] = note
+  state.lockedNotes = state.lockedNotes.insert(noteId, note)
+  state
 
 func removeDeclarationFromLockedNote*(
-    state: var SdpState,
+    state: sink SdpState,
     noteId: NoteId,
     declId: DeclarationId,
-) =
+): SdpState =
   if noteId notin state.lockedNotes:
-    return
-  var note = state.lockedNotes.mgetOrPut(noteId, LockedNote())
+    return state
+  var note = state.lockedNotes.getOrDefault(noteId)
   note.declarations.excl(declId)
   if note.declarations.len == 0:
-    state.lockedNotes.del(noteId)
+    state.lockedNotes = state.lockedNotes.remove(noteId)
   else:
-    state.lockedNotes[noteId] = note
+    state.lockedNotes = state.lockedNotes.insert(noteId, note)
+  state
 
 func isDeclarationGarbage*(
     info: DeclarationInfo,
@@ -93,10 +114,10 @@ func isDeclarationGarbage*(
   info.active + inactiveRetentionBlocks < blockHeight
 
 func collectGarbage*(
-    state: var SdpState,
+    state: sink SdpState,
     parameters: Table[ServiceType, ServiceParameters],
     blockHeight: BlockNumber,
-) =
+): SdpState =
   let toRemove = mapIt(
     filterIt(toSeq(state.declarations.pairs),
       it[1].service in parameters and
@@ -107,7 +128,8 @@ func collectGarbage*(
   )
   for declId in toRemove:
     let info = state.declarations.getOrDefault(declId)
-    removeDeclarationFromLockedNote(state, info.lockedNoteId, declId)
-    state.declarations.del(declId)
+    state = removeDeclarationFromLockedNote(state, info.lockedNoteId, declId)
+    state.declarations = state.declarations.remove(declId)
+  state
 
 {.pop.}

@@ -12,7 +12,6 @@
 
 import
   results,
-  std/tables,
   ./util,
   ../[registry, state],
   ../../mantle/[operations, proofs]
@@ -72,7 +71,7 @@ proc tryApplySdpActive*(
   var updated = declaration
   updated.nonce = active.nonce
   updated.active = blockHeight
-  registry.state.declarations[active.declarationId] = updated
+  registry.state = insertDeclaration(registry.state, active.declarationId, updated)
   indexEvent(
     registry,
     EventType.active,
