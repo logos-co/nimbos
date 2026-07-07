@@ -19,10 +19,10 @@ import
   chronos, chronos/ratelimit, chronicles, metrics,
   libp2p/[
     switch, peerinfo, multiaddress, multicodec, crypto/crypto, builders],
+  libp2p/protocols/connectivity/autonatv2/[server, service],
   libp2p/protocols/pubsub/[
     pubsub, gossipsub, rpc/message, rpc/messages, peertable, pubsubpeer],
   libp2p/stream/connection,
-  libp2p/services/wildcardresolverservice,
   bearssl/rand,
   eth/async_utils,
   eth/net/nat,
@@ -1330,7 +1330,7 @@ proc onConnEvent(
       peer.connectionState = ConnectionState.Disconnected
 
 proc new(T: type LBP2PNode,
-         config: LBNodeConf,
+         config: NetworkConfig,
          switch: Switch, pubsub: GossipSub,
          announcedAddresses: openArray[MultiAddress],
          bootstrapPeers: openArray[PeerAddr],
@@ -1716,7 +1716,7 @@ func quicEndPoint(address: IpAddress, port: Port): Result[MultiAddress, string] 
   except MaError as exc:
     err(exc.msg)
 
-proc loadBootstrapPeers(config: LBNodeConf): seq[PeerAddr] =
+proc loadBootstrapPeers(config: NetworkConfig): seq[PeerAddr] =
   var peers: seq[PeerAddr]
   for (peerId, maddr) in loadBootstrapNodes(config):
     peers.add(PeerAddr(peerId: peerId, addrs: @[maddr]))
@@ -1726,8 +1726,8 @@ func initNetKeys(privKey: PrivateKey): NetKeyPair =
   let pubKey = privKey.getPublicKey().expect("working public key from random")
   NetKeyPair(seckey: privKey, pubkey: pubKey)
 
-proc getRandomNetKeys*(rng: var HmacDrbgContext): NetKeyPair =
-  let privKey = PrivateKey.random(Ed25519, rng).valueOr:
+proc getRandomNetKeys*(rng: ref HmacDrbgContext): NetKeyPair =
+  let privKey = PrivateKey.random(Ed25519, newBearSslRng(rng)).valueOr:
     fatal "Could not generate random network key file"
     quit QuitFailure
   initNetKeys(privKey)
@@ -1741,31 +1741,42 @@ func gossipId(data: openArray[byte], topic: string): seq[byte] =
   ctx.finish().data[0..19]
 
 proc newBeaconSwitch(
-    config: LBNodeConf,
+    config: NetworkConfig,
     seckey: PrivateKey,
     address: MultiAddress,
     rng: ref HmacDrbgContext,
 ): Result[Switch, string] =
-  let service: Service = WildcardAddressResolverService.new()
-
   var sb = SwitchBuilder.new()
   try:
     ok sb
     .withPrivateKey(seckey)
     .withAddress(address)
-    .withRng(rng)
+    .withWildcardResolver()
+    .withIdentifyPusher(false)
+    .withRng(newBearSslRng(rng))
     .withNoise()
     .withMaxConnections(config.maxPeers)
     .withAgentVersion(config.agentString)
     .withQuicTransport()
-    .withServices(@[service])
+    # AutoNAT v2 dial-back opens a transient second session to a peer we may
+    # already be connected to (the bootstrap link). The default per-peer cap
+    # rejects that session over QUIC, so allow headroom for the dial-back.
+    .withMaxConnsPerPeer(2)
+    .withAutonatV2Server(
+      AutonatV2Config.new(allowPrivateAddresses = config.autonatAllowPrivateAddresses)
+    )
+    # Do not probe on PeerEventKind.Joined: bootstrap dials complete before the
+    # peer-pool handshake finishes, and concurrent dial-back attempts fail (QUIC
+    # EDialError).
+    .withNAT(autonatConfig(AutonatV2, v2ServiceConfig =
+      Opt.some(AutonatV2ServiceConfig.new(askNewConnectedPeers = false))))
     .build()
   except LPError as exc:
     err(exc.msg)
 
 proc createLBP2PNode*(
     rng: ref HmacDrbgContext,
-    config: LBNodeConf,
+    config: NetworkConfig,
     netKeys: NetKeyPair,
 ): Result[LBP2PNode, string] =
   let
@@ -1850,6 +1861,7 @@ proc createLBP2PNode*(
           verifySignature = false,
           anonymize = true,
           maxMessageSize = static(MAX_PAYLOAD_SIZE.int),
+          rng = switch.rng,
           parameters = params,
         )
       except InitializationError as exc:

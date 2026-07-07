@@ -10,6 +10,7 @@
 import
   system/ansi_c,
   std/os,
+  bearssl/rand,
   chronicles,
   metrics,
   ./node,

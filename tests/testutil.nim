@@ -8,7 +8,8 @@
 {.push raises: [].}
 
 import
-  std/[net, times],
+  std/[net, strutils, times],
+  bearssl/rand,
   chronos,
   libp2p/[switch, peerid],
   testutils/markdown_reports,
@@ -77,7 +78,28 @@ proc summarizeLongTests*(name: string) =
   except IOError, OSError, ValueError:
     raiseAssert getCurrentExceptionMsg()
 
-const TestLoopbackIp* = parseIpAddress("127.0.0.1")
+const TestLoopbackIp = parseIpAddress("127.0.0.1")
+const TestQuicAnyPort* = Port(0)
+
+template loopbackQuicMultiAddr*(port: Port): string =
+  "/ip4/" & $TestLoopbackIp & "/udp/" & $port & "/quic-v1"
+
+proc startLBP2PNodeListening*(
+    rng: ref HmacDrbgContext,
+    conf: NetworkConfig,
+    keys: NetKeyPair,
+): Future[LBP2PNode] {.async.} =
+  ## Create and start a node; the kernel assigns a free loopback QUIC port.
+  var nodeConf = conf
+  nodeConf.quicPort = TestQuicAnyPort
+  let node = createLBP2PNode(rng, nodeConf, keys).valueOr:
+    fail("createLBP2PNode failed: " & $error)
+  await node.switch.start()
+  if node.switch.peerInfo.listenAddrs.len == 0:
+    fail("no listen addrs on switch")
+  if ($node.switch.peerInfo.listenAddrs[0]).contains("/udp/0/"):
+    fail("switch still bound to ephemeral port 0")
+  node
 
 func minimalSignedTx*(): SignedMantleTx =
   SignedMantleTx(
@@ -130,35 +152,50 @@ proc waitLibp2pConnected*(sw: Switch, remote: PeerId): Future[bool] {.async.} =
     await sleepAsync(chronos.milliseconds(100))
   false
 
-proc makeBootstrapConfs*(listenerPort, dialerPort: Port): tuple[
-    confL: LBNodeConf, confD: LBNodeConf,
-    rngL: ref HmacDrbgContext, rngD: ref HmacDrbgContext] =
-  # TODO(logos-chain-networking): remove NatConfig dependency from test helpers once
-  # networking no longer relies on eth/net/nat-config style plumbing.
+type BootstrapPeers* = object
+  listener*, dialer*: LBP2PNode
+  listenerPeerId*: PeerId
+
+proc createBootstrapPeers*(): Future[BootstrapPeers] {.async.} =
   let natCfg = NatConfig(hasExtIp: true, extIp: TestLoopbackIp)
   let rngL = HmacDrbgContext.new()
   let rngD = HmacDrbgContext.new()
-  (
-    confL: LBNodeConf(
-      cmd: BNStartUpCmd.lbNode,
-      listenAddress: some(TestLoopbackIp),
-      nat: natCfg,
-      quicPort: listenerPort,
-      maxPeers: 8,
-      hardMaxPeers: some(8),
-      agentString: "p2p-bootstrap-listener",
-    ),
-    confD: LBNodeConf(
-      cmd: BNStartUpCmd.lbNode,
-      listenAddress: some(TestLoopbackIp),
-      nat: natCfg,
-      quicPort: dialerPort,
-      maxPeers: 8,
-      hardMaxPeers: some(8),
-      agentString: "p2p-bootstrap-dialer",
-    ),
-    rngL: rngL,
-    rngD: rngD,
+  let listenerConf = NetworkConfig(
+    listenAddress: some(TestLoopbackIp),
+    nat: natCfg,
+    quicPort: TestQuicAnyPort,
+    maxPeers: 8,
+    hardMaxPeers: some(8),
+    agentString: "p2p-bootstrap-listener",
+    autonatAllowPrivateAddresses: true,
+  )
+  let listener = await startLBP2PNodeListening(
+    rngL, listenerConf, rngL.getRandomNetKeys(),
+  )
+
+  let listenerPeerId = listener.switch.peerInfo.peerId
+  let listenerBootstrap = listener.switch.peerInfo.fullAddrs().valueOr:
+    fail("peerInfo.fullAddrs failed: " & $error)
+  if listenerBootstrap.len == 0:
+    fail("listener has no full addrs")
+  let dialerConf = NetworkConfig(
+    listenAddress: some(TestLoopbackIp),
+    nat: natCfg,
+    quicPort: TestQuicAnyPort,
+    maxPeers: 8,
+    hardMaxPeers: some(8),
+    agentString: "p2p-bootstrap-dialer",
+    autonatAllowPrivateAddresses: true,
+    bootstrapNodes: @[$listenerBootstrap[0]],
+  )
+  let dialer = await startLBP2PNodeListening(
+    rngD, dialerConf, rngD.getRandomNetKeys(),
+  )
+
+  BootstrapPeers(
+    listener: listener,
+    dialer: dialer,
+    listenerPeerId: listenerPeerId,
   )
 
 addOutputFormatter(new TimingCollector)

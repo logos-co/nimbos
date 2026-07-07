@@ -79,7 +79,7 @@ proc loadBootstrapFile*(bootstrapFile: string,
     error "Unknown bootstrap file format", ext
     quit 1
 
-proc loadBootstrapNodes*(config: LBNodeConf): seq[(PeerId, MultiAddress)] =
+proc loadBootstrapNodes*(config: NetworkConfig): seq[(PeerId, MultiAddress)] =
   var bootstrapPeers: seq[(PeerId, MultiAddress)]
   for node in config.bootstrapNodes:
     addBootstrapNode(node, bootstrapPeers)
