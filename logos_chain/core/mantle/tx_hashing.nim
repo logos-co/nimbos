@@ -34,4 +34,16 @@ func opId*(op: TransferPayload): Hash32 =
   ## op_id = Blake2b-256("OPERATION_ID_V1" || encode_op_bytes(op))
   blake2bWithDomain(OperationIdV1DomainTag, encodeTransfer(op))
 
+func opId*(op: DeclarationMessage): Hash32 =
+  ## op_id = Blake2b-256("OPERATION_ID_V1" || encode_op_bytes(op))
+  blake2bWithDomain(OperationIdV1DomainTag, encodeSdpDeclare(op))
+
+func opId*(op: WithdrawMessage): Hash32 =
+  ## op_id = Blake2b-256("OPERATION_ID_V1" || encode_op_bytes(op))
+  blake2bWithDomain(OperationIdV1DomainTag, @(encodeSdpWithdraw(op)))
+
+func opId*(op: ActiveMessage): Hash32 =
+  ## op_id = Blake2b-256("OPERATION_ID_V1" || encode_op_bytes(op))
+  blake2bWithDomain(OperationIdV1DomainTag, encodeSdpActive(op))
+
 {.pop.}
