@@ -39,11 +39,6 @@ type
 
   ChannelStore* = HashTrieMap[ChannelId, ChannelState]
 
-func saturatingSub(a, b: SlotNumber): SlotNumber =
-  # Defensive against `tip_slot > block_slot`, which shouldn't happen under
-  # normal consensus but is cheaper to guard than to debug if it ever does.
-  if a >= b: a - b else: 0
-
 func checkedAdd(a, b: TokenValue): Result[TokenValue, LedgerError] =
   ## Returns `a + b`, or `BalanceOverflow` on overflow.
   let (res, didOverflow) = overflowingAdd(a, b)
@@ -71,12 +66,14 @@ func default_channel*(
 func round_robin*(
     blockSlot: SlotNumber, chan: ChannelState
 ): tuple[index: ChannelKeyIndex, startingSlot: SlotNumber] =
-  ## Returns the current sequencer index and its starting slot. Timeout
-  ## rotation (skip past silent sequencers) wins over scheduled rotation;
-  ## when both are zero, the current sequencer holds.
+  # Returns the current sequencer index and its starting slot. Timeout
+  # rotation (skip past silent sequencers) wins over scheduled rotation;
+  # when both are zero, the current sequencer holds.
+  # Underflow is impossible by design: tips never exceed `blockSlot` (seeded to
+  # it, advanced only to `<= blockSlot`) and per-fork slots are monotonic.
   let
-    elapsed = saturatingSub(blockSlot, chan.tipSlot)
-    duration = saturatingSub(blockSlot, chan.tipSequencerStartingSlot)
+    elapsed = blockSlot - chan.tipSlot
+    duration = blockSlot - chan.tipSequencerStartingSlot
     numKeys = lenu64(chan.accreditedKeys)
 
   if chan.postingTimeout != 0 and elapsed >= SlotNumber(chan.postingTimeout):
