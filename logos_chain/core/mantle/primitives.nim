@@ -261,8 +261,6 @@ func encodeLocator*(value: Locator): seq[byte] =
 
 func encodeLocators*(locators: openArray[Locator]): seq[byte] =
   ## Locators = LocatorCount *Locator
-  doAssert locators.len <= MaxSdpLocators,
-    "Locators: LocatorCount exceeds max supported locators"
   var res = @[encodeLocatorCount(byte(locators.len))]
   for locator in locators:
     res.add(encodeLocator(locator))

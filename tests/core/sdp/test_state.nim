@@ -114,7 +114,7 @@ suite "core/sdp/state":
 
   test "collectGarbage removes expired declarations and cleans locked notes":
     var state = SdpState.init()
-    var parameters = initTable[ServiceType, ServiceParameters]()
+    var parameters = Table[ServiceType, ServiceParameters]()
     parameters[ServiceType.bn] = gcParams
 
     let declId = seedDeclId(7)

@@ -29,9 +29,12 @@ proc validateSdpWithdraw(
     blockHeight: BlockNumber,
     genesis: bool = false,
 ): Result[void, LedgerError] =
-  let utxo = utxos.get(withdraw.lockedNoteId).valueOr:
-    return err(LockedNoteNotFound)
-  let note = utxo.note
+  let declareInfo = ?loadDeclaration(state, withdraw.declarationId)
+  ?checkNotWithdrawn(declareInfo)
+  ?checkNonceMonotonic(declareInfo, withdraw.nonce)
+
+  if withdraw.lockedNoteId != declareInfo.lockedNoteId:
+    return err(LockedNoteIdMismatch)
 
   let lockedNote = getLockedNote(state, withdraw.lockedNoteId).valueOr:
     return err(LockedNoteNotFound)
@@ -41,14 +44,10 @@ proc validateSdpWithdraw(
   if lockedNote.lockedUntil > blockHeight:
     return err(LockPeriodActive)
 
-  let declareInfo = ?loadDeclaration(state, withdraw.declarationId)
-  if withdraw.lockedNoteId != declareInfo.lockedNoteId:
-    return err(LockedNoteIdMismatch)
-
   if not genesis:
-    ?verifyZkSig(proof, txHash, @[note.zkPublicKey, declareInfo.zkId])
-  ?checkNotWithdrawn(declareInfo)
-  ?checkNonceMonotonic(declareInfo, withdraw.nonce)
+    let utxo = utxos.get(withdraw.lockedNoteId).valueOr:
+      return err(LockedNoteNotFound)
+    ?verifyZkSig(proof, txHash, @[utxo.note.zkPublicKey, declareInfo.zkId])
 
   ok()
 

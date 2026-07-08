@@ -233,13 +233,13 @@ func parseZkProofComponent(
         Result[seq[byte], string].err("deployment-settings: invalid hex at " & path)
     else:
       parseByteSeqNode(node, path)
-  if bytes.isErr:
+  let parsedBytes = bytes.valueOr:
     return bytes
-  if bytes.get.len != expectedLen:
+  if parsedBytes.len != expectedLen:
     return err(
       "deployment-settings: expected " & $expectedLen & " bytes at " & path &
-      ", got " & $bytes.get.len)
-  ok(bytes.get)
+      ", got " & $parsedBytes.len)
+  ok(parsedBytes)
 
 func parseZkSigNode(node: YamlNode, path: string): Result[ZkSignature, string] =
   let zkSigNode = yamlGetPathNode(node, ["zk_sig"])

@@ -9,7 +9,7 @@
 {.used.}
 
 import
-  std/[options, tables],
+  std/tables,
   unittest2,
   ../../../logos_chain/core/sdp/registry,
   ./test_helpers

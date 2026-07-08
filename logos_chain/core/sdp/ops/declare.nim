@@ -15,7 +15,7 @@ import
   std/sequtils,
   libp2p/crypto/ed25519/ed25519,
   ./util,
-  ../[registry, state],
+  ../[registry, state, types],
   ../../crypto/types,
   ../../mantle/[operations, proofs],
   ../../../ledger/utxo_store
@@ -43,29 +43,29 @@ proc validateSdpDeclare(
     state: SdpState,
     genesis: bool = false,
 ): Result[DeclarationId, LedgerError] =
-  let utxo = utxos.get(declaration.lockedNoteId).valueOr:
-    return err(LockedNoteNotFound)
-  let note = utxo.note
-
-  if not genesis:
-    ?verifySdpDeclareProofs(
-      declaration, proof, txHash, note.zkPublicKey,
-    )
-
-  let declarationId = declarationId(declaration)
-  if declarationId in state.declarations:
-    return err(DuplicateDeclaration)
-
   if declaration.locators.len > MaxSdpLocators:
     return err(TooManyLocators)
   if not declaration.locators.allIt(isValidLocator(it)):
     return err(InvalidLocator)
 
+  if lockedNoteHasService(state, declaration.lockedNoteId, declaration.serviceType):
+    return err(LockedNoteServiceConflict)
+
+  let utxo = utxos.get(declaration.lockedNoteId).valueOr:
+    return err(LockedNoteNotFound)
+  let note = utxo.note
+
   if note.value < minStake.stakeThreshold:
     return err(InsufficientStake)
 
-  if lockedNoteHasService(state, declaration.lockedNoteId, declaration.serviceType):
-    return err(LockedNoteServiceConflict)
+  let declarationId = declarationId(declaration)
+  if declarationId in state.declarations:
+    return err(DuplicateDeclaration)
+
+  if not genesis:
+    ?verifySdpDeclareProofs(
+      declaration, proof, txHash, note.zkPublicKey,
+    )
 
   ok(declarationId)
 

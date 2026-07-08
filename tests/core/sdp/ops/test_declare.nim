@@ -62,6 +62,25 @@ suite "core/sdp/ops/declare":
     missingNote.lockedNoteId = frFromBytesLE([byte(99)]).get
     check execDeclare(registry, missingNote, store, 1).isErr
 
+  test "tryApplySdpDeclare rejects too many locators":
+    let utxo = mkUtxo(value = 200, pkSeed = 5)
+    var store = UtxoStore.init()
+    store = store.insert(utxo.id, utxo).store
+    var locators = newSeq[Locator](MaxSdpLocators + 1)
+    for i in 0 ..< locators.len:
+      locators[i] = mkLocator(30000 + i)
+    let declaration = DeclarationMessage(
+      serviceType: ServiceType.bn,
+      locators: locators,
+      providerId: mkProvider(1),
+      lockedNoteId: utxo.id,
+      zkId: utxo.note.zkPublicKey,
+    )
+    var registry = testSdpRegistry()
+    let declareResult = execDeclare(registry, declaration, store, 1)
+    check declareResult.isErr
+    check declareResult.error == TooManyLocators
+
   test "tryApplySdpDeclare stores declaration and indexes created event":
     let seeded = seedDeclaration(pkSeed = 4, declareHeight = 10)
     let info = getDeclaration(seeded.registry.state, seeded.declId).get()

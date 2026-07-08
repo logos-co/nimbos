@@ -12,7 +12,7 @@
 
 import
   results,
-  std/[sequtils, tables],
+  std/[sequtils, sugar, tables],
   ./[registry, state]
 
 export registry, state
@@ -36,43 +36,50 @@ func declarationWasIndexed*(
     events: Table[EventType, Table[ServiceType, Table[BlockNumber, seq[DeclarationId]]]],
     declId: DeclarationId, upTo: BlockNumber,
 ): bool =
-  allEventTypes.anyIt:
-    let byService = events.getOrDefault(it)
-    toSeq(byService.keys).anyIt:
-      toSeq(byService.getOrDefault(it).pairs).anyIt:
-        it[0] <= upTo and declId in it[1]
+  for eventType in allEventTypes:
+    let byService = events.getOrDefault(eventType)
+    for service in byService.keys:
+      for ts, declIds in byService.getOrDefault(service).pairs:
+        if ts <= upTo and declId in declIds:
+          return true
+  false
 
 func declarationIdsInTimestampRange(
     byTimestamp: Table[BlockNumber, seq[DeclarationId]],
     fromTimestamp, toTimestamp: BlockNumber,
 ): seq[DeclarationId] =
-  concat mapIt(
-    filterIt(toSeq(byTimestamp.pairs), it[0] >= fromTimestamp and it[0] <= toTimestamp),
-    it[1],
-  )
+  collect:
+    for ts, declIds in byTimestamp.pairs:
+      if ts >= fromTimestamp and ts <= toTimestamp:
+        for declId in declIds:
+          declId
 
 func collectEventDeclarationIdsAt*(
     registry: SdpRegistry,
     timestamp: BlockNumber,
 ): seq[DeclarationId] =
-  var ids: seq[DeclarationId] = @[]
-  for eventType in allEventTypes.filterIt(it in registry.index.events):
-    let byService = registry.index.events.getOrDefault(eventType)
-    for service in byService.keys:
-      ids.add getEventDeclarations(registry, eventType, service, timestamp)
+  let ids = collect:
+    for eventType in allEventTypes:
+      if eventType in registry.index.events:
+        let byService = registry.index.events.getOrDefault(eventType)
+        for service in byService.keys:
+          for declId in getEventDeclarations(registry, eventType, service, timestamp):
+            declId
   deduplicate ids
 
 func collectEventDeclarationIdsSince*(
     events: Table[EventType, Table[ServiceType, Table[BlockNumber, seq[DeclarationId]]]],
     fromTimestamp, toTimestamp: BlockNumber,
 ): seq[DeclarationId] =
-  var ids: seq[DeclarationId] = @[]
-  for eventType in allEventTypes.filterIt(it in events):
-    let byService = events.getOrDefault(eventType)
-    for service in byService.keys:
-      ids.add declarationIdsInTimestampRange(
-        byService.getOrDefault(service), fromTimestamp, toTimestamp,
-      )
+  let ids = collect:
+    for eventType in allEventTypes:
+      if eventType in events:
+        let byService = events.getOrDefault(eventType)
+        for service in byService.keys:
+          for declId in declarationIdsInTimestampRange(
+            byService.getOrDefault(service), fromTimestamp, toTimestamp,
+          ):
+            declId
   deduplicate ids
 
 func loadDeclarationForQuery*(
@@ -81,8 +88,8 @@ func loadDeclarationForQuery*(
     declId: DeclarationId,
 ): Result[DeclarationInfo, SdpQueryError] =
   let infoOpt = getDeclaration(registry.state, declId)
-  if infoOpt.isSome:
-    return ok(infoOpt.get())
+  infoOpt.isErrOr:
+    return ok(value)
   if declarationWasIndexed(registry.index.events, declId, finalizedHeight):
     return err(RetentionExpired)
   err(NotFound)
@@ -147,9 +154,10 @@ func getAllDeclarationInfoSince*(
 func getDeclarationInfo*(
     registry: SdpRegistry, providerId: ProviderId,
 ): Result[DeclarationInfo, SdpQueryError] =
-  let matches = filterIt(
-    toSeq(registry.state.declarations.values), it.providerId == providerId,
-  )
+  let matches = collect:
+    for info in registry.state.declarations.values:
+      if info.providerId == providerId:
+        info
   if matches.len == 0:
     return err(NotFound)
   let activeIdx = matches.findIt(it.withdrawn == 0)
@@ -170,14 +178,22 @@ func getAllServiceParameters*(
     finalizedHeight, timestamp: BlockNumber,
 ): Result[seq[(ServiceType, ServiceParameters)], SdpQueryError] =
   ?validateFinalizedTimestamp(finalizedHeight, timestamp)
-  ok filterIt(toSeq(registry.params.parameters.pairs), it[1].timestamp <= timestamp)
+  let parameters = collect:
+    for service, params in registry.params.parameters.pairs:
+      if params.timestamp <= timestamp:
+        (service, params)
+  ok(parameters)
 
 func getAllServiceParametersSince*(
     registry: SdpRegistry,
     finalizedHeight, timestamp: BlockNumber,
 ): Result[seq[(ServiceType, ServiceParameters)], SdpQueryError] =
   ?validateFinalizedTimestamp(finalizedHeight, timestamp)
-  ok filterIt(toSeq(registry.params.parameters.pairs), it[1].timestamp >= timestamp)
+  let parameters = collect:
+    for service, params in registry.params.parameters.pairs:
+      if params.timestamp >= timestamp:
+        (service, params)
+  ok(parameters)
 
 func getServiceParameters*(
     registry: SdpRegistry,
@@ -207,6 +223,10 @@ func getMinStakeSince*(
     finalizedHeight, timestamp: BlockNumber,
 ): Result[seq[MinStake], SdpQueryError] =
   ?validateFinalizedTimestamp(finalizedHeight, timestamp)
-  ok filterIt(registry.params.stakeThresholds, it.timestamp >= timestamp)
+  let stakes = collect:
+    for entry in registry.params.stakeThresholds:
+      if entry.timestamp >= timestamp:
+        entry
+  ok stakes
 
 {.pop.}

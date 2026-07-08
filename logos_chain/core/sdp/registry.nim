@@ -11,7 +11,7 @@
 
 import
   results,
-  std/[options, tables],
+  std/tables,
   ./state,
   ./types as sdpTypes,
   ../../deployment/deployment_settings as deploy
@@ -54,10 +54,7 @@ func init*(
   validateSessionLength(bnParams, securityParam)
   T(
     state: SdpState.init(),
-    index: SdpIndex(
-      events: initTable[EventType, Table[ServiceType, Table[BlockNumber, seq[DeclarationId]]]](),
-      sessions: initTable[ServiceType, Table[uint64, SdpState]](),
-    ),
+    index: SdpIndex(),
     params: SdpParams(
       parameters: [(ServiceType.bn, bnParams)].toTable(),
       stakeThresholds: @[sdpTypes.MinStake(
@@ -84,7 +81,7 @@ func onBlockApplied*(
     if curSession <= prevSession or curSession < 2:
       continue
     var bySession = registry.index.sessions.mgetOrPut(
-      service, initTable[uint64, SdpState](),
+      service, Table[uint64, SdpState](),
     )
     bySession[curSession] = registry.state
 
@@ -92,16 +89,16 @@ func getSessionSnapshot*(
     snapshots: Table[ServiceType, Table[uint64, SdpState]],
     service: ServiceType,
     sessionNumber: uint64,
-): Option[SdpState] =
+): Opt[SdpState] =
   if service notin snapshots:
-    return none(SdpState)
+    return Opt.none(SdpState)
   let
     bySession = snapshots.getOrDefault(service)
     storedSession = if sessionNumber < 2: 0'u64 else: sessionNumber
   if storedSession in bySession:
-    some(bySession.getOrDefault(storedSession))
+    Opt.some(bySession.getOrDefault(storedSession))
   else:
-    none(SdpState)
+    Opt.none(SdpState)
 
 func appendParameters*(
     registry: var SdpRegistry,
@@ -150,9 +147,9 @@ func indexEvent*(
     declarationId: DeclarationId,
 ) =
   registry.index.events.mgetOrPut(
-    eventType, initTable[ServiceType, Table[BlockNumber, seq[DeclarationId]]](),
+    eventType, Table[ServiceType, Table[BlockNumber, seq[DeclarationId]]](),
   ).mgetOrPut(
-    service, initTable[BlockNumber, seq[DeclarationId]](),
+    service, Table[BlockNumber, seq[DeclarationId]](),
   ).mgetOrPut(timestamp, @[]).add(declarationId)
 
 func getEventDeclarations*(
