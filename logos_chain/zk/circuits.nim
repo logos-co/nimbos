@@ -36,7 +36,10 @@ func polVerificationKeyPath*(dir: string): string =
 func zksignVerificationKeyPath*(dir: string): string =
   dir / "zksign" / "verification_key.json"
 
-# Future per-circuit/per-artefact helpers (PoC, PoQ; zkey, witness_generator)
+func pocVerificationKeyPath*(dir: string): string =
+  dir / "poc" / "verification_key.json"
+
+# Future per-circuit/per-artefact helpers (PoQ; zkey, witness_generator)
 # land here as their verifiers/provers ship.
 
 proc verifyCircuitsVersion*(dir: string): Result[void, CircuitsBundleError] =

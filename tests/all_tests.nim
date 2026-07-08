@@ -39,11 +39,13 @@ import # Unit test
   ./ledger/test_cryptarchia,
   ./ledger/test_ledger,
   ./ledger/test_pol_verifier,
+  ./ledger/test_poc_verifier,
   ./logos_chain/sync/test_framing,
   ./logos_chain/sync/test_types,
   ./logos_chain/sync/test_ibd,
   ./zk/test_circuits,
   ./zk/test_pol,
+  ./zk/test_poc,
   ./zk/test_zksign,
   ./zk/groth16/test_vk_json,
   ./zk/groth16/test_verifier
