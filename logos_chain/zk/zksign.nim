@@ -49,7 +49,7 @@ type
 var zksignVk: Opt[VKey]
 
 proc loadVk*(circuitsDir: string): Result[VKey, ZkSignLoadError] =
-  ## Read + parse `<circuitsDir>/zksign/verification_key.json`.
+  ## Read + parse `<circuitsDir>/signature/verification_key.json`.
   let path = zksignVerificationKeyPath(circuitsDir)
   if not fileExists(path):
     return err(VkFileMissing)

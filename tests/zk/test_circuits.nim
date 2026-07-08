@@ -9,10 +9,14 @@
 {.used.}
 
 import
-  std/[os, times],
+  std/[os, strutils, times],
   unittest2,
   stew/io2,
   ../../logos_chain/zk/circuits
+
+const testCircuitsDir = block:
+  let testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
+  testsDir / "../circuits-bundle" / ExpectedCircuitsVersion
 
 proc uniqueTmpDir(tag: string): string =
   # Per-test unique subdir under the system temp dir; OS cleans up eventually.
@@ -26,8 +30,19 @@ suite "zk/circuits — path derivations":
   test "polVerificationKeyPath joins <dir>/pol/verification_key.json":
     check polVerificationKeyPath("/foo") == "/foo" / "pol" / "verification_key.json"
 
+  test "zksignVerificationKeyPath joins <dir>/signature/verification_key.json":
+    check zksignVerificationKeyPath("/foo") == "/foo" / "signature" / "verification_key.json"
+
   test "pocVerificationKeyPath joins <dir>/poc/verification_key.json":
     check pocVerificationKeyPath("/foo") == "/foo" / "poc" / "verification_key.json"
+
+suite "zk/circuits — release bundle layout":
+  test "verification key paths exist in logos-blockchain-circuits bundle":
+    # Requires `make deps` / circuits-install-test (`tests/circuits-bundle/`).
+    check verifyCircuitsVersion(testCircuitsDir).isOk
+    check fileExists(polVerificationKeyPath(testCircuitsDir))
+    check fileExists(zksignVerificationKeyPath(testCircuitsDir))
+    check fileExists(pocVerificationKeyPath(testCircuitsDir))
 
 suite "zk/circuits — verifyCircuitsVersion":
   test "rejects missing dir":

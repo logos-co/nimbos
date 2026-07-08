@@ -34,7 +34,7 @@ func polVerificationKeyPath*(dir: string): string =
   dir / "pol" / "verification_key.json"
 
 func zksignVerificationKeyPath*(dir: string): string =
-  dir / "zksign" / "verification_key.json"
+  dir / "signature" / "verification_key.json"
 
 func pocVerificationKeyPath*(dir: string): string =
   dir / "poc" / "verification_key.json"
