@@ -20,11 +20,6 @@ from ./types import
 from ./mantle/primitives import MaxBlockTxs, SlotNumber
 from ./mantle/tx_types import SignedMantleTx, encodeSignedMantleTx
 
-func wallclockSlot(): SlotNumber =
-  ## TODO: implement `wallclock_time().to_slot()` from deployment genesis time
-  ## and slot duration.
-  high(SlotNumber)
-
 func txBytesLen(txs: openArray[SignedMantleTx]): int =
   var total = 0
   for stx in txs:
@@ -37,12 +32,15 @@ func blockPayloadBytesLen(blk: Block): int =
   txBytesLen(blk.txs) + EdSignatureSize
 
 func verifyPoL(localTree: LocalTree, header: Header): bool =
-  ## TODO: implement `verifyPoL()`.
+  # Structural placeholder: the proof itself is verified statefully by
+  # `ledger.tryApplyHeader` (epoch pipeline + Groth16) when the block's
+  # state transition is applied.
   discard localTree
   discard header
   true
 
-func validateBlockHeader(blk: Block, localTree: LocalTree): bool =
+func validateBlockHeader(
+    blk: Block, localTree: LocalTree, wallclock: SlotNumber): bool =
   if header(blk).bedrockVersion != ExpectedBedrockVersion:
     return false
 
@@ -60,7 +58,7 @@ func validateBlockHeader(blk: Block, localTree: LocalTree): bool =
   if header(blk).slot <= parentHeader.slot:
     return false
 
-  if wallclockSlot() < header(blk).slot:
+  if wallclock < header(blk).slot:
     return false
 
   if not hasBlock(localTree, header(blk).parentBlock):
@@ -78,7 +76,11 @@ func validateBlockBody(blk: Block): bool =
   discard blk # TODO: body checks
   true
 
-func validateBlock*(blk: Block, localTree: LocalTree): bool =
-  validateBlockHeader(blk, localTree) and validateBlockBody(blk)
+func validateBlock*(
+    blk: Block, localTree: LocalTree,
+    wallclock: SlotNumber = high(SlotNumber)): bool =
+  ## `wallclock` bounds the future-slot check; the default disables the
+  ## bound (historical sync).
+  validateBlockHeader(blk, localTree, wallclock) and validateBlockBody(blk)
 
 {.pop.}

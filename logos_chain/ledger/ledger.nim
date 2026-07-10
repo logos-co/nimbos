@@ -16,18 +16,20 @@ import
   ./[
     balance, types, cryptarchia_state, channel_state, mantle_state,
     pol_verifier,
+    locked_notes, pol_verifier, epoch_state,
   ],
   ./sdp/[registry, ops],
   ../core/mantle/[tx_types, tx_hashing, operations, proofs],
   ../core/types
 
-export types, cryptarchia_state, registry, channel_state, mantle_state
+export types, cryptarchia_state, channel_state, mantle_state, epoch_state, registry
 
 type
   LedgerState* = object
     cryptarchiaLedger*: CryptarchiaState
     sdp*: SdpRegistry
     mantleLedger*: MantleState
+    epochs*: EpochTracker
 
   Ledger*[Id] = object
     states: Table[Id, LedgerState]
@@ -49,22 +51,52 @@ func latestUtxos*(s: LedgerState): lent UtxoStore =
   ## The live UTXO set.
   s.cryptarchiaLedger.latestUtxos
 
-proc tryApplyHeader*(
-    state: sink LedgerState, slot: SlotNumber, proof: ProofOfLeadership
+func withGenesisEpochs*(
+    state: sink LedgerState,
+    genesisNonce: FieldElement,
+    genesisStake: uint64,
+    cfg: LedgerConfig,
 ): Result[LedgerState, LedgerError] =
-  ## Verifies the leader proof against the singleton PoL VK installed at
-  ## startup. Returns `InvalidProof` on rejection, `VerifierNotInitialised`
-  ## if the singleton wasn't installed.
-  # Epoch-derived `LeaderPublic` fields (nonce, lottery, agedRoot) stay at
-  # `default(FieldElement)` until `EpochState` lands.
+  ## Seeds epoch bookkeeping on a freshly built genesis state from the
+  ## ceremony nonce and the faucet-filtered initial distribution.
+  var s = state
+  s.epochs = ?genesisEpochTracker(
+    genesisNonce, s.cryptarchiaLedger.latestUtxos.root, genesisStake, cfg)
+  ok(s)
+
+proc tryApplyHeader*(
+    state: sink LedgerState,
+    slot: SlotNumber,
+    proof: ProofOfLeadership,
+    cfg: LedgerConfig = LedgerConfig(),
+): Result[LedgerState, LedgerError] =
+  ## Epoch pipeline for `slot`, leader-proof verification against the active
+  ## epoch state, then entropy/density bookkeeping.
+  # A zero `epochSchedule` disables the pipeline: epoch-derived fields stay
+  # at their defaults (legacy scaffold mode, used by pre-epoch tests).
+  let epochsEnabled = cfg.epochSchedule.basePeriodLength > 0
+  var s = state
+  if epochsEnabled:
+    s.epochs = ?s.epochs.advanceEpochs(
+      slot, s.cryptarchiaLedger.latestUtxos.root, cfg)
   let
-    public =
-      LeaderPublic(slot: slot, latestRoot: state.cryptarchiaLedger.latestUtxos.root)
+    active = s.epochs.activeEpoch
+    public = LeaderPublic(
+      slot: slot,
+      epochNonce: active.nonce,
+      lottery0: active.lottery0,
+      lottery1: active.lottery1,
+      agedRoot: active.agedUtxoRoot,
+      latestRoot: s.cryptarchiaLedger.latestUtxos.root)
     verified = verifyLeaderProof(proof, public).valueOr:
       return err(VerifierNotInitialised)
   if not verified:
     return err(InvalidProof)
-  ok(state)
+  if epochsEnabled:
+    let entropy = frFromBytesLE(proof.entropyContribution).valueOr:
+      return err(InvalidProof)
+    s.epochs = s.epochs.recordBlock(slot, entropy)
+  ok(s)
 
 proc tryApplyTx*(
     state: sink LedgerState,
@@ -272,8 +304,8 @@ proc prepareUpdate*[Id](
     return err(ParentNotFound)
   let
     parent = l.states.getOrDefault(parentId)
-    afterHeader = ?parent.tryApplyHeader(slot, proof)
-    afterTxs = ?afterHeader.tryApplyTxns(txs, epoch, slot)
+    afterHeader = ?parent.tryApplyHeader(slot, proof, l.config)
+    afterTxs = ?afterHeader.tryApplyTxns(txs, lockedNotes,epoch, slot)
   ok((id: id, state: afterTxs))
 
 {.pop.}

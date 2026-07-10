@@ -205,8 +205,9 @@ proc sendDownloadBlocksRequest*(
 proc onBlock(
     localTree: LocalTree,
     blk: Block,
+    wallclock: SlotNumber,
 ) {.raises: [InvalidBlock].} =
-  if not validateBlock(blk, localTree):
+  if not validateBlock(blk, localTree, wallclock):
     raise newException(InvalidBlock, "invalid block")
   discard addBlockToTree(localTree, blk)
   var leaderKeyBytes: array[EdPublicKeySize, byte]
@@ -285,7 +286,7 @@ proc downloadBlocks(
     for blk in blocks:
       latestDownloaded = Opt.some(blk)
       try:
-        onBlock(syncer.localTree, blk)
+        onBlock(syncer.localTree, blk, syncer.chain.currentWallclockSlot())
         debug "IBD: block ingest ok", peer, blockId = sbyteutils.toHex(blockId(blk.header))
         if blockId(blk.header) == effectiveTarget.get:
           targetReached = true

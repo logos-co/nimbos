@@ -12,9 +12,11 @@
 
 {.push raises: [], gcsafe.}
 
-import results
+import
+  results,
+  ../time/clock
 
-export results
+export results, clock
 
 type
   LedgerError* {.pure.} = enum
@@ -55,9 +57,15 @@ type
     ThresholdUnmet ## Config/Withdraw signature count != channel threshold
     InvalidChannelConfig ## ChannelConfig has zero threshold or empty keys
     WithdrawNonceOverflow ## ChannelWithdraw incremented withdrawalNonce past uint32
+    UnsupportedLotteryF ## no lottery constants registered for the configured `f`
+    InvalidSlot ## header slot is not strictly greater than the parent state's
 
   LedgerConfig* = object
-    ## Chain configuration. Currently empty — fields land with the modules
-    ## that need them (epoch, lottery, SDP, gas).
+    ## Chain configuration. Remaining fields land with the modules that
+    ## need them (SDP, gas). A zero `epochSchedule` disables the epoch
+    ## machinery (legacy scaffold mode for pre-epoch tests/deployments).
+    epochSchedule*: EpochSchedule
+    slotActivationCoeff*: NonNegativeRatio ## f
+    stakeInferenceLearningRate*: NonNegativeRatio ## beta
 
 {.pop.}

@@ -64,10 +64,6 @@ type
     epochPeriodNonceBuffer*: int
     epochPeriodNonceStabilization*: int
 
-  SlotActivationCoeff* = object
-    numerator*: int
-    denominator*: int
-
   BnServiceParams* = object
     inactivityPeriod*: int
     epoch*: int
@@ -83,8 +79,8 @@ type
   CryptarchiaDeploymentSettings* = object
     epochConfig*: EpochConfig
     securityParam*: int
-    slotActivationCoeff*: SlotActivationCoeff
-    learningRate*: float
+    slotActivationCoeff*: NonNegativeRatio ## f — exact rational, no float
+    learningRate*: NonNegativeRatio ## beta — parsed exactly from the decimal scalar
     sdpConfig*: SdpConfig
     gossipsubProtocol*: string
     genesisState*: GenesisState
@@ -183,11 +179,11 @@ func deploymentSettingsFromYaml(root: YamlNode): Result[DeploymentSettings, stri
           root, ["cryptarchia", "epoch_config", "epoch_period_nonce_stabilization"])
       ),
       securityParam: ? reqInt(root, ["cryptarchia", "security_param"]),
-      slotActivationCoeff: SlotActivationCoeff(
-        numerator: ? reqInt(root, ["cryptarchia", "slot_activation_coeff", "numerator"]),
-        denominator: ? reqInt(root, ["cryptarchia", "slot_activation_coeff", "denominator"])
+      slotActivationCoeff: NonNegativeRatio(
+        num: ? reqUInt64(root, ["cryptarchia", "slot_activation_coeff", "numerator"]),
+        den: ? reqUInt64(root, ["cryptarchia", "slot_activation_coeff", "denominator"])
       ),
-      learningRate: ? reqFloat(root, ["cryptarchia", "learning_rate"]),
+      learningRate: ? reqDecimalRatio(root, ["cryptarchia", "learning_rate"]),
       sdpConfig: SdpConfig(
         bn: BnServiceParams(
           inactivityPeriod: ? reqInt(
@@ -239,9 +235,9 @@ func validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
   need(ds.cryptarchia.epochConfig.epochPeriodNonceStabilization > 0,
     "cryptarchia.epoch_config.epoch_period_nonce_stabilization must be > 0")
   need(ds.cryptarchia.securityParam > 0, "cryptarchia.security_param must be > 0")
-  need(ds.cryptarchia.slotActivationCoeff.numerator > 0,
+  need(ds.cryptarchia.slotActivationCoeff.num > 0,
     "cryptarchia.slot_activation_coeff.numerator must be > 0")
-  need(ds.cryptarchia.slotActivationCoeff.denominator > 0,
+  need(ds.cryptarchia.slotActivationCoeff.den > 0,
     "cryptarchia.slot_activation_coeff.denominator must be > 0")
   need(ds.cryptarchia.learningRate > 0.0, "cryptarchia.learning_rate must be > 0")
   need(ds.cryptarchia.sdpConfig.bn.inactivityPeriod >= 2,
