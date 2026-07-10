@@ -75,6 +75,12 @@ func encodeLe*[T: SomeUnsignedInt](value: T): array[sizeof(T), byte] =
 func encodeByte*(value: byte): byte =
   value
 
+func encodeUtf8*(value: string): seq[byte] =
+  ## UTF-8 bytes of ``value`` (ASCII service tags, domain tags, …).
+  result = newSeqOfCap[byte](value.len)
+  for c in value:
+    result.add(byte ord(c))
+
 func encodeU32LeLenPrefixed*(data: openArray[byte]): seq[byte] =
   ## ``UINT32`` length (LE) then payload (Inscription, Metadata, …).
   doAssert data.len <= int(high(uint32)),

@@ -18,7 +18,7 @@ import
   poseidon2/[types, io]
 export hashing, types, io
 export
-  encodeByte, encodeEd25519PublicKey, encodeEd25519Signature, encodeFieldElement,
+  encodeByte, encodeUtf8, encodeEd25519PublicKey, encodeEd25519Signature, encodeFieldElement,
   encodeGroth16, encodeHash32, encodeU16LeLenPrefixed, encodeU32LeLenPrefixed,
   encodeLe, encodeZkPublicKey, encodeZkSignature,
   decodeByte, decodeEd25519PublicKey, decodeEd25519Signature, decodeFieldElement,
@@ -58,7 +58,7 @@ type
   WithdrawThreshold* = uint16
 
   ServiceType* {.pure.} = enum
-    bn = 0
+    bn = "BN"
   Locator* = MultiAddress
 
   Opcode* = uint8
@@ -241,9 +241,17 @@ func encodeInscription*(value: Inscription): seq[byte] =
   ## Inscription = UINT32 * BYTE
   encodeU32LeLenPrefixed(value)
 
-func encodeServiceType*(value: ServiceType): byte =
-  ## ServiceType = Byte ; 0 = BN
+func encodeServiceTypeAsByte*(value: ServiceType): byte =
+  ## Wire ``ServiceType`` = single byte (``ord``). Used by ``encodeSdpDeclare`` /
+  ## ``encode_mantle_tx`` only — not for ``declaration_id``.
   encodeByte(byte(ord(value)))
+
+func encodeServiceTypeAsString*(value: ServiceType): seq[byte] =
+  ## UTF-8 service identifier for ``declaration_id`` preimage (e.g. BN → ``"BN"``).
+  ## Distinct from wire ``encodeServiceTypeAsByte``.
+  case value
+  of ServiceType.bn:
+    encodeUtf8($value)
 
 func isValidLocator*(locator: Locator): bool =
   locator.data().buffer.len <= MaxLocatorMultiaddrBytes
@@ -337,8 +345,8 @@ func decodeInscription*(data: openArray[byte]): Inscription {.raises: [DecodingE
 func readServiceType*(data: openArray[byte], pos: var int): ServiceType {.raises: [DecodingError].} =
   let b = readByte(data, pos)
   case b
-  of byte(ord(bn)):
-    bn
+  of byte(ord(ServiceType.bn)):
+    ServiceType.bn
   else:
     raise newException(DecodingError, "invalid ServiceType byte: " & $b)
 

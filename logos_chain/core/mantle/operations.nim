@@ -246,7 +246,7 @@ func encodeTransfer*(value: TransferPayload): seq[byte] =
 
 func encodeSdpDeclare*(value: DeclarationMessage): seq[byte] =
   ## SDPDeclare = ServiceType LocatorCount *Locator ProviderId ZkId LockedNoteId
-  var res = @[encodeServiceType(value.serviceType)]
+  var res = @[encodeServiceTypeAsByte(value.serviceType)]
   res.add(encodeLocators(value.locators))
   res.add(encodeProviderId(value.providerId))
   res.add(encodeZkId(value.zkId))

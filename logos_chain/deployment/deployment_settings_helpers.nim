@@ -345,7 +345,7 @@ func parseGenesisOpPayload(
       return err("deployment-settings: service_type must be scalar at " & path & ".service_type")
     let serviceType =
       case toLowerAscii(serviceTypeNode.content)
-      of "bn": bn
+      of "bn": ServiceType.bn
       else:
         return err("deployment-settings: unsupported service_type at " & path & ".service_type")
     if locatorsNode.kind != ySequence:

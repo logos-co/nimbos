@@ -71,6 +71,23 @@ suite "core/mantle/operations":
       OpPayload(kind: ChannelConfig, channelConfig: channelConfig)
     ) == OpChannelConfig
 
+  test "encodeSdpDeclare uses wire ServiceType byte, not declaration-id UTF-8 tag":
+    let declare = DeclarationMessage(
+      serviceType: ServiceType.bn,
+      locators: @[],
+      providerId: default(ProviderId),
+      zkId: default(ZkId),
+      lockedNoteId: default(LockedNoteId),
+    )
+    let wire = encodeSdpDeclare(declare)
+    check wire.len > 0
+    check wire[0] == encodeServiceTypeAsByte(ServiceType.bn)
+    check wire[0] == byte(ord(ServiceType.bn))
+    check wire[0] != encodeServiceTypeAsString(ServiceType.bn)[0]
+    ## Locator count follows; must not start with ASCII ``"BN"``.
+    check encodeServiceTypeAsString(ServiceType.bn) == @[66'u8, 78'u8]
+    check @[wire[0], wire[1]] != encodeServiceTypeAsString(ServiceType.bn)
+
   test "expectedOpProofKindForOpcode matches op families":
     check expectedOpProofKindForOpcode(OpTransfer) == opfTransfer
     check expectedOpProofKindForOpcode(OpChannelInscribe) == opfChannelInscribe

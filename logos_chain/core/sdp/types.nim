@@ -60,8 +60,9 @@ func defaultBnServiceParameters*(timestamp: BlockNumber = 0): ServiceParameters 
   )
 
 func declarationId*(declaration: DeclarationMessage): DeclarationId =
-  ## ``declaration_id = Blake2b-256(service || provider_id || zk_id || locators)``.
-  var preimage = @[encodeServiceType(declaration.serviceType)]
+  ## ``declaration_id = Blake2b-256(service_tag || provider_id || zk_id || locators)``.
+  ## ``service_tag`` is the UTF-8 identifier (e.g. ``"BN"``), not the wire byte.
+  var preimage = encodeServiceTypeAsString(declaration.serviceType)
   preimage.add(encodeProviderId(declaration.providerId))
   preimage.add(encodeZkId(declaration.zkId))
   preimage.add(encodeLocators(declaration.locators))

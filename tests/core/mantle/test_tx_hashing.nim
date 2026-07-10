@@ -12,7 +12,8 @@ import
   unittest2,
   libp2p/crypto/ed25519/ed25519,
   ./test_helpers,
-  ../../../logos_chain/core/mantle/[operations, tx_hashing, tx_types, utxo]
+  ../../../logos_chain/core/mantle/[operations, tx_hashing, tx_types, utxo],
+  ../../../logos_chain/core/sdp/types
 
 proc mkProvider(seed: byte): ProviderId =
   var bytes: array[EdPublicKeySize, byte]
@@ -82,5 +83,19 @@ suite "core/mantle/tx_hashing":
       nonce: 2'u64,
       metadata: @[],
     ))
+
+  test "sdp declare opId is over wire-encoded payload, not declaration_id preimage":
+    let declare = DeclarationMessage(
+      serviceType: ServiceType.bn,
+      locators: @[],
+      providerId: mkProvider(1),
+      lockedNoteId: id(mkUtxo(pkSeed = 1)),
+      zkId: mkUtxo(pkSeed = 1).note.zkPublicKey,
+    )
+    let wire = encodeSdpDeclare(declare)
+    check wire[0] == encodeServiceTypeAsByte(ServiceType.bn)
+    check encodeServiceTypeAsString(ServiceType.bn) == @[66'u8, 78'u8]
+    check @[wire[0]] != encodeServiceTypeAsString(ServiceType.bn)
+    check opId(declare) != declarationId(declare)
 
 {.pop.}

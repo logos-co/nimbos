@@ -57,6 +57,19 @@ suite "core/mantle/primitives":
     let wire = @[encodeOpcode(0x42'u8)]
     check decodeOpcode(wire) == 0x42'u8
 
+  test "encodeServiceTypeAsByte maps BN to wire byte 0":
+    check encodeServiceTypeAsByte(ServiceType.bn) == 0'u8
+    check encodeServiceTypeAsByte(ServiceType.bn) == byte(ord(ServiceType.bn))
+
+  test "decodeServiceType roundtrips encodeServiceTypeAsByte":
+    check decodeServiceType(@[encodeServiceTypeAsByte(ServiceType.bn)]) == ServiceType.bn
+
+  test "encodeServiceTypeAsString is UTF-8 BN, not the wire byte":
+    check encodeServiceTypeAsString(ServiceType.bn) == @[66'u8, 78'u8]
+    check encodeServiceTypeAsString(ServiceType.bn).len == 2
+    check @[encodeServiceTypeAsByte(ServiceType.bn)] == @[0'u8]
+    check encodeServiceTypeAsString(ServiceType.bn)[0] != encodeServiceTypeAsByte(ServiceType.bn)
+
   test "decodeLocator roundtrips encodeLocator":
     let
       locator = MultiAddress.init("/ip4/127.0.0.1/udp/30303/quic-v1").tryGet()

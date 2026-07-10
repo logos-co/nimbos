@@ -11,7 +11,7 @@
 import
   unittest2,
   ../../../logos_chain/core/crypto/hashing,
-  ../../../logos_chain/core/mantle/operations,
+  ../../../logos_chain/core/mantle/[operations, tx_hashing],
   ../../../logos_chain/core/sdp/types,
   ../../../logos_chain/zk/poseidon2/hasher,
   ./test_helpers
@@ -80,21 +80,45 @@ suite "core/sdp/types":
       lockedNoteId: default(NoteId),
     ))
 
-  test "declarationId matches blake2b over wire preimage":
+  test "declarationId hashes UTF-8 BN service tag, not wire ServiceType byte":
+    check encodeServiceTypeAsString(ServiceType.bn) == @[66'u8, 78'u8]
     let provider = mkProvider(7)
     let zkId = seedZkId(4)
     let locators = @[mkLocator(30303), mkLocator(30304)]
-    var preimage = @[encodeServiceType(ServiceType.bn)]
+    const BnUtf8Tag = @[66'u8, 78'u8]
+    var preimage = BnUtf8Tag
     preimage.add(encodeProviderId(provider))
     preimage.add(encodeZkId(zkId))
     preimage.add(encodeLocators(locators))
     let expected = blake2b256Hash(preimage)
-    check declarationId(DeclarationMessage(
+    let decl = DeclarationMessage(
       serviceType: ServiceType.bn,
       locators: locators,
       providerId: provider,
       zkId: zkId,
       lockedNoteId: default(NoteId),
-    )) == expected
+    )
+    check declarationId(decl) == expected
+
+    var wirePreimage = @[encodeServiceTypeAsByte(ServiceType.bn)]
+    wirePreimage.add(encodeProviderId(provider))
+    wirePreimage.add(encodeZkId(zkId))
+    wirePreimage.add(encodeLocators(locators))
+    check declarationId(decl) != blake2b256Hash(wirePreimage)
+
+  test "declarationId is independent of mantle wire encoding for ServiceType":
+    let provider = mkProvider(1)
+    let zkId = seedZkId(2)
+    let declare = DeclarationMessage(
+      serviceType: ServiceType.bn,
+      locators: @[],
+      providerId: provider,
+      zkId: zkId,
+      lockedNoteId: default(NoteId),
+    )
+    let wire = encodeSdpDeclare(declare)
+    check wire[0] == encodeServiceTypeAsByte(ServiceType.bn)
+    check declarationId(declare) != blake2b256Hash(wire)
+    check opId(declare) != declarationId(declare)
 
 {.pop.}
