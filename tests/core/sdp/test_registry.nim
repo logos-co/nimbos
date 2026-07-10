@@ -52,12 +52,104 @@ suite "core/sdp/registry":
     check registry.params.parameters.len == 1
     check registry.params.stakeThresholds.len == 1
 
-    appendParameters(registry, ServiceType.bn, ServiceParameters(
-      sessionLength: 10, lockPeriod: 1, timestamp: 0,
-    ), TestSecurityParam)
-    onBlockApplied(registry, previousBlockNumber = 9, blockNumber = 10)
-    check getSessionSnapshot(registry.index.sessions, ServiceType.bn, 2).isNone
+suite "core/sdp/registry — session snapshots":
+  const SessionLen = 10'u64
 
+  proc withShortSessions(registry: var SdpRegistry) =
+    appendParameters(registry, ServiceType.bn, ServiceParameters(
+      sessionLength: SessionLen, lockPeriod: 1, timestamp: 0,
+    ), TestSecurityParam)
+
+  test "sessions 0 and 1 use genesis snapshot at block 0":
+    var registry = testSdpRegistry()
+    withShortSessions(registry)
+    onBlockApplied(registry, previousBlockNumber = 0, blockNumber = 0)
+    check getSessionSnapshot(registry.index.sessions, ServiceType.bn, 0).isSome
+    check getSessionSnapshot(registry.index.sessions, ServiceType.bn, 1).isSome
+    check getSessionSnapshot(registry.index.sessions, ServiceType.bn, 0).get() ==
+      getSessionSnapshot(registry.index.sessions, ServiceType.bn, 1).get()
+
+    var declId: DeclarationId
+    declId[0] = 1
+    registry.state = insertDeclaration(
+      registry.state, declId,
+      DeclarationInfo(
+        service: ServiceType.bn,
+        providerId: mkProvider(1),
+        lockedNoteId: default(NoteId),
+        zkId: default(ZkPublicKey),
+        locators: @[],
+        created: 1,
+        active: 1,
+        withdrawn: 0,
+        nonce: 0,
+      ),
+    )
+    check getSessionSnapshot(registry.index.sessions, ServiceType.bn, 0).get()
+      .declarations.len == 0
+
+  test "takes S_n when session n-1 starts":
+    var registry = testSdpRegistry()
+    withShortSessions(registry)
+    onBlockApplied(registry, previousBlockNumber = 9, blockNumber = 10)
+    check getSessionSnapshot(registry.index.sessions, ServiceType.bn, 2).isSome
+
+  test "takes next snapshot and prunes ended session on boundary":
+    var registry = testSdpRegistry()
+    withShortSessions(registry)
+    onBlockApplied(registry, previousBlockNumber = 9, blockNumber = 10)
+    check getSessionSnapshot(registry.index.sessions, ServiceType.bn, 2).isSome
+
+    onBlockApplied(registry, previousBlockNumber = 19, blockNumber = 20)
+    check getSessionSnapshot(registry.index.sessions, ServiceType.bn, 2).isSome
+    check getSessionSnapshot(registry.index.sessions, ServiceType.bn, 3).isSome
+
+    onBlockApplied(registry, previousBlockNumber = 29, blockNumber = 30)
+    check getSessionSnapshot(registry.index.sessions, ServiceType.bn, 2).isNone
+    check getSessionSnapshot(registry.index.sessions, ServiceType.bn, 3).isSome
+    check getSessionSnapshot(registry.index.sessions, ServiceType.bn, 4).isSome
+
+  test "snapshots are isolated from later live state":
+    var registry = testSdpRegistry()
+    withShortSessions(registry)
+    onBlockApplied(registry, previousBlockNumber = 9, blockNumber = 10)
+    let snap2 = getSessionSnapshot(registry.index.sessions, ServiceType.bn, 2).get()
+    check snap2.declarations.len == 0
+
+    var declId: DeclarationId
+    declId[0] = 1
+    indexEvent(registry, EventType.created, ServiceType.bn, 15, declId)
+    registry.state = insertDeclaration(
+      registry.state, declId,
+      DeclarationInfo(
+        service: ServiceType.bn,
+        providerId: mkProvider(1),
+        lockedNoteId: default(NoteId),
+        zkId: default(ZkPublicKey),
+        locators: @[],
+        created: 15,
+        active: 15,
+        withdrawn: 0,
+        nonce: 0,
+      ),
+    )
+    check registry.state.declarations.len == 1
+    check getSessionSnapshot(registry.index.sessions, ServiceType.bn, 2).get()
+      .declarations.len == 0
+
+  test "retains at most two session snapshots in steady state":
+    var registry = testSdpRegistry()
+    withShortSessions(registry)
+    for i in 1 .. 6:
+      let boundary = uint64(i) * SessionLen
+      onBlockApplied(
+        registry,
+        previousBlockNumber = boundary - 1,
+        blockNumber = boundary,
+      )
+      check registry.index.sessions.getOrDefault(ServiceType.bn).len <= 2
+
+suite "core/sdp/registry — event index":
   test "indexes declarations by type, service, and timestamp":
     var registry = testSdpRegistry()
     var declA, declB: DeclarationId

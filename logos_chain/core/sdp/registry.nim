@@ -22,6 +22,10 @@ type
   SdpIndex* = object
     events*: Table[EventType, Table[ServiceType, Table[BlockNumber, seq[DeclarationId]]]]
     sessions*: Table[ServiceType, Table[uint64, SdpState]]
+      ## Frozen SDP state keyed by **target session** ``n`` (``S_n`` for use during
+      ## session ``n``). Key ``0`` is the genesis snapshot (sessions ``0`` and
+      ## ``1``). For ``n >= 2``, taken when session ``n-1`` starts; pruned when
+      ## session ``n`` ends.
 
   SdpParams* = object
     parameters*: Table[ServiceType, ServiceParameters]
@@ -75,28 +79,38 @@ func onBlockApplied*(
   for service, params in registry.params.parameters.pairs:
     if params.timestamp > blockNumber:
       continue
+    if blockNumber == 0:
+      var genesisSnap = registry.index.sessions.mgetOrPut(
+        service, Table[uint64, SdpState](),
+      )
+      genesisSnap[0] = registry.state
+      registry.index.sessions[service] = genesisSnap
     let
       prevSession = previousBlockNumber div params.sessionLength
       curSession = blockNumber div params.sessionLength
-    if curSession <= prevSession or curSession < 2:
+    if curSession <= prevSession:
       continue
     var bySession = registry.index.sessions.mgetOrPut(
       service, Table[uint64, SdpState](),
     )
-    bySession[curSession] = registry.state
+    bySession[curSession + 1] = registry.state
+    if curSession >= 2:
+      bySession.del(curSession - 1)
+    registry.index.sessions[service] = bySession
 
 func getSessionSnapshot*(
     snapshots: Table[ServiceType, Table[uint64, SdpState]],
     service: ServiceType,
     sessionNumber: uint64,
 ): Opt[SdpState] =
+  ## Sessions ``0`` and ``1`` both use the genesis snapshot (key ``0``).
   if service notin snapshots:
     return Opt.none(SdpState)
   let
     bySession = snapshots.getOrDefault(service)
-    storedSession = if sessionNumber < 2: 0'u64 else: sessionNumber
-  if storedSession in bySession:
-    Opt.some(bySession.getOrDefault(storedSession))
+    lookupKey = if sessionNumber < 2: 0'u64 else: sessionNumber
+  if lookupKey in bySession:
+    Opt.some(bySession.getOrDefault(lookupKey))
   else:
     Opt.none(SdpState)
 
