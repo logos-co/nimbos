@@ -89,10 +89,5 @@ suite "core/sdp/ops/declare":
     check info.withdrawn == 0'u64
     check info.nonce == 0'u64
     check getLockedNote(seeded.registry.state, seeded.declaration.lockedNoteId).isSome
-    let created = getEventDeclarations(
-      seeded.registry, EventType.created, ServiceType.bn, 10,
-    )
-    check created.len == 1
-    check created[0] == seeded.declId
 
 {.pop.}

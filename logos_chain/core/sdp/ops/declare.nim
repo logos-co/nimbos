@@ -107,13 +107,6 @@ proc tryApplySdpDeclare*(
       nonce: 0'u64,
     ),
   )
-  indexEvent(
-    registry,
-    EventType.created,
-    declaration.serviceType,
-    blockHeight,
-    declarationId,
-  )
   ok()
 
 {.pop.}

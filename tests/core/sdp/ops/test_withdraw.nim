@@ -58,10 +58,5 @@ suite "core/sdp/ops/withdraw":
     check info.withdrawn == 20'u64
     check info.nonce == 1'u64
     check getLockedNote(seeded.registry.state, seeded.declaration.lockedNoteId).isNone
-    let withdrawn = getEventDeclarations(
-      seeded.registry, EventType.withdrawn, ServiceType.bn, 20,
-    )
-    check withdrawn.len == 1
-    check withdrawn[0] == seeded.declId
 
 {.pop.}

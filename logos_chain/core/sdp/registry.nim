@@ -20,7 +20,6 @@ export state
 
 type
   SdpIndex* = object
-    events*: Table[EventType, Table[ServiceType, Table[BlockNumber, seq[DeclarationId]]]]
     sessions*: Table[ServiceType, Table[uint64, SdpState]]
       ## Frozen SDP state keyed by **target session** ``n`` (``S_n`` for use during
       ## session ``n``). Key ``0`` is the genesis snapshot (sessions ``0`` and
@@ -152,26 +151,5 @@ func getMinStakeAt*(
       if best.isNone or entry.timestamp >= best.get().timestamp:
         best = Opt.some(entry)
   best
-
-func indexEvent*(
-    registry: var SdpRegistry,
-    eventType: EventType,
-    service: ServiceType,
-    timestamp: BlockNumber,
-    declarationId: DeclarationId,
-) =
-  registry.index.events.mgetOrPut(
-    eventType, Table[ServiceType, Table[BlockNumber, seq[DeclarationId]]](),
-  ).mgetOrPut(
-    service, Table[BlockNumber, seq[DeclarationId]](),
-  ).mgetOrPut(timestamp, @[]).add(declarationId)
-
-func getEventDeclarations*(
-    registry: SdpRegistry,
-    eventType: EventType,
-    service: ServiceType,
-    timestamp: BlockNumber,
-): seq[DeclarationId] =
-  registry.index.events.getOrDefault(eventType).getOrDefault(service).getOrDefault(timestamp)
 
 {.pop.}

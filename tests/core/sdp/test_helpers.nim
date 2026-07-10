@@ -73,9 +73,6 @@ proc installTestDeclaration*(
       nonce: 0'u64,
     ),
   )
-  indexEvent(
-    registry, EventType.created, declaration.serviceType, blockHeight, declarationId,
-  )
   declarationId
 
 proc installTestActive*(
@@ -89,9 +86,6 @@ proc installTestActive*(
   registry.state = insertDeclaration(
     registry.state, active.declarationId, updated,
   )
-  indexEvent(
-    registry, EventType.active, updated.service, blockHeight, active.declarationId,
-  )
 
 proc installTestWithdraw*(
     registry: var SdpRegistry,
@@ -104,13 +98,6 @@ proc installTestWithdraw*(
   registry.state = removeDeclarationFromLockedNote(
     insertDeclaration(registry.state, withdraw.declarationId, declaration),
     withdraw.lockedNoteId,
-    withdraw.declarationId,
-  )
-  indexEvent(
-    registry,
-    EventType.withdrawn,
-    declaration.service,
-    blockHeight,
     withdraw.declarationId,
   )
 

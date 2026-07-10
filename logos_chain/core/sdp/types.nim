@@ -34,11 +34,6 @@ type
     retentionPeriod*: uint64
     timestamp*: BlockNumber
 
-  EventType* {.pure.} = enum
-    created = 0
-    active = 1
-    withdrawn = 2
-
   DeclarationInfo* = object
     service*: ServiceType
     providerId*: Ed25519PublicKey

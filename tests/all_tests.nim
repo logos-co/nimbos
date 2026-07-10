@@ -38,7 +38,6 @@ import # Unit test
   ./core/sdp/ops/test_declare,
   ./core/sdp/ops/test_withdraw,
   ./core/sdp/ops/test_active,
-  ./core/sdp/test_query,
   ./utils/test_hash_trie_map,
   ./utils/test_dynamic_merkle_tree,
   ./ledger/test_utxo_store,

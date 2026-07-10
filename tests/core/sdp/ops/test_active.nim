@@ -57,10 +57,5 @@ suite "core/sdp/ops/active":
     let info = getDeclaration(seeded.registry.state, seeded.declId).get()
     check info.active == 25'u64
     check info.nonce == 1'u64
-    let actives = getEventDeclarations(
-      seeded.registry, EventType.active, ServiceType.bn, 25,
-    )
-    check actives.len == 1
-    check actives[0] == seeded.declId
 
 {.pop.}

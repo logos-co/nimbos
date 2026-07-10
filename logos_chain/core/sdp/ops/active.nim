@@ -72,13 +72,6 @@ proc tryApplySdpActive*(
   updated.nonce = active.nonce
   updated.active = blockHeight
   registry.state = insertDeclaration(registry.state, active.declarationId, updated)
-  indexEvent(
-    registry,
-    EventType.active,
-    declaration.service,
-    blockHeight,
-    active.declarationId,
-  )
   ok()
 
 {.pop.}

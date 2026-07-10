@@ -118,7 +118,6 @@ suite "core/sdp/registry — session snapshots":
 
     var declId: DeclarationId
     declId[0] = 1
-    indexEvent(registry, EventType.created, ServiceType.bn, 15, declId)
     registry.state = insertDeclaration(
       registry.state, declId,
       DeclarationInfo(
@@ -148,26 +147,5 @@ suite "core/sdp/registry — session snapshots":
         blockNumber = boundary,
       )
       check registry.index.sessions.getOrDefault(ServiceType.bn).len <= 2
-
-suite "core/sdp/registry — event index":
-  test "indexes declarations by type, service, and timestamp":
-    var registry = testSdpRegistry()
-    var declA, declB: DeclarationId
-    declA[0] = 1
-    declB[0] = 2
-
-    indexEvent(registry, EventType.created, ServiceType.bn, 10, declA)
-    indexEvent(registry, EventType.created, ServiceType.bn, 10, declB)
-    indexEvent(registry, EventType.active, ServiceType.bn, 20, declA)
-
-    check getEventDeclarations(
-      registry, EventType.created, ServiceType.bn, 10,
-    ).len == 2
-    check getEventDeclarations(
-      registry, EventType.active, ServiceType.bn, 20,
-    )[0] == declA
-    check getEventDeclarations(
-      registry, EventType.withdrawn, ServiceType.bn, 10,
-    ).len == 0
 
 {.pop.}

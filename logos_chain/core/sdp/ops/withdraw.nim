@@ -71,13 +71,6 @@ proc tryApplySdpWithdraw*(
     withdraw.lockedNoteId,
     withdraw.declarationId,
   )
-  indexEvent(
-    registry,
-    EventType.withdrawn,
-    declaration.service,
-    blockHeight,
-    withdraw.declarationId,
-  )
   ok()
 
 {.pop.}
