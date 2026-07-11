@@ -18,7 +18,7 @@ import
   poseidon2/[types, io]
 export hashing, types, io
 export
-  encodeByte, encodeUtf8, encodeEd25519PublicKey, encodeEd25519Signature, encodeFieldElement,
+  encodeByte, encodeEd25519PublicKey, encodeEd25519Signature, encodeFieldElement,
   encodeGroth16, encodeHash32, encodeU16LeLenPrefixed, encodeU32LeLenPrefixed,
   encodeLe, encodeZkPublicKey, encodeZkSignature,
   decodeByte, decodeEd25519PublicKey, decodeEd25519Signature, decodeFieldElement,
@@ -241,17 +241,10 @@ func encodeInscription*(value: Inscription): seq[byte] =
   ## Inscription = UINT32 * BYTE
   encodeU32LeLenPrefixed(value)
 
-func encodeServiceTypeAsByte*(value: ServiceType): byte =
+func encodeServiceType*(value: ServiceType): byte =
   ## Wire ``ServiceType`` = single byte (``ord``). Used by ``encodeSdpDeclare`` /
-  ## ``encode_mantle_tx`` only — not for ``declaration_id``.
+  ## ``encode_mantle_tx`` and ``declaration_id``.
   encodeByte(byte(ord(value)))
-
-func encodeServiceTypeAsString*(value: ServiceType): seq[byte] =
-  ## UTF-8 service identifier for ``declaration_id`` preimage (e.g. BN → ``"BN"``).
-  ## Distinct from wire ``encodeServiceTypeAsByte``.
-  case value
-  of ServiceType.bn:
-    encodeUtf8($value)
 
 func isValidLocator*(locator: Locator): bool =
   locator.data().buffer.len <= MaxLocatorMultiaddrBytes

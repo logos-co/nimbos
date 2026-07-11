@@ -80,17 +80,10 @@ suite "core/sdp/types":
       lockedNoteId: default(NoteId),
     ))
 
-  test "declarationId hashes UTF-8 BN service tag, not wire ServiceType byte":
-    check encodeServiceTypeAsString(ServiceType.bn) == @[66'u8, 78'u8]
+  test "declarationId matches blake2b over identity preimage encoding":
     let provider = mkProvider(7)
     let zkId = seedZkId(4)
     let locators = @[mkLocator(30303), mkLocator(30304)]
-    const BnUtf8Tag = @[66'u8, 78'u8]
-    var preimage = BnUtf8Tag
-    preimage.add(encodeProviderId(provider))
-    preimage.add(encodeZkId(zkId))
-    preimage.add(encodeLocators(locators))
-    let expected = blake2b256Hash(preimage)
     let decl = DeclarationMessage(
       serviceType: ServiceType.bn,
       locators: locators,
@@ -98,15 +91,13 @@ suite "core/sdp/types":
       zkId: zkId,
       lockedNoteId: default(NoteId),
     )
-    check declarationId(decl) == expected
+    var preimage = @[encodeServiceType(decl.serviceType)]
+    preimage.add(encodeProviderId(decl.providerId))
+    preimage.add(encodeZkId(decl.zkId))
+    preimage.add(encodeLocators(decl.locators))
+    check declarationId(decl) == blake2b256Hash(preimage)
 
-    var wirePreimage = @[encodeServiceTypeAsByte(ServiceType.bn)]
-    wirePreimage.add(encodeProviderId(provider))
-    wirePreimage.add(encodeZkId(zkId))
-    wirePreimage.add(encodeLocators(locators))
-    check declarationId(decl) != blake2b256Hash(wirePreimage)
-
-  test "declarationId is independent of mantle wire encoding for ServiceType":
+  test "declarationId is independent of full mantle SDPDeclare wire bytes":
     let provider = mkProvider(1)
     let zkId = seedZkId(2)
     let declare = DeclarationMessage(
@@ -116,9 +107,7 @@ suite "core/sdp/types":
       zkId: zkId,
       lockedNoteId: default(NoteId),
     )
-    let wire = encodeSdpDeclare(declare)
-    check wire[0] == encodeServiceTypeAsByte(ServiceType.bn)
-    check declarationId(declare) != blake2b256Hash(wire)
+    check declarationId(declare) != blake2b256Hash(encodeSdpDeclare(declare))
     check opId(declare) != declarationId(declare)
 
 {.pop.}

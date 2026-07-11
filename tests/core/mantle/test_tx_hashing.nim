@@ -93,9 +93,7 @@ suite "core/mantle/tx_hashing":
       zkId: mkUtxo(pkSeed = 1).note.zkPublicKey,
     )
     let wire = encodeSdpDeclare(declare)
-    check wire[0] == encodeServiceTypeAsByte(ServiceType.bn)
-    check encodeServiceTypeAsString(ServiceType.bn) == @[66'u8, 78'u8]
-    check @[wire[0]] != encodeServiceTypeAsString(ServiceType.bn)
+    check wire[0] == encodeServiceType(ServiceType.bn)
     check opId(declare) != declarationId(declare)
 
 {.pop.}
