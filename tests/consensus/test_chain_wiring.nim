@@ -57,13 +57,13 @@ suite "chain/epoch wiring (devnet deployment settings)":
       # distribution up to exactly uint64.high) is excluded.
       seed.totalStake == 400404
 
-  test "seedGenesisEpochs builds a lottery-ready genesis state":
+  test "fromGenesis builds a lottery-ready genesis state":
     let
       seed = ds.cryptarchia.genesisState.genesisEpochSeed().valueOr:
         check false
         return
-      state = LedgerState.fromUtxos([]).seedGenesisEpochs(
-        seed, ledgerConfig(ds)).valueOr:
+      state = LedgerState.fromGenesis(
+        [], seed.nonce, seed.totalStake, ledgerConfig(ds)).valueOr:
         check false
         return
     check:

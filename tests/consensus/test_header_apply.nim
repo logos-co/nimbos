@@ -27,8 +27,7 @@ func sentinelProof(): ProofOfLeadership =
   ProofOfLeadership()
 
 proc genesisLedgerState(): LedgerState =
-  LedgerState.fromUtxos([]).withGenesisEpochs(
-    fe(7), 1000, testConfig).expect("genesis epochs")
+  LedgerState.fromGenesis([], fe(7), 1000, testConfig).expect("genesis epochs")
 
 suite "ledger/header apply (epoch pipeline)":
   test "applying a header advances the tracker":

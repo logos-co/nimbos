@@ -51,15 +51,16 @@ func latestUtxos*(s: LedgerState): lent UtxoStore =
   ## The live UTXO set.
   s.cryptarchiaLedger.latestUtxos
 
-func withGenesisEpochs*(
-    state: sink LedgerState,
+func fromGenesis*(
+    _: typedesc[LedgerState],
+    utxos: openArray[Utxo],
     genesisNonce: FieldElement,
     genesisStake: uint64,
     cfg: LedgerConfig,
 ): Result[LedgerState, LedgerError] =
-  ## Seeds epoch bookkeeping on a freshly built genesis state from the
-  ## ceremony nonce and the faucet-filtered initial distribution.
-  var s = state
+  ## Genesis state from the initial UTXO set, with epoch bookkeeping seeded
+  ## from the ceremony values.
+  var s = LedgerState.fromUtxos(utxos)
   s.epochs = ?genesisEpochTracker(
     genesisNonce, s.cryptarchiaLedger.latestUtxos.root, genesisStake, cfg)
   ok(s)

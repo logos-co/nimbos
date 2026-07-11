@@ -23,6 +23,13 @@ from ../../../logos_chain/core/mantle/tx_types import SignedMantleTx, encodeSign
 
 const testChainSyncProtocol* = "/logos-blockchain-testnet-v0.1.2/chainsync/1.0.0"
 
+proc initTestChain*(genesis: Block): Chain =
+  ## Chain over an empty genesis ledger state, without a wallclock.
+  Chain.init(
+    genesis,
+    Ledger[BlockId].init(blockId(genesis.header), LedgerState.fromUtxos([])),
+    SlotConfig())
+
 func exampleBlockId*(fill: byte): BlockId =
   var id: BlockId
   for i in 0 ..< id.len:
