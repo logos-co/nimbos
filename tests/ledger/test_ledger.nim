@@ -57,7 +57,7 @@ suite "tryApplyHeader":
     let
       u = mkUtxo()
       s0 = LedgerState.fromUtxos([u], testSdpRegistry())
-      r = s0.tryApplyHeader(slot = 1'u64, proof = mkProof())
+      r = s0.tryApplyHeader(slot = 1'u64, proof = mkProof(), cfg = LedgerConfig())
     check r.isOk
     check r.get.latestUtxos == s0.latestUtxos
 
@@ -66,7 +66,7 @@ suite "tryApplyHeader":
     let s0 = LedgerState.fromUtxos([mkUtxo()], testSdpRegistry())
     var bad = mkProof()
     bad.proof[0] = 0x01  # break the genesis sentinel so verify is invoked
-    let r = s0.tryApplyHeader(slot = 1'u64, proof = bad)
+    let r = s0.tryApplyHeader(slot = 1'u64, proof = bad, cfg = LedgerConfig())
     check r.error == VerifierNotInitialised
 
   test "returns InvalidProof when verifier rejects":
@@ -82,7 +82,7 @@ suite "tryApplyHeader":
     let s0 = LedgerState.fromUtxos([mkUtxo()], testSdpRegistry())
     var bad = mkProof()
     bad.proof[0] = 0x01  # bit-pattern can't be a valid compressed G1 point
-    let r = s0.tryApplyHeader(slot = 1'u64, proof = bad)
+    let r = s0.tryApplyHeader(slot = 1'u64, proof = bad, cfg = LedgerConfig())
     check r.error == InvalidProof
 
 suite "tryApplyTx — structural error paths":

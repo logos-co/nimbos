@@ -9,20 +9,11 @@
 {.used.}
 
 import
-  stew/endians2,
   unittest2,
-  ../../logos_chain/ledger/epoch_state
+  ../../logos_chain/ledger/epoch_state,
+  ./test_helpers
 
-const
-  testSchedule = EpochSchedule(
-    basePeriodLength: 10, # k = 5, f = 1/2
-    stakeDistributionStabilization: 3,
-    nonceBuffer: 3,
-    nonceStabilization: 4)
-  mainnetF = NonNegativeRatio(num: 1, den: 30)
-
-func fe(n: uint64): FieldElement =
-  frFromBytesLE(n.toBytesLE).expect("8 bytes < order")
+const mainnetF = NonNegativeRatio(num: 1, den: 30)
 
 suite "ledger/epoch_state":
   test "genesis ctor seeds nonce, root, stake and lottery":
@@ -50,8 +41,9 @@ suite "ledger/epoch_state":
       base != default(FieldElement)
 
   test "a ten-step chain differs from any prefix":
-    var nonce = fe(0)
-    var seen: seq[FieldElement]
+    var
+      nonce = fe(0)
+      seen: seq[FieldElement]
     for slot in 1'u64 .. 10'u64:
       nonce = accumulateNonce(nonce, fe(slot), slot)
       check nonce notin seen

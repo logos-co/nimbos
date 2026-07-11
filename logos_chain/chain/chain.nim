@@ -25,8 +25,7 @@ type
     genesisBlock*: Block
     localTree*: LocalTree
     ledger*: Ledger[BlockId]
-    genesisTime*: WallclockSeconds ## from the genesis inscription
-    slotDurationSeconds*: uint64
+    slotConfig*: SlotConfig ## wallclock anchor from the genesis inscription
 
 func ledgerConfig*(settings: DeploymentSettings): LedgerConfig =
   ## Epoch-machinery configuration from validated deployment settings
@@ -44,15 +43,12 @@ func ledgerConfig*(settings: DeploymentSettings): LedgerConfig =
     stakeInferenceLearningRate: c.learningRate)
 
 func seedGenesisEpochs*(
-    base: sink LedgerState, settings: DeploymentSettings, cfg: LedgerConfig
+    base: sink LedgerState, seed: GenesisEpochSeed, cfg: LedgerConfig
 ): Result[LedgerState, string] =
   ## Seeds epoch bookkeeping on a freshly built genesis ledger state from
-  ## the genesis block's ceremony values (nonce, faucet-filtered stake).
-  let
-    seed = settings.cryptarchia.genesisState.genesisEpochSeed().valueOr:
-      return err("chain: " & $error)
-    state = base.withGenesisEpochs(seed.nonce, seed.totalStake, cfg).valueOr:
-      return err("chain: failed to seed genesis epochs: " & $error)
+  ## the decoded ceremony seed (nonce, faucet-filtered stake).
+  let state = base.withGenesisEpochs(seed.nonce, seed.totalStake, cfg).valueOr:
+    return err("chain: failed to seed genesis epochs: " & $error)
   ok(state)
 
 func init*(T: type Chain, genesisBlock: Block, ledger: Ledger[BlockId], latestImmutableHeight: uint64 = 0): T =
@@ -72,23 +68,18 @@ func init*(T: type Chain, settings: DeploymentSettings): Result[T, string] =
     # TODO: apply the genesis transactions once trusted genesis execution
     # (proof checks skipped) lands; until then the UTXO set starts empty
     # with epoch bookkeeping seeded.
-    genesisState = LedgerState.fromUtxos([], cfg).withGenesisEpochs(
-        seed.nonce, seed.totalStake, cfg).valueOr:
-      return err("chain: failed to seed genesis epochs: " & $error)
+    genesisState = ?LedgerState.fromUtxos([]).seedGenesisEpochs(seed, cfg)
   var chain = T.init(genesisBlock)
   chain.ledger = Ledger[BlockId].init(
     blockId(genesisBlock.header), genesisState, cfg)
-  chain.genesisTime = seed.genesisTime
-  chain.slotDurationSeconds = uint64(settings.time.slotDuration.seconds)
+  chain.slotConfig = SlotConfig(
+    genesisTime: seed.genesisTime,
+    slotDurationSeconds: uint64(settings.time.slotDuration.seconds))
   ok(chain)
 
 proc currentWallclockSlot*(chain: Chain): SlotNumber =
-  ## Slot containing the current system time; `high(SlotNumber)` (bound
-  ## disabled) when the chain has no clock (zero slot duration).
-  if chain.slotDurationSeconds == 0:
-    return high(SlotNumber)
-  wallclockSlot(
-    uint64(max(getTime().toUnix(), 0'i64)),
-    chain.genesisTime, chain.slotDurationSeconds)
+  ## Slot containing the current system time; `WallclockUnbounded` when the
+  ## chain has no clock (zero slot duration).
+  wallclockSlot(uint64(max(getTime().toUnix(), 0'i64)), chain.slotConfig)
 
 {.pop.}

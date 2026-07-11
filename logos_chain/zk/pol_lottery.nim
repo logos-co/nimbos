@@ -17,7 +17,7 @@ export results, NonNegativeRatio
 
 const
   ## BN254 scalar field order.
-  Bn254POrder = UInt256.fromHex(
+  Bn254POrder* = UInt256.fromHex(
     "0x30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001")
 
   ## Precomputed (t₀_constant, t₁_constant) per supported `f`, as pinned in

@@ -19,6 +19,7 @@ from ./types import
   Block, Header, createBlockRoot, ExpectedBedrockVersion, MaxBlockSize, header
 from ./mantle/primitives import MaxBlockTxs, SlotNumber
 from ./mantle/tx_types import SignedMantleTx, encodeSignedMantleTx
+from ../time/clock import WallclockUnbounded
 
 func txBytesLen(txs: openArray[SignedMantleTx]): int =
   var total = 0
@@ -78,7 +79,7 @@ func validateBlockBody(blk: Block): bool =
 
 func validateBlock*(
     blk: Block, localTree: LocalTree,
-    wallclock: SlotNumber = high(SlotNumber)): bool =
+    wallclock: SlotNumber = WallclockUnbounded): bool =
   ## `wallclock` bounds the future-slot check; the default disables the
   ## bound (historical sync).
   validateBlockHeader(blk, localTree, wallclock) and validateBlockBody(blk)

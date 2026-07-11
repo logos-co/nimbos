@@ -39,6 +39,12 @@ type
     genesisTime*: WallclockSeconds
     epochNonce*: ZkHash
 
+  GenesisEpochSeed* = tuple
+    ## Ceremony values seeding the epoch machinery at genesis.
+    nonce: FieldElement
+    totalStake: uint64
+    genesisTime: WallclockSeconds
+
 func decodeCryptarchiaParameter(
     data: openArray[byte]): Result[CryptarchiaParameter, cstring] =
   # Layout: u64-le chain-id length ‖ utf8 chain id ‖ u64-le unix seconds
@@ -48,15 +54,13 @@ func decodeCryptarchiaParameter(
   let chainIdLen = uint64.fromBytesLE(data.toOpenArray(0, 7))
   if chainIdLen != uint64(data.len - 8 - 8 - 32):
     return err(cstring"inscription length mismatch")
-  var param = CryptarchiaParameter()
   let timeStart = 8 + int(chainIdLen)
-  if chainIdLen > 0:
-    param.chainId = string.fromBytes(data.toOpenArray(8, timeStart - 1))
-  param.genesisTime =
-    uint64.fromBytesLE(data.toOpenArray(timeStart, timeStart + 7))
-  param.epochNonce[0 ..< 32] =
-    data.toOpenArray(timeStart + 8, timeStart + 39)
-  ok(param)
+  var nonce: ZkHash
+  nonce[0 ..< 32] = data.toOpenArray(timeStart + 8, timeStart + 39)
+  ok(CryptarchiaParameter(
+    chainId: string.fromBytes(data.toOpenArray(8, timeStart - 1)),
+    genesisTime: uint64.fromBytesLE(data.toOpenArray(timeStart, timeStart + 7)),
+    epochNonce: nonce))
 
 func cryptarchiaParameter*(
     state: GenesisState): Result[CryptarchiaParameter, cstring] =
@@ -81,10 +85,7 @@ func genesisTotalStake*(state: GenesisState): uint64 =
           total += note.value
   max(total, 1)
 
-func genesisEpochSeed*(state: GenesisState): Result[
-    tuple[nonce: FieldElement, totalStake: uint64,
-          genesisTime: WallclockSeconds],
-    cstring] =
+func genesisEpochSeed*(state: GenesisState): Result[GenesisEpochSeed, cstring] =
   ## Ceremony nonce, faucet-filtered initial `D`, and genesis time, decoded
   ## from the genesis block.
   let

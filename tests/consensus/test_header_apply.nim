@@ -9,24 +9,17 @@
 {.used.}
 
 import
-  stew/endians2,
   unittest2,
-  ../../logos_chain/ledger/ledger
+  ../../logos_chain/ledger/ledger,
+  ./test_helpers
 
 # k = 1, f = 1/10 → base period 10, epoch length 100, nonce snapshots at
 # 60/160, TSI window [0, 59] for epoch 0 with expected density 6.
 # f = 1/10 keeps the lottery-constants lookup satisfied (standalone entry).
 const testConfig = LedgerConfig(
-  epochSchedule: EpochSchedule(
-    basePeriodLength: 10,
-    stakeDistributionStabilization: 3,
-    nonceBuffer: 3,
-    nonceStabilization: 4),
+  epochSchedule: testSchedule,
   slotActivationCoeff: NonNegativeRatio(num: 1, den: 10),
   stakeInferenceLearningRate: NonNegativeRatio(num: 1, den: 1))
-
-func fe(n: uint64): FieldElement =
-  frFromBytesLE(n.toBytesLE).expect("8 bytes < order")
 
 func sentinelProof(): ProofOfLeadership =
   # All-default fields form the genesis sentinel, which bypasses Groth16
@@ -34,7 +27,7 @@ func sentinelProof(): ProofOfLeadership =
   ProofOfLeadership()
 
 proc genesisLedgerState(): LedgerState =
-  LedgerState.fromUtxos([], testConfig).withGenesisEpochs(
+  LedgerState.fromUtxos([]).withGenesisEpochs(
     fe(7), 1000, testConfig).expect("genesis epochs")
 
 suite "ledger/header apply (epoch pipeline)":
@@ -103,7 +96,7 @@ suite "ledger/header apply (epoch pipeline)":
 
   test "zero schedule keeps the legacy scaffold path":
     let s = LedgerState.fromUtxos([]).tryApplyHeader(
-      5, sentinelProof()).expect("scaffold mode")
+      5, sentinelProof(), LedgerConfig()).expect("scaffold mode")
     check s.epochs.lastAppliedSlot == 0 # pipeline skipped
 
 {.pop.}

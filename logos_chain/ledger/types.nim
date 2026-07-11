@@ -68,4 +68,8 @@ type
     slotActivationCoeff*: NonNegativeRatio ## f
     stakeInferenceLearningRate*: NonNegativeRatio ## beta
 
+func epochsEnabled*(cfg: LedgerConfig): bool =
+  ## False in the zero-`epochSchedule` scaffold mode.
+  cfg.epochSchedule.basePeriodLength > 0
+
 {.pop.}

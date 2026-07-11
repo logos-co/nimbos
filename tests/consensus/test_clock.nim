@@ -10,13 +10,8 @@
 
 import
   unittest2,
-  ../../logos_chain/time/clock
-
-const testSchedule = EpochSchedule(
-  basePeriodLength: 10, # k = 5, f = 1/2
-  stakeDistributionStabilization: 3,
-  nonceBuffer: 3,
-  nonceStabilization: 4)
+  ../../logos_chain/time/clock,
+  ./test_helpers
 
 suite "time/clock":
   test "base period length is ⌊k/f⌋ for every deployment":

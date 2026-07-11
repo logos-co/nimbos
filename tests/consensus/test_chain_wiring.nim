@@ -58,10 +58,14 @@ suite "chain/epoch wiring (devnet deployment settings)":
       seed.totalStake == 400404
 
   test "seedGenesisEpochs builds a lottery-ready genesis state":
-    let state = LedgerState.fromUtxos([]).seedGenesisEpochs(
-      ds, ledgerConfig(ds)).valueOr:
-      check false
-      return
+    let
+      seed = ds.cryptarchia.genesisState.genesisEpochSeed().valueOr:
+        check false
+        return
+      state = LedgerState.fromUtxos([]).seedGenesisEpochs(
+        seed, ledgerConfig(ds)).valueOr:
+        check false
+        return
     check:
       state.epochs.activeEpoch.epoch == 0
       state.epochs.nextEpoch.epoch == 1
@@ -80,8 +84,8 @@ suite "chain/epoch wiring (devnet deployment settings)":
       check false
       return
     check:
-      chain.genesisTime == 0x69f8a943'u64
-      chain.slotDurationSeconds == 1
+      chain.slotConfig.genesisTime == 0x69f8a943'u64
+      chain.slotConfig.slotDurationSeconds == 1
       genesisState.epochs.activeEpoch.totalStake == 400404
       genesisState.epochs.nextEpoch.epoch == 1
       chain.currentWallclockSlot() > 0 # devnet genesis lies in the past

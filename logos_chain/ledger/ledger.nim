@@ -68,15 +68,12 @@ proc tryApplyHeader*(
     state: sink LedgerState,
     slot: SlotNumber,
     proof: ProofOfLeadership,
-    cfg: LedgerConfig = LedgerConfig(),
+    cfg: LedgerConfig,
 ): Result[LedgerState, LedgerError] =
   ## Epoch pipeline for `slot`, leader-proof verification against the active
   ## epoch state, then entropy/density bookkeeping.
-  # A zero `epochSchedule` disables the pipeline: epoch-derived fields stay
-  # at their defaults (legacy scaffold mode, used by pre-epoch tests).
-  let epochsEnabled = cfg.epochSchedule.basePeriodLength > 0
   var s = state
-  if epochsEnabled:
+  if cfg.epochsEnabled:
     s.epochs = ?s.epochs.advanceEpochs(
       slot, s.cryptarchiaLedger.latestUtxos.root, cfg)
   let
@@ -92,7 +89,7 @@ proc tryApplyHeader*(
       return err(VerifierNotInitialised)
   if not verified:
     return err(InvalidProof)
-  if epochsEnabled:
+  if cfg.epochsEnabled:
     let entropy = frFromBytesLE(proof.entropyContribution).valueOr:
       return err(InvalidProof)
     s.epochs = s.epochs.recordBlock(slot, entropy)

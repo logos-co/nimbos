@@ -10,13 +10,8 @@
 
 import
   unittest2,
-  ../../logos_chain/ledger/block_density
-
-const testSchedule = EpochSchedule(
-  basePeriodLength: 10, # k = 5, f = 1/2
-  stakeDistributionStabilization: 3,
-  nonceBuffer: 3,
-  nonceStabilization: 4)
+  ../../logos_chain/ledger/block_density,
+  ./test_helpers
 
 suite "ledger/block_density":
   test "initial density is zero and epoch-0 window starts at slot 0":
