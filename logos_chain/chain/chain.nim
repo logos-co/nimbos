@@ -43,7 +43,13 @@ func ledgerConfig*(settings: DeploymentSettings): LedgerConfig =
     stakeInferenceLearningRate: c.learningRate)
 
 
-func init*(T: type Chain, genesisBlock: Block, ledger: Ledger[BlockId],slotConfig: SlotConfig, latestImmutableHeight: uint64 = 0): T =
+func init*(
+    T: type Chain,
+    genesisBlock: Block,
+    ledger: Ledger[BlockId],
+    slotConfig: SlotConfig,
+    latestImmutableHeight: uint64 = 0,
+): T =
   T(
     genesisBlock: genesisBlock,
     localTree: newLocalTree(genesisBlock, latestImmutableHeight),

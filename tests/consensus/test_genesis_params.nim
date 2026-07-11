@@ -13,15 +13,20 @@ import
   unittest2,
   ../../logos_chain/chain/genesis
 
-# Worked example from `bedrock-genesis-block.md` §Cryptarchia Parameters:
-# chain id "nomos-mainnet", genesis time 2026-01-05T19:20:35+00:00,
-# nonce abcdef… repeated.
-const SpecInscription = hexToSeqByte(
-  "0d000000000000006e6f6d6f732d6d61696e6e6574030f5c6900000000" &
-  "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890")
+# Worked example per `bedrock-genesis-block.md` §Cryptarchia Parameters:
+# chain id "nomos-mainnet", genesis time 2026-01-05T19:20:35+00:00 (u32-le),
+# little-endian nonce below the BN254 order.
+const
+  SpecNonceHex =
+    "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567800"
+  SpecInscription = hexToSeqByte(
+    "0d6e6f6d6f732d6d61696e6e6574030f5c69" & SpecNonceHex)
 
-func genesisStateWith(inscription: seq[byte], channelId: ChannelId):
-    GenesisState =
+func genesisStateWith(
+    inscription: seq[byte],
+    channelId: ChannelId,
+    parent = default(Parent),
+): GenesisState =
   GenesisState(
     signedMantleTx: SignedMantleTx(
       tx: MantleTx(ops: @[
@@ -29,7 +34,8 @@ func genesisStateWith(inscription: seq[byte], channelId: ChannelId):
           kind: OpPayloadTag.ChannelInscribe,
           channelInscribe: ChannelInscribePayload(
             channelId: channelId,
-            inscription: inscription)))])))
+            inscription: inscription,
+            parent: parent)))])))
 
 suite "chain/genesis cryptarchia parameters":
   test "decodes the spec worked example":
@@ -39,8 +45,8 @@ suite "chain/genesis cryptarchia parameters":
     check:
       param.chainId == "nomos-mainnet"
       param.genesisTime == 0x695c0f03'u64
-      param.epochNonce.toHex ==
-        "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890"
+      param.epochNonce ==
+        frFromBytesLE(hexToSeqByte(SpecNonceHex)).expect("below order")
 
   test "rejects a truncated inscription":
     var bytes = SpecInscription
@@ -51,6 +57,17 @@ suite "chain/genesis cryptarchia parameters":
     var bytes = SpecInscription
     bytes[0] = 0x0c # claims 12 bytes; payload has 13
     check genesisStateWith(bytes, default(ChannelId)).cryptarchiaParameter.isErr
+
+  test "rejects an epoch nonce at or above the BN254 order":
+    var bytes = SpecInscription
+    bytes[^1] = 0x90 # little-endian top byte 0x90 > the order's 0x30
+    check genesisStateWith(bytes, default(ChannelId)).cryptarchiaParameter.isErr
+
+  test "rejects an inscription whose parent is not the root message":
+    var parent: Parent
+    parent[0] = 1
+    check genesisStateWith(
+      SpecInscription, default(ChannelId), parent).cryptarchiaParameter.isErr
 
   test "ignores inscriptions on non-null channels":
     var channel: ChannelId

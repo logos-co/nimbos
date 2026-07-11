@@ -54,15 +54,15 @@ func latestUtxos*(s: LedgerState): lent UtxoStore =
 func fromGenesis*(
     _: typedesc[LedgerState],
     utxos: openArray[Utxo],
-    genesisNonce: FieldElement,
-    genesisStake: uint64,
+    nonce: FieldElement,
+    totalStake: uint64,
     cfg: LedgerConfig,
 ): Result[LedgerState, LedgerError] =
   ## Genesis state from the initial UTXO set, with epoch bookkeeping seeded
   ## from the ceremony values.
   var s = LedgerState.fromUtxos(utxos)
   s.epochs = ?genesisEpochTracker(
-    genesisNonce, s.cryptarchiaLedger.latestUtxos.root, genesisStake, cfg)
+    nonce, s.cryptarchiaLedger.latestUtxos.root, totalStake, cfg)
   ok(s)
 
 proc tryApplyHeader*(

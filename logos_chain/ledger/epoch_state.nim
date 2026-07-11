@@ -55,15 +55,15 @@ func withLottery*(
 
 func genesisEpochState*(
     epoch: EpochNumber,
-    genesisNonce: FieldElement,
-    genesisRoot: FieldElement,
-    genesisStake: uint64,
+    nonce: FieldElement,
+    root: FieldElement,
+    totalStake: uint64,
     f: NonNegativeRatio,
 ): Result[EpochState, LedgerError] =
   ## Seed state for epoch 0 (active) or epoch 1 (next) at chain start.
   EpochState(
-    epoch: epoch, nonce: genesisNonce, agedUtxoRoot: genesisRoot
-  ).withLottery(genesisStake, f)
+    epoch: epoch, nonce: nonce, agedUtxoRoot: root
+  ).withLottery(totalStake, f)
 
 proc accumulateNonce*(
     prevNonce: FieldElement,
@@ -100,18 +100,17 @@ type EpochTracker* = object
   blockDensity*: BlockDensity
 
 func genesisEpochTracker*(
-    genesisNonce, genesisRoot: FieldElement,
-    genesisStake: uint64,
+    nonce, root: FieldElement,
+    totalStake: uint64,
     cfg: LedgerConfig,
 ): Result[EpochTracker, LedgerError] =
   ## Chain-start bookkeeping: epoch-0 and epoch-1 states both seeded from
   ## the genesis values, density window over epoch 0's first two phases.
-  let epoch0 = ?genesisEpochState(
-    0, genesisNonce, genesisRoot, genesisStake, cfg.slotActivationCoeff)
+  let epoch0 = ?genesisEpochState(0, nonce, root, totalStake, cfg.slotActivationCoeff)
   var epoch1 = epoch0
   epoch1.epoch = 1
   ok(EpochTracker(
-    nonce: genesisNonce,
+    nonce: nonce,
     lastAppliedSlot: 0,
     activeEpoch: epoch0,
     nextEpoch: epoch1,
