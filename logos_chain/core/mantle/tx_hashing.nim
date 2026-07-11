@@ -46,4 +46,16 @@ func opId*(op: ActiveMessage): Hash32 =
   ## op_id = Blake2b-256("OPERATION_ID_V1" || encode_op_bytes(op))
   blake2bWithDomain(OperationIdV1DomainTag, encodeSdpActive(op))
 
+func opId*(op: ChannelInscribePayload): Hash32 =
+  blake2bWithDomain(OperationIdV1DomainTag, encodeChannelInscribe(op))
+
+func opId*(op: ChannelConfigPayload): Hash32 =
+  blake2bWithDomain(OperationIdV1DomainTag, encodeChannelConfig(op))
+
+func opId*(op: ChannelDepositPayload): Hash32 =
+  blake2bWithDomain(OperationIdV1DomainTag, encodeChannelDeposit(op))
+
+func opId*(op: ChannelWithdrawPayload): Hash32 =
+  blake2bWithDomain(OperationIdV1DomainTag, encodeChannelWithdraw(op))
+
 {.pop.}

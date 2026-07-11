@@ -28,7 +28,7 @@ func zero*(_: typedesc[Balance]): Balance =
 # helpers do explicit MIN/MAX headroom checks for arbitrary signed operands.
 
 func checkedAdd*(a, b: Balance): Result[Balance, LedgerError] =
-  ## Saturates at `BalanceOverflow` when `a + b` falls outside
+  ## Returns `a + b`, or `BalanceOverflow` when the result falls outside
   ## `[Balance.low, Balance.high]`.
   if b > Balance.zero and a > (Balance.high - b):
     err(BalanceOverflow)
@@ -38,7 +38,7 @@ func checkedAdd*(a, b: Balance): Result[Balance, LedgerError] =
     ok(a + b)
 
 func checkedSub*(a, b: Balance): Result[Balance, LedgerError] =
-  ## Saturates at `BalanceOverflow` when `a - b` falls outside
+  ## Returns `a - b`, or `BalanceOverflow` when the result falls outside
   ## `[Balance.low, Balance.high]`.
   if b < Balance.zero and a > (Balance.high + b):
     err(BalanceOverflow)

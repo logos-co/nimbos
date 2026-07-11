@@ -5,25 +5,29 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-## Composite `LedgerState` wrapping `CryptarchiaState`, and the chain-wide
-## `Ledger[Id]` state-by-block-id map.
+## Composite `LedgerState` (cryptarchia + mantle sub-states) and the
+## chain-wide `Ledger[Id]` state-by-block-id map.
 
 {.push raises: [], gcsafe.}
 
 import
   results,
   std/[options, tables],
-  ./[balance, types, cryptarchia_state, pol_verifier],
+  ./[
+    balance, types, cryptarchia_state, channel_state, mantle_state,
+    pol_verifier,
+  ],
   ../core/mantle/[tx_types, tx_hashing, operations, proofs],
   ../core/sdp/[registry, ops],
   ../core/types
 
-export types, cryptarchia_state, registry
+export types, cryptarchia_state, registry, channel_state, mantle_state
 
 type
   LedgerState* = object
     cryptarchiaLedger*: CryptarchiaState
     sdp*: SdpRegistry
+    mantleLedger*: MantleState
 
   Ledger*[Id] = object
     states: Table[Id, LedgerState]
@@ -38,6 +42,7 @@ func fromUtxos*(
   LedgerState(
     cryptarchiaLedger: CryptarchiaState.init(utxos),
     sdp: sdp,
+    mantleLedger: MantleState.init(),
   )
 
 func latestUtxos*(s: LedgerState): lent UtxoStore =
@@ -65,11 +70,11 @@ proc tryApplyTx*(
     state: sink LedgerState,
     tx: SignedMantleTx,
     blockHeight: BlockNumber,
+    slot: SlotNumber,
     genesis: bool = false,
 ): Result[tuple[state: LedgerState, balance: Balance], LedgerError] =
-  ## Applies one transaction; returns the new state and the tx's net balance
-  ## (sum of per-op balances). When ``genesis`` is true, ZK proofs are not
-  ## checked (trusted deployment proofs).
+  ## Applies one transaction. Returns the new state and Transfer-only
+  ## balance delta. `slot` is used by channel ops for sequencer rotation.
   if tx.tx.ops.len != tx.opProofs.len:
     return err(InvalidProof)
 
@@ -128,13 +133,33 @@ proc tryApplyTx*(
         genesis,
       )
     of ChannelInscribe:
-      # Temporary: genesis deployment settings include channel_inscribe; skip
-      # until ChannelInscribe ledger support lands.
-      if not genesis:
-        return err(UnsupportedOp)
       if proof.kind != opfChannelInscribe:
         return err(InvalidProof)
-      discard
+      s.mantleLedger = ?s.mantleLedger.tryApplyChannelInscribe(
+        op.payload.channelInscribe, proof.ed25519SigProof, txHash, slot, genesis,
+      )
+    of ChannelConfig:
+      if proof.kind != opfChannelConfig:
+        return err(InvalidProof)
+      s.mantleLedger = ?s.mantleLedger.tryApplyChannelConfig(
+        op.payload.channelConfig, proof.channelConfigOpProof, txHash, slot, genesis,
+      )
+    of ChannelDeposit:
+      if proof.kind != opfChannelDeposit:
+        return err(InvalidProof)
+      let r = ?s.mantleLedger.tryApplyChannelDeposit(
+        s.cryptarchiaLedger, getLockedNotes(s.sdp.state),
+        op.payload.channelDeposit, proof.channelDepositProof, txHash, genesis,
+      )
+      s = LedgerState(cryptarchiaLedger: r.cs, mantleLedger: r.ms, sdp: s.sdp)
+    of ChannelWithdraw:
+      if proof.kind != opfChannelWithdraw:
+        return err(InvalidProof)
+      let r = ?s.mantleLedger.tryApplyChannelWithdraw(
+        s.cryptarchiaLedger,
+        op.payload.channelWithdraw, proof.channelWithdrawOpProof, txHash, genesis,
+      )
+      s = LedgerState(cryptarchiaLedger: r.cs, mantleLedger: r.ms, sdp: s.sdp)
     else:
       return err(UnsupportedOp)
   ok((state: s, balance: balance))
@@ -143,6 +168,7 @@ proc tryApplyTxns*(
     state: sink LedgerState,
     txs: openArray[SignedMantleTx],
     blockHeight: BlockNumber,
+    slot: SlotNumber,
     genesis: bool = false,
 ): Result[LedgerState, LedgerError] =
   ## Applies a block's transactions in order. Each tx must net to zero
@@ -151,7 +177,7 @@ proc tryApplyTxns*(
   ## skipped (trusted genesis mints need not balance).
   var s = state
   for tx in txs:
-    let r = ?s.tryApplyTx(tx, blockHeight, genesis)
+    let r = ?s.tryApplyTx(tx, blockHeight, slot, genesis)
     s = r.state
     if genesis:
       continue
@@ -212,8 +238,9 @@ proc fromGenesis*(
   var state = LedgerState(
     cryptarchiaLedger: CryptarchiaState.init(),
     sdp: sdp,
+    mantleLedger: MantleState.init(),
   )
-  state = ?state.tryApplyTxns(genesisTxs, blockHeight = 0'u64, genesis = true)
+  state = ?state.tryApplyTxns(genesisTxs, blockHeight = 0'u64, slot = 0'u64, genesis = true)
   onBlockApplied(state.sdp, previousBlockNumber = 0'u64, blockNumber = 0'u64)
   ok(state)
 
@@ -233,7 +260,7 @@ proc prepareUpdate*[Id](
   let
     parent = l.states.getOrDefault(parentId)
     afterHeader = ?parent.tryApplyHeader(slot, proof)
-    afterTxs = ?afterHeader.tryApplyTxns(txs, blockHeight)
+    afterTxs = ?afterHeader.tryApplyTxns(txs, blockHeight, slot)
   ok((id: id, state: afterTxs))
 
 {.pop.}

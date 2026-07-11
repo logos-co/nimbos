@@ -18,7 +18,7 @@ import
   results,
   bincode,
   libp2p/crypto/ed25519/ed25519,
-  stew/[assign2, endians2],
+  stew/[assign2, endians2, staticfor],
   ../../zk/poseidon2/hasher           # FieldElement (+ re-exported poseidon2 symbols)
 
 export hasher
@@ -109,6 +109,16 @@ func encodeFieldElement*(value: FieldElement): array[32, byte] =
 func encodeHash32*(value: Hash32): Hash32 =
   ## Hash32 = 32BYTE.
   value
+
+func isZero*(x: Hash32): bool =
+  var
+    tmp {.noinit.}: uint64
+    tmp2 = 0'u64
+  static: doAssert sizeof(x) mod sizeof(tmp) == 0
+  staticFor i, 0 ..< sizeof(x) div sizeof(tmp):
+    copyMem(addr tmp, addr x[i * sizeof(tmp)], sizeof(tmp))
+    tmp2 = tmp2 or tmp
+  tmp2 == 0
 
 func encodeEd25519PublicKey*(value: Ed25519PublicKey): array[32, byte] =
   ## Ed25519 public key = 32BYTE.
