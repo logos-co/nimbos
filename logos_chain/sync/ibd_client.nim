@@ -17,11 +17,10 @@ import
   libp2p/stream/connection,
   stew/byteutils as sbyteutils,
   ../chain/chain,
-  ../core/block_validation,
   ./[framing, syncer_types, types]
 
 from ../core/local_tree import
-  LocalTree, localTipId, latestImmutableBlockId, hasBlock, addBlockToTree
+  LocalTree, localTipId, latestImmutableBlockId, hasBlock
 from ../core/types import Block, BlockId, blockId, header
 from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
 
@@ -202,14 +201,13 @@ proc sendDownloadBlocksRequest*(
   finally:
     await noCancel conn.close()
 
-proc onBlock(
-    localTree: LocalTree,
-    blk: Block,
-    wallclock: SlotNumber,
-) {.raises: [InvalidBlock].} =
-  if not validateBlock(blk, localTree, wallclock):
-    raise newException(InvalidBlock, "invalid block")
-  discard addBlockToTree(localTree, blk)
+proc onBlock(syncer: Syncer, blk: Block) {.raises: [InvalidBlock].} =
+  syncer.chain.tryApplyBlock(blk).isOkOr:
+    if error.kind == BlockApplyErrorKind.AlreadyApplied:
+      debug "IBD: block already applied",
+        id = sbyteutils.toHex(blockId(header(blk)))
+      return
+    raise newException(InvalidBlock, "block rejected: " & $error)
   var leaderKeyBytes: array[EdPublicKeySize, byte]
   doAssert toBytes(header(blk).proofOfLeadership.leaderKey, leaderKeyBytes) == EdPublicKeySize
   info "IBD ingested block",
@@ -286,7 +284,7 @@ proc downloadBlocks(
     for blk in blocks:
       latestDownloaded = Opt.some(blk)
       try:
-        onBlock(syncer.localTree, blk, syncer.chain.currentWallclockSlot())
+        onBlock(syncer, blk)
         debug "IBD: block ingest ok", peer, blockId = sbyteutils.toHex(blockId(blk.header))
         if blockId(blk.header) == effectiveTarget.get:
           targetReached = true

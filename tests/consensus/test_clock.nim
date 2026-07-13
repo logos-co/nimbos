@@ -51,4 +51,12 @@ suite "time/clock":
       wallclockSlot(999, 1000, 1) == 0 # pre-genesis clamps to slot 0
       wallclockSlot(1011, 1000, 2) == 5
 
+  test "stake-distribution snapshot at epoch 0 violates the precondition":
+    expect AssertionDefect:
+      discard stakeDistributionSnapshot(0, testSchedule)
+
+  test "nonce snapshot at epoch 0 violates the precondition":
+    expect AssertionDefect:
+      discard nonceSnapshot(0, testSchedule)
+
 {.pop.}

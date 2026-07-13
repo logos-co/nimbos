@@ -14,6 +14,7 @@
 
 import
   results,
+  ../core/crypto/types,
   ../time/clock
 
 export results, clock
@@ -59,17 +60,14 @@ type
     WithdrawNonceOverflow ## ChannelWithdraw incremented withdrawalNonce past uint32
     UnsupportedLotteryF ## no lottery constants registered for the configured `f`
     InvalidSlot ## header slot is not strictly greater than the parent state's
+    InputInGenesis ## genesis transfer consumes inputs; genesis may only mint
 
   LedgerConfig* = object
     ## Chain configuration. Remaining fields land with the modules that
-    ## need them (SDP, gas). A zero `epochSchedule` disables the epoch
-    ## machinery (legacy scaffold mode for pre-epoch tests/deployments).
+    ## need them (SDP, gas).
     epochSchedule*: EpochSchedule
     slotActivationCoeff*: NonNegativeRatio ## f
     stakeInferenceLearningRate*: NonNegativeRatio ## beta
-
-func epochsEnabled*(cfg: LedgerConfig): bool =
-  ## False in the zero-`epochSchedule` scaffold mode.
-  cfg.epochSchedule.basePeriodLength > 0
+    faucetPk*: Opt[ZkPublicKey] ## excluded from the genesis total-stake sum
 
 {.pop.}

@@ -20,14 +20,19 @@ import
   ../../../logos_chain/sync/[framing, types, ibd_client, ibd_server]
 from ../../../logos_chain/core/mantle/primitives import SlotNumber
 from ../../../logos_chain/core/mantle/tx_types import SignedMantleTx, encodeSignedMantleTx
+from ../../consensus/test_helpers import testLedgerConfig
 
 const testChainSyncProtocol* = "/logos-blockchain-testnet-v0.1.2/chainsync/1.0.0"
 
 proc initTestChain*(genesis: Block): Chain =
-  ## Chain over an empty genesis ledger state, without a wallclock.
+  ## Chain over the genesis block's ledger state (epochs seeded under
+  ## `testLedgerConfig`), without a wallclock.
+  let state = LedgerState.fromGenesis(
+      genesis.txs, default(FieldElement), testLedgerConfig).valueOr:
+    raiseAssert "initTestChain: " & $error
   Chain.init(
     genesis,
-    Ledger[BlockId].init(blockId(genesis.header), LedgerState.fromUtxos([])),
+    Ledger[BlockId].init(blockId(genesis.header), state, testLedgerConfig),
     SlotConfig())
 
 func exampleBlockId*(fill: byte): BlockId =

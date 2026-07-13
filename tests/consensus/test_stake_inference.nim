@@ -39,6 +39,13 @@ suite "ledger/stake_inference":
     # measured = 2× expected: error is −tse, correction −tse/2 → 1.5× estimate.
     check total_stake_inference(1000, 120, testPeriod, halfBeta, testF) == 1500
 
+  test "estimate at uint64.high stays in range":
+    # Half the expected density halves the estimate at beta = 1; the
+    # intermediate fixed-point products must not overflow at the maximum
+    # representable stake.
+    check total_stake_inference(uint64.high, 30, testPeriod, testBeta, testF) ==
+      uint64.high div 2
+
   test "fixed-point parity per deployment":
     check:
       # beta_p: mainnet 1/1, devnet 1/2, standalone 1/10

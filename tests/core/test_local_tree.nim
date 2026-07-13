@@ -105,15 +105,32 @@ suite "core/local_tree":
       sm = minimalSignedTx()
       genesis = createGenesisBlock(sm)
       gid = blockId(genesis.header)
-      tree = newLocalTree(genesis, latestImmutableHeight = 1'u64)
+      tree = newLocalTree(genesis)
       b1 = childBlock(genesis.header, gid, 1'u64, [sm])
     check tree.addBlockToTree(b1)
+    tree.latestImmutableHeight = 1'u64
     let
       id1 = blockId(b1.header)
       b2 = childBlock(b1.header, id1, 2'u64, [sm])
     check tree.isFutureDescendantOfImmutable(b2.header)
-    let replay = childBlock(genesis.header, gid, 1'u64, [sm])
+    # A sibling forking at or before the immutable height is refused by the
+    # membership predicate and by insertion itself.
+    let replay = childBlock(genesis.header, gid, 3'u64, [sm])
     check not tree.isFutureDescendantOfImmutable(replay.header)
+    check not tree.addBlockToTree(replay)
+
+  test "addBlockToTree rejects a child slot below its parent":
+    let
+      sm = minimalSignedTx()
+      genesis = createGenesisBlock(sm)
+      gid = blockId(genesis.header)
+      tree = newLocalTree(genesis)
+      b1 = childBlock(genesis.header, gid, 5'u64, [sm])
+      id1 = blockId(b1.header)
+    check tree.addBlockToTree(b1)
+    check not tree.addBlockToTree(childBlock(b1.header, id1, 4'u64, [sm]))
+    # Equal slots pass the tree; the strict ordering is the ledger's rule.
+    check tree.addBlockToTree(childBlock(b1.header, id1, 5'u64, [sm]))
 
 suite "core/local_tree (lcaBlockIdAndHeight)":
   test "lcaBlockIdAndHeight of genesis with itself is genesis":

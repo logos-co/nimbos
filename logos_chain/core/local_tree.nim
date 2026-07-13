@@ -163,6 +163,12 @@ proc addBlockToTree*(localTree: LocalTree, blk: Block): bool =
   let parent = localTree.blocks.getOrDefault(parentId, nil)
   if parent == nil:
     return false
+  # A child may not precede its parent; the strict ordering (no equality)
+  # is the ledger's slot rule.
+  if blk.header.slot < parent.blk.header.slot:
+    return false
+  if not isFutureDescendantOfImmutable(localTree, blk.header):
+    return false
   let node = BlockNode(id: id, blk: blk, parent: parent, height: parent.height + 1'u64)
   localTree.blocks[id] = node
   let curTip = localTree.blocks.getOrDefault(localTree.tipId, nil)

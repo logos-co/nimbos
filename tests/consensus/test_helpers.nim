@@ -12,13 +12,24 @@
 import
   stew/endians2,
   ../../logos_chain/time/clock,
+  ../../logos_chain/ledger/types,
   ../../logos_chain/zk/poseidon2/hasher
 
-const testSchedule* = EpochSchedule(
-  basePeriodLength: 10, # k = 5, f = 1/2
-  stakeDistributionStabilization: 3,
-  nonceBuffer: 3,
-  nonceStabilization: 4)
+from ../../logos_chain/core/crypto/types import ZkPublicKey
+
+const
+  testSchedule* = EpochSchedule(
+    basePeriodLength: 10, # k = 5, f = 1/2
+    stakeDistributionStabilization: 3,
+    nonceBuffer: 3,
+    nonceStabilization: 4)
+  # f = 1/10 keeps the lottery-constants lookup satisfied (standalone entry);
+  # no faucet, so total stake is the plain UTXO sum.
+  testLedgerConfig* = LedgerConfig(
+    epochSchedule: testSchedule,
+    slotActivationCoeff: NonNegativeRatio(num: 1, den: 10),
+    stakeInferenceLearningRate: NonNegativeRatio(num: 1, den: 1),
+    faucetPk: Opt.none(ZkPublicKey))
 
 func fe*(n: uint64): FieldElement =
   ## Small-integer field element for test vectors.

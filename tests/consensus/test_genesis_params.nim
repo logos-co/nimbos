@@ -11,6 +11,7 @@
 import
   stew/byteutils,
   unittest2,
+  libp2p/crypto/ed25519/ed25519,
   ../../logos_chain/chain/genesis
 
 # Worked example per `bedrock-genesis-block.md` §Cryptarchia Parameters:
@@ -26,6 +27,7 @@ func genesisStateWith(
     inscription: seq[byte],
     channelId: ChannelId,
     parent = default(Parent),
+    signer = default(Signer),
 ): GenesisState =
   GenesisState(
     signedMantleTx: SignedMantleTx(
@@ -35,7 +37,8 @@ func genesisStateWith(
           channelInscribe: ChannelInscribePayload(
             channelId: channelId,
             inscription: inscription,
-            parent: parent)))])))
+            parent: parent,
+            signer: signer)))])))
 
 suite "chain/genesis cryptarchia parameters":
   test "decodes the spec worked example":
@@ -68,6 +71,15 @@ suite "chain/genesis cryptarchia parameters":
     parent[0] = 1
     check genesisStateWith(
       SpecInscription, default(ChannelId), parent).cryptarchiaParameter.isErr
+
+  test "rejects an inscription whose signer is not zero":
+    var raw: array[32, byte]
+    raw[0] = 1
+    var signer: Signer
+    check signer.init(raw)
+    check genesisStateWith(
+      SpecInscription, default(ChannelId), signer = signer
+    ).cryptarchiaParameter.isErr
 
   test "ignores inscriptions on non-null channels":
     var channel: ChannelId

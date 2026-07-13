@@ -22,6 +22,7 @@ import
   ../core/mantle/[tx_types, tx_hashing, operations, proofs],
   ../core/types
 
+from ../core/crypto/types import ZkPublicKey
 export types, cryptarchia_state, channel_state, mantle_state, epoch_state, registry
 
 type
@@ -51,18 +52,71 @@ func latestUtxos*(s: LedgerState): lent UtxoStore =
   ## The live UTXO set.
   s.cryptarchiaLedger.latestUtxos
 
-func fromGenesis*(
+func stakeContribution(
+    value: uint64, pk: ZkPublicKey, faucetPk: Opt[ZkPublicKey]): uint64 =
+  ## A note's contribution to total stake — zero for the faucet note, whose
+  ## outsized mint would dominate the lottery.
+  if faucetPk.isSome and pk == faucetPk.get: 0'u64 else: value
+
+func fromUtxos*(
     _: typedesc[LedgerState],
     utxos: openArray[Utxo],
     nonce: FieldElement,
-    totalStake: uint64,
     cfg: LedgerConfig,
 ): Result[LedgerState, LedgerError] =
-  ## Genesis state from the initial UTXO set, with epoch bookkeeping seeded
-  ## from the ceremony values.
-  var s = LedgerState.fromUtxos(utxos)
+  ## Genesis-style state seeded with epoch bookkeeping from the UTXO set;
+  ## total stake is the faucet-filtered note sum, floored at 1.
+  var
+    s = LedgerState(
+      cryptarchiaLedger: CryptarchiaState.init(utxos),
+      mantleLedger: MantleState.init())
+    total = 0'u64
+  for u in utxos:
+    let c = stakeContribution(u.note.value, u.note.zkPublicKey, cfg.faucetPk)
+    doAssert total <= uint64.high - c, "total stake overflows uint64"
+    total += c
   s.epochs = ?genesisEpochTracker(
-    nonce, s.cryptarchiaLedger.latestUtxos.root, totalStake, cfg)
+    nonce, s.cryptarchiaLedger.latestUtxos.root, max(total, 1), cfg)
+  ok(s)
+
+func fromGenesis*(
+    _: typedesc[LedgerState],
+    genesisTxs: openArray[SignedMantleTx],
+    nonce: FieldElement,
+    cfg: LedgerConfig,
+): Result[LedgerState, LedgerError] =
+  ## Genesis state from the genesis block's transactions: ops run through the
+  ## pure transition cores (no proof or balance checks), then epochs are
+  ## seeded from the faucet-filtered stake and ceremony nonce.
+  var
+    s = LedgerState(
+      cryptarchiaLedger: CryptarchiaState.init(),
+      mantleLedger: MantleState.init())
+    total = 0'u64
+  for tx in genesisTxs:
+    for op in tx.tx.ops:
+      case op.payload.kind
+      of Transfer:
+        if op.payload.transfer.inputs.noteIds.len > 0:
+          return err(InputInGenesis)
+        for note in op.payload.transfer.outputs.notes:
+          let c = stakeContribution(note.value, note.zkPublicKey, cfg.faucetPk)
+          doAssert total <= uint64.high - c, "total stake overflows uint64"
+          total += c
+        let r = ?s.cryptarchiaLedger.applyTransferState(
+          LockedNotes.init(), op.payload.transfer)
+        s.cryptarchiaLedger = r.state
+      of ChannelInscribe:
+        # Envelope validity (null channel, root parent, zero signer) is
+        # enforced at the chain layer when the ceremony is decoded.
+        s.mantleLedger.channels = applyChannelInscribe(
+          s.mantleLedger.channels, op.payload.channelInscribe, 0)
+      of SdpDeclare:
+        discard # genesis SDP declarations land with the SDP module
+      else:
+        return err(UnsupportedOp)
+  s.epochs = ?genesisEpochTracker(
+    nonce, s.cryptarchiaLedger.latestUtxos.root, max(total, 1), cfg)
   ok(s)
 
 proc tryApplyHeader*(
@@ -74,9 +128,8 @@ proc tryApplyHeader*(
   ## Epoch pipeline for `slot`, leader-proof verification against the active
   ## epoch state, then entropy/density bookkeeping.
   var s = state
-  if cfg.epochsEnabled:
-    s.epochs = ?s.epochs.advanceEpochs(
-      slot, s.cryptarchiaLedger.latestUtxos.root, cfg)
+  s.epochs = ?s.epochs.advanceEpochs(
+    slot, s.cryptarchiaLedger.latestUtxos.root, cfg)
   let
     active = s.epochs.activeEpoch
     public = LeaderPublic(
@@ -90,10 +143,9 @@ proc tryApplyHeader*(
       return err(VerifierNotInitialised)
   if not verified:
     return err(InvalidProof)
-  if cfg.epochsEnabled:
-    let entropy = frFromBytesLE(proof.entropyContribution).valueOr:
-      return err(InvalidProof)
-    s.epochs = s.epochs.recordBlock(slot, entropy)
+  let entropy = frFromBytesLE(proof.entropyContribution).valueOr:
+    return err(InvalidProof)
+  s.epochs = s.epochs.recordBlock(slot, entropy)
   ok(s)
 
 proc tryApplyTx*(

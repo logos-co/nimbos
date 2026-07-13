@@ -40,12 +40,6 @@ type
     genesisTime*: WallclockSeconds ## u32 on the wire
     epochNonce*: FieldElement
 
-  GenesisEpochSeed* = tuple
-    ## Ceremony values seeding the epoch machinery at genesis.
-    nonce: FieldElement
-    totalStake: uint64
-    genesisTime: WallclockSeconds
-
 func decodeCryptarchiaParameter(
     inscribe: ChannelInscribePayload): Result[CryptarchiaParameter, cstring] =
   # Envelope checks (root parent, zero signer), then the payload.
@@ -82,26 +76,6 @@ func cryptarchiaParameter*(
         op.payload.channelInscribe.channelId == static(default(ChannelId)):
       return decodeCryptarchiaParameter(op.payload.channelInscribe)
   err(cstring"genesis tx has no null-channel inscription")
-
-func genesisTotalStake*(state: GenesisState): uint64 =
-  ## Initial `D`: tokens distributed at genesis, floored at 1. Excludes the
-  ## faucet note, whose outsized mint would dominate the lottery.
-  var total = 0'u64
-  for op in state.signedMantleTx.tx.ops:
-    if op.payload.kind == OpPayloadTag.Transfer:
-      for note in op.payload.transfer.outputs.notes:
-        if note.zkPublicKey != state.faucetZkPublicKey:
-          doAssert total <= uint64.high - note.value,
-            "genesis stake overflows uint64"
-          total += note.value
-  max(total, 1)
-
-func genesisEpochSeed*(state: GenesisState): Result[GenesisEpochSeed, cstring] =
-  ## Ceremony nonce, faucet-filtered initial `D`, and genesis time, decoded
-  ## from the genesis block.
-  let param = ? state.cryptarchiaParameter()
-  ok((nonce: param.epochNonce, totalStake: genesisTotalStake(state),
-      genesisTime: param.genesisTime))
 
 func createGenesisHeader(genesisMantleTx: SignedMantleTx): Header =
   ## Genesis header constructor using spec defaults:
