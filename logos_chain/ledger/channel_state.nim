@@ -117,7 +117,6 @@ func validateChannelInscribe*(
     sig: Ed25519Signature,
     txHash: Hash32,
     blockSlot: SlotNumber,
-    genesis: bool = false,
 ): Result[void, LedgerError] =
   ## Read-only checks for ChannelInscribe. If the channel exists, the parent
   ## must match its `tipMessage` and the signer must be the current
@@ -134,9 +133,8 @@ func validateChannelInscribe*(
   elif not op.parent.isZero:
     return err(InvalidParent)
 
-  if not genesis:
-    if not verify(sig, txHash, op.signer):
-      return err(InvalidProof)
+  if not verify(sig, txHash, op.signer):
+    return err(InvalidProof)
   ok()
 
 func applyChannelInscribe*(
@@ -160,7 +158,6 @@ func validateChannelConfig*(
     op: ChannelConfigPayload,
     proof: ChannelWithdrawOpProof,
     txHash: Hash32,
-    genesis: bool = false,
 ): Result[void, LedgerError] =
   ## Read-only checks for ChannelConfig. Validates well-formedness, and if
   ## the channel exists, verifies `configuration_threshold` signatures from
@@ -178,9 +175,8 @@ func validateChannelConfig*(
     return err(InvalidChannelConfig)
 
   channels.get(op.channel).isErrOr:
-    if not genesis:
-      ?verifyChannelMultiSig(
-        proof, value.accreditedKeys, value.configurationThreshold, txHash)
+    ?verifyChannelMultiSig(
+      proof, value.accreditedKeys, value.configurationThreshold, txHash)
   ok()
 
 func applyChannelConfig*(
@@ -206,11 +202,10 @@ func applyChannelConfig*(
 proc validateChannelDeposit*(
     channels: ChannelStore,
     cs: CryptarchiaState,
-    lockedNoteIds: HashSet[NoteId],
+    lockedNotes: LockedNotes,
     op: ChannelDepositPayload,
     sig: ZkSigProof,
     txHash: Hash32,
-    genesis: bool = false,
 ): Result[void, LedgerError] =
   ## Read-only checks for ChannelDeposit.
   if op.channel notin channels:
@@ -223,20 +218,19 @@ proc validateChannelDeposit*(
 
   var pks = newSeqOfCap[ZkPublicKey](op.inputs.len)
   for inputId in op.inputs:
-    if inputId in lockedNoteIds:
+    if inputId in lockedNotes:
       return err(LockedNote)
     let utxo = cs.utxos.get(inputId).valueOr:
       return err(InvalidNote)
     pks.add(utxo.note.zkPublicKey)
 
-  if not genesis:
-    let
-      input = zksignInput(pks, frFromBytesLEModOrder(txHash)).valueOr:
-        return err(InvalidProof)
-      verified = zksign.verify(sig, input).valueOr:
-        return err(VerifierNotInitialised)
-    if not verified:
+  let
+    input = zksignInput(pks, frFromBytesLEModOrder(txHash)).valueOr:
       return err(InvalidProof)
+    verified = zksign.verify(sig, input).valueOr:
+      return err(VerifierNotInitialised)
+  if not verified:
+    return err(InvalidProof)
   ok()
 
 func applyChannelDeposit*(
@@ -261,7 +255,6 @@ func validateChannelWithdraw*(
     op: ChannelWithdrawPayload,
     proof: ChannelWithdrawOpProof,
     txHash: Hash32,
-    genesis: bool = false,
 ): Result[void, LedgerError] =
   ## Read-only checks for ChannelWithdraw.
   let chan = channels.get(op.channel).valueOr:
@@ -279,9 +272,8 @@ func validateChannelWithdraw*(
     return err(WithdrawNonceOverflow)
   if outflow > chan.balance:
     return err(InsufficientBalance)
-  if not genesis:
-    ?verifyChannelMultiSig(
-      proof, chan.accreditedKeys, chan.withdrawThreshold, txHash)
+  ?verifyChannelMultiSig(
+    proof, chan.accreditedKeys, chan.withdrawThreshold, txHash)
   ok()
 
 func applyChannelWithdraw*(

@@ -71,7 +71,6 @@ proc tryApplyTx*(
     tx: SignedMantleTx,
     epoch: EpochNumber,
     slot: SlotNumber,
-    genesis: bool = false,
 ): Result[tuple[state: LedgerState, balance: Balance], LedgerError] =
   ## Applies one transaction. Returns the new state and Transfer-only
   ## balance delta. `slot` is used by channel ops for sequencer rotation.
@@ -92,8 +91,8 @@ proc tryApplyTx*(
         return err(InvalidProof)
       let r =
         ?s.cryptarchiaLedger.tryApplyTransfer(
-          getLockedNotes(s.sdp.state),
-          op.payload.transfer, proof.transferProof, txHash, genesis,
+          s.sdp.state.lockedNotes,
+          op.payload.transfer, proof.transferProof, txHash,
         )
       s.cryptarchiaLedger = r.state
       balance = ?balance.checkedAdd(r.balance)
@@ -107,7 +106,6 @@ proc tryApplyTx*(
         txHash,
         s.cryptarchiaLedger.latestUtxos,
         epoch,
-        genesis,
       )
     of SdpWithdraw:
       if proof.kind != opfSdpWithdraw:
@@ -119,7 +117,6 @@ proc tryApplyTx*(
         txHash,
         s.cryptarchiaLedger.latestUtxos,
         epoch,
-        genesis,
       )
     of SdpActive:
       if proof.kind != opfSdpActive:
@@ -130,26 +127,25 @@ proc tryApplyTx*(
         proof.sdpActiveProof,
         txHash,
         epoch,
-        genesis,
       )
     of ChannelInscribe:
       if proof.kind != opfChannelInscribe:
         return err(InvalidProof)
       s.mantleLedger = ?s.mantleLedger.tryApplyChannelInscribe(
-        op.payload.channelInscribe, proof.ed25519SigProof, txHash, slot, genesis,
+        op.payload.channelInscribe, proof.ed25519SigProof, txHash, slot,
       )
     of ChannelConfig:
       if proof.kind != opfChannelConfig:
         return err(InvalidProof)
       s.mantleLedger = ?s.mantleLedger.tryApplyChannelConfig(
-        op.payload.channelConfig, proof.channelConfigOpProof, txHash, slot, genesis,
+        op.payload.channelConfig, proof.channelConfigOpProof, txHash, slot,
       )
     of ChannelDeposit:
       if proof.kind != opfChannelDeposit:
         return err(InvalidProof)
       let r = ?s.mantleLedger.tryApplyChannelDeposit(
-        s.cryptarchiaLedger, getLockedNotes(s.sdp.state),
-        op.payload.channelDeposit, proof.channelDepositProof, txHash, genesis,
+        s.cryptarchiaLedger, s.sdp.state.lockedNotes,
+        op.payload.channelDeposit, proof.channelDepositProof, txHash,
       )
       s = LedgerState(cryptarchiaLedger: r.cs, mantleLedger: r.ms, sdp: s.sdp)
     of ChannelWithdraw:
@@ -157,7 +153,7 @@ proc tryApplyTx*(
         return err(InvalidProof)
       let r = ?s.mantleLedger.tryApplyChannelWithdraw(
         s.cryptarchiaLedger,
-        op.payload.channelWithdraw, proof.channelWithdrawOpProof, txHash, genesis,
+        op.payload.channelWithdraw, proof.channelWithdrawOpProof, txHash,
       )
       s = LedgerState(cryptarchiaLedger: r.cs, mantleLedger: r.ms, sdp: s.sdp)
     else:
@@ -169,18 +165,14 @@ proc tryApplyTxns*(
     txs: openArray[SignedMantleTx],
     epoch: EpochNumber,
     slot: SlotNumber,
-    genesis: bool = false,
 ): Result[LedgerState, LedgerError] =
   ## Applies a block's transactions in order. Each tx must net to zero
   ## balance — otherwise returns `UnbalancedTransaction` or
-  ## `InsufficientBalance`. When ``genesis`` is true, balance checks are
-  ## skipped (trusted genesis mints need not balance).
+  ## `InsufficientBalance`.
   var s = state
   for tx in txs:
-    let r = ?s.tryApplyTx(tx, epoch, slot, genesis)
+    let r = ?s.tryApplyTx(tx, epoch, slot)
     s = r.state
-    if genesis:
-      continue
     if r.balance > Balance.zero:
       return err(UnbalancedTransaction)
     if r.balance < Balance.zero:
@@ -234,14 +226,32 @@ proc fromGenesis*(
     sdp: sink SdpRegistry,
     genesisTxs: openArray[SignedMantleTx],
 ): Result[LedgerState, LedgerError] =
-  ## Builds genesis ledger state by applying genesis transactions at epoch 0.
-  ## Genesis proofs are trusted from deployment settings and are not verified.
+  ## Builds genesis ledger state from the genesis block's transactions.
+  ## Ops run through pure transition cores (no proof or balance checks).
   var state = LedgerState(
     cryptarchiaLedger: CryptarchiaState.init(),
     sdp: sdp,
     mantleLedger: MantleState.init(),
   )
-  state = ?state.tryApplyTxns(genesisTxs, epoch = 0'u64, slot = 0'u64, genesis = true)
+  const
+    epoch = 0'u64
+    slot = 0'u64
+  for tx in genesisTxs:
+    for op in tx.tx.ops:
+      case op.payload.kind
+      of Transfer:
+        let r = ?state.cryptarchiaLedger.applyTransferState(
+          state.sdp.state.lockedNotes, op.payload.transfer,
+        )
+        state.cryptarchiaLedger = r.state
+      of ChannelInscribe:
+        state.mantleLedger.channels = applyChannelInscribe(
+          state.mantleLedger.channels, op.payload.channelInscribe, slot,
+        )
+      of SdpDeclare:
+        ?applySdpDeclare(state.sdp, op.payload.sdpDeclare, epoch)
+      else:
+        return err(UnsupportedOp)
   onEpochStarted(state.sdp, previousEpoch = 0'u64, epoch = 0'u64)
   ok(state)
 

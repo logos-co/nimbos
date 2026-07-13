@@ -33,6 +33,7 @@ type
     VerifierNotInitialised ## per-circuit VK singleton wasn't installed at
       ## node startup — wiring bug, not adversarial input
     # SDP (Service Declaration Protocol)
+    EmptyLocators ## SDP Declare locators must contain at least one element
     TooManyLocators
     InvalidLocator
     DuplicateDeclaration

@@ -56,7 +56,7 @@ suite "validateChannelDeposit — structural checks (no VK)":
         metadata: @[],
       )
       r = validateChannelDeposit(
-        chans, cs, initHashSet[NoteId](), op,
+        chans, cs, LockedNotes.init(), op,
         default(ZkSigProof), mkTxHash())
     check r.error == ChannelNotFound
 
@@ -70,7 +70,7 @@ suite "validateChannelDeposit — structural checks (no VK)":
         channel: cid, inputs: @[input.id, input.id], metadata: @[],
       )
       r = validateChannelDeposit(
-        chans, cs, initHashSet[NoteId](), op,
+        chans, cs, LockedNotes.init(), op,
         default(ZkSigProof), mkTxHash())
     check r.error == DoubleSpend
 
@@ -84,7 +84,7 @@ suite "validateChannelDeposit — structural checks (no VK)":
         channel: cid, inputs: @[missing.id], metadata: @[],
       )
       r = validateChannelDeposit(
-        chans, cs, initHashSet[NoteId](), op,
+        chans, cs, LockedNotes.init(), op,
         default(ZkSigProof), mkTxHash())
     check r.error == InvalidNote
 
@@ -97,8 +97,8 @@ suite "validateChannelDeposit — structural checks (no VK)":
       op = ChannelDepositPayload(
         channel: cid, inputs: @[input.id], metadata: @[],
       )
-    var locked = initHashSet[NoteId]()
-    locked.incl(input.id)
+    var locked = LockedNotes.init()
+    locked = locked.insert(input.id, initHashSet[DeclarationId]())
     let r = validateChannelDeposit(
       chans, cs, locked, op,
       default(ZkSigProof), mkTxHash())
@@ -144,7 +144,7 @@ suite "MantleState.tryApplyChannelDeposit — verify wrapper (fixture-driven)":
         channel: cid, inputs: @[input.id], metadata: @[],
       )
       r = m.tryApplyChannelDeposit(
-        cs, initHashSet[NoteId](), op,
+        cs, LockedNotes.init(), op,
         sig = default(ZkSigProof), txHash = mkTxHash())
     check r.error == VerifierNotInitialised
 
@@ -159,7 +159,7 @@ suite "MantleState.tryApplyChannelDeposit — verify wrapper (fixture-driven)":
         channel: cid, inputs: @[input.id], metadata: @[],
       )
       r = m.tryApplyChannelDeposit(
-        cs, initHashSet[NoteId](), op,
+        cs, LockedNotes.init(), op,
         sig = default(ZkSigProof), txHash = mkTxHash())
     check r.error == InvalidProof
 
@@ -175,7 +175,7 @@ suite "MantleState.tryApplyChannelDeposit — verify wrapper (fixture-driven)":
       op = ChannelDepositPayload(
         channel: cid, inputs: @[input.id], metadata: @[],
       )
-      r = m.tryApplyChannelDeposit(cs, initHashSet[NoteId](), op, sig, txHash)
+      r = m.tryApplyChannelDeposit(cs, LockedNotes.init(), op, sig, txHash)
     check r.isOk
     let (newMs, newCs) = r.get
     check newMs.channels.getOrDefault(cid).balance == 100

@@ -493,7 +493,7 @@ suite "tryApplyTx — SDP":
       outputs: Outputs(notes: @[mkNote(200, pkSeed = 2)]),
     )
     let locked = state.cryptarchiaLedger.applyTransferState(
-      getLockedNotes(state.sdp.state), spendOp,
+      state.sdp.state.lockedNotes, spendOp,
     )
     check locked.isErr
     check locked.error == LedgerError.LockedNote
@@ -505,13 +505,13 @@ suite "tryApplyTx — SDP":
     )
     installTestWithdraw(state.sdp, withdraw, epoch = 5)
     let stillLocked = state.cryptarchiaLedger.applyTransferState(
-      getLockedNotes(state.sdp.state), spendOp,
+      state.sdp.state.lockedNotes, spendOp,
     )
     check stillLocked.isErr
 
     state.sdp.state = finalizeWithdrawals(state.sdp.state, 7)
     let unlocked = state.cryptarchiaLedger.applyTransferState(
-      getLockedNotes(state.sdp.state), spendOp,
+      state.sdp.state.lockedNotes, spendOp,
     )
     check unlocked.isOk
 

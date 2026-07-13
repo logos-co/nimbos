@@ -87,7 +87,7 @@ suite "tryApplyTransfer — error paths":
           outputs: Outputs(notes: @[mkNote(50, pkSeed = 2)]),
         )
         r = s0.tryApplyTransfer(
-          initHashSet[NoteId](),
+          LockedNotes.init(),
           op,
           sig = default(ZkSigProof),
           txHash = mkTxHash(),
@@ -103,8 +103,8 @@ suite "tryApplyTransfer — error paths":
         inputs: Inputs(noteIds: @[input.id]),
         outputs: Outputs(notes: @[mkNote(100, pkSeed = 2)]),
       )
-    var locked = initHashSet[NoteId]()
-    locked.incl(input.id)
+    var locked = LockedNotes.init()
+    locked = locked.insert(input.id, initHashSet[DeclarationId]())
     let r = s0.tryApplyTransfer(
       locked,
       op,
@@ -123,7 +123,7 @@ suite "tryApplyTransfer — error paths":
         outputs: Outputs(notes: @[mkNote(100, pkSeed = 2)]),
       )
       r = s0.tryApplyTransfer(
-        initHashSet[NoteId](),
+        LockedNotes.init(),
         op,
         sig = default(ZkSigProof),
         txHash = mkTxHash(),
@@ -141,7 +141,7 @@ suite "tryApplyTransfer — error paths":
         outputs: Outputs(notes: @[mkNote(100, pkSeed = 2)]),
       )
       r = s0.tryApplyTransfer(
-        initHashSet[NoteId](),
+        LockedNotes.init(),
         op,
         sig = default(ZkSigProof),
         txHash = mkTxHash(),
@@ -173,7 +173,7 @@ suite "tryApplyTransfer — happy paths (fixture-driven)":
         inputs: Inputs(noteIds: @[input.id]),
         outputs: Outputs(notes: @[mkNote(100, pkSeed = 2)]),
       )
-      r = s0.tryApplyTransfer(initHashSet[NoteId](), op, sig, txHash)
+      r = s0.tryApplyTransfer(LockedNotes.init(), op, sig, txHash)
     check r.isOk
 
     let (s1, balance) = r.get
@@ -192,7 +192,7 @@ suite "tryApplyTransfer — happy paths (fixture-driven)":
             @[mkNote(30, pkSeed = 2), mkNote(30, pkSeed = 3), mkNote(40, pkSeed = 4)]
         ),
       )
-      r = s0.tryApplyTransfer(initHashSet[NoteId](), op, sig, txHash)
+      r = s0.tryApplyTransfer(LockedNotes.init(), op, sig, txHash)
     check r.isOk
 
     let (s1, balance) = r.get
@@ -208,7 +208,7 @@ suite "tryApplyTransfer — happy paths (fixture-driven)":
         inputs: Inputs(noteIds: @[input.id]),
         outputs: Outputs(notes: @[mkNote(0, pkSeed = 2)]),
       )
-      r = s0.tryApplyTransfer(initHashSet[NoteId](), op, sig, txHash)
+      r = s0.tryApplyTransfer(LockedNotes.init(), op, sig, txHash)
     check r.isErr
     check r.error == ZeroValueNote
 
@@ -219,7 +219,7 @@ suite "tryApplyTransfer — happy paths (fixture-driven)":
       op = TransferPayload(
         inputs: Inputs(noteIds: @[input.id]), outputs: Outputs(notes: @[])
       )
-      r = s0.tryApplyTransfer(initHashSet[NoteId](), op, sig, txHash)
+      r = s0.tryApplyTransfer(LockedNotes.init(), op, sig, txHash)
     check r.isOk
 
     let (s1, balance) = r.get
@@ -235,7 +235,7 @@ suite "tryApplyTransfer — happy paths (fixture-driven)":
         inputs: Inputs(noteIds: @[input.id]),
         outputs: Outputs(notes: @[mkNote(1, pkSeed = 2), mkNote(1, pkSeed = 3)]),
       )
-      r = s0.tryApplyTransfer(initHashSet[NoteId](), op, sig, txHash)
+      r = s0.tryApplyTransfer(LockedNotes.init(), op, sig, txHash)
     check r.isOk
 
     let (s1, balance) = r.get
@@ -251,7 +251,7 @@ suite "tryApplyTransfer — happy paths (fixture-driven)":
         outputs:
           Outputs(notes: @[mkNote(4000, pkSeed = 2), mkNote(3000, pkSeed = 3)]),
       )
-      r = s0.tryApplyTransfer(initHashSet[NoteId](), op, sig, txHash)
+      r = s0.tryApplyTransfer(LockedNotes.init(), op, sig, txHash)
     check r.isOk
 
     let (s1, balance) = r.get
@@ -268,7 +268,7 @@ suite "tryApplyTransfer — happy paths (fixture-driven)":
         inputs: Inputs(noteIds: @[input.id]),
         outputs: Outputs(notes: @[mkNote(100, pkSeed = 2)]),
       )
-    discard s0.tryApplyTransfer(initHashSet[NoteId](), op, sig, txHash)
+    discard s0.tryApplyTransfer(LockedNotes.init(), op, sig, txHash)
 
     check s0.len == preLen
     check s0.root == preRoot
@@ -284,7 +284,7 @@ suite "applyTransferState — multi-input":
         inputs: Inputs(noteIds: @[a.id, b.id]),
         outputs: Outputs(notes: @[mkNote(100, pkSeed = 2)]),
       )
-      r = s0.applyTransferState(initHashSet[NoteId](), op)
+      r = s0.applyTransferState(LockedNotes.init(), op)
     check r.isOk
 
     let (s1, balance, pks) = r.get
@@ -303,7 +303,7 @@ suite "applyTransferState — chain":
         inputs: Inputs(noteIds: @[input.id]),
         outputs: Outputs(notes: @[mkNote(60, pkSeed = 2), mkNote(40, pkSeed = 3)]),
       )
-      r1 = s0.applyTransferState(initHashSet[NoteId](), tx1)
+      r1 = s0.applyTransferState(LockedNotes.init(), tx1)
     check r1.isOk
 
     let
@@ -322,7 +322,7 @@ suite "applyTransferState — chain":
         inputs: Inputs(noteIds: @[outUtxo0.id, outUtxo1.id]),
         outputs: Outputs(notes: @[mkNote(100, pkSeed = 4)]),
       )
-      r2 = s1.applyTransferState(initHashSet[NoteId](), tx2)
+      r2 = s1.applyTransferState(LockedNotes.init(), tx2)
     check r2.isOk
 
     let (s2, balance2, pks2) = r2.get

@@ -13,10 +13,12 @@
 
 import
   results,
+  std/sets,
   ../mantle/[primitives, operations],
-  ../crypto/hashing
+  ../crypto/hashing,
+  ../../utils/hash_trie_map
 
-export primitives, results
+export primitives, results, hash_trie_map
 
 type
   MinStake* = object
@@ -37,6 +39,8 @@ type
     active*: Opt[EpochNumber]
     withdrawAt*: Opt[EpochNumber]
     nonce*: Nonce
+
+  LockedNotes* = HashTrieMap[NoteId, HashSet[DeclarationId]]
 
 func defaultBnServiceParameters*(epoch: EpochNumber = 0): ServiceParameters =
   ServiceParameters(

@@ -41,8 +41,9 @@ proc validateSdpDeclare(
     minStake: MinStake,
     utxos: UtxoStore,
     state: SdpState,
-    genesis: bool = false,
-): Result[DeclarationId, LedgerError] =
+): Result[void, LedgerError] =
+  if declaration.locators.len == 0:
+    return err(EmptyLocators)
   if declaration.locators.len > MaxSdpLocators:
     return err(TooManyLocators)
   if not declaration.locators.allIt(isValidLocator(it)):
@@ -62,29 +63,21 @@ proc validateSdpDeclare(
   if declarationId in state.declarations:
     return err(DuplicateDeclaration)
 
-  if not genesis:
-    ?verifySdpDeclareProofs(
-      declaration, proof, txHash, note.zkPublicKey,
-    )
+  ?verifySdpDeclareProofs(
+    declaration, proof, txHash, note.zkPublicKey,
+  )
 
-  ok(declarationId)
+  ok()
 
-proc tryApplySdpDeclare*(
+proc applySdpDeclare*(
     registry: var SdpRegistry,
     declaration: DeclarationMessage,
-    proof: ZkAndEd25519SigsProof,
-    txHash: ZkHash,
-    utxos: UtxoStore,
     epoch: EpochNumber,
-    genesis: bool = false,
 ): Result[void, LedgerError] =
-  let minStake = getMinStakeAt(registry, epoch).valueOr:
-    return err(MinStakeNotFound)
-  let declarationId = ?validateSdpDeclare(
-    declaration, proof, txHash, minStake, utxos, registry.state, genesis,
-  )
+  ## Mutation only; assumes validation passed (or genesis trusted the op).
   if getParametersAt(registry, declaration.serviceType, epoch).isNone:
     return err(MissingServiceParameters)
+  let declarationId = declarationId(declaration)
   registry.state = insertDeclaration(
     addDeclarationToLockedNote(
       registry.state,
@@ -105,5 +98,20 @@ proc tryApplySdpDeclare*(
     ),
   )
   ok()
+
+proc tryApplySdpDeclare*(
+    registry: var SdpRegistry,
+    declaration: DeclarationMessage,
+    proof: ZkAndEd25519SigsProof,
+    txHash: ZkHash,
+    utxos: UtxoStore,
+    epoch: EpochNumber,
+): Result[void, LedgerError] =
+  let minStake = getMinStakeAt(registry, epoch).valueOr:
+    return err(MinStakeNotFound)
+  ?validateSdpDeclare(
+    declaration, proof, txHash, minStake, utxos, registry.state,
+  )
+  applySdpDeclare(registry, declaration, epoch)
 
 {.pop.}

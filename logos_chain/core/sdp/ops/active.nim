@@ -40,14 +40,10 @@ proc validateSdpActive(
     proof: ZkSigProof,
     txHash: Hash32,
     state: SdpState,
-    genesis: bool = false,
 ): Result[void, LedgerError] =
   let declaration = ?loadDeclaration(state, active.declarationId)
   ?checkNonceMonotonic(declaration, active.nonce)
-
-  if not genesis:
-    ?verifyZkSig(proof, txHash, @[declaration.zkId])
-
+  ?verifyZkSig(proof, txHash, @[declaration.zkId])
   ok()
 
 proc tryApplySdpActive*(
@@ -56,9 +52,8 @@ proc tryApplySdpActive*(
     proof: ZkSigProof,
     txHash: Hash32,
     epoch: EpochNumber,
-    genesis: bool = false,
 ): Result[void, LedgerError] =
-  ?validateSdpActive(active, proof, txHash, registry.state, genesis)
+  ?validateSdpActive(active, proof, txHash, registry.state)
   let declaration = registry.state.declarations.getOrDefault(active.declarationId)
   let params = getParametersAt(
     registry, declaration.service, epoch,

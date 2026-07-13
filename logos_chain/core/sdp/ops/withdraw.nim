@@ -26,7 +26,6 @@ proc validateSdpWithdraw(
     txHash: ZkHash,
     utxos: UtxoStore,
     state: SdpState,
-    genesis: bool = false,
 ): Result[DeclarationInfo, LedgerError] =
   let declareInfo = ?loadDeclaration(state, withdraw.declarationId)
   ?checkNotWithdrawn(declareInfo)
@@ -40,10 +39,9 @@ proc validateSdpWithdraw(
   if withdraw.declarationId notin lockedNote:
     return err(DeclarationNotInLockedNote)
 
-  if not genesis:
-    let utxo = utxos.get(withdraw.lockedNoteId).valueOr:
-      return err(LockedNoteNotFound)
-    ?verifyZkSig(proof, txHash, @[utxo.note.zkPublicKey, declareInfo.zkId])
+  let utxo = utxos.get(withdraw.lockedNoteId).valueOr:
+    return err(LockedNoteNotFound)
+  ?verifyZkSig(proof, txHash, @[utxo.note.zkPublicKey, declareInfo.zkId])
 
   ok(declareInfo)
 
@@ -54,12 +52,10 @@ proc tryApplySdpWithdraw*(
     txHash: ZkHash,
     utxos: UtxoStore,
     epoch: EpochNumber,
-    genesis: bool = false,
 ): Result[void, LedgerError] =
-  let declareInfo = ?validateSdpWithdraw(
-    withdraw, proof, txHash, utxos, registry.state, genesis,
+  var declaration = ?validateSdpWithdraw(
+    withdraw, proof, txHash, utxos, registry.state,
   )
-  var declaration = registry.state.declarations.getOrDefault(withdraw.declarationId)
   declaration.nonce = withdraw.nonce
   declaration.withdrawAt = Opt.some(epoch)
   registry.state = insertDeclaration(

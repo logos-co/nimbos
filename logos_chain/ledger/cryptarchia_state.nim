@@ -13,13 +13,14 @@ import results
 
 import
   ./[balance, types, utxo_store, zksig_verify],
-  std/sets,
-  ../core/mantle/[primitives, operations, proofs, utxo, tx_hashing]
+  ../core/mantle/[primitives, operations, proofs, utxo, tx_hashing],
+  ../core/sdp/types as sdp_types
 
-export types, utxo, primitives, utxo_store
+export types, utxo, primitives, utxo_store, sdp_types
 
-type CryptarchiaState* = object
-  utxos*: UtxoStore
+type
+  CryptarchiaState* = object
+    utxos*: UtxoStore
 
 func init*(_: typedesc[CryptarchiaState]): CryptarchiaState =
   CryptarchiaState(utxos: UtxoStore.init())
@@ -53,7 +54,7 @@ func `==`*(a, b: CryptarchiaState): bool =
 
 func applyTransferState*(
     s: sink CryptarchiaState,
-    lockedNoteIds: HashSet[NoteId],
+    lockedNotes: LockedNotes,
     op: TransferPayload,
 ): Result[
   tuple[state: CryptarchiaState, balance: Balance, pks: seq[ZkPublicKey]],
@@ -67,7 +68,7 @@ func applyTransferState*(
     pks = newSeqOfCap[ZkPublicKey](op.inputs.noteIds.len)
 
   for inputId in op.inputs.noteIds:
-    if inputId in lockedNoteIds:
+    if inputId in lockedNotes:
       return err(LockedNote)
     let (newStore, removedUtxo) = s.utxos.remove(inputId).valueOr:
       return err(InvalidNote)
@@ -87,19 +88,17 @@ func applyTransferState*(
 
 proc tryApplyTransfer*(
     s: sink CryptarchiaState,
-    lockedNoteIds: HashSet[NoteId],
+    lockedNotes: LockedNotes,
     op: TransferPayload,
     sig: ZkSigProof,
     txHash: ZkHash,
-    genesis: bool = false,
 ): Result[tuple[state: CryptarchiaState, balance: Balance], LedgerError] =
-  ## Applies a `TransferPayload` to the cryptarchia state. When ``genesis``
-  ## is false, verifies the ZkSig over the collected input pks. Returns
+  ## Applies a `TransferPayload` to the cryptarchia state and verifies the
+  ## ZkSig over the collected input pks. Returns
   ## `(new_state, sum(inputs) − sum(outputs))`. The returned balance may be
   ## positive (surplus → fees), zero (balanced), or negative (deficit).
-  let r = ?s.applyTransferState(lockedNoteIds, op)
-  if not genesis:
-    ?verifyZkSig(sig, txHash, r.pks)
+  let r = ?s.applyTransferState(lockedNotes, op)
+  ?verifyZkSig(sig, txHash, r.pks)
   ok((r.state, r.balance))
 
 {.pop.}

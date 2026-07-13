@@ -31,10 +31,9 @@ func tryApplyChannelInscribe*(
     sig: Ed25519Signature,
     txHash: Hash32,
     blockSlot: SlotNumber,
-    genesis: bool = false,
 ): Result[MantleState, LedgerError] =
   ## ChannelInscribe — validate-then-apply.
-  ?validateChannelInscribe(ms.channels, op, sig, txHash, blockSlot, genesis)
+  ?validateChannelInscribe(ms.channels, op, sig, txHash, blockSlot)
   ok(MantleState(channels: applyChannelInscribe(ms.channels, op, blockSlot)))
 
 func tryApplyChannelConfig*(
@@ -43,24 +42,22 @@ func tryApplyChannelConfig*(
     proof: ChannelWithdrawOpProof,
     txHash: Hash32,
     blockSlot: SlotNumber,
-    genesis: bool = false,
 ): Result[MantleState, LedgerError] =
   ## ChannelConfig — validate-then-apply.
-  ?validateChannelConfig(ms.channels, op, proof, txHash, genesis)
+  ?validateChannelConfig(ms.channels, op, proof, txHash)
   ok(MantleState(channels: applyChannelConfig(ms.channels, op, blockSlot)))
 
 proc tryApplyChannelDeposit*(
     ms: MantleState,
     cs: CryptarchiaState,
-    lockedNoteIds: HashSet[NoteId],
+    lockedNotes: LockedNotes,
     op: ChannelDepositPayload,
     sig: ZkSigProof,
     txHash: Hash32,
-    genesis: bool = false,
 ): Result[tuple[ms: MantleState, cs: CryptarchiaState], LedgerError] =
   ## ChannelDeposit — consumes input UTXOs from cryptarchia and credits the
   ## channel balance. Validate-then-apply.
-  ?validateChannelDeposit(ms.channels, cs, lockedNoteIds, op, sig, txHash, genesis)
+  ?validateChannelDeposit(ms.channels, cs, lockedNotes, op, sig, txHash)
   let (newChans, newCs) = ?applyChannelDeposit(ms.channels, cs, op)
   ok((MantleState(channels: newChans), newCs))
 
@@ -70,11 +67,10 @@ func tryApplyChannelWithdraw*(
     op: ChannelWithdrawPayload,
     proof: ChannelWithdrawOpProof,
     txHash: Hash32,
-    genesis: bool = false,
 ): Result[tuple[ms: MantleState, cs: CryptarchiaState], LedgerError] =
   ## ChannelWithdraw — drains the channel balance and inserts output UTXOs
   ## into cryptarchia. Validate-then-apply.
-  ?validateChannelWithdraw(ms.channels, op, proof, txHash, genesis)
+  ?validateChannelWithdraw(ms.channels, op, proof, txHash)
   let (newChans, newCs) = applyChannelWithdraw(ms.channels, cs, op)
   ok((MantleState(channels: newChans), newCs))
 

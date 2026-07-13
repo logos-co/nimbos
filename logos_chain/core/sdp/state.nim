@@ -21,12 +21,12 @@ export types, hash_trie_map
 type
   SdpState* = object
     declarations*: HashTrieMap[DeclarationId, DeclarationInfo]
-    lockedNotes*: HashTrieMap[NoteId, HashSet[DeclarationId]]
+    lockedNotes*: LockedNotes
 
 func init*(_: typedesc[SdpState]): SdpState =
   SdpState(
     declarations: HashTrieMap[DeclarationId, DeclarationInfo].init(),
-    lockedNotes: HashTrieMap[NoteId, HashSet[DeclarationId]].init(),
+    lockedNotes: LockedNotes.init(),
   )
 
 func `==`*(a, b: SdpState): bool =
@@ -39,13 +39,6 @@ func getDeclaration*(
 
 func getLockedNote*(state: SdpState, id: NoteId): Opt[HashSet[DeclarationId]] =
   state.lockedNotes.get(id)
-
-func getLockedNotes*(state: SdpState): HashSet[NoteId] =
-  var ids: HashSet[NoteId]
-  for noteId, declIds in state.lockedNotes.pairs:
-    if declIds.len > 0:
-      ids.incl(noteId)
-  ids
 
 func lockedNoteHasService*(
     state: SdpState, noteId: NoteId, service: ServiceType,
