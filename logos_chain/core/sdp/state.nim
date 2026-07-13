@@ -6,7 +6,7 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## In-memory SDP validator state store.
-## Spec: [1.0.0 Service Declaration Protocol](https://nomos-tech.notion.site/1-0-0-Service-Declaration-Protocol-1fd261aa09df819ca9f8eb2bdfd4ec1d)
+## Spec: [1.1.0 Service Declaration Protocol](bedrock-service-declaration-protocol.md)
 
 {.push raises: [], gcsafe.}
 
@@ -21,12 +21,12 @@ export types, hash_trie_map
 type
   SdpState* = object
     declarations*: HashTrieMap[DeclarationId, DeclarationInfo]
-    lockedNotes*: HashTrieMap[NoteId, LockedNote]
+    lockedNotes*: HashTrieMap[NoteId, HashSet[DeclarationId]]
 
 func init*(_: typedesc[SdpState]): SdpState =
   SdpState(
     declarations: HashTrieMap[DeclarationId, DeclarationInfo].init(),
-    lockedNotes: HashTrieMap[NoteId, LockedNote].init(),
+    lockedNotes: HashTrieMap[NoteId, HashSet[DeclarationId]].init(),
   )
 
 func `==`*(a, b: SdpState): bool =
@@ -37,13 +37,13 @@ func getDeclaration*(
 ): Opt[DeclarationInfo] =
   state.declarations.get(id)
 
-func getLockedNote*(state: SdpState, id: NoteId): Opt[LockedNote] =
+func getLockedNote*(state: SdpState, id: NoteId): Opt[HashSet[DeclarationId]] =
   state.lockedNotes.get(id)
 
 func getLockedNotes*(state: SdpState): HashSet[NoteId] =
   var ids: HashSet[NoteId]
-  for noteId, note in state.lockedNotes.pairs:
-    if note.declarations.len > 0:
+  for noteId, declIds in state.lockedNotes.pairs:
+    if declIds.len > 0:
       ids.incl(noteId)
   ids
 
@@ -53,7 +53,7 @@ func lockedNoteHasService*(
   if noteId notin state.lockedNotes:
     false
   else:
-    anyIt(state.lockedNotes.getOrDefault(noteId).declarations):
+    anyIt(state.lockedNotes.getOrDefault(noteId)):
       let info = getDeclaration(state, it)
       info.isSome and info.get().service == service
 
@@ -76,12 +76,10 @@ func addDeclarationToLockedNote*(
     state: sink SdpState,
     noteId: NoteId,
     declId: DeclarationId,
-    lockedUntil: BlockNumber,
 ): SdpState =
-  var note = state.lockedNotes.getOrDefault(noteId)
-  note.declarations.incl(declId)
-  note.lockedUntil = max(lockedUntil, note.lockedUntil)
-  state.lockedNotes = state.lockedNotes.insert(noteId, note)
+  var declIds = state.lockedNotes.getOrDefault(noteId)
+  declIds.incl(declId)
+  state.lockedNotes = state.lockedNotes.insert(noteId, declIds)
   state
 
 func removeDeclarationFromLockedNote*(
@@ -91,45 +89,27 @@ func removeDeclarationFromLockedNote*(
 ): SdpState =
   if noteId notin state.lockedNotes:
     return state
-  var note = state.lockedNotes.getOrDefault(noteId)
-  note.declarations.excl(declId)
-  if note.declarations.len == 0:
+  var declIds = state.lockedNotes.getOrDefault(noteId)
+  declIds.excl(declId)
+  if declIds.len == 0:
     state.lockedNotes = state.lockedNotes.remove(noteId)
   else:
-    state.lockedNotes = state.lockedNotes.insert(noteId, note)
+    state.lockedNotes = state.lockedNotes.insert(noteId, declIds)
   state
 
-func isDeclarationGarbage*(
-    info: DeclarationInfo,
-    params: ServiceParameters,
-    blockHeight: BlockNumber,
-): bool =
-  let sessionLen = params.sessionLength
-  if info.withdrawn != 0:
-    let retentionBlocks = params.retentionPeriod * sessionLen
-    if info.withdrawn + retentionBlocks < blockHeight:
-      return true
-  let inactiveRetentionBlocks =
-    (params.inactivityPeriod + params.retentionPeriod) * sessionLen
-  info.active + inactiveRetentionBlocks < blockHeight
-
-func collectGarbage*(
+func finalizeWithdrawals*(
     state: sink SdpState,
-    parameters: Table[ServiceType, ServiceParameters],
-    blockHeight: BlockNumber,
+    currentEpoch: EpochNumber,
 ): SdpState =
-  let toRemove = mapIt(
-    filterIt(toSeq(state.declarations.pairs),
-      it[1].service in parameters and
-      parameters.getOrDefault(it[1].service).timestamp <= blockHeight and
-      isDeclarationGarbage(
-        it[1], parameters.getOrDefault(it[1].service), blockHeight)),
-    it[0],
-  )
-  for declId in toRemove:
-    let info = state.declarations.getOrDefault(declId)
-    state = removeDeclarationFromLockedNote(state, info.lockedNoteId, declId)
-    state.declarations = state.declarations.remove(declId)
+  ## Removes declarations whose ``withdraw_at <= current_epoch - 2`` and
+  ## unlocks notes no longer bound to any declaration.
+  if currentEpoch < 2:
+    return state
+  let threshold = currentEpoch - 2
+  for declId, info in state.declarations.pairs:
+    if info.withdrawAt.valueOr(high(EpochNumber)) <= threshold:
+      state = removeDeclarationFromLockedNote(state, info.lockedNoteId, declId)
+      state.declarations = state.declarations.remove(declId)
   state
 
 {.pop.}

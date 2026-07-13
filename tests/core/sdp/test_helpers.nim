@@ -21,18 +21,14 @@ import
 
 export ops, utxo, utxo_store, operations
 
-const TestSecurityParam* = 1'u64
-
 func testSdpConfig*(): deploy.SdpConfig =
   deploy.SdpConfig(
-    bn: deploy.BnServiceParams(
-      lockPeriod: 5, inactivityPeriod: 1, retentionPeriod: 1, epoch: 0,
-    ),
-    minStake: deploy.MinStake(threshold: 100, timestamp: 0),
+    bn: deploy.BnServiceParams(inactivityPeriod: 2, epoch: 0),
+    minStake: deploy.MinStake(threshold: 100, epoch: 0),
   )
 
 func testSdpRegistry*(): SdpRegistry =
-  SdpRegistry.init(testSdpConfig(), TestSecurityParam)
+  SdpRegistry.init(testSdpConfig())
 
 proc mkProvider*(seed: byte): ProviderId =
   var bytes: array[EdPublicKeySize, byte]
@@ -47,18 +43,14 @@ proc mkLocator*(port: int): Locator =
 proc installTestDeclaration*(
     registry: var SdpRegistry,
     declaration: DeclarationMessage,
-    blockHeight: BlockNumber,
+    epoch: EpochNumber,
 ): DeclarationId =
   let declarationId = declarationId(declaration)
-  let params = getParametersAt(registry, declaration.serviceType, blockHeight).valueOr:
-    defaultBnServiceParameters()
-  let lockPeriod = params.lockPeriod
   registry.state = insertDeclaration(
     addDeclarationToLockedNote(
       registry.state,
       declaration.lockedNoteId,
       declarationId,
-      blockHeight + lockPeriod,
     ),
     declarationId,
     DeclarationInfo(
@@ -67,9 +59,9 @@ proc installTestDeclaration*(
       providerId: declaration.providerId,
       zkId: declaration.zkId,
       lockedNoteId: declaration.lockedNoteId,
-      created: blockHeight,
-      active: blockHeight,
-      withdrawn: 0'u64,
+      created: epoch,
+      active: Opt.none(EpochNumber),
+      withdrawAt: Opt.none(EpochNumber),
       nonce: 0'u64,
     ),
   )
@@ -78,11 +70,11 @@ proc installTestDeclaration*(
 proc installTestActive*(
     registry: var SdpRegistry,
     active: ActiveMessage,
-    blockHeight: BlockNumber,
+    epoch: EpochNumber,
 ) =
   var updated = registry.state.declarations.getOrDefault(active.declarationId)
   updated.nonce = active.nonce
-  updated.active = blockHeight
+  updated.active = Opt.some(epoch)
   registry.state = insertDeclaration(
     registry.state, active.declarationId, updated,
   )
@@ -90,15 +82,13 @@ proc installTestActive*(
 proc installTestWithdraw*(
     registry: var SdpRegistry,
     withdraw: WithdrawMessage,
-    blockHeight: BlockNumber,
+    epoch: EpochNumber,
 ) =
   var declaration = registry.state.declarations.getOrDefault(withdraw.declarationId)
   declaration.nonce = withdraw.nonce
-  declaration.withdrawn = blockHeight
-  registry.state = removeDeclarationFromLockedNote(
-    insertDeclaration(registry.state, withdraw.declarationId, declaration),
-    withdraw.lockedNoteId,
-    withdraw.declarationId,
+  declaration.withdrawAt = Opt.some(epoch)
+  registry.state = insertDeclaration(
+    registry.state, withdraw.declarationId, declaration,
   )
 
 func mkTxHash*(seed: byte = 0x42): ZkHash =
@@ -125,7 +115,7 @@ proc execDeclare*(
     registry: var SdpRegistry,
     declaration: DeclarationMessage,
     store: UtxoStore,
-    height: BlockNumber,
+    epoch: EpochNumber,
 ): Result[void, LedgerError] =
   tryApplySdpDeclare(
     registry,
@@ -133,13 +123,13 @@ proc execDeclare*(
     defaultDeclareProof(),
     mkTxHash(),
     store,
-    height,
+    epoch,
   )
 
 proc execWithdraw*(
     seeded: var SeededDeclaration,
     withdraw: WithdrawMessage,
-    height: BlockNumber,
+    epoch: EpochNumber,
 ): Result[void, LedgerError] =
   tryApplySdpWithdraw(
     seeded.registry,
@@ -147,24 +137,24 @@ proc execWithdraw*(
     defaultWithdrawProof(),
     mkTxHash(),
     seeded.store,
-    height,
+    epoch,
   )
 
 proc execActive*(
     seeded: var SeededDeclaration,
     active: ActiveMessage,
-    height: BlockNumber,
+    epoch: EpochNumber,
 ): Result[void, LedgerError] =
   tryApplySdpActive(
     seeded.registry,
     active,
     defaultActiveProof(),
     mkTxHash(),
-    height,
+    epoch,
   )
 
 proc seedDeclaration*(
-    pkSeed: byte = 1, declareHeight: BlockNumber = 10,
+    pkSeed: byte = 1, declareEpoch: EpochNumber = 10,
 ): SeededDeclaration =
   let utxo = mkUtxo(value = 200, pkSeed = pkSeed)
   var store = UtxoStore.init()
@@ -177,7 +167,7 @@ proc seedDeclaration*(
     zkId: utxo.note.zkPublicKey,
   )
   var registry = testSdpRegistry()
-  let declId = installTestDeclaration(registry, declaration, declareHeight)
+  let declId = installTestDeclaration(registry, declaration, declareEpoch)
   SeededDeclaration(
     registry: registry, store: store, declaration: declaration, declId: declId,
   )

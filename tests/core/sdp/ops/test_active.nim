@@ -15,7 +15,7 @@ import
 
 suite "core/sdp/ops/active":
   test "tryApplySdpActive rejects unknown declaration and bad nonce":
-    var seeded = seedDeclaration(pkSeed = 21, declareHeight = 10)
+    var seeded = seedDeclaration(pkSeed = 21, declareEpoch = 10)
     var unknown = ActiveMessage(
       declarationId: seeded.declId,
       nonce: 1,
@@ -31,8 +31,8 @@ suite "core/sdp/ops/active":
     )
     check execActive(seeded, stale, 15).isErr
 
-  test "tryApplySdpActive rejects withdrawn declaration":
-    var seeded = seedDeclaration(pkSeed = 22, declareHeight = 10)
+  test "tryApplySdpActive accepts declaration with withdraw intent":
+    var seeded = seedDeclaration(pkSeed = 22, declareEpoch = 10)
     let withdraw = WithdrawMessage(
       declarationId: seeded.declId,
       lockedNoteId: seeded.declaration.lockedNoteId,
@@ -44,18 +44,20 @@ suite "core/sdp/ops/active":
       nonce: 2,
       metadata: @[],
     )
-    check execActive(seeded, active, 16).isErr
+    installTestActive(seeded.registry, active, 15)
+    let info = getDeclaration(seeded.registry.state, seeded.declId).get()
+    check info.active == Opt.some(15'u64)
 
-  test "tryApplySdpActive updates active field and indexes event":
-    var seeded = seedDeclaration(pkSeed = 23, declareHeight = 10)
+  test "tryApplySdpActive updates active field":
+    var seeded = seedDeclaration(pkSeed = 23, declareEpoch = 10)
     let active = ActiveMessage(
       declarationId: seeded.declId,
       nonce: 1,
-      metadata: @[byte(42)],
+      metadata: @[],
     )
     installTestActive(seeded.registry, active, 25)
     let info = getDeclaration(seeded.registry.state, seeded.declId).get()
-    check info.active == 25'u64
+    check info.active == Opt.some(25'u64)
     check info.nonce == 1'u64
 
 {.pop.}

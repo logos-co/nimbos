@@ -5,7 +5,7 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-## Spec: [1.0.0 Service Declaration Protocol](https://nomos-tech.notion.site/1-0-0-Service-Declaration-Protocol-1fd261aa09df819ca9f8eb2bdfd4ec1d)
+## Spec: [1.1.0 Service Declaration Protocol](bedrock-service-declaration-protocol.md)
 
 {.push raises: [], gcsafe.}
 
@@ -26,9 +26,8 @@ proc validateSdpWithdraw(
     txHash: ZkHash,
     utxos: UtxoStore,
     state: SdpState,
-    blockHeight: BlockNumber,
     genesis: bool = false,
-): Result[void, LedgerError] =
+): Result[DeclarationInfo, LedgerError] =
   let declareInfo = ?loadDeclaration(state, withdraw.declarationId)
   ?checkNotWithdrawn(declareInfo)
   ?checkNonceMonotonic(declareInfo, withdraw.nonce)
@@ -38,18 +37,15 @@ proc validateSdpWithdraw(
 
   let lockedNote = getLockedNote(state, withdraw.lockedNoteId).valueOr:
     return err(LockedNoteNotFound)
-  if withdraw.declarationId notin lockedNote.declarations:
+  if withdraw.declarationId notin lockedNote:
     return err(DeclarationNotInLockedNote)
-
-  if lockedNote.lockedUntil > blockHeight:
-    return err(LockPeriodActive)
 
   if not genesis:
     let utxo = utxos.get(withdraw.lockedNoteId).valueOr:
       return err(LockedNoteNotFound)
     ?verifyZkSig(proof, txHash, @[utxo.note.zkPublicKey, declareInfo.zkId])
 
-  ok()
+  ok(declareInfo)
 
 proc tryApplySdpWithdraw*(
     registry: var SdpRegistry,
@@ -57,19 +53,17 @@ proc tryApplySdpWithdraw*(
     proof: ZkSigProof,
     txHash: ZkHash,
     utxos: UtxoStore,
-    blockHeight: BlockNumber,
+    epoch: EpochNumber,
     genesis: bool = false,
 ): Result[void, LedgerError] =
-  ?validateSdpWithdraw(
-    withdraw, proof, txHash, utxos, registry.state, blockHeight, genesis,
+  let declareInfo = ?validateSdpWithdraw(
+    withdraw, proof, txHash, utxos, registry.state, genesis,
   )
   var declaration = registry.state.declarations.getOrDefault(withdraw.declarationId)
   declaration.nonce = withdraw.nonce
-  declaration.withdrawn = blockHeight
-  registry.state = removeDeclarationFromLockedNote(
-    insertDeclaration(registry.state, withdraw.declarationId, declaration),
-    withdraw.lockedNoteId,
-    withdraw.declarationId,
+  declaration.withdrawAt = Opt.some(epoch)
+  registry.state = insertDeclaration(
+    registry.state, withdraw.declarationId, declaration,
   )
   ok()
 

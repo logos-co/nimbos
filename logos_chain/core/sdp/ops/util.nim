@@ -25,7 +25,7 @@ func loadDeclaration*(
   ok(info)
 
 func checkNotWithdrawn*(info: DeclarationInfo): Result[void, LedgerError] =
-  if info.withdrawn != 0:
+  if info.withdrawAt.isSome:
     return err(AlreadyWithdrawn)
   ok()
 

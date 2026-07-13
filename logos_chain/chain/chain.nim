@@ -33,10 +33,7 @@ func init*(T: type Chain, genesisBlock: Block, ledger: Ledger[BlockId], latestIm
 
 proc init*(T: type Chain, settings: DeploymentSettings): Result[T, string] =
   let genesisBlock = createGenesisBlock(settings.cryptarchia.genesisState.signedMantleTx)
-  let sdp = SdpRegistry.init(
-    settings.cryptarchia.sdpConfig,
-    settings.cryptarchia.securityParam.uint64,
-  )
+  let sdp = SdpRegistry.init(settings.cryptarchia.sdpConfig)
   let genesisState = LedgerState.fromGenesis(sdp, genesisBlock.txs).valueOr:
     return err("chain: failed to apply genesis block: " & $error)
   let ledger = Ledger[BlockId].init(blockId(genesisBlock.header), genesisState)

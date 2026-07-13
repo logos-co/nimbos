@@ -6,7 +6,7 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## SDP Declare validation and application.
-## Spec: [1.0.0 Service Declaration Protocol](https://nomos-tech.notion.site/1-0-0-Service-Declaration-Protocol-1fd261aa09df819ca9f8eb2bdfd4ec1d)
+## Spec: [1.1.0 Service Declaration Protocol](bedrock-service-declaration-protocol.md)
 
 {.push raises: [], gcsafe.}
 
@@ -75,24 +75,21 @@ proc tryApplySdpDeclare*(
     proof: ZkAndEd25519SigsProof,
     txHash: ZkHash,
     utxos: UtxoStore,
-    blockHeight: BlockNumber,
+    epoch: EpochNumber,
     genesis: bool = false,
 ): Result[void, LedgerError] =
-  let minStake = getMinStakeAt(registry, blockHeight).valueOr:
+  let minStake = getMinStakeAt(registry, epoch).valueOr:
     return err(MinStakeNotFound)
   let declarationId = ?validateSdpDeclare(
     declaration, proof, txHash, minStake, utxos, registry.state, genesis,
   )
-  let params = getParametersAt(
-    registry, declaration.serviceType, blockHeight,
-  ).valueOr:
+  if getParametersAt(registry, declaration.serviceType, epoch).isNone:
     return err(MissingServiceParameters)
   registry.state = insertDeclaration(
     addDeclarationToLockedNote(
       registry.state,
       declaration.lockedNoteId,
       declarationId,
-      blockHeight + params.lockPeriod,
     ),
     declarationId,
     DeclarationInfo(
@@ -101,9 +98,9 @@ proc tryApplySdpDeclare*(
       providerId: declaration.providerId,
       zkId: declaration.zkId,
       lockedNoteId: declaration.lockedNoteId,
-      created: blockHeight,
-      active: blockHeight,
-      withdrawn: 0'u64,
+      created: epoch,
+      active: Opt.none(EpochNumber),
+      withdrawAt: Opt.none(EpochNumber),
       nonce: 0'u64,
     ),
   )

@@ -99,13 +99,11 @@ cryptarchia:
   sdp_config:
     service_params:
       BN:
-        lock_period: 1
-        inactivity_period: 1
-        retention_period: 1
-        timestamp: 0
+        inactivity_period: 2
+        epoch: 0
     min_stake:
       threshold: 1
-      timestamp: 0
+      epoch: 0
   gossipsub_protocol: /a/cryp
 """ & deploymentGenesisBlockMin & """
   faucet_pk: '0000000000000000000000000000000000000000000000000000000000000001'
@@ -177,13 +175,11 @@ cryptarchia:
   sdp_config:
     service_params:
       BN:
-        lock_period: 1
-        inactivity_period: 1
-        retention_period: 1
-        timestamp: 0
+        inactivity_period: 2
+        epoch: 0
     min_stake:
       threshold: 1
-      timestamp: 0
+      epoch: 0
   gossipsub_protocol:
     - /a/cryp
 """ & deploymentGenesisBlockMin & """

@@ -6,7 +6,7 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## SDP Active validation and application.
-## Spec: [1.0.0 Service Declaration Protocol](https://nomos-tech.notion.site/1-0-0-Service-Declaration-Protocol-1fd261aa09df819ca9f8eb2bdfd4ec1d)
+## Spec: [1.1.0 Service Declaration Protocol](bedrock-service-declaration-protocol.md)
 
 {.push raises: [], gcsafe.}
 
@@ -22,12 +22,14 @@ func evaluateSdpActivity*(
     service: ServiceType,
     declaration: DeclarationInfo,
     metadata: Metadata,
-    blockHeight: BlockNumber,
+    epoch: EpochNumber,
     params: ServiceParameters,
 ): bool =
+  ## Service-specific activity check. Blend Network proof validation is not
+  ## implemented yet; BN currently accepts any metadata.
   discard declaration
   discard metadata
-  discard blockHeight
+  discard epoch
   discard params
   case service
   of ServiceType.bn:
@@ -41,7 +43,6 @@ proc validateSdpActive(
     genesis: bool = false,
 ): Result[void, LedgerError] =
   let declaration = ?loadDeclaration(state, active.declarationId)
-  ?checkNotWithdrawn(declaration)
   ?checkNonceMonotonic(declaration, active.nonce)
 
   if not genesis:
@@ -54,23 +55,23 @@ proc tryApplySdpActive*(
     active: ActiveMessage,
     proof: ZkSigProof,
     txHash: Hash32,
-    blockHeight: BlockNumber,
+    epoch: EpochNumber,
     genesis: bool = false,
 ): Result[void, LedgerError] =
   ?validateSdpActive(active, proof, txHash, registry.state, genesis)
   let declaration = registry.state.declarations.getOrDefault(active.declarationId)
   let params = getParametersAt(
-    registry, declaration.service, blockHeight,
+    registry, declaration.service, epoch,
   ).valueOr:
     return err(MissingServiceParameters)
   if not evaluateSdpActivity(
-    declaration.service, declaration, active.metadata, blockHeight, params,
+    declaration.service, declaration, active.metadata, epoch, params,
   ):
     return err(ActivityRejected)
 
   var updated = declaration
   updated.nonce = active.nonce
-  updated.active = blockHeight
+  updated.active = Opt.some(epoch)
   registry.state = insertDeclaration(registry.state, active.declarationId, updated)
   ok()
 

@@ -81,12 +81,12 @@ suite "core/sdp/ops/declare":
     check declareResult.isErr
     check declareResult.error == TooManyLocators
 
-  test "tryApplySdpDeclare stores declaration and indexes created event":
-    let seeded = seedDeclaration(pkSeed = 4, declareHeight = 10)
+  test "tryApplySdpDeclare stores declaration":
+    let seeded = seedDeclaration(pkSeed = 4, declareEpoch = 10)
     let info = getDeclaration(seeded.registry.state, seeded.declId).get()
     check info.created == 10'u64
-    check info.active == 10'u64
-    check info.withdrawn == 0'u64
+    check info.active.isNone
+    check info.withdrawAt.isNone
     check info.nonce == 0'u64
     check getLockedNote(seeded.registry.state, seeded.declaration.lockedNoteId).isSome
 

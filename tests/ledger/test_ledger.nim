@@ -105,7 +105,7 @@ suite "tryApplyTx — structural error paths":
         ),
         opProofs: @[],
       ) # zero proofs vs one op
-      r = s0.tryApplyTx(tx, blockHeight = 0'u64, slot = 0'u64)
+      r = s0.tryApplyTx(tx, epoch = 0'u64, slot = 0'u64)
     check r.isErr
     check r.error == InvalidProof
 
@@ -129,7 +129,7 @@ suite "tryApplyTx — structural error paths":
             )
           ],
       )
-      r = s0.tryApplyTx(tx, blockHeight = 0'u64, slot = 0'u64)
+      r = s0.tryApplyTx(tx, epoch = 0'u64, slot = 0'u64)
     check r.isErr
     check r.error == UnsupportedOp
 
@@ -156,7 +156,7 @@ suite "tryApplyTx — structural error paths":
             )
           ],
       )
-      r = s0.tryApplyTx(tx, blockHeight = 0'u64, slot = 0'u64)
+      r = s0.tryApplyTx(tx, epoch = 0'u64, slot = 0'u64)
     check r.isErr
     check r.error == InvalidProof
 
@@ -174,7 +174,7 @@ suite "Ledger[Id] map ops":
     let
       id2 = mkId(0x02)
       st2 = LedgerState.fromUtxos(@[mkUtxo(value = 7, pkSeed = 7)], testSdpRegistry())
-    l.commitUpdate(id2, blockHeight = 1'u64, st2)
+    l.commitUpdate(id2, epoch = 1'u64, st2)
     check l.state(id2).isSome
     check l.state(id2).get.latestUtxos.len == 1
 
@@ -194,7 +194,7 @@ suite "prepareUpdate — no-verify paths":
         slot = 1'u64,
         proof = mkProof(),
         txs = @[],
-        blockHeight = 1'u64,
+        epoch = 1'u64,
       )
     check r.isErr
     check r.error == ParentNotFound
@@ -211,7 +211,7 @@ suite "prepareUpdate — no-verify paths":
         slot = 1'u64,
         proof = mkProof(),
         txs = @[],
-        blockHeight = 1'u64,
+        epoch = 1'u64,
       )
     check r.isOk
     let prepared = r.get
@@ -246,7 +246,7 @@ suite "tryApplyTx — happy path (Rust-generated fixture)":
           OpProof(kind: opfTransfer, transferProof: loadProof(transferProofPath)),
         ],
       )
-      r = s0.tryApplyTx(tx, blockHeight = 0'u64, slot = 0'u64)
+      r = s0.tryApplyTx(tx, epoch = 0'u64, slot = 0'u64)
     check r.isOk
 
     let res = r.get
@@ -285,7 +285,7 @@ when false:
               OpProof(kind: opfTransfer, transferProof: default(ZkSigProof)),
             ],
         )
-        r = s0.tryApplyTx(tx, blockHeight = 0'u64, slot = 0'u64)
+        r = s0.tryApplyTx(tx, epoch = 0'u64, slot = 0'u64)
       check r.isOk
       let res = r.get
       check res.balance == Balance.zero
@@ -319,7 +319,7 @@ when false:
               OpProof(kind: opfChannelInscribe, ed25519SigProof: default(Ed25519SigProof)),
             ],
         )
-        r = s0.tryApplyTx(tx, blockHeight = 0'u64, slot = 0'u64)
+        r = s0.tryApplyTx(tx, epoch = 0'u64, slot = 0'u64)
       check r.isErr
       check r.error == InvalidProof
 
@@ -329,7 +329,7 @@ when false:
         input = mkUtxo(value = 100, pkSeed = 1)
         s0 = LedgerState.fromUtxos([input], testSdpRegistry())
         tx = mkTransferTx([input.id], [mkNote(100, pkSeed = 2)])
-        r = s0.tryApplyTxns([tx], blockHeight = 0'u64, slot = 0'u64)
+        r = s0.tryApplyTxns([tx], epoch = 0'u64, slot = 0'u64)
       check r.isOk
       check r.get.latestUtxos.len == 1
 
@@ -339,7 +339,7 @@ when false:
         s0 = LedgerState.fromUtxos([input], testSdpRegistry())
         tx = mkTransferTx([input.id], [mkNote(60, pkSeed = 2), mkNote(50, pkSeed = 3)])
           # sum 110 > input 100
-        r = s0.tryApplyTxns([tx], blockHeight = 0'u64, slot = 0'u64)
+        r = s0.tryApplyTxns([tx], epoch = 0'u64, slot = 0'u64)
       check r.isErr
       check r.error == InsufficientBalance
 
@@ -348,7 +348,7 @@ when false:
         input = mkUtxo(value = 100, pkSeed = 1)
         s0 = LedgerState.fromUtxos([input], testSdpRegistry())
         tx = mkTransferTx([input.id], [mkNote(50, pkSeed = 2)]) # output 50 < input 100
-        r = s0.tryApplyTxns([tx], blockHeight = 0'u64, slot = 0'u64)
+        r = s0.tryApplyTxns([tx], epoch = 0'u64, slot = 0'u64)
       check r.isErr
       check r.error == UnbalancedTransaction
 
@@ -366,11 +366,11 @@ when false:
           slot = 1'u64,
           proof = mkProof(),
           txs = @[tx],
-          blockHeight = 1'u64,
+          epoch = 1'u64,
         )
       check r.isOk
       let prepared = r.get
-      l.commitUpdate(prepared.id, blockHeight = 1'u64, prepared.state)
+      l.commitUpdate(prepared.id, epoch = 1'u64, prepared.state)
       check l.state(mkId(0x02)).isSome
       check l.state(mkId(0x02)).get.latestUtxos.len == 1
       check not l.state(mkId(0x02)).get.latestUtxos.contains(input.id)
@@ -386,7 +386,7 @@ when false:
           slot = 1'u64,
           proof = mkProof(),
           txs = @[tx],
-          blockHeight = 1'u64,
+          epoch = 1'u64,
         )
       check r.isErr
       check r.error == UnbalancedTransaction
@@ -408,10 +408,10 @@ when false:
           slot = 1'u64,
           proof = mkProof(),
           txs = @[tx1],
-          blockHeight = 1'u64,
+          epoch = 1'u64,
         )
       check r1.isOk
-      l.commitUpdate(r1.get.id, blockHeight = 1'u64, r1.get.state)
+      l.commitUpdate(r1.get.id, epoch = 1'u64, r1.get.state)
 
       let
         tx1OpId = opId(
@@ -433,10 +433,10 @@ when false:
           slot = 2'u64,
           proof = mkProof(),
           txs = @[tx2],
-          blockHeight = 1'u64,
+          epoch = 1'u64,
         )
       check r2.isOk
-      l.commitUpdate(r2.get.id, blockHeight = 1'u64, r2.get.state)
+      l.commitUpdate(r2.get.id, epoch = 1'u64, r2.get.state)
 
       let
         tx2OpId = opId(
@@ -459,10 +459,10 @@ when false:
           slot = 3'u64,
           proof = mkProof(),
           txs = @[tx3],
-          blockHeight = 1'u64,
+          epoch = 1'u64,
         )
       check r3.isOk
-      l.commitUpdate(r3.get.id, blockHeight = 1'u64, r3.get.state)
+      l.commitUpdate(r3.get.id, epoch = 1'u64, r3.get.state)
 
       check l.state(mkId(0x00)).isSome
       check l.state(mkId(0x01)).isSome
@@ -475,7 +475,7 @@ when false:
       check not l.state(mkId(0x03)).get.latestUtxos.contains(utxoAfter2.id)
 
 suite "tryApplyTx — SDP":
-  test "declare locks note; withdraw unlocks it":
+  test "declare locks note; withdraw unlocks after finalization":
     let input = mkUtxo(value = 200, pkSeed = 1)
     var state = LedgerState.fromUtxos([input], testSdpRegistry())
     let declaration = DeclarationMessage(
@@ -485,7 +485,7 @@ suite "tryApplyTx — SDP":
       lockedNoteId: input.id,
       zkId: input.note.zkPublicKey,
     )
-    let declId = installTestDeclaration(state.sdp, declaration, blockHeight = 1)
+    let declId = installTestDeclaration(state.sdp, declaration, epoch = 1)
     check declId in state.sdp.state.declarations
 
     let spendOp = TransferPayload(
@@ -503,7 +503,13 @@ suite "tryApplyTx — SDP":
       lockedNoteId: input.id,
       nonce: 1,
     )
-    installTestWithdraw(state.sdp, withdraw, blockHeight = 6)
+    installTestWithdraw(state.sdp, withdraw, epoch = 5)
+    let stillLocked = state.cryptarchiaLedger.applyTransferState(
+      getLockedNotes(state.sdp.state), spendOp,
+    )
+    check stillLocked.isErr
+
+    state.sdp.state = finalizeWithdrawals(state.sdp.state, 7)
     let unlocked = state.cryptarchiaLedger.applyTransferState(
       getLockedNotes(state.sdp.state), spendOp,
     )
@@ -519,7 +525,7 @@ suite "tryApplyTx — SDP":
       lockedNoteId: input.id,
       zkId: input.note.zkPublicKey,
     )
-    discard installTestDeclaration(parent.sdp, declaration, blockHeight = 1)
+    discard installTestDeclaration(parent.sdp, declaration, epoch = 1)
     let id0 = mkId(0x10)
     var l = Ledger[TestId].init(id0, parent)
     let r = l.prepareUpdate(
@@ -528,10 +534,10 @@ suite "tryApplyTx — SDP":
       slot = 1'u64,
       proof = mkProof(),
       txs = @[],
-      blockHeight = 1'u64,
+      epoch = 1'u64,
     )
     check r.isOk
-    l.commitUpdate(r.get.id, blockHeight = 1'u64, r.get.state)
+    l.commitUpdate(r.get.id, epoch = 1'u64, r.get.state)
     check declarationId(declaration) in l.state(mkId(0x11)).get.sdp.state.declarations
 
 {.pop.}

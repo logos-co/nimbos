@@ -6,7 +6,7 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## SDP declare / withdraw / active validation and application.
-## Spec: [1.0.0 Service Declaration Protocol](https://nomos-tech.notion.site/1-0-0-Service-Declaration-Protocol-1fd261aa09df819ca9f8eb2bdfd4ec1d)
+## Spec: [1.1.0 Service Declaration Protocol](bedrock-service-declaration-protocol.md)
 
 {.push raises: [], gcsafe.}
 

@@ -14,8 +14,8 @@ import
   ../test_helpers
 
 suite "core/sdp/ops/withdraw":
-  test "tryApplySdpWithdraw rejects unknown declaration and lock period":
-    var seeded = seedDeclaration(pkSeed = 11, declareHeight = 10)
+  test "tryApplySdpWithdraw rejects unknown declaration":
+    var seeded = seedDeclaration(pkSeed = 11, declareEpoch = 10)
     var unknown = WithdrawMessage(
       declarationId: seeded.declId,
       lockedNoteId: seeded.declaration.lockedNoteId,
@@ -24,15 +24,8 @@ suite "core/sdp/ops/withdraw":
     unknown.declarationId[0] = byte(99)
     check execWithdraw(seeded, unknown, 15).isErr
 
-    let tooEarly = WithdrawMessage(
-      declarationId: seeded.declId,
-      lockedNoteId: seeded.declaration.lockedNoteId,
-      nonce: 1,
-    )
-    check execWithdraw(seeded, tooEarly, 14).isErr
-
   test "tryApplySdpWithdraw rejects bad nonce and already withdrawn":
-    var seeded = seedDeclaration(pkSeed = 12, declareHeight = 10)
+    var seeded = seedDeclaration(pkSeed = 12, declareEpoch = 10)
     let withdraw = WithdrawMessage(
       declarationId: seeded.declId,
       lockedNoteId: seeded.declaration.lockedNoteId,
@@ -46,17 +39,23 @@ suite "core/sdp/ops/withdraw":
     replay.nonce = 0
     check execWithdraw(seeded, replay, 16).isErr
 
-  test "tryApplySdpWithdraw unlocks note and indexes withdrawn event":
-    var seeded = seedDeclaration(pkSeed = 13, declareHeight = 10)
+  test "tryApplySdpWithdraw sets withdraw_at and keeps note locked until finalization":
+    var seeded = seedDeclaration(pkSeed = 13, declareEpoch = 10)
     let withdraw = WithdrawMessage(
       declarationId: seeded.declId,
       lockedNoteId: seeded.declaration.lockedNoteId,
       nonce: 1,
     )
-    installTestWithdraw(seeded.registry, withdraw, 20)
+    installTestWithdraw(seeded.registry, withdraw, 5)
     let info = getDeclaration(seeded.registry.state, seeded.declId).get()
-    check info.withdrawn == 20'u64
+    check info.withdrawAt == Opt.some(5'u64)
     check info.nonce == 1'u64
+    check getLockedNote(seeded.registry.state, seeded.declaration.lockedNoteId).isSome
+
+    seeded.registry.state = finalizeWithdrawals(seeded.registry.state, 6)
+    check getDeclaration(seeded.registry.state, seeded.declId).isSome
+    seeded.registry.state = finalizeWithdrawals(seeded.registry.state, 7)
+    check getDeclaration(seeded.registry.state, seeded.declId).isNone
     check getLockedNote(seeded.registry.state, seeded.declaration.lockedNoteId).isNone
 
 {.pop.}

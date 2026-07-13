@@ -69,7 +69,7 @@ proc tryApplyHeader*(
 proc tryApplyTx*(
     state: sink LedgerState,
     tx: SignedMantleTx,
-    blockHeight: BlockNumber,
+    epoch: EpochNumber,
     slot: SlotNumber,
     genesis: bool = false,
 ): Result[tuple[state: LedgerState, balance: Balance], LedgerError] =
@@ -106,7 +106,7 @@ proc tryApplyTx*(
         proof.declarationProof,
         txHash,
         s.cryptarchiaLedger.latestUtxos,
-        blockHeight,
+        epoch,
         genesis,
       )
     of SdpWithdraw:
@@ -118,7 +118,7 @@ proc tryApplyTx*(
         proof.sdpWithdrawProof,
         txHash,
         s.cryptarchiaLedger.latestUtxos,
-        blockHeight,
+        epoch,
         genesis,
       )
     of SdpActive:
@@ -129,7 +129,7 @@ proc tryApplyTx*(
         op.payload.sdpActive,
         proof.sdpActiveProof,
         txHash,
-        blockHeight,
+        epoch,
         genesis,
       )
     of ChannelInscribe:
@@ -167,7 +167,7 @@ proc tryApplyTx*(
 proc tryApplyTxns*(
     state: sink LedgerState,
     txs: openArray[SignedMantleTx],
-    blockHeight: BlockNumber,
+    epoch: EpochNumber,
     slot: SlotNumber,
     genesis: bool = false,
 ): Result[LedgerState, LedgerError] =
@@ -177,7 +177,7 @@ proc tryApplyTxns*(
   ## skipped (trusted genesis mints need not balance).
   var s = state
   for tx in txs:
-    let r = ?s.tryApplyTx(tx, blockHeight, slot, genesis)
+    let r = ?s.tryApplyTx(tx, epoch, slot, genesis)
     s = r.state
     if genesis:
       continue
@@ -212,13 +212,14 @@ func config*[Id](l: Ledger[Id]): lent LedgerConfig =
 proc commitUpdate*[Id](
     l: var Ledger[Id],
     id: Id,
-    blockHeight: BlockNumber,
+    epoch: EpochNumber,
     state: sink LedgerState,
 ) =
-  ## Installs ``state`` at ``id`` and runs per-block SDP housekeeping (GC,
-  ## session snapshots) once the block is accepted.
-  let parentHeight = if blockHeight > 0: blockHeight - 1 else: 0'u64
-  onBlockApplied(state.sdp, parentHeight, blockHeight)
+  ## Installs ``state`` at ``id`` and runs SDP epoch-boundary updates
+  ## (withdrawal finalization, epoch snapshots) once the block is accepted.
+  
+  let parentEpoch = if epoch > 0: epoch - 1 else: 0'u64
+  onEpochStarted(state.sdp, parentEpoch, epoch)
   l.states[id] = state
 
 func pruneStateAt*[Id](l: var Ledger[Id], id: Id): bool =
@@ -233,15 +234,15 @@ proc fromGenesis*(
     sdp: sink SdpRegistry,
     genesisTxs: openArray[SignedMantleTx],
 ): Result[LedgerState, LedgerError] =
-  ## Builds genesis ledger state by applying genesis transactions at height 0.
+  ## Builds genesis ledger state by applying genesis transactions at epoch 0.
   ## Genesis proofs are trusted from deployment settings and are not verified.
   var state = LedgerState(
     cryptarchiaLedger: CryptarchiaState.init(),
     sdp: sdp,
     mantleLedger: MantleState.init(),
   )
-  state = ?state.tryApplyTxns(genesisTxs, blockHeight = 0'u64, slot = 0'u64, genesis = true)
-  onBlockApplied(state.sdp, previousBlockNumber = 0'u64, blockNumber = 0'u64)
+  state = ?state.tryApplyTxns(genesisTxs, epoch = 0'u64, slot = 0'u64, genesis = true)
+  onEpochStarted(state.sdp, previousEpoch = 0'u64, epoch = 0'u64)
   ok(state)
 
 proc prepareUpdate*[Id](
@@ -250,17 +251,17 @@ proc prepareUpdate*[Id](
     slot: SlotNumber,
     proof: ProofOfLeadership,
     txs: openArray[SignedMantleTx],
-    blockHeight: BlockNumber,
+    epoch: EpochNumber,
 ): Result[tuple[id: Id, state: LedgerState], LedgerError] =
   ## Validates a block's header + transactions against the parent state.
   ## Caller invokes `commitUpdate` to install the result and run SDP
-  ## block-boundary updates, or drops it to reject.
+  ## epoch-boundary updates, or drops it to reject.
   if parentId notin l.states:
     return err(ParentNotFound)
   let
     parent = l.states.getOrDefault(parentId)
     afterHeader = ?parent.tryApplyHeader(slot, proof)
-    afterTxs = ?afterHeader.tryApplyTxns(txs, blockHeight, slot)
+    afterTxs = ?afterHeader.tryApplyTxns(txs, epoch, slot)
   ok((id: id, state: afterTxs))
 
 {.pop.}

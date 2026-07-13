@@ -9,6 +9,7 @@
 {.used.}
 
 import
+  results,
   std/tables,
   unittest2,
   ../../../logos_chain/core/sdp/registry,
@@ -21,53 +22,57 @@ suite "core/sdp/registry":
     check getParametersAt(registry, ServiceType.bn, 100).isSome
 
     appendParameters(registry, ServiceType.bn, ServiceParameters(
-      sessionLength: 10, lockPeriod: 1, timestamp: 0,
-    ), TestSecurityParam)
+      inactivityPeriod: 2, epoch: 0,
+    ))
     check registry.params.parameters.len == 1
-    check getParametersAt(registry, ServiceType.bn, 100).get().sessionLength == 10'u64
+    check getParametersAt(registry, ServiceType.bn, 100).get().inactivityPeriod == 2'u64
 
     appendParameters(registry, ServiceType.bn, ServiceParameters(
-      sessionLength: 20, lockPeriod: 2, timestamp: 50,
-    ), TestSecurityParam)
+      inactivityPeriod: 3, epoch: 50,
+    ))
     check registry.params.parameters.len == 1
     check getParametersAt(registry, ServiceType.bn, 25).isNone
-    check getParametersAt(registry, ServiceType.bn, 50).get().sessionLength == 20'u64
+    check getParametersAt(registry, ServiceType.bn, 50).get().inactivityPeriod == 3'u64
 
   test "stores versioned minimum stake entries":
     var registry = testSdpRegistry()
     check registry.params.stakeThresholds.len == 1
     check getMinStakeAt(registry, 100).isSome
 
-    appendMinStake(registry, MinStake(stakeThreshold: 1000, timestamp: 0))
-    appendMinStake(registry, MinStake(stakeThreshold: 2000, timestamp: 50))
+    appendMinStake(registry, MinStake(stakeThreshold: 1000, epoch: 0))
+    appendMinStake(registry, MinStake(stakeThreshold: 2000, epoch: 50))
     check registry.params.stakeThresholds.len == 3
     check getMinStakeAt(registry, 25).get().stakeThreshold == 1000'u64
     check getMinStakeAt(registry, 50).get().stakeThreshold == 2000'u64
     check getMinStakeAt(registry, 100).get().stakeThreshold == 2000'u64
 
-  test "bundles state, index, and params":
+  test "bundles state, snapshots, and params":
     var registry = testSdpRegistry()
     check registry.state.declarations.len == 0
-    check registry.index.sessions.len == 0
+    check registry.snapshots.len == 0
     check registry.params.parameters.len == 1
     check registry.params.stakeThresholds.len == 1
 
-suite "core/sdp/registry — session snapshots":
-  const SessionLen = 10'u64
+  test "onEpochStarted finalizes pending withdrawals":
+    var seeded = seedDeclaration(pkSeed = 30, declareEpoch = 1)
+    let withdraw = WithdrawMessage(
+      declarationId: seeded.declId,
+      lockedNoteId: seeded.declaration.lockedNoteId,
+      nonce: 1,
+    )
+    installTestWithdraw(seeded.registry, withdraw, 5)
+    check getDeclaration(seeded.registry.state, seeded.declId).isSome
+    onEpochStarted(seeded.registry, previousEpoch = 6, epoch = 7)
+    check getDeclaration(seeded.registry.state, seeded.declId).isNone
 
-  proc withShortSessions(registry: var SdpRegistry) =
-    appendParameters(registry, ServiceType.bn, ServiceParameters(
-      sessionLength: SessionLen, lockPeriod: 1, timestamp: 0,
-    ), TestSecurityParam)
-
-  test "sessions 0 and 1 use genesis snapshot at block 0":
+suite "core/sdp/registry — epoch snapshots":
+  test "epochs 0 and 1 use genesis snapshot":
     var registry = testSdpRegistry()
-    withShortSessions(registry)
-    onBlockApplied(registry, previousBlockNumber = 0, blockNumber = 0)
-    check getSessionSnapshot(registry.index.sessions, ServiceType.bn, 0).isSome
-    check getSessionSnapshot(registry.index.sessions, ServiceType.bn, 1).isSome
-    check getSessionSnapshot(registry.index.sessions, ServiceType.bn, 0).get() ==
-      getSessionSnapshot(registry.index.sessions, ServiceType.bn, 1).get()
+    onEpochStarted(registry, previousEpoch = 0, epoch = 0)
+    check getEpochSnapshot(registry.snapshots, ServiceType.bn, 0).isSome
+    check getEpochSnapshot(registry.snapshots, ServiceType.bn, 1).isSome
+    check getEpochSnapshot(registry.snapshots, ServiceType.bn, 0).get() ==
+      getEpochSnapshot(registry.snapshots, ServiceType.bn, 1).get()
 
     var declId: DeclarationId
     declId[0] = 1
@@ -80,41 +85,44 @@ suite "core/sdp/registry — session snapshots":
         zkId: default(ZkPublicKey),
         locators: @[],
         created: 1,
-        active: 1,
-        withdrawn: 0,
+        active: Opt.none(EpochNumber),
+        withdrawAt: Opt.none(EpochNumber),
         nonce: 0,
       ),
     )
-    check getSessionSnapshot(registry.index.sessions, ServiceType.bn, 0).get()
+    check getEpochSnapshot(registry.snapshots, ServiceType.bn, 0).get()
       .declarations.len == 0
 
-  test "takes S_n when session n-1 starts":
+  test "takes S_n when epoch n-2 starts":
     var registry = testSdpRegistry()
-    withShortSessions(registry)
-    onBlockApplied(registry, previousBlockNumber = 9, blockNumber = 10)
-    check getSessionSnapshot(registry.index.sessions, ServiceType.bn, 2).isSome
+    onEpochStarted(registry, previousEpoch = 0, epoch = 1)
+    check getEpochSnapshot(registry.snapshots, ServiceType.bn, 3).isSome
 
-  test "takes next snapshot and prunes ended session on boundary":
+  test "takes next snapshot and prunes ended epoch on boundary":
     var registry = testSdpRegistry()
-    withShortSessions(registry)
-    onBlockApplied(registry, previousBlockNumber = 9, blockNumber = 10)
-    check getSessionSnapshot(registry.index.sessions, ServiceType.bn, 2).isSome
+    onEpochStarted(registry, previousEpoch = 0, epoch = 1)
+    check getEpochSnapshot(registry.snapshots, ServiceType.bn, 3).isSome
 
-    onBlockApplied(registry, previousBlockNumber = 19, blockNumber = 20)
-    check getSessionSnapshot(registry.index.sessions, ServiceType.bn, 2).isSome
-    check getSessionSnapshot(registry.index.sessions, ServiceType.bn, 3).isSome
+    onEpochStarted(registry, previousEpoch = 1, epoch = 2)
+    check getEpochSnapshot(registry.snapshots, ServiceType.bn, 3).isSome
+    check getEpochSnapshot(registry.snapshots, ServiceType.bn, 4).isSome
 
-    onBlockApplied(registry, previousBlockNumber = 29, blockNumber = 30)
-    check getSessionSnapshot(registry.index.sessions, ServiceType.bn, 2).isNone
-    check getSessionSnapshot(registry.index.sessions, ServiceType.bn, 3).isSome
-    check getSessionSnapshot(registry.index.sessions, ServiceType.bn, 4).isSome
+    onEpochStarted(registry, previousEpoch = 2, epoch = 3)
+    check getEpochSnapshot(registry.snapshots, ServiceType.bn, 3).isSome
+    check getEpochSnapshot(registry.snapshots, ServiceType.bn, 4).isSome
+    check getEpochSnapshot(registry.snapshots, ServiceType.bn, 5).isSome
+
+    onEpochStarted(registry, previousEpoch = 3, epoch = 4)
+    check getEpochSnapshot(registry.snapshots, ServiceType.bn, 3).isNone
+    check getEpochSnapshot(registry.snapshots, ServiceType.bn, 4).isSome
+    check getEpochSnapshot(registry.snapshots, ServiceType.bn, 5).isSome
+    check getEpochSnapshot(registry.snapshots, ServiceType.bn, 6).isSome
 
   test "snapshots are isolated from later live state":
     var registry = testSdpRegistry()
-    withShortSessions(registry)
-    onBlockApplied(registry, previousBlockNumber = 9, blockNumber = 10)
-    let snap2 = getSessionSnapshot(registry.index.sessions, ServiceType.bn, 2).get()
-    check snap2.declarations.len == 0
+    onEpochStarted(registry, previousEpoch = 0, epoch = 1)
+    let snap3 = getEpochSnapshot(registry.snapshots, ServiceType.bn, 3).get()
+    check snap3.declarations.len == 0
 
     var declId: DeclarationId
     declId[0] = 1
@@ -126,26 +134,20 @@ suite "core/sdp/registry — session snapshots":
         lockedNoteId: default(NoteId),
         zkId: default(ZkPublicKey),
         locators: @[],
-        created: 15,
-        active: 15,
-        withdrawn: 0,
+        created: 2,
+        active: Opt.none(EpochNumber),
+        withdrawAt: Opt.none(EpochNumber),
         nonce: 0,
       ),
     )
     check registry.state.declarations.len == 1
-    check getSessionSnapshot(registry.index.sessions, ServiceType.bn, 2).get()
+    check getEpochSnapshot(registry.snapshots, ServiceType.bn, 3).get()
       .declarations.len == 0
 
-  test "retains at most two session snapshots in steady state":
+  test "retains at most three epoch snapshots in steady state":
     var registry = testSdpRegistry()
-    withShortSessions(registry)
-    for i in 1 .. 6:
-      let boundary = uint64(i) * SessionLen
-      onBlockApplied(
-        registry,
-        previousBlockNumber = boundary - 1,
-        blockNumber = boundary,
-      )
-      check registry.index.sessions.getOrDefault(ServiceType.bn).len <= 2
+    for epoch in 1'u64 .. 6'u64:
+      onEpochStarted(registry, previousEpoch = epoch - 1, epoch = epoch)
+      check registry.snapshots.getOrDefault(ServiceType.bn).len <= 3
 
 {.pop.}

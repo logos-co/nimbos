@@ -6,33 +6,26 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## SDP domain types layered on top of Bedrock mantle primitives.
-## Spec: [1.0.0 Service Declaration Protocol](https://nomos-tech.notion.site/1-0-0-Service-Declaration-Protocol-1fd261aa09df819ca9f8eb2bdfd4ec1d)
+## Spec: [1.1.0 Service Declaration Protocol](bedrock-service-declaration-protocol.md)
 ## Spec: [v1.5.0 Mantle](https://nomos-tech.notion.site/1-5-0-Mantle-33d261aa09df8051b0d0cd4d5ddade85)
 
 {.push raises: [], gcsafe.}
 
 import
-  std/sets,
+  results,
   ../mantle/[primitives, operations],
   ../crypto/hashing
 
-export primitives
+export primitives, results
 
 type
-  LockedNote* = object
-    declarations*: HashSet[DeclarationId]
-    lockedUntil*: BlockNumber
-
   MinStake* = object
     stakeThreshold*: uint64
-    timestamp*: BlockNumber
+    epoch*: EpochNumber
 
   ServiceParameters* = object
-    sessionLength*: uint64
-    lockPeriod*: uint64
     inactivityPeriod*: uint64
-    retentionPeriod*: uint64
-    timestamp*: BlockNumber
+    epoch*: EpochNumber
 
   DeclarationInfo* = object
     service*: ServiceType
@@ -40,18 +33,15 @@ type
     lockedNoteId*: NoteId
     zkId*: ZkPublicKey
     locators*: seq[Locator]
-    created*: BlockNumber
-    active*: BlockNumber
-    withdrawn*: BlockNumber
+    created*: EpochNumber
+    active*: Opt[EpochNumber]
+    withdrawAt*: Opt[EpochNumber]
     nonce*: Nonce
 
-func defaultBnServiceParameters*(timestamp: BlockNumber = 0): ServiceParameters =
+func defaultBnServiceParameters*(epoch: EpochNumber = 0): ServiceParameters =
   ServiceParameters(
-    sessionLength: 21600'u64,
-    lockPeriod: 1'u64,
-    inactivityPeriod: 1'u64,
-    retentionPeriod: 1'u64,
-    timestamp: timestamp,
+    inactivityPeriod: 2'u64,
+    epoch: epoch,
   )
 
 func declarationId*(declaration: DeclarationMessage): DeclarationId =

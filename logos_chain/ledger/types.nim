@@ -46,7 +46,6 @@ type
     InvalidNonce
     LockedNoteIdMismatch
     DeclarationNotInLockedNote
-    LockPeriodActive
     ActivityRejected
     ChannelNotFound ## ChannelDeposit/Withdraw references a missing ChannelId
     InvalidParent ## ChannelInscribe parent doesn't match the channel's tipMessage

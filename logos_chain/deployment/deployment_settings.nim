@@ -69,14 +69,12 @@ type
     denominator*: int
 
   BnServiceParams* = object
-    lockPeriod*: int
     inactivityPeriod*: int
-    retentionPeriod*: int
     epoch*: int
 
   MinStake* = object
     threshold*: int
-    timestamp*: int
+    epoch*: int
 
   SdpConfig* = object
     bn*: BnServiceParams
@@ -134,39 +132,15 @@ func validateDeploymentSettingsStructure(root: YamlNode): Result[void, string] =
   needPath(["cryptarchia", "slot_activation_coeff", "denominator"])
   needPath(["cryptarchia", "learning_rate"])
   needPath(["cryptarchia", "sdp_config", "service_params", "BN", "inactivity_period"])
-  needPath(["cryptarchia", "sdp_config", "service_params", "BN", "retention_period"])
-  let bnNode = yamlGetPathNode(root, ["cryptarchia", "sdp_config", "service_params", "BN"]).valueOr:
-    return err("deployment-settings: missing or invalid path: cryptarchia.sdp_config.service_params.BN")
-  if yamlGetPathNode(bnNode, ["epoch"]).isNone and yamlGetPathNode(bnNode, ["timestamp"]).isNone:
-    return err("deployment-settings: missing or invalid path: cryptarchia.sdp_config.service_params.BN.epoch")
+  needPath(["cryptarchia", "sdp_config", "service_params", "BN", "epoch"])
   needPath(["cryptarchia", "sdp_config", "min_stake", "threshold"])
-  needPath(["cryptarchia", "sdp_config", "min_stake", "timestamp"])
+  needPath(["cryptarchia", "sdp_config", "min_stake", "epoch"])
   needPath(["cryptarchia", "gossipsub_protocol"])
   needPath(["cryptarchia", "faucet_pk"])
   ? validateCryptarchiaGenesisYaml(root)
   needPath(["time", "slot_duration"])
   needPath(["mempool", "pubsub_topic"])
   ok()
-
-func reqBnServiceParams(root: YamlNode): Result[BnServiceParams, string] =
-  let lockPeriod =
-    if yamlGetPathNode(root, ["cryptarchia", "sdp_config", "service_params", "BN", "lock_period"]).isSome:
-      ? reqInt(root, ["cryptarchia", "sdp_config", "service_params", "BN", "lock_period"])
-    else:
-      1
-  let epoch =
-    if yamlGetPathNode(root, ["cryptarchia", "sdp_config", "service_params", "BN", "epoch"]).isSome:
-      ? reqInt(root, ["cryptarchia", "sdp_config", "service_params", "BN", "epoch"])
-    else:
-      ? reqInt(root, ["cryptarchia", "sdp_config", "service_params", "BN", "timestamp"])
-  ok(BnServiceParams(
-    lockPeriod: lockPeriod,
-    inactivityPeriod: ? reqInt(
-      root, ["cryptarchia", "sdp_config", "service_params", "BN", "inactivity_period"]),
-    retentionPeriod: ? reqInt(
-      root, ["cryptarchia", "sdp_config", "service_params", "BN", "retention_period"]),
-    epoch: epoch,
-  ))
 
 func deploymentSettingsFromYaml(root: YamlNode): Result[DeploymentSettings, string] =
   let parsedGenesis = ? parseDeploymentGenesisState(root)
@@ -215,10 +189,14 @@ func deploymentSettingsFromYaml(root: YamlNode): Result[DeploymentSettings, stri
       ),
       learningRate: ? reqFloat(root, ["cryptarchia", "learning_rate"]),
       sdpConfig: SdpConfig(
-        bn: ? reqBnServiceParams(root),
+        bn: BnServiceParams(
+          inactivityPeriod: ? reqInt(
+            root, ["cryptarchia", "sdp_config", "service_params", "BN", "inactivity_period"]),
+          epoch: ? reqInt(root, ["cryptarchia", "sdp_config", "service_params", "BN", "epoch"]),
+        ),
         minStake: MinStake(
           threshold: ? reqInt(root, ["cryptarchia", "sdp_config", "min_stake", "threshold"]),
-          timestamp: ? reqInt(root, ["cryptarchia", "sdp_config", "min_stake", "timestamp"])
+          epoch: ? reqInt(root, ["cryptarchia", "sdp_config", "min_stake", "epoch"]),
         )
       ),
       gossipsubProtocol: ? reqScalar(root, ["cryptarchia", "gossipsub_protocol"]),
@@ -266,18 +244,14 @@ func validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
   need(ds.cryptarchia.slotActivationCoeff.denominator > 0,
     "cryptarchia.slot_activation_coeff.denominator must be > 0")
   need(ds.cryptarchia.learningRate > 0.0, "cryptarchia.learning_rate must be > 0")
-  need(ds.cryptarchia.sdpConfig.bn.lockPeriod > 0,
-    "cryptarchia.sdp_config.service_params.BN.lock_period must be > 0")
-  need(ds.cryptarchia.sdpConfig.bn.inactivityPeriod > 0,
-    "cryptarchia.sdp_config.service_params.BN.inactivity_period must be > 0")
-  need(ds.cryptarchia.sdpConfig.bn.retentionPeriod > 0,
-    "cryptarchia.sdp_config.service_params.BN.retention_period must be > 0")
+  need(ds.cryptarchia.sdpConfig.bn.inactivityPeriod >= 2,
+    "cryptarchia.sdp_config.service_params.BN.inactivity_period must be >= 2")
   need(ds.cryptarchia.sdpConfig.bn.epoch >= 0,
     "cryptarchia.sdp_config.service_params.BN.epoch must be >= 0")
   need(ds.cryptarchia.sdpConfig.minStake.threshold > 0,
     "cryptarchia.sdp_config.min_stake.threshold must be > 0")
-  need(ds.cryptarchia.sdpConfig.minStake.timestamp >= 0,
-    "cryptarchia.sdp_config.min_stake.timestamp must be >= 0")
+  need(ds.cryptarchia.sdpConfig.minStake.epoch >= 0,
+    "cryptarchia.sdp_config.min_stake.epoch must be >= 0")
   need(ds.network.kademliaProtocolName.len > 0, "empty network.kademlia_protocol_name")
   need(ds.network.identifyProtocolName.len > 0, "empty network.identify_protocol_name")
   need(ds.network.chainSyncProtocolName.len > 0, "empty network.chain_sync_protocol_name")

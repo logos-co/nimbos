@@ -5,7 +5,7 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-## Spec: [1.0.0 Service Declaration Protocol](https://nomos-tech.notion.site/1-0-0-Service-Declaration-Protocol-1fd261aa09df819ca9f8eb2bdfd4ec1d)
+## Spec: [1.1.0 Service Declaration Protocol](bedrock-service-declaration-protocol.md)
 
 {.push raises: [], gcsafe.}
 
@@ -19,12 +19,11 @@ import
 export state
 
 type
-  SdpIndex* = object
-    sessions*: Table[ServiceType, Table[uint64, SdpState]]
-      ## Frozen SDP state keyed by **target session** ``n`` (``S_n`` for use during
-      ## session ``n``). Key ``0`` is the genesis snapshot (sessions ``0`` and
-      ## ``1``). For ``n >= 2``, taken when session ``n-1`` starts; pruned when
-      ## session ``n`` ends.
+  SdpSnapshots* = Table[ServiceType, Table[EpochNumber, SdpState]]
+    ## Frozen SDP state keyed by **target epoch** ``n`` (``S_n`` for use during
+    ## epoch ``n``). Keys ``0`` and ``1`` are both set to the genesis snapshot.
+    ## For ``n >= 2``, taken when epoch ``n-2`` starts; pruned when epoch
+    ## ``n+1`` starts (once epoch ``n`` has ended).
 
   SdpParams* = object
     parameters*: Table[ServiceType, ServiceParameters]
@@ -32,84 +31,72 @@ type
 
   SdpRegistry* = object
     state*: SdpState
-    index*: SdpIndex
+    snapshots*: SdpSnapshots
     params*: SdpParams
 
-func validateSessionLength*(params: ServiceParameters, securityParam: uint64) =
-  ## ``session_length`` must be at least ``k`` (security param).
-  doAssert params.sessionLength > 0, "session_length must be > 0"
-  doAssert params.sessionLength >= securityParam,
-    "session_length must be >= consensus finality parameter k"
+func validateInactivityPeriod*(params: ServiceParameters) =
+  doAssert params.inactivityPeriod >= 2,
+    "inactivity_period must be >= 2 epochs"
 
 func init*(
     T: type SdpRegistry,
     sdpConfig: deploy.SdpConfig,
-    securityParam: uint64,
 ): T =
-  let bnDefaults = defaultBnServiceParameters(sdpConfig.bn.epoch.uint64)
   let bnParams = ServiceParameters(
-    sessionLength: bnDefaults.sessionLength,
-    lockPeriod: sdpConfig.bn.lockPeriod.uint64,
     inactivityPeriod: sdpConfig.bn.inactivityPeriod.uint64,
-    retentionPeriod: sdpConfig.bn.retentionPeriod.uint64,
-    timestamp: sdpConfig.bn.epoch.uint64,
+    epoch: sdpConfig.bn.epoch.uint64,
   )
-  validateSessionLength(bnParams, securityParam)
+  validateInactivityPeriod(bnParams)
   T(
     state: SdpState.init(),
-    index: SdpIndex(),
+    snapshots: initTable[ServiceType, Table[EpochNumber, SdpState]](),
     params: SdpParams(
       parameters: [(ServiceType.bn, bnParams)].toTable(),
       stakeThresholds: @[sdpTypes.MinStake(
         stakeThreshold: sdpConfig.minStake.threshold.uint64,
-        timestamp: sdpConfig.minStake.timestamp.uint64,
+        epoch: sdpConfig.minStake.epoch.uint64,
       )],
     ),
   )
 
-func onBlockApplied*(
+proc onEpochStarted*(
     registry: var SdpRegistry,
-    previousBlockNumber: BlockNumber,
-    blockNumber: BlockNumber,
+    previousEpoch: EpochNumber,
+    epoch: EpochNumber,
 ) =
-  registry.state = collectGarbage(
-    registry.state, registry.params.parameters, blockNumber,
-  )
-  for service, params in registry.params.parameters.pairs:
-    if params.timestamp > blockNumber:
-      continue
-    if blockNumber == 0:
-      var genesisSnap = registry.index.sessions.mgetOrPut(
-        service, Table[uint64, SdpState](),
-      )
-      genesisSnap[0] = registry.state
-      registry.index.sessions[service] = genesisSnap
-    let
-      prevSession = previousBlockNumber div params.sessionLength
-      curSession = blockNumber div params.sessionLength
-    if curSession <= prevSession:
-      continue
-    var bySession = registry.index.sessions.mgetOrPut(
-      service, Table[uint64, SdpState](),
+  ## Runs withdrawal finalization and epoch snapshotting at an epoch boundary.
+  ## TODO(EpochState): callers must pass the consensus epoch.
+  registry.state = finalizeWithdrawals(registry.state, epoch)
+  if epoch == 0:
+    var genesisSnap = registry.snapshots.mgetOrPut(
+      ServiceType.bn, initTable[EpochNumber, SdpState](),
     )
-    bySession[curSession + 1] = registry.state
-    if curSession >= 2:
-      bySession.del(curSession - 1)
-    registry.index.sessions[service] = bySession
+    genesisSnap[0] = registry.state
+    genesisSnap[1] = registry.state
+    registry.snapshots[ServiceType.bn] = genesisSnap
+  if epoch <= previousEpoch:
+    return
+  for service, params in registry.params.parameters.pairs:
+    if params.epoch > epoch:
+      continue
+    var byEpoch = registry.snapshots.mgetOrPut(
+      service, initTable[EpochNumber, SdpState](),
+    )
+    byEpoch[epoch + 2] = registry.state
+    # Keep ``epoch``, ``epoch+1``, and the new ``epoch+2`` (loop runs for epoch >= 1).
+    byEpoch.del(epoch - 1)
+    registry.snapshots[service] = byEpoch
 
-func getSessionSnapshot*(
-    snapshots: Table[ServiceType, Table[uint64, SdpState]],
+func getEpochSnapshot*(
+    snapshots: SdpSnapshots,
     service: ServiceType,
-    sessionNumber: uint64,
+    epochNumber: EpochNumber,
 ): Opt[SdpState] =
-  ## Sessions ``0`` and ``1`` both use the genesis snapshot (key ``0``).
   if service notin snapshots:
     return Opt.none(SdpState)
-  let
-    bySession = snapshots.getOrDefault(service)
-    lookupKey = if sessionNumber < 2: 0'u64 else: sessionNumber
-  if lookupKey in bySession:
-    Opt.some(bySession.getOrDefault(lookupKey))
+  let byEpoch = snapshots.getOrDefault(service)
+  if epochNumber in byEpoch:
+    Opt.some(byEpoch.getOrDefault(epochNumber))
   else:
     Opt.none(SdpState)
 
@@ -117,20 +104,19 @@ func appendParameters*(
     registry: var SdpRegistry,
     service: ServiceType,
     params: ServiceParameters,
-    securityParam: uint64,
 ) =
-  validateSessionLength(params, securityParam)
+  validateInactivityPeriod(params)
   registry.params.parameters[service] = params
 
 func getParametersAt*(
     registry: SdpRegistry,
     service: ServiceType,
-    timestamp: BlockNumber,
+    epoch: EpochNumber,
 ): Opt[ServiceParameters] =
   if service notin registry.params.parameters:
     return Opt.none(ServiceParameters)
   let params = registry.params.parameters.getOrDefault(service)
-  if params.timestamp <= timestamp:
+  if params.epoch <= epoch:
     Opt.some(params)
   else:
     Opt.none(ServiceParameters)
@@ -143,12 +129,12 @@ func appendMinStake*(
 
 func getMinStakeAt*(
     registry: SdpRegistry,
-    timestamp: BlockNumber,
+    epoch: EpochNumber,
 ): Opt[sdpTypes.MinStake] =
   var best = Opt.none(sdpTypes.MinStake)
   for entry in registry.params.stakeThresholds:
-    if entry.timestamp <= timestamp:
-      if best.isNone or entry.timestamp >= best.get().timestamp:
+    if entry.epoch <= epoch:
+      if best.isNone or entry.epoch >= best.get().epoch:
         best = Opt.some(entry)
   best
 
