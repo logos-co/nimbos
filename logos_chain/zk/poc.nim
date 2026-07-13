@@ -72,7 +72,7 @@ proc loadAndInitVk*(circuitsDir: string): Result[void, PocLoadError] =
 proc resetVkForTesting*() =
   ## Test-only: clear the singleton between cases. Not for production paths.
   {.cast(gcsafe).}:
-    pocVk = Opt.none(VKey)
+    pocVk.reset()
 
 proc verify*(
     proof: array[ProofBytesLen, byte], input: PocVerifierInput
