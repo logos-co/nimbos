@@ -142,6 +142,16 @@ func parseByteSeqNode(node: YamlNode, path: string): Result[seq[byte], string] =
     bytes.add(byte(bVal))
   ok(bytes)
 
+func parseBytesNode(node: YamlNode, path: string): Result[seq[byte], string] =
+  ## Hex scalar (current cfgsync output) or per-byte integer sequence.
+  if node.kind == yScalar:
+    try:
+      ok(hexToSeqByte(node.content))
+    except ValueError:
+      err("deployment-settings: invalid hex at " & path)
+  else:
+    parseByteSeqNode(node, path)
+
 func parseHex32Node(node: YamlNode, path: string): Result[array[32, byte], string] =
   if node.kind != yScalar:
     return err("deployment-settings: expected hex scalar at " & path)
@@ -344,15 +354,7 @@ func parseGenesisOpPayload(
       return err("deployment-settings: missing channel inscribe fields at " & path)
     let signerNode = yamlGetPathNode(payload, ["signer"]).valueOr:
       return err("deployment-settings: missing channel inscribe fields at " & path)
-    let inscriptionBytes =
-      if inscriptionNode.kind == yScalar:
-        try:
-          Result[seq[byte], string].ok(hexToSeqByte(inscriptionNode.content))
-        except ValueError:
-          Result[seq[byte], string].err(
-            "deployment-settings: invalid inscription hex at " & path & ".inscription")
-      else:
-        parseByteSeqNode(inscriptionNode, path & ".inscription")
+    let inscriptionBytes = parseBytesNode(inscriptionNode, path & ".inscription")
     ok(createChannelInscribeOp(ChannelInscribePayload(
       channelId: ? parseHex32Node(channelIdNode, path & ".channel_id"),
       inscription: ? inscriptionBytes,

@@ -152,7 +152,7 @@ func deploymentSettingsFromYaml(root: YamlNode): Result[DeploymentSettings, stri
         scheduler: BlendScheduler(
           cover: BlendSchedulerCover(
             messageFrequencyPerRound: ? reqFloat(
-              root, ["blend", "core", "scheduler", "cover", "message_frequency_per_round"]),
+              root, ["blend", "core", "scheduler", "cover", "message_frequency_per_round"])
           ),
           delayer: BlendSchedulerDelayer(
             maximumReleaseDelayInRounds: ? reqInt(
