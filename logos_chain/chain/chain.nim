@@ -25,7 +25,7 @@ type
     genesisBlock*: Block
     localTree*: LocalTree
     ledger*: Ledger[BlockId]
-    slotConfig*: SlotConfig ## wallclock anchor from the genesis inscription
+    slotConfig*: SlotConfig
 
   BlockApplyErrorKind* {.pure.} = enum
     AlreadyApplied

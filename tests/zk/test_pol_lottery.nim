@@ -22,7 +22,7 @@ template checkPinnedConstants(fDen: uint64, t0Hex, t1Hex: string) =
   # checkable against the spec-appendix hex.
   let
     pMinusT1 = Bn254POrder - UInt256.fromHex(t1Hex)
-    values = computeLotteryValues(
+    values = lottery_constants(
       NonNegativeRatio(num: 1, den: fDen), 1).expect("supported f")
   check:
     values.t0 == fr(t0Hex)
@@ -30,7 +30,7 @@ template checkPinnedConstants(fDen: uint64, t0Hex, t1Hex: string) =
 
 suite "zk/pol_lottery":
   test "lottery values for f = 1/30, total stake 1000":
-    let values = computeLotteryValues(
+    let values = lottery_constants(
       NonNegativeRatio(num: 1, den: 30), 1000).expect("supported f")
     check:
       values.t0 == fr(
@@ -51,6 +51,6 @@ suite "zk/pol_lottery":
       "0x104bfd09ebdd01fb0bbbf222248a8a067df6f05cf20eb1b17ec2a9284e6a0f")
 
   test "unsupported f is rejected":
-    check computeLotteryValues(NonNegativeRatio(num: 2, den: 30), 1000).isErr
+    check lottery_constants(NonNegativeRatio(num: 2, den: 30), 1000).isErr
 
 {.pop.}

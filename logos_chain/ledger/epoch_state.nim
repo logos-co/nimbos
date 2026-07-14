@@ -49,7 +49,7 @@ func withLottery*(
     state: EpochState, totalStake: uint64, f: NonNegativeRatio,
 ): Result[EpochState, LedgerError] =
   ## Copy of `state` with `totalStake` and freshly derived (t₀, t₁).
-  let values = computeLotteryValues(f, totalStake).valueOr:
+  let values = lottery_constants(f, totalStake).valueOr:
     return err(UnsupportedLotteryF)
   ok(state.withLottery(totalStake, values))
 
@@ -132,7 +132,7 @@ func rotate(
     stake = total_stake_inference(
       stake, 0, period, cfg.stakeInferenceLearningRate, cfg.slotActivationCoeff)
   let
-    values = computeLotteryValues(cfg.slotActivationCoeff, stake).valueOr:
+    values = lottery_constants(cfg.slotActivationCoeff, stake).valueOr:
       return err(UnsupportedLotteryF)
     promoted =
       if newEpoch == t.activeEpoch.epoch + 1:

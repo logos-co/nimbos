@@ -20,11 +20,12 @@ const
   Bn254POrder* = UInt256.fromHex(
     "0x30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001")
 
+  # https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/cryptarchia-proof-of-leadership.md#lottery-approximation
   ## Precomputed (t₀_constant, t₁_constant) per supported `f`, as pinned in
-  ## the PoL spec appendix (`cryptarchia-proof-of-leadership.md` §Lottery
-  ## Approximation): t₀_constant = ⌊p·(−ln(1−f))⌋, t₁_constant = ⌊p·ln²(1−f)/2⌋,
-  ## derived offline at 512-bit precision. A zero entry means the constants
-  ## for that `f` are not derived yet and `computeLotteryValues` rejects it.
+  ## the PoL spec appendix: t₀_constant = ⌊p·(−ln(1−f))⌋,
+  ## t₁_constant = ⌊p·ln²(1−f)/2⌋, derived offline at 512-bit precision.
+  ## A zero entry means the constants for that `f` are not derived yet and
+  ## `lottery_constants` rejects it.
   LotteryConstantsTable = [
     # f = 1/30 (mainnet)
     (fNum: 1'u64, fDen: 30'u64,
@@ -53,7 +54,7 @@ func toFieldElement(v: UInt256): FieldElement =
   ## construction (t₀ ≤ t₀_constant < p, and t₁ = p − x with 0 < x ≤ p).
   frFromBytesLE(v.toBytesLE).expect("value below BN254 order")
 
-func computeLotteryValues*(
+func lottery_constants*(
     f: NonNegativeRatio, totalStake: uint64,
 ): Result[tuple[t0, t1: FieldElement], cstring] =
   ## Lottery threshold coefficients for the epoch:

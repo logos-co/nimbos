@@ -20,6 +20,7 @@ func fixedPoint*(r: NonNegativeRatio): uint64 =
   doAssert r.den > 0
   r.num * Precision div r.den
 
+# https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/cryptarchia-total-stake-inference.md#algorithm
 func total_stake_inference*(
     totalStakeEstimate: uint64,
     measuredDensity: uint64,
@@ -27,8 +28,8 @@ func total_stake_inference*(
     beta: NonNegativeRatio,
     slotActivationCoeff: NonNegativeRatio,
 ): uint64 =
-  ## Next-epoch total-stake estimate from the observed block density
-  ## (`cryptarchia-total-stake-inference.md` §Algorithm). Floors at 1.
+  ## Next-epoch total-stake estimate from the observed block density.
+  ## Floors at 1.
   doAssert period > 0
   doAssert slotActivationCoeff.num > 0
   let

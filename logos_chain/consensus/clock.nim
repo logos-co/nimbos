@@ -7,8 +7,6 @@
 
 {.push raises: [], gcsafe.}
 
-# Layer L1 — slot ⇄ epoch ⇄ wallclock arithmetic. Pure functions only.
-
 from ../core/utils import NonNegativeRatio
 from ../core/mantle/primitives import SlotNumber, EpochNumber
 
@@ -26,7 +24,7 @@ type
 
   SlotConfig* = object
     ## Wallclock anchor for slot timing. A zero `slotDurationSeconds`
-    ## disables the wallclock bound (tree-only chains without a clock).
+    ## disables the wallclock bound.
     genesisTime*: WallclockSeconds ## start of the first epoch
     slotDurationSeconds*: uint64
 
