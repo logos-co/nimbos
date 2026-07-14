@@ -10,10 +10,10 @@
 
 import
   unittest2,
-  ../../logos_chain/time/clock,
+  ../../logos_chain/consensus/clock,
   ./test_helpers
 
-suite "time/clock":
+suite "consensus/clock":
   test "base period length is ⌊k/f⌋ for every deployment":
     check:
       basePeriodLength(5, NonNegativeRatio(num: 1, den: 2)) == 10

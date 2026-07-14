@@ -7,7 +7,7 @@
 
 {.push raises: [], gcsafe.}
 
-import ../time/clock
+import ../consensus/clock
 
 export clock
 

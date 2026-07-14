@@ -9,7 +9,7 @@
 
 import
   results,
-  ../time/clock,
+  ../consensus/clock,
   ../zk/pol_lottery,
   ../zk/poseidon2/hasher,
   ./block_density,

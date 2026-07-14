@@ -15,7 +15,7 @@
 import
   results,
   ../core/crypto/types,
-  ../time/clock
+  ../consensus/clock
 
 export results, clock
 

@@ -19,7 +19,7 @@ import
 from stew/byteutils import fromBytes
 
 from ../core/crypto/types as crypto_types import encodeEd25519PublicKey
-from ../time/clock import WallclockSeconds
+from ../consensus/clock import WallclockSeconds
 
 export results, types, hashing, WallclockSeconds
 

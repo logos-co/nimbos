@@ -7,7 +7,7 @@
 
 {.push raises: [], gcsafe.}
 
-# Layer L0 — slot ⇄ epoch ⇄ wallclock arithmetic. Pure functions only.
+# Layer L1 — slot ⇄ epoch ⇄ wallclock arithmetic. Pure functions only.
 
 from ../core/utils import NonNegativeRatio
 from ../core/mantle/primitives import SlotNumber

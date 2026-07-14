@@ -11,7 +11,7 @@
 
 import
   stew/endians2,
-  ../../logos_chain/time/clock,
+  ../../logos_chain/consensus/clock,
   ../../logos_chain/ledger/types,
   ../../logos_chain/zk/poseidon2/hasher
 
