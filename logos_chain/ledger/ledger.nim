@@ -17,8 +17,8 @@ import
     balance, types, cryptarchia_state, channel_state, mantle_state,
     pol_verifier,
   ],
+  ./sdp/[registry, ops],
   ../core/mantle/[tx_types, tx_hashing, operations, proofs],
-  ../core/sdp/[registry, ops],
   ../core/types
 
 export types, cryptarchia_state, registry, channel_state, mantle_state

@@ -10,8 +10,8 @@
 import
   results,
   libp2p/[crypto/ed25519/ed25519, multiaddress],
-  ../../../logos_chain/core/sdp/ops/util,
-  ../../../logos_chain/core/sdp/[registry, state, ops],
+  ../../../logos_chain/ledger/sdp/ops/util,
+  ../../../logos_chain/ledger/sdp/[registry, ops, state],
   ../../../logos_chain/core/crypto/types,
   ../../../logos_chain/core/mantle/[operations, proofs, utxo],
   ../../../logos_chain/ledger/utxo_store,

@@ -12,8 +12,8 @@
 import
   results,
   ../state,
-  ../../crypto/types,
-  ../../../ledger/[types, zksig_verify]
+  ../../../core/crypto/types,
+  ../../[types, zksig_verify]
 
 export types, zksig_verify.verifyZkSig
 

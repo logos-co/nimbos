@@ -13,7 +13,7 @@ import
   bincode,
   stew/byteutils as byteutils,
   ../../testutil,
-  ../../core/sdp/test_helpers,
+  ../../ledger/sdp/test_helpers,
   ../../../logos_chain/chain/chain,
   ../../../logos_chain/core/[types, local_tree],
   ../../../logos_chain/ledger/ledger,

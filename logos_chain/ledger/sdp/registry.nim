@@ -12,11 +12,10 @@
 import
   results,
   std/tables,
-  ./state,
-  ./types as sdpTypes,
+  ./state as sdpState,
   ../../deployment/deployment_settings as deploy
 
-export state
+export sdpState
 
 type
   SdpSnapshots* = Table[ServiceType, Table[EpochNumber, SdpState]]
@@ -27,7 +26,7 @@ type
 
   SdpParams* = object
     parameters*: Table[ServiceType, ServiceParameters]
-    stakeThresholds*: seq[sdpTypes.MinStake]
+    stakeThresholds*: seq[sdpState.MinStake]
 
   SdpRegistry* = object
     state*: SdpState
@@ -56,7 +55,7 @@ func init*(
     snapshots: SdpSnapshots(),
     params: SdpParams(
       parameters: [(ServiceType.bn, bnParams)].toTable(),
-      stakeThresholds: @[sdpTypes.MinStake(
+      stakeThresholds: @[sdpState.MinStake(
         stakeThreshold: sdpConfig.minStake.threshold.uint64,
         epoch: sdpConfig.minStake.epoch.uint64,
       )],
@@ -136,15 +135,15 @@ func getParametersAt*(
 
 func appendMinStake*(
     registry: var SdpRegistry,
-    entry: sdpTypes.MinStake,
+    entry: sdpState.MinStake,
 ) =
   registry.params.stakeThresholds.add(entry)
 
 func getMinStakeAt*(
     registry: SdpRegistry,
     epoch: EpochNumber,
-): Opt[sdpTypes.MinStake] =
-  var best = Opt.none(sdpTypes.MinStake)
+): Opt[sdpState.MinStake] =
+  var best = Opt.none(sdpState.MinStake)
   for entry in registry.params.stakeThresholds:
     if entry.epoch <= epoch:
       if best.isNone or entry.epoch >= best.get().epoch:

@@ -12,8 +12,7 @@ import
   unittest2,
   libp2p/crypto/ed25519/ed25519,
   ./test_helpers,
-  ../../../logos_chain/core/mantle/[operations, tx_hashing, tx_types, utxo],
-  ../../../logos_chain/core/sdp/types
+  ../../../logos_chain/core/mantle/[operations, tx_hashing, tx_types, utxo]
 
 proc mkProvider(seed: byte): ProviderId =
   var bytes: array[EdPublicKeySize, byte]

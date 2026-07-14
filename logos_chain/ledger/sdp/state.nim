@@ -5,7 +5,7 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-## In-memory SDP validator state store.
+## SDP declaration records and in-memory validator state store.
 ## Spec: [1.1.0 Service Declaration Protocol](https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/bedrock-service-declaration-protocol.md)
 
 {.push raises: [], gcsafe.}
@@ -13,15 +13,42 @@
 import
   results,
   std/[sequtils, sets, tables],
-  ./types,
+  ../../core/mantle/primitives,
   ../../utils/hash_trie_map
 
-export types, hash_trie_map
+export primitives, results, hash_trie_map
 
 type
+  MinStake* = object
+    stakeThreshold*: uint64
+    epoch*: EpochNumber
+
+  ServiceParameters* = object
+    inactivityPeriod*: uint64
+    epoch*: EpochNumber
+
+  DeclarationInfo* = object
+    service*: ServiceType
+    providerId*: Ed25519PublicKey
+    lockedNoteId*: NoteId
+    zkId*: ZkPublicKey
+    locators*: seq[Locator]
+    created*: EpochNumber
+    active*: Opt[EpochNumber]
+    withdrawAt*: Opt[EpochNumber]
+    nonce*: Nonce
+
+  LockedNotes* = HashTrieMap[NoteId, HashSet[DeclarationId]]
+
   SdpState* = object
     declarations*: HashTrieMap[DeclarationId, DeclarationInfo]
     lockedNotes*: LockedNotes
+
+func defaultBnServiceParameters*(epoch: EpochNumber = 0): ServiceParameters =
+  ServiceParameters(
+    inactivityPeriod: 2'u64,
+    epoch: epoch,
+  )
 
 func init*(_: typedesc[SdpState]): SdpState =
   SdpState(

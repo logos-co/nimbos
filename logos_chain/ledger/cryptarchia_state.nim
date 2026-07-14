@@ -13,10 +13,10 @@ import results
 
 import
   ./[balance, types, utxo_store, zksig_verify],
-  ../core/mantle/[primitives, operations, proofs, utxo, tx_hashing],
-  ../core/sdp/types as sdp_types
+  ./sdp/state as sdp_state,
+  ../core/mantle/[primitives, operations, proofs, utxo, tx_hashing]
 
-export types, utxo, primitives, utxo_store, sdp_types
+export types, utxo, primitives, utxo_store, sdp_state
 
 type
   CryptarchiaState* = object

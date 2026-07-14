@@ -15,10 +15,10 @@ import
   std/sequtils,
   libp2p/crypto/ed25519/ed25519,
   ./util,
-  ../[registry, state, types],
-  ../../crypto/types,
-  ../../mantle/[operations, proofs],
-  ../../../ledger/utxo_store
+  ../[registry, state],
+  ../../utxo_store,
+  ../../../core/crypto/types,
+  ../../../core/mantle/[operations, proofs]
 
 export util, registry, state
 

@@ -14,9 +14,9 @@ import
   std/sets,
   ./util,
   ../[registry, state],
-  ../../crypto/types,
-  ../../mantle/[operations, proofs],
-  ../../../ledger/utxo_store
+  ../../utxo_store,
+  ../../../core/crypto/types,
+  ../../../core/mantle/[operations, proofs]
 
 export util, registry, state
 

@@ -13,7 +13,7 @@ import
   results,
   ../test_helpers
 
-suite "core/sdp/ops/withdraw":
+suite "ledger/sdp/ops/withdraw":
   test "tryApplySdpWithdraw rejects unknown declaration":
     var seeded = seedDeclaration(pkSeed = 11, declareEpoch = 10)
     var unknown = WithdrawMessage(

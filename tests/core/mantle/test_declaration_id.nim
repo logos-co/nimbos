@@ -10,13 +10,22 @@
 
 import
   unittest2,
+  libp2p/[crypto/ed25519/ed25519, multiaddress],
   ../../../logos_chain/core/crypto/hashing,
   ../../../logos_chain/core/mantle/[operations, tx_hashing],
-  ../../../logos_chain/core/sdp/types,
-  ../../../logos_chain/zk/poseidon2/hasher,
-  ./test_helpers
+  ../../../logos_chain/zk/poseidon2/hasher
 
-suite "core/sdp/types":
+suite "core/mantle/operations — declarationId":
+  proc mkProvider(seed: byte): ProviderId =
+    var bytes: array[EdPublicKeySize, byte]
+    bytes[0] = seed
+    var key: ProviderId
+    doAssert key.init(bytes)
+    key
+
+  proc mkLocator(port: int): Locator =
+    MultiAddress.init("/ip4/127.0.0.1/tcp/" & $port).get()
+
   func seedZkId(seed: byte): ZkId =
     var bytes: array[32, byte]
     bytes[0] = seed
