@@ -16,12 +16,12 @@ import
   libp2p/crypto/ed25519/ed25519,
   ../../logos_chain/ledger/
     [balance, cryptarchia_state, ledger, types],
-  ../../logos_chain/core/sdp/[ops, registry, state],
+  ../../logos_chain/ledger/sdp/[ops, registry, state],
   ../../logos_chain/core/mantle/[primitives, operations, proofs, tx_types, utxo],
   ../../logos_chain/core/types,
   ../../logos_chain/zk/pol,
   ../zk/[snarkjs_helpers, zksign_helpers],
-  ../core/sdp/test_helpers,
+  ./sdp/test_helpers,
   ../core/mantle/test_helpers
 
 proc mkProvider(seed: byte): ProviderId =

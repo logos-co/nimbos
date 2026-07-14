@@ -14,7 +14,7 @@ import
   ../test_helpers,
   ../test_utxo_helpers
 
-suite "core/sdp/ops/declare":
+suite "ledger/sdp/ops/declare":
   test "tryApplySdpDeclare rejects invalid proof":
     let utxo = mkUtxo(value = 200, pkSeed = 1)
     var store = UtxoStore.init()

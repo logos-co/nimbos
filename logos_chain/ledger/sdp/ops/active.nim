@@ -14,7 +14,7 @@ import
   results,
   ./util,
   ../[registry, state],
-  ../../mantle/[operations, proofs]
+  ../../../core/mantle/[operations, proofs]
 
 export util, registry, state
 

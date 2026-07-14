@@ -13,7 +13,7 @@ import
   results,
   ../test_helpers
 
-suite "core/sdp/ops/active":
+suite "ledger/sdp/ops/active":
   test "tryApplySdpActive rejects unknown declaration and bad nonce":
     var seeded = seedDeclaration(pkSeed = 21, declareEpoch = 10)
     var unknown = ActiveMessage(

@@ -12,10 +12,10 @@ import
   results,
   std/tables,
   unittest2,
-  ../../../logos_chain/core/sdp/registry,
+  ../../../logos_chain/ledger/sdp/registry,
   ./test_helpers
 
-suite "core/sdp/registry":
+suite "ledger/sdp/registry":
   test "stores service parameters per service":
     var registry = testSdpRegistry()
     check registry.params.parameters.len == 1
@@ -81,7 +81,7 @@ suite "core/sdp/registry":
     onEpochStarted(seeded.registry, 7)
     check getDeclaration(seeded.registry.state, seeded.declId).isNone
 
-suite "core/sdp/registry — epoch snapshots":
+suite "ledger/sdp/registry — epoch snapshots":
   test "epochs 0 and 1 use genesis snapshot":
     var registry = testSdpRegistry()
     onEpochStarted(registry, 0)

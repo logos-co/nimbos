@@ -14,10 +14,10 @@ import
   unittest2,
   libp2p/multiaddress,
   ../../../logos_chain/core/mantle/primitives,
-  ../../../logos_chain/core/sdp/state,
+  ../../../logos_chain/ledger/sdp/state,
   ../../../logos_chain/zk/poseidon2/hasher
 
-suite "core/sdp/state":
+suite "ledger/sdp/state":
   test "DeclarationInfo fields are default-zero":
     var d: DeclarationInfo
     check d.nonce == 0'u64
