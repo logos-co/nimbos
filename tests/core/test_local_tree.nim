@@ -48,7 +48,6 @@ suite "core/local_tree":
     let
       sm = minimalSignedTx()
       genesis = createGenesisBlock(sm)
-      gid = blockId(genesis.header)
       tree = newLocalTree(genesis)
     check not tree.addBlockToTree(genesis)
 
@@ -56,7 +55,6 @@ suite "core/local_tree":
     let
       sm = minimalSignedTx()
       genesis = createGenesisBlock(sm)
-      gid = blockId(genesis.header)
       tree = newLocalTree(genesis)
     var fakeParent: BlockId
     for i in 0 ..< fakeParent.len:

@@ -37,11 +37,11 @@ proc runLbp2pIbdSyncTest(extraBlocks: int) {.async.} =
     sm = minimalSignedTx()
     genesis = createGenesisBlock(sm)
 
-  var chainBootstrap = Chain.init(genesis)
+  var chainBootstrap = initTestChain(genesis)
   let tipId = extendChainAfterGenesis(chainBootstrap.localTree, genesis, extraBlocks)
   check chainBootstrap.localTree.localTipId == tipId
 
-  let chainClient = Chain.init(genesis)
+  let chainClient = initTestChain(genesis)
 
   let peers = await createBootstrapPeers()
   let bootstrapSyncer = Syncer.init(
@@ -135,11 +135,11 @@ suite "sync/initial_block_download (download blocks)":
       genesis = createGenesisBlock(sm)
       gid = blockId(genesis.header)
       b1 = childBlock(genesis.header, gid, SlotNumber(1), [sm])
-    var serverChain = Chain.init(genesis)
+    var serverChain = initTestChain(genesis)
     check serverChain.localTree.addBlockToTree(b1)
     let
       b1id = blockId(b1.header)
-      clientChain = Chain.init(genesis)
+      clientChain = initTestChain(genesis)
       req = DownloadBlocksRequest(
         targetBlock: b1id, knownBlocks: buildKnownBlocks(clientChain.localTree))
       server = await startQuicTestSwitch()
@@ -169,13 +169,13 @@ suite "sync/initial_block_download (GetTip)":
     let
       sm = minimalSignedTx()
       genesis = createGenesisBlock(sm)
-    var serverChain = Chain.init(genesis)
+    var serverChain = initTestChain(genesis)
     let
       server = await startQuicTestSwitch()
     let serverSyncer = Syncer.init(server, serverChain, testChainSyncProtocol)
     mountCryptarchiaSyncHandler(serverSyncer)
     let client = await startQuicTestSwitch()
-    let clientSyncer = Syncer.init(client, Chain.init(genesis), testChainSyncProtocol)
+    let clientSyncer = Syncer.init(client, initTestChain(genesis), testChainSyncProtocol)
 
     try:
       await client.connect(server.peerInfo.peerId, server.peerInfo.addrs, forceDial = true)
@@ -208,7 +208,7 @@ suite "sync/initial_block_download (IBD requester loop)":
           .build()
       except LPError as exc:
         fail("newStandardSwitch: " & exc.msg)
-    let clientSyncer = Syncer.init(sw, Chain.init(genesis), testChainSyncProtocol)
+    let clientSyncer = Syncer.init(sw, initTestChain(genesis), testChainSyncProtocol)
     await initialBlockDownload(clientSyncer, @[])
 
   asyncTest "initialBlockDownload succeeds when peer tip is already in local tree":
@@ -216,8 +216,8 @@ suite "sync/initial_block_download (IBD requester loop)":
       sm = minimalSignedTx()
       genesis = createGenesisBlock(sm)
       server = await startQuicTestSwitch()
-    var serverChain = Chain.init(genesis)
-    var clientChain = Chain.init(genesis)
+    var serverChain = initTestChain(genesis)
+    var clientChain = initTestChain(genesis)
     let serverSyncer = Syncer.init(server, serverChain, testChainSyncProtocol)
     mountCryptarchiaSyncHandler(serverSyncer)
     let client = await startQuicTestSwitch()
@@ -236,12 +236,12 @@ suite "sync/initial_block_download (IBD requester loop)":
       genesis = createGenesisBlock(sm)
       gid = blockId(genesis.header)
       b1 = childBlock(genesis.header, gid, SlotNumber(1), [sm])
-    var serverChain = Chain.init(genesis)
+    var serverChain = initTestChain(genesis)
     check serverChain.localTree.addBlockToTree(b1)
     check serverChain.localTree.localTipId == blockId(b1.header)
 
     let
-      clientChain = Chain.init(genesis)
+      clientChain = initTestChain(genesis)
       server = await startQuicTestSwitch()
       client = await startQuicTestSwitch()
     let clientSyncer = Syncer.init(client, clientChain, testChainSyncProtocol)
@@ -264,13 +264,13 @@ suite "sync/initial_block_download (IBD requester loop)":
       genesis = createGenesisBlock(sm)
       gid = blockId(genesis.header)
       b1 = childBlock(genesis.header, gid, SlotNumber(1), [sm])
-    var serverChain = Chain.init(genesis)
+    var serverChain = initTestChain(genesis)
     check serverChain.localTree.addBlockToTree(b1)
     let b1id = blockId(b1.header)
     check serverChain.localTree.localTipId == b1id
 
     let
-      clientChain = Chain.init(genesis)
+      clientChain = initTestChain(genesis)
       server = await startQuicTestSwitch()
     let serverSyncer = Syncer.init(server, serverChain, testChainSyncProtocol)
     mountCryptarchiaSyncHandler(serverSyncer)

@@ -39,15 +39,15 @@ suite "zk/zksign — loadVk":
 
   test "rejects garbage JSON":
     let dir = uniqueTmpDir("bad-vk")
-    check createPath(dir / "zksign").isOk
-    check io2.writeFile(dir / "zksign" / "verification_key.json", "not json {").isOk
+    check createPath(dir / "signature").isOk
+    check io2.writeFile(dir / "signature" / "verification_key.json", "not json {").isOk
     check loadVk(dir).error == VkInvalid
 
   test "rejects JSON with wrong protocol":
     let dir = uniqueTmpDir("wrong-proto-vk")
-    check createPath(dir / "zksign").isOk
+    check createPath(dir / "signature").isOk
     check io2.writeFile(
-      dir / "zksign" / "verification_key.json",
+      dir / "signature" / "verification_key.json",
       """{"protocol":"plonk","curve":"bn128","vk_alpha_1":["0","0","1"],""" &
       """"vk_beta_2":[["0","0"],["0","0"],["1","0"]],""" &
       """"vk_gamma_2":[["0","0"],["0","0"],["1","0"]],""" &
@@ -60,8 +60,8 @@ suite "zk/zksign — loadVk":
       dir = uniqueTmpDir("good-vk")
       vkBytes = readAllChars(fixtureVk).valueOr:
         raiseAssert "zksign fixture VK unreadable"
-    check createPath(dir / "zksign").isOk
-    check io2.writeFile(dir / "zksign" / "verification_key.json", vkBytes).isOk
+    check createPath(dir / "signature").isOk
+    check io2.writeFile(dir / "signature" / "verification_key.json", vkBytes).isOk
     let r = loadVk(dir)
     check r.isOk
     check r.get.curve == "bn128"
@@ -87,8 +87,8 @@ suite "zk/zksign — singleton lifecycle":
       dir = uniqueTmpDir("compose-vk")
       vkBytes = readAllChars(fixtureVk).valueOr:
         raiseAssert "zksign fixture VK unreadable"
-    check createPath(dir / "zksign").isOk
-    check io2.writeFile(dir / "zksign" / "verification_key.json", vkBytes).isOk
+    check createPath(dir / "signature").isOk
+    check io2.writeFile(dir / "signature" / "verification_key.json", vkBytes).isOk
     check zksign.loadAndInitVk(dir).isOk
 
   test "resetVkForTesting clears prior install":

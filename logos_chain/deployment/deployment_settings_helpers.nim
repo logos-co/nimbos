@@ -222,6 +222,25 @@ func parseGenesisBlockHeaderFromYaml(hdr: YamlNode, pathPrefix: string): Result[
     ),
   ))
 
+func parseZkProofComponent(
+    node: YamlNode, path: string, expectedLen: int
+): Result[seq[byte], string] =
+  let bytes =
+    if node.kind == yScalar:
+      try:
+        Result[seq[byte], string].ok(hexToSeqByte(node.content))
+      except ValueError:
+        Result[seq[byte], string].err("deployment-settings: invalid hex at " & path)
+    else:
+      parseByteSeqNode(node, path)
+  let parsedBytes = bytes.valueOr:
+    return bytes
+  if parsedBytes.len != expectedLen:
+    return err(
+      "deployment-settings: expected " & $expectedLen & " bytes at " & path &
+      ", got " & $parsedBytes.len)
+  ok(parsedBytes)
+
 func parseZkSigNode(node: YamlNode, path: string): Result[ZkSignature, string] =
   let zkSigNode = yamlGetPathNode(node, ["zk_sig"])
   let target =
@@ -237,11 +256,9 @@ func parseZkSigNode(node: YamlNode, path: string): Result[ZkSignature, string] =
     return err("deployment-settings: expected pi_a/pi_b/pi_c at " & path)
   let pcNode = yamlGetPathNode(target, ["pi_c"]).valueOr:
     return err("deployment-settings: expected pi_a/pi_b/pi_c at " & path)
-  let piA = ? parseByteSeqNode(paNode, path & ".pi_a")
-  let piB = ? parseByteSeqNode(pbNode, path & ".pi_b")
-  let piC = ? parseByteSeqNode(pcNode, path & ".pi_c")
-  if piA.len != 32 or piB.len != 64 or piC.len != 32:
-    return err("deployment-settings: invalid zk signature component lengths at " & path)
+  let piA = ? parseZkProofComponent(paNode, path & ".pi_a", 32)
+  let piB = ? parseZkProofComponent(pbNode, path & ".pi_b", 64)
+  let piC = ? parseZkProofComponent(pcNode, path & ".pi_c", 32)
   var zk: ZkSignature
   for i in 0 ..< 32: zk[i] = piA[i]
   for i in 0 ..< 64: zk[32 + i] = piB[i]
@@ -328,7 +345,7 @@ func parseGenesisOpPayload(
       return err("deployment-settings: service_type must be scalar at " & path & ".service_type")
     let serviceType =
       case toLowerAscii(serviceTypeNode.content)
-      of "bn": bn
+      of "bn": ServiceType.bn
       else:
         return err("deployment-settings: unsupported service_type at " & path & ".service_type")
     if locatorsNode.kind != ySequence:
@@ -342,7 +359,7 @@ func parseGenesisOpPayload(
         return err("deployment-settings: invalid multiaddr at " &
           path & ".locators[" & $i & "]: " & error)
       locators.add(locator)
-    ok(createSdpDeclareOp(SdpDeclarePayload(
+    ok(createSdpDeclareOp(DeclarationMessage(
       serviceType: serviceType,
       locators: locators,
       providerId: ? parseEd25519PublicKeyNode(providerIdNode, path & ".provider_id"),

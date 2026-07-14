@@ -10,7 +10,17 @@
 
 import
   unittest2,
-  ../../../logos_chain/core/mantle/[tx_hashing, tx_types]
+  libp2p/crypto/ed25519/ed25519,
+  ./test_helpers,
+  ../../../logos_chain/core/mantle/[operations, tx_hashing, tx_types, utxo],
+  ../../../logos_chain/core/sdp/types
+
+proc mkProvider(seed: byte): ProviderId =
+  var bytes: array[EdPublicKeySize, byte]
+  bytes[0] = seed
+  var key: ProviderId
+  doAssert key.init(bytes)
+  key
 
 suite "core/mantle/tx_hashing":
   test "mantleTxHash is sensitive to tx bytes":
@@ -28,5 +38,62 @@ suite "core/mantle/tx_hashing":
   test "mantleTxHash is deterministic":
     let tx = MantleTx(ops: @[])
     check mantleTxHash(tx) == mantleTxHash(tx)
+
+  test "sdp opId is deterministic and payload-sensitive":
+    let utxo = mkUtxo(pkSeed = 1)
+    let otherUtxo = mkUtxo(pkSeed = 2)
+    let declare = DeclarationMessage(
+      serviceType: ServiceType.bn,
+      locators: @[],
+      providerId: mkProvider(1),
+      lockedNoteId: id(utxo),
+      zkId: utxo.note.zkPublicKey,
+    )
+    check opId(declare) == opId(declare)
+    check opId(declare) != opId(DeclarationMessage(
+      serviceType: declare.serviceType,
+      locators: declare.locators,
+      providerId: declare.providerId,
+      lockedNoteId: id(otherUtxo),
+      zkId: declare.zkId,
+    ))
+
+    var declarationId: DeclarationId
+    declarationId[0] = 4'u8
+    let withdraw = WithdrawMessage(
+      declarationId: declarationId,
+      lockedNoteId: id(utxo),
+      nonce: 1'u64,
+    )
+    check opId(withdraw) == opId(withdraw)
+    check opId(withdraw) != opId(WithdrawMessage(
+      declarationId: declarationId,
+      lockedNoteId: id(utxo),
+      nonce: 2'u64,
+    ))
+
+    let active = ActiveMessage(
+      declarationId: declarationId,
+      nonce: 1'u64,
+      metadata: @[],
+    )
+    check opId(active) == opId(active)
+    check opId(active) != opId(ActiveMessage(
+      declarationId: declarationId,
+      nonce: 2'u64,
+      metadata: @[],
+    ))
+
+  test "sdp declare opId is over wire-encoded payload, not declaration_id preimage":
+    let declare = DeclarationMessage(
+      serviceType: ServiceType.bn,
+      locators: @[],
+      providerId: mkProvider(1),
+      lockedNoteId: id(mkUtxo(pkSeed = 1)),
+      zkId: mkUtxo(pkSeed = 1).note.zkPublicKey,
+    )
+    let wire = encodeSdpDeclare(declare)
+    check wire[0] == encodeServiceType(ServiceType.bn)
+    check opId(declare) != declarationId(declare)
 
 {.pop.}

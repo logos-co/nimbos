@@ -91,7 +91,6 @@ func encodeU16LeLenPrefixed*(data: openArray[byte]): seq[byte] =
   res.add(data)
   res
 
-
 func encodeGroth16*(proof: CompressedGroth16Proof): CompressedGroth16Proof =
   ## Groth16 = 128BYTE (pi_a:32 || pi_b:64 || pi_c:32) — compressed on-wire layout.
   proof

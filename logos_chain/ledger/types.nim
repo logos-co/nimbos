@@ -22,7 +22,7 @@ type
     ## that emit them.
     ParentNotFound ## prepareUpdate's parent_id is not in the map
     InvalidNote ## input NoteId not in UtxoStore
-    LockedNote ## input NoteId is in LockedNotes
+    LockedNote ## input NoteId is locked by SDP
     DoubleSpend ## same NoteId appears twice within a single op's inputs
     ZeroValueNote ## output Note has value == 0
     InvalidProof ## ZK multi-sig or leader-proof verify failed
@@ -32,6 +32,22 @@ type
     InsufficientBalance ## not enough balance for the requested debit
     VerifierNotInitialised ## per-circuit VK singleton wasn't installed at
       ## node startup — wiring bug, not adversarial input
+    # SDP (Service Declaration Protocol)
+    EmptyLocators ## SDP Declare locators must contain at least one element
+    TooManyLocators
+    InvalidLocator
+    DuplicateDeclaration
+    LockedNoteNotFound
+    InsufficientStake
+    LockedNoteServiceConflict
+    MissingServiceParameters
+    MinStakeNotFound
+    DeclarationNotFound
+    AlreadyWithdrawn
+    InvalidNonce
+    LockedNoteIdMismatch
+    DeclarationNotInLockedNote
+    ActivityRejected
     ChannelNotFound ## ChannelDeposit/Withdraw references a missing ChannelId
     InvalidParent ## ChannelInscribe parent doesn't match the channel's tipMessage
     UnauthorizedSigner ## ChannelInscribe signer isn't the round-robin sequencer

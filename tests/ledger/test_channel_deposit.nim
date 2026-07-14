@@ -9,11 +9,11 @@
 {.used.}
 
 import
-  std/[os, strutils],
+  std/[os, sets, strutils],
   unittest2,
   results,
   ../../logos_chain/ledger/
-    [channel_state, cryptarchia_state, locked_notes, mantle_state, types],
+    [channel_state, cryptarchia_state, mantle_state, types],
   ../../logos_chain/core/mantle/[primitives, operations, proofs],
   ../../logos_chain/zk/zksign,
   ../zk/[snarkjs_helpers, zksign_helpers],
@@ -94,13 +94,14 @@ suite "validateChannelDeposit — structural checks (no VK)":
       chans = mkChanStore(cid)
       input = mkUtxo(value = 100, pkSeed = 1)
       cs = CryptarchiaState.init([input])
-      locked = LockedNotes.init([input.id])
       op = ChannelDepositPayload(
         channel: cid, inputs: @[input.id], metadata: @[],
       )
-      r = validateChannelDeposit(
-        chans, cs, locked, op,
-        default(ZkSigProof), mkTxHash())
+    var locked = LockedNotes.init()
+    locked = locked.insert(input.id, initHashSet[DeclarationId]())
+    let r = validateChannelDeposit(
+      chans, cs, locked, op,
+      default(ZkSigProof), mkTxHash())
     check r.error == LockedNote
 
 suite "applyChannelDeposit — mutation and overflow (no verify)":

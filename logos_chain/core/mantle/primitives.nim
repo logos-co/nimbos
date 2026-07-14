@@ -44,6 +44,7 @@ type
 
   SlotNumber* = uint64
   BlockNumber* = uint64
+  EpochNumber* = uint64
   RewardVoucher* = array[32, byte]
 
   TokenValue* = uint64
@@ -58,7 +59,7 @@ type
   WithdrawThreshold* = uint16
 
   ServiceType* {.pure.} = enum
-    bn = 0
+    bn = "BN"
   Locator* = MultiAddress
 
   Opcode* = uint8
@@ -242,8 +243,12 @@ func encodeInscription*(value: Inscription): seq[byte] =
   encodeU32LeLenPrefixed(value)
 
 func encodeServiceType*(value: ServiceType): byte =
-  ## ServiceType = Byte ; 0 = BN
+  ## Wire ``ServiceType`` = single byte (``ord``). Used by ``encodeSdpDeclare`` /
+  ## ``encode_mantle_tx`` and ``declaration_id``.
   encodeByte(byte(ord(value)))
+
+func isValidLocator*(locator: Locator): bool =
+  locator.data().buffer.len <= MaxLocatorMultiaddrBytes
 
 func encodeLocatorCount*(value: byte): byte =
   ## LocatorCount = Byte
@@ -255,6 +260,13 @@ func encodeLocator*(value: Locator): seq[byte] =
   doAssert locatorBytes.len <= MaxLocatorMultiaddrBytes,
     "Locator exceeds max multiaddr byte length"
   encodeU16LeLenPrefixed(locatorBytes)
+
+func encodeLocators*(locators: openArray[Locator]): seq[byte] =
+  ## Locators = LocatorCount *Locator
+  var res = @[encodeLocatorCount(byte(locators.len))]
+  for locator in locators:
+    res.add(encodeLocator(locator))
+  res
 
 func slotToFr*(slot: SlotNumber): FieldElement =
   ## Convert a ``SlotNumber`` to a BN254 field element via 8-byte
@@ -327,8 +339,8 @@ func decodeInscription*(data: openArray[byte]): Inscription {.raises: [DecodingE
 func readServiceType*(data: openArray[byte], pos: var int): ServiceType {.raises: [DecodingError].} =
   let b = readByte(data, pos)
   case b
-  of byte(ord(bn)):
-    bn
+  of byte(ord(ServiceType.bn)):
+    ServiceType.bn
   else:
     raise newException(DecodingError, "invalid ServiceType byte: " & $b)
 

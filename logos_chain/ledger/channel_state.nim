@@ -15,7 +15,7 @@ import
   intops,
   results,
   libp2p/crypto/ed25519/ed25519,
-  ./[types, cryptarchia_state, locked_notes],
+  ./[types, cryptarchia_state],
   ../core/[utils],
   ../core/mantle/[primitives, operations, proofs, tx_hashing, utxo],
   ../utils/hash_trie_map,
@@ -218,7 +218,7 @@ proc validateChannelDeposit*(
 
   var pks = newSeqOfCap[ZkPublicKey](op.inputs.len)
   for inputId in op.inputs:
-    if lockedNotes.contains(inputId):
+    if inputId in lockedNotes:
       return err(LockedNote)
     let utxo = cs.utxos.get(inputId).valueOr:
       return err(InvalidNote)

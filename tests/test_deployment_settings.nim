@@ -99,13 +99,11 @@ cryptarchia:
   sdp_config:
     service_params:
       BN:
-        lock_period: 1
-        inactivity_period: 1
-        retention_period: 1
-        timestamp: 0
+        inactivity_period: 2
+        epoch: 0
     min_stake:
       threshold: 1
-      timestamp: 0
+      epoch: 0
   gossipsub_protocol: /a/cryp
 """ & deploymentGenesisBlockMin & """
   faucet_pk: '0000000000000000000000000000000000000000000000000000000000000001'
@@ -177,13 +175,11 @@ cryptarchia:
   sdp_config:
     service_params:
       BN:
-        lock_period: 1
-        inactivity_period: 1
-        retention_period: 1
-        timestamp: 0
+        inactivity_period: 2
+        epoch: 0
     min_stake:
       threshold: 1
-      timestamp: 0
+      epoch: 0
   gossipsub_protocol:
     - /a/cryp
 """ & deploymentGenesisBlockMin & """
@@ -236,10 +232,10 @@ suite "deployment-settings":
       mt = yamlGetPathNode(tx0, ["mantle_tx"]).get()
       ops = yamlGetPathNode(mt, ["ops"]).get()
     check ops.kind == ySequence
-    check ops.elems.len == 6
+    check ops.elems.len == 3
     let proofs = yamlGetPathNode(tx0, ["ops_proofs"]).get()
     check proofs.kind == ySequence
-    check proofs.elems.len == 6
+    check proofs.elems.len == 3
 
   test "loadDeploymentSettings validates canonical YAML":
     var c = LBNodeConf(cmd: BNStartUpCmd.lbNode)

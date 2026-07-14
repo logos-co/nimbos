@@ -12,7 +12,8 @@
 
 import
   results,
-  ./[channel_state, cryptarchia_state, locked_notes, types],
+  std/sets,
+  ./[channel_state, cryptarchia_state, types],
   ../core/mantle/[primitives, operations, proofs]
 
 export channel_state
