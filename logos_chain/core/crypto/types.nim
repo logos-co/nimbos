@@ -75,12 +75,6 @@ func encodeLe*[T: SomeUnsignedInt](value: T): array[sizeof(T), byte] =
 func encodeByte*(value: byte): byte =
   value
 
-func encodeUtf8*(value: string): seq[byte] =
-  ## UTF-8 bytes of ``value`` (ASCII service tags, domain tags, …).
-  result = newSeqOfCap[byte](value.len)
-  for c in value:
-    result.add(byte ord(c))
-
 func encodeU32LeLenPrefixed*(data: openArray[byte]): seq[byte] =
   ## ``UINT32`` length (LE) then payload (Inscription, Metadata, …).
   doAssert data.len <= int(high(uint32)),
@@ -96,7 +90,6 @@ func encodeU16LeLenPrefixed*(data: openArray[byte]): seq[byte] =
   var res = @(encodeLe(uint16(data.len)))
   res.add(data)
   res
-
 
 func encodeGroth16*(proof: CompressedGroth16Proof): CompressedGroth16Proof =
   ## Groth16 = 128BYTE (pi_a:32 || pi_b:64 || pi_c:32) — compressed on-wire layout.

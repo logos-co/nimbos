@@ -5,7 +5,7 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-## Spec: [1.1.0 Service Declaration Protocol](bedrock-service-declaration-protocol.md)
+## Spec: [1.1.0 Service Declaration Protocol](https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/bedrock-service-declaration-protocol.md)
 
 {.push raises: [], gcsafe.}
 
@@ -22,8 +22,8 @@ type
   SdpSnapshots* = Table[ServiceType, Table[EpochNumber, SdpState]]
     ## Frozen SDP state keyed by **target epoch** ``n`` (``S_n`` for use during
     ## epoch ``n``). Keys ``0`` and ``1`` are both set to the genesis snapshot.
-    ## For ``n >= 2``, taken when epoch ``n-2`` starts; pruned when epoch
-    ## ``n+1`` starts (once epoch ``n`` has ended).
+    ## For ``n >= 2``, taken when epoch ``n-2`` starts; snapshot ``S_n`` is
+    ## pruned at the start of epoch ``n+1``.
 
   SdpParams* = object
     parameters*: Table[ServiceType, ServiceParameters]
@@ -33,6 +33,10 @@ type
     state*: SdpState
     snapshots*: SdpSnapshots
     params*: SdpParams
+    lastEpochStarted*: Opt[EpochNumber]
+      ## Highest epoch for which epoch-boundary processing has run.
+      ## ``none`` until the first boundary.
+      ## TODO(EpochState): rewind on chain reorgs once epoch management lands.
 
 func validateInactivityPeriod*(params: ServiceParameters) =
   doAssert params.inactivityPeriod >= 2,
@@ -49,7 +53,7 @@ func init*(
   validateInactivityPeriod(bnParams)
   T(
     state: SdpState.init(),
-    snapshots: initTable[ServiceType, Table[EpochNumber, SdpState]](),
+    snapshots: SdpSnapshots(),
     params: SdpParams(
       parameters: [(ServiceType.bn, bnParams)].toTable(),
       stakeThresholds: @[sdpTypes.MinStake(
@@ -57,35 +61,44 @@ func init*(
         epoch: sdpConfig.minStake.epoch.uint64,
       )],
     ),
+    lastEpochStarted: Opt.none(EpochNumber),
   )
 
 proc onEpochStarted*(
     registry: var SdpRegistry,
-    previousEpoch: EpochNumber,
     epoch: EpochNumber,
 ) =
   ## Runs withdrawal finalization and epoch snapshotting at an epoch boundary.
-  ## TODO(EpochState): callers must pass the consensus epoch.
-  registry.state = finalizeWithdrawals(registry.state, epoch)
+  ## No-op when ``epoch`` is not greater than ``lastEpochStarted``.
+  ## TODO(EpochState): callers must pass the consensus epoch; rewind
+  ## ``lastEpochStarted`` on reorgs once epoch management lands.
+  if registry.lastEpochStarted.isSome and epoch <= registry.lastEpochStarted.get():
+    return
   if epoch == 0:
     var genesisSnap = registry.snapshots.mgetOrPut(
-      ServiceType.bn, initTable[EpochNumber, SdpState](),
+      ServiceType.bn, Table[EpochNumber, SdpState](),
     )
     genesisSnap[0] = registry.state
     genesisSnap[1] = registry.state
     registry.snapshots[ServiceType.bn] = genesisSnap
-  if epoch <= previousEpoch:
+    registry.lastEpochStarted = Opt.some(0'u64)
     return
+  let last = registry.lastEpochStarted
+  registry.state = finalizeWithdrawals(registry.state, epoch)
   for service, params in registry.params.parameters.pairs:
     if params.epoch > epoch:
       continue
     var byEpoch = registry.snapshots.mgetOrPut(
-      service, initTable[EpochNumber, SdpState](),
+      service, Table[EpochNumber, SdpState](),
     )
     byEpoch[epoch + 2] = registry.state
-    # Keep ``epoch``, ``epoch+1``, and the new ``epoch+2`` (loop runs for epoch >= 1).
-    byEpoch.del(epoch - 1)
+    # Drop S_n for target epochs lastEpochStarted .. epoch - 1.
+    for target in last.get(0'u64) .. epoch - 1:
+      if target in byEpoch:
+        byEpoch.del(target)
     registry.snapshots[service] = byEpoch
+  registry.lastEpochStarted = Opt.some(epoch)
+
 
 func getEpochSnapshot*(
     snapshots: SdpSnapshots,

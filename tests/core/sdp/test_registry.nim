@@ -62,13 +62,29 @@ suite "core/sdp/registry":
     )
     installTestWithdraw(seeded.registry, withdraw, 5)
     check getDeclaration(seeded.registry.state, seeded.declId).isSome
-    onEpochStarted(seeded.registry, previousEpoch = 6, epoch = 7)
+    onEpochStarted(seeded.registry, 7)
+    check getDeclaration(seeded.registry.state, seeded.declId).isNone
+
+  test "onEpochStarted skips finalization when epoch unchanged":
+    var seeded = seedDeclaration(pkSeed = 31, declareEpoch = 1)
+    let withdraw = WithdrawMessage(
+      declarationId: seeded.declId,
+      lockedNoteId: seeded.declaration.lockedNoteId,
+      nonce: 1,
+    )
+    installTestWithdraw(seeded.registry, withdraw, 5)
+    for epoch in 1'u64 .. 6'u64:
+      onEpochStarted(seeded.registry, epoch)
+    check getDeclaration(seeded.registry.state, seeded.declId).isSome
+    onEpochStarted(seeded.registry, 7)
+    check getDeclaration(seeded.registry.state, seeded.declId).isNone
+    onEpochStarted(seeded.registry, 7)
     check getDeclaration(seeded.registry.state, seeded.declId).isNone
 
 suite "core/sdp/registry — epoch snapshots":
   test "epochs 0 and 1 use genesis snapshot":
     var registry = testSdpRegistry()
-    onEpochStarted(registry, previousEpoch = 0, epoch = 0)
+    onEpochStarted(registry, 0)
     check getEpochSnapshot(registry.snapshots, ServiceType.bn, 0).isSome
     check getEpochSnapshot(registry.snapshots, ServiceType.bn, 1).isSome
     check getEpochSnapshot(registry.snapshots, ServiceType.bn, 0).get() ==
@@ -95,24 +111,24 @@ suite "core/sdp/registry — epoch snapshots":
 
   test "takes S_n when epoch n-2 starts":
     var registry = testSdpRegistry()
-    onEpochStarted(registry, previousEpoch = 0, epoch = 1)
+    onEpochStarted(registry, 1)
     check getEpochSnapshot(registry.snapshots, ServiceType.bn, 3).isSome
 
   test "takes next snapshot and prunes ended epoch on boundary":
     var registry = testSdpRegistry()
-    onEpochStarted(registry, previousEpoch = 0, epoch = 1)
+    onEpochStarted(registry, 1)
     check getEpochSnapshot(registry.snapshots, ServiceType.bn, 3).isSome
 
-    onEpochStarted(registry, previousEpoch = 1, epoch = 2)
+    onEpochStarted(registry, 2)
     check getEpochSnapshot(registry.snapshots, ServiceType.bn, 3).isSome
     check getEpochSnapshot(registry.snapshots, ServiceType.bn, 4).isSome
 
-    onEpochStarted(registry, previousEpoch = 2, epoch = 3)
+    onEpochStarted(registry, 3)
     check getEpochSnapshot(registry.snapshots, ServiceType.bn, 3).isSome
     check getEpochSnapshot(registry.snapshots, ServiceType.bn, 4).isSome
     check getEpochSnapshot(registry.snapshots, ServiceType.bn, 5).isSome
 
-    onEpochStarted(registry, previousEpoch = 3, epoch = 4)
+    onEpochStarted(registry, 4)
     check getEpochSnapshot(registry.snapshots, ServiceType.bn, 3).isNone
     check getEpochSnapshot(registry.snapshots, ServiceType.bn, 4).isSome
     check getEpochSnapshot(registry.snapshots, ServiceType.bn, 5).isSome
@@ -120,7 +136,7 @@ suite "core/sdp/registry — epoch snapshots":
 
   test "snapshots are isolated from later live state":
     var registry = testSdpRegistry()
-    onEpochStarted(registry, previousEpoch = 0, epoch = 1)
+    onEpochStarted(registry, 1)
     let snap3 = getEpochSnapshot(registry.snapshots, ServiceType.bn, 3).get()
     check snap3.declarations.len == 0
 
@@ -147,7 +163,25 @@ suite "core/sdp/registry — epoch snapshots":
   test "retains at most three epoch snapshots in steady state":
     var registry = testSdpRegistry()
     for epoch in 1'u64 .. 6'u64:
-      onEpochStarted(registry, previousEpoch = epoch - 1, epoch = epoch)
+      onEpochStarted(registry, epoch)
       check registry.snapshots.getOrDefault(ServiceType.bn).len <= 3
+
+  test "prunes all ended snapshots when epochs are skipped":
+    var registry = testSdpRegistry()
+    onEpochStarted(registry, 1)
+    onEpochStarted(registry, 2)
+    onEpochStarted(registry, 3)
+    check registry.snapshots.getOrDefault(ServiceType.bn).len == 3
+    check getEpochSnapshot(registry.snapshots, ServiceType.bn, 3).isSome
+    check getEpochSnapshot(registry.snapshots, ServiceType.bn, 4).isSome
+    check getEpochSnapshot(registry.snapshots, ServiceType.bn, 5).isSome
+
+    onEpochStarted(registry, 7)
+    let byEpoch = registry.snapshots.getOrDefault(ServiceType.bn)
+    check byEpoch.len == 1
+    check getEpochSnapshot(registry.snapshots, ServiceType.bn, 3).isNone
+    check getEpochSnapshot(registry.snapshots, ServiceType.bn, 4).isNone
+    check getEpochSnapshot(registry.snapshots, ServiceType.bn, 5).isNone
+    check getEpochSnapshot(registry.snapshots, ServiceType.bn, 9).isSome
 
 {.pop.}

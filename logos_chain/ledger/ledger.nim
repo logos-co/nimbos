@@ -209,9 +209,9 @@ proc commitUpdate*[Id](
 ) =
   ## Installs ``state`` at ``id`` and runs SDP epoch-boundary updates
   ## (withdrawal finalization, epoch snapshots) once the block is accepted.
-  
-  let parentEpoch = if epoch > 0: epoch - 1 else: 0'u64
-  onEpochStarted(state.sdp, parentEpoch, epoch)
+  # TODO(EpochState): derive epoch from the consensus slot schedule and call
+  # onEpochStarted only when the epoch advances, not on every block commit.
+  onEpochStarted(state.sdp, epoch)
   l.states[id] = state
 
 func pruneStateAt*[Id](l: var Ledger[Id], id: Id): bool =
@@ -252,7 +252,9 @@ proc fromGenesis*(
         ?applySdpDeclare(state.sdp, op.payload.sdpDeclare, epoch)
       else:
         return err(UnsupportedOp)
-  onEpochStarted(state.sdp, previousEpoch = 0'u64, epoch = 0'u64)
+  # TODO(EpochState): genesis epoch-boundary handling should follow the same
+  # consensus epoch schedule as commitUpdate once epoch management lands.
+  onEpochStarted(state.sdp, epoch = 0'u64)
   ok(state)
 
 proc prepareUpdate*[Id](

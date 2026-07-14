@@ -6,7 +6,7 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## In-memory SDP validator state store.
-## Spec: [1.1.0 Service Declaration Protocol](bedrock-service-declaration-protocol.md)
+## Spec: [1.1.0 Service Declaration Protocol](https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/bedrock-service-declaration-protocol.md)
 
 {.push raises: [], gcsafe.}
 

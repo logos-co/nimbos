@@ -6,7 +6,7 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## SDP domain types layered on top of Bedrock mantle primitives.
-## Spec: [1.1.0 Service Declaration Protocol](bedrock-service-declaration-protocol.md)
+## Spec: [1.1.0 Service Declaration Protocol](https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/bedrock-service-declaration-protocol.md)
 ## Spec: [v1.5.0 Mantle](https://nomos-tech.notion.site/1-5-0-Mantle-33d261aa09df8051b0d0cd4d5ddade85)
 
 {.push raises: [], gcsafe.}
