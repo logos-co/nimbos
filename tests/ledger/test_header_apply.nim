@@ -10,8 +10,10 @@
 
 import
   unittest2,
+  results,
   ../../logos_chain/ledger/ledger,
   ../core/mantle/test_helpers,
+  ./sdp/test_helpers as sdp_test_helpers,
   ./test_helpers
 
 from ../../logos_chain/core/types import ProofOfLeadership
@@ -26,7 +28,8 @@ proc genesisLedgerState(): LedgerState =
   # (base period 10, epoch length 100, snapshots 60/160) comes from
   # `testLedgerConfig`.
   LedgerState.fromUtxos(
-    [mkUtxo(value = 1000)], fe(7), testLedgerConfig).expect("genesis state")
+    [mkUtxo(value = 1000)], fe(7), testSdpRegistry(), testLedgerConfig
+  ).expect("genesis state")
 
 suite "ledger/header apply (epoch pipeline)":
   test "applying a header advances the tracker":
@@ -53,6 +56,7 @@ suite "ledger/header apply (epoch pipeline)":
     var s = genesisLedgerState()
     for slot in [5'u64, 10, 20]:
       s = s.tryApplyHeader(slot, sentinelProof(), testLedgerConfig).expect("valid")
+    check s.sdp.lastEpochStarted.isNone # no boundary crossed yet
     s = s.tryApplyHeader(100, sentinelProof(), testLedgerConfig).expect("rotation")
     check:
       s.epochs.activeEpoch.epoch == 1
@@ -60,6 +64,8 @@ suite "ledger/header apply (epoch pipeline)":
       s.epochs.activeEpoch.totalStake == 500
       s.epochs.blockDensity.periodStart == 100 # new window
       s.epochs.blockDensity.density == 1 # the rotating block itself
+      # The rotating block also runs the SDP epoch boundary.
+      s.sdp.lastEpochStarted == Opt.some(EpochNumber(1))
 
   test "nonce freezes at the snapshot slot, aged root at the epoch start":
     var s = genesisLedgerState()

@@ -239,7 +239,7 @@ func validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
     "cryptarchia.slot_activation_coeff.numerator must be > 0")
   need(ds.cryptarchia.slotActivationCoeff.den > 0,
     "cryptarchia.slot_activation_coeff.denominator must be > 0")
-  need(ds.cryptarchia.learningRate > 0.0, "cryptarchia.learning_rate must be > 0")
+  need(ds.cryptarchia.learningRate.num > 0, "cryptarchia.learning_rate must be > 0")
   need(ds.cryptarchia.sdpConfig.bn.inactivityPeriod >= 2,
     "cryptarchia.sdp_config.service_params.BN.inactivity_period must be >= 2")
   need(ds.cryptarchia.sdpConfig.bn.epoch >= 0,

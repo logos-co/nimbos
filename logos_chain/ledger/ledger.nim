@@ -15,8 +15,7 @@ import
   std/[options, tables],
   ./[
     balance, types, cryptarchia_state, channel_state, mantle_state,
-    pol_verifier,
-    locked_notes, pol_verifier, epoch_state,
+    pol_verifier, epoch_state,
   ],
   ./sdp/[registry, ops],
   ../core/mantle/[tx_types, tx_hashing, operations, proofs],
@@ -36,18 +35,6 @@ type
     states: Table[Id, LedgerState]
     config: LedgerConfig
 
-func fromUtxos*(
-    _: typedesc[LedgerState],
-    utxos: openArray[Utxo],
-    sdp: sink SdpRegistry,
-): LedgerState =
-  ## Builds a genesis-style state from the given UTXO set and SDP registry.
-  LedgerState(
-    cryptarchiaLedger: CryptarchiaState.init(utxos),
-    sdp: sdp,
-    mantleLedger: MantleState.init(),
-  )
-
 func latestUtxos*(s: LedgerState): lent UtxoStore =
   ## The live UTXO set.
   s.cryptarchiaLedger.latestUtxos
@@ -62,6 +49,7 @@ func fromUtxos*(
     _: typedesc[LedgerState],
     utxos: openArray[Utxo],
     nonce: FieldElement,
+    sdp: sink SdpRegistry,
     cfg: LedgerConfig,
 ): Result[LedgerState, LedgerError] =
   ## Genesis-style state seeded with epoch bookkeeping from the UTXO set;
@@ -69,6 +57,7 @@ func fromUtxos*(
   var
     s = LedgerState(
       cryptarchiaLedger: CryptarchiaState.init(utxos),
+      sdp: sdp,
       mantleLedger: MantleState.init())
     total = 0'u64
   for u in utxos:
@@ -79,18 +68,21 @@ func fromUtxos*(
     nonce, s.cryptarchiaLedger.latestUtxos.root, max(total, 1), cfg)
   ok(s)
 
-func fromGenesis*(
+proc fromGenesis*(
     _: typedesc[LedgerState],
     genesisTxs: openArray[SignedMantleTx],
     nonce: FieldElement,
+    sdp: sink SdpRegistry,
     cfg: LedgerConfig,
 ): Result[LedgerState, LedgerError] =
   ## Genesis state from the genesis block's transactions: ops run through the
   ## pure transition cores (no proof or balance checks), then epochs are
   ## seeded from the faucet-filtered stake and ceremony nonce.
+  const genesisEpoch = 0'u64
   var
     s = LedgerState(
       cryptarchiaLedger: CryptarchiaState.init(),
+      sdp: sdp,
       mantleLedger: MantleState.init())
     total = 0'u64
   for tx in genesisTxs:
@@ -104,7 +96,7 @@ func fromGenesis*(
           doAssert total <= uint64.high - c, "total stake overflows uint64"
           total += c
         let r = ?s.cryptarchiaLedger.applyTransferState(
-          LockedNotes.init(), op.payload.transfer)
+          s.sdp.state.lockedNotes, op.payload.transfer)
         s.cryptarchiaLedger = r.state
       of ChannelInscribe:
         # Envelope validity (null channel, root parent, zero signer) is
@@ -112,11 +104,14 @@ func fromGenesis*(
         s.mantleLedger.channels = applyChannelInscribe(
           s.mantleLedger.channels, op.payload.channelInscribe, 0)
       of SdpDeclare:
-        discard # genesis SDP declarations land with the SDP module
+        ?applySdpDeclare(s.sdp, op.payload.sdpDeclare, genesisEpoch)
       else:
         return err(UnsupportedOp)
   s.epochs = ?genesisEpochTracker(
     nonce, s.cryptarchiaLedger.latestUtxos.root, max(total, 1), cfg)
+  # Epochs 0 and 1 read the registry snapshot taken at genesis
+  # (bedrock-service-declaration-protocol.md, Registry Snapshots).
+  onEpochStarted(s.sdp, genesisEpoch)
   ok(s)
 
 proc tryApplyHeader*(
@@ -128,8 +123,15 @@ proc tryApplyHeader*(
   ## Epoch pipeline for `slot`, leader-proof verification against the active
   ## epoch state, then entropy/density bookkeeping.
   var s = state
+  let prevEpoch = s.epochs.activeEpoch.epoch
   s.epochs = ?s.epochs.advanceEpochs(
     slot, s.cryptarchiaLedger.latestUtxos.root, cfg)
+  if s.epochs.activeEpoch.epoch > prevEpoch:
+    # SDP epoch finalization is part of applying the first block of the new
+    # epoch (bedrock-v1.1-mantle-specification.md, SDP Epoch Finalization);
+    # reward distribution slots in ahead of the withdrawal removal once it
+    # lands.
+    onEpochStarted(s.sdp, s.epochs.activeEpoch.epoch)
   let
     active = s.epochs.activeEpoch
     public = LeaderPublic(
@@ -283,17 +285,13 @@ func state*[Id](l: Ledger[Id], id: Id): Opt[LedgerState] =
 func config*[Id](l: Ledger[Id]): lent LedgerConfig =
   l.config
 
-proc commitUpdate*[Id](
+func commitUpdate*[Id](
     l: var Ledger[Id],
     id: Id,
-    epoch: EpochNumber,
     state: sink LedgerState,
 ) =
-  ## Installs ``state`` at ``id`` and runs SDP epoch-boundary updates
-  ## (withdrawal finalization, epoch snapshots) once the block is accepted.
-  # TODO(EpochState): derive epoch from the consensus slot schedule and call
-  # onEpochStarted only when the epoch advances, not on every block commit.
-  onEpochStarted(state.sdp, epoch)
+  ## Installs ``state`` at ``id``. Epoch-boundary effects were already
+  ## applied by `tryApplyHeader` when the state was prepared.
   l.states[id] = state
 
 func pruneStateAt*[Id](l: var Ledger[Id], id: Id): bool =
@@ -302,42 +300,6 @@ func pruneStateAt*[Id](l: var Ledger[Id], id: Id): bool =
     true
   else:
     false
-
-proc fromGenesis*(
-    _: typedesc[LedgerState],
-    sdp: sink SdpRegistry,
-    genesisTxs: openArray[SignedMantleTx],
-): Result[LedgerState, LedgerError] =
-  ## Builds genesis ledger state from the genesis block's transactions.
-  ## Ops run through pure transition cores (no proof or balance checks).
-  var state = LedgerState(
-    cryptarchiaLedger: CryptarchiaState.init(),
-    sdp: sdp,
-    mantleLedger: MantleState.init(),
-  )
-  const
-    epoch = 0'u64
-    slot = 0'u64
-  for tx in genesisTxs:
-    for op in tx.tx.ops:
-      case op.payload.kind
-      of Transfer:
-        let r = ?state.cryptarchiaLedger.applyTransferState(
-          state.sdp.state.lockedNotes, op.payload.transfer,
-        )
-        state.cryptarchiaLedger = r.state
-      of ChannelInscribe:
-        state.mantleLedger.channels = applyChannelInscribe(
-          state.mantleLedger.channels, op.payload.channelInscribe, slot,
-        )
-      of SdpDeclare:
-        ?applySdpDeclare(state.sdp, op.payload.sdpDeclare, epoch)
-      else:
-        return err(UnsupportedOp)
-  # TODO(EpochState): genesis epoch-boundary handling should follow the same
-  # consensus epoch schedule as commitUpdate once epoch management lands.
-  onEpochStarted(state.sdp, epoch = 0'u64)
-  ok(state)
 
 proc prepareUpdate*[Id](
     l: Ledger[Id],
@@ -355,7 +317,7 @@ proc prepareUpdate*[Id](
   let
     parent = l.states.getOrDefault(parentId)
     afterHeader = ?parent.tryApplyHeader(slot, proof, l.config)
-    afterTxs = ?afterHeader.tryApplyTxns(txs, lockedNotes,epoch, slot)
+    afterTxs = ?afterHeader.tryApplyTxns(txs, epoch, slot)
   ok((id: id, state: afterTxs))
 
 {.pop.}

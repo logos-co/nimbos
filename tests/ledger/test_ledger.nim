@@ -24,14 +24,7 @@ import
   ./sdp/test_helpers,
   ../core/mantle/test_helpers
 
-proc mkProvider(seed: byte): ProviderId =
-  var bytes: array[EdPublicKeySize, byte]
-  bytes[0] = seed
-  var key: ProviderId
-  doAssert key.init(bytes)
-  key
-
-from ../consensus/test_helpers import testLedgerConfig
+from ./test_helpers import testLedgerConfig
 
 const
   testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
@@ -40,11 +33,19 @@ const
   zksignFixtureVk = zksignFixtureDir / "verification_key.json"
   transferProofPath = zksignFixtureDir / "proof.json"
 
+proc mkProvider(seed: byte): ProviderId =
+  var bytes: array[EdPublicKeySize, byte]
+  bytes[0] = seed
+  var key: ProviderId
+  doAssert key.init(bytes)
+  key
+
 proc mkState(utxos: openArray[Utxo]): LedgerState =
   ## Epoch-seeded genesis-style state under `testLedgerConfig` (zero nonce);
   ## the bare, un-seeded constructor no longer exists.
   LedgerState.fromUtxos(
-    utxos, default(FieldElement),testSdpRegistry(), testLedgerConfig).expect("seed")
+    utxos, default(FieldElement), testSdpRegistry(), testLedgerConfig
+  ).expect("seed")
 
 suite "LedgerState constructors and reads":
   test "fromUtxos with empty seq → empty state":
@@ -182,7 +183,7 @@ suite "Ledger[Id] map ops":
     let
       id2 = mkId(0x02)
       st2 = mkState(@[mkUtxo(value = 7, pkSeed = 7)])
-    l.commitUpdate(id2,epoch = 1'u64, st2)
+    l.commitUpdate(id2, st2)
     check l.state(id2).isSome
     check l.state(id2).get.latestUtxos.len == 1
 
@@ -209,7 +210,7 @@ suite "prepareUpdate — no-verify paths":
 
   test "empty tx list → state unchanged, no commit":
     let
-      parent = LedgerState.fromUtxos(@[mkUtxo()], testSdpRegistry())
+      parent = mkState(@[mkUtxo()])
       id0 = mkId(0x01)
       l = Ledger[TestId].init(id0, parent, testLedgerConfig)
       id1 = mkId(0x02)
@@ -378,7 +379,7 @@ when false:
         )
       check r.isOk
       let prepared = r.get
-      l.commitUpdate(prepared.id, epoch = 1'u64, prepared.state)
+      l.commitUpdate(prepared.id, prepared.state)
       check l.state(mkId(0x02)).isSome
       check l.state(mkId(0x02)).get.latestUtxos.len == 1
       check not l.state(mkId(0x02)).get.latestUtxos.contains(input.id)
@@ -419,7 +420,7 @@ when false:
           epoch = 1'u64,
         )
       check r1.isOk
-      l.commitUpdate(r1.get.id, epoch = 1'u64, r1.get.state)
+      l.commitUpdate(r1.get.id, r1.get.state)
 
       let
         tx1OpId = opId(
@@ -444,7 +445,7 @@ when false:
           epoch = 1'u64,
         )
       check r2.isOk
-      l.commitUpdate(r2.get.id, epoch = 1'u64, r2.get.state)
+      l.commitUpdate(r2.get.id, r2.get.state)
 
       let
         tx2OpId = opId(
@@ -470,7 +471,7 @@ when false:
           epoch = 1'u64,
         )
       check r3.isOk
-      l.commitUpdate(r3.get.id, epoch = 1'u64, r3.get.state)
+      l.commitUpdate(r3.get.id, r3.get.state)
 
       check l.state(mkId(0x00)).isSome
       check l.state(mkId(0x01)).isSome
@@ -485,7 +486,7 @@ when false:
 suite "tryApplyTx — SDP":
   test "declare locks note; withdraw unlocks after finalization":
     let input = mkUtxo(value = 200, pkSeed = 1)
-    var state = LedgerState.fromUtxos([input], testSdpRegistry())
+    var state = mkState([input])
     let declaration = DeclarationMessage(
       serviceType: ServiceType.bn,
       locators: @[],
@@ -525,7 +526,7 @@ suite "tryApplyTx — SDP":
 
   test "prepareUpdate commits registry state from parent":
     let input = mkUtxo(value = 200, pkSeed = 3)
-    var parent = LedgerState.fromUtxos([input], testSdpRegistry())
+    var parent = mkState([input])
     let declaration = DeclarationMessage(
       serviceType: ServiceType.bn,
       locators: @[],
@@ -535,7 +536,7 @@ suite "tryApplyTx — SDP":
     )
     discard installTestDeclaration(parent.sdp, declaration, epoch = 1)
     let id0 = mkId(0x10)
-    var l = Ledger[TestId].init(id0, parent)
+    var l = Ledger[TestId].init(id0, parent, testLedgerConfig)
     let r = l.prepareUpdate(
       id = mkId(0x11),
       parentId = id0,
@@ -545,7 +546,7 @@ suite "tryApplyTx — SDP":
       epoch = 1'u64,
     )
     check r.isOk
-    l.commitUpdate(r.get.id, epoch = 1'u64, r.get.state)
+    l.commitUpdate(r.get.id, r.get.state)
     check declarationId(declaration) in l.state(mkId(0x11)).get.sdp.state.declarations
 
 {.pop.}

@@ -69,8 +69,8 @@ proc onEpochStarted*(
 ) =
   ## Runs withdrawal finalization and epoch snapshotting at an epoch boundary.
   ## No-op when ``epoch`` is not greater than ``lastEpochStarted``.
-  ## TODO(EpochState): callers must pass the consensus epoch; rewind
-  ## ``lastEpochStarted`` on reorgs once epoch management lands.
+  # The registry is fork-local (copied with LedgerState per branch), so a
+  # reorg never needs to rewind lastEpochStarted.
   if registry.lastEpochStarted.isSome and epoch <= registry.lastEpochStarted.get():
     return
   if epoch == 0:

@@ -11,17 +11,18 @@
 ## actual devnet configuration).
 
 # `gcsafe` deliberately omitted: `parseDeploymentSettings` (YAML) is not
-# GC-safe, matching `tests/core/test_devnet_genesis_mantle_tx.nim`.
+# GC-safe, matching `tests/chain/test_devnet_genesis_mantle_tx.nim`.
 {.push raises: [].}
 {.used.}
 
 import
   std/[os, strutils],
   unittest2,
-  stew/io2,
+  stew/[byteutils, io2],
   ../testutil,
   ../../logos_chain/chain/chain,
-  ../../logos_chain/deployment/deployment_settings
+  ../../logos_chain/deployment/deployment_settings,
+  ../../logos_chain/zk/poseidon2/hasher
 
 const
   testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
@@ -48,12 +49,17 @@ suite "chain/epoch wiring (devnet deployment settings)":
       cfg.stakeInferenceLearningRate == NonNegativeRatio(num: 5, den: 10)
 
   test "cryptarchiaParameter decodes the devnet ceremony values":
-    let param = ds.cryptarchia.genesisState.cryptarchiaParameter().valueOr:
-      check false
-      return
+    let
+      param = ds.cryptarchia.genesisState.cryptarchiaParameter().valueOr:
+        check false
+        return
+      # Nonce derived by the ceremony from its pinned entropy_sources input.
+      ceremonyNonce = frFromBytesLE(hexToByteArray[32](
+        "2d2ddf918544bca603c5a291c7dd1b902d6769ff4b00021506780e075c06051a"
+      )).expect("below the BN254 order")
     check:
-      param.genesisTime == 0x69f8a943'u64
-      param.epochNonce == default(FieldElement) # devnet ceremony nonce is zero
+      param.genesisTime == 0x69fe6991'u64
+      param.epochNonce == ceremonyNonce
 
   test "fromGenesis builds a lottery-ready genesis state":
     let
@@ -61,17 +67,17 @@ suite "chain/epoch wiring (devnet deployment settings)":
         check false
         return
       state = LedgerState.fromGenesis(
-        [ds.cryptarchia.genesisState.signedMantleTx],
-        param.epochNonce, ledgerConfig(ds)).valueOr:
+        [ds.cryptarchia.genesisState.signedMantleTx], param.epochNonce,
+        SdpRegistry.init(ds.cryptarchia.sdpConfig), ledgerConfig(ds)).valueOr:
         check false
         return
     check:
-      # 4 × (100000 + 1 + 100) distribution notes plus the faucet note.
-      state.latestUtxos.len == 13
+      # Standalone ceremony notes (100000 + 100 + 100 + 1) plus the faucet note.
+      state.latestUtxos.len == 5
       state.epochs.activeEpoch.epoch == 0
       state.epochs.nextEpoch.epoch == 1
       # faucet-filtered sum: the ~2^64 faucet mint is excluded.
-      state.epochs.activeEpoch.totalStake == 400404
+      state.epochs.activeEpoch.totalStake == 100201
       state.epochs.activeEpoch.lottery0 != default(FieldElement)
       state.epochs.activeEpoch.lottery1 != default(FieldElement)
       state.epochs.blockDensity.periodStart == 0
@@ -86,10 +92,10 @@ suite "chain/epoch wiring (devnet deployment settings)":
       check false
       return
     check:
-      chain.slotConfig.genesisTime == 0x69f8a943'u64
+      chain.slotConfig.genesisTime == 0x69fe6991'u64
       chain.slotConfig.slotDurationSeconds == 1
-      genesisState.latestUtxos.len == 13
-      genesisState.epochs.activeEpoch.totalStake == 400404
+      genesisState.latestUtxos.len == 5
+      genesisState.epochs.activeEpoch.totalStake == 100201
       genesisState.epochs.nextEpoch.epoch == 1
       chain.currentWallclockSlot() > 0 # devnet genesis lies in the past
 

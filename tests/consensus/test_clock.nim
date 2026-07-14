@@ -11,7 +11,7 @@
 import
   unittest2,
   ../../logos_chain/consensus/clock,
-  ./test_helpers
+  ../ledger/test_helpers
 
 suite "consensus/clock":
   test "base period length is ⌊k/f⌋ for every deployment":

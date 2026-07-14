@@ -14,7 +14,7 @@ import
   results,
   ../core/[types, local_tree, block_validation],
   ../deployment/deployment_settings,
-  ../ledger/[ledger, locked_notes],
+  ../ledger/ledger,
   ./genesis
 
 export genesis, local_tree
@@ -62,7 +62,6 @@ func ledgerConfig*(settings: DeploymentSettings): LedgerConfig =
     stakeInferenceLearningRate: c.learningRate,
     faucetPk: Opt.some(c.genesisState.faucetZkPublicKey))
 
-
 func init*(
     T: type Chain,
     genesisBlock: Block,
@@ -77,16 +76,15 @@ func init*(
     slotConfig: slotConfig,
   )
 
-func init*(T: type Chain, settings: DeploymentSettings): Result[T, string] =
+proc init*(T: type Chain, settings: DeploymentSettings): Result[T, string] =
   let
     genesisBlock = createGenesisBlock(settings.cryptarchia.genesisState.signedMantleTx)
     cfg = ledgerConfig(settings)
     sdp = SdpRegistry.init(settings.cryptarchia.sdpConfig)
-
     param = settings.cryptarchia.genesisState.cryptarchiaParameter().valueOr:
       return err("chain: " & $error)
     genesisState = LedgerState.fromGenesis(
-        genesisBlock.txs, param.epochNonce, cfg).valueOr:
+        genesisBlock.txs, param.epochNonce, sdp, cfg).valueOr:
       return err("chain: failed to build the genesis state: " & $error)
   ok(T.init(
     genesisBlock,
@@ -107,18 +105,18 @@ proc tryApplyBlock*(
   let
     hdr = header(blk)
     id = blockId(hdr)
+    epoch = slotToEpoch(hdr.slot, chain.ledger.config.epochSchedule)
   if chain.ledger.state(id).isSome:
     return err(BlockApplyError(kind: AlreadyApplied))
   if hdr.slot > chain.currentWallclockSlot():
     return err(BlockApplyError(kind: FutureSlot))
   if not validateBlock(blk):
     return err(BlockApplyError(kind: InvalidStructure))
-  # Empty locked notes until the mempool lands; the ledger prepares without
-  # mutating, the tree mutates, the ledger commits — a failure at any step
-  # leaves no partial state.
+  # The ledger prepares without mutating, the tree mutates, the ledger
+  # commits — a failure at any step leaves no partial state.
   let prepared = chain.ledger.prepareUpdate(
       id, hdr.parentBlock, hdr.slot, hdr.proofOfLeadership, blk.txs,
-      LockedNotes.init()).valueOr:
+      epoch).valueOr:
     return err(BlockApplyError(kind: LedgerRejected, ledgerError: error))
   if not chain.localTree.addBlockToTree(blk):
     return err(BlockApplyError(kind: TreeRejected))

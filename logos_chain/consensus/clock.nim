@@ -10,12 +10,11 @@
 # Layer L1 — slot ⇄ epoch ⇄ wallclock arithmetic. Pure functions only.
 
 from ../core/utils import NonNegativeRatio
-from ../core/mantle/primitives import SlotNumber
+from ../core/mantle/primitives import SlotNumber, EpochNumber
 
-export NonNegativeRatio, SlotNumber
+export NonNegativeRatio, SlotNumber, EpochNumber
 
 type
-  EpochNumber* = uint64
   WallclockSeconds* = uint64
 
   EpochSchedule* = object
