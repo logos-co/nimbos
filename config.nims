@@ -131,6 +131,7 @@ switch("passL", "-fno-omit-frame-pointer")
 --define:nimTypeNames
 --styleCheck:usages
 --styleCheck:error
+--define:chronosStrictReentrancy
 
 switch("define", "nim_compiler_path=" & currentDir & "env.sh nim")
 switch("define", "withoutPCRE")
