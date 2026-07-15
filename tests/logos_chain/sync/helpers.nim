@@ -13,7 +13,10 @@ import
   bincode,
   stew/byteutils as byteutils,
   ../../testutil,
+  ../../ledger/sdp/test_helpers,
+  ../../../logos_chain/chain/chain,
   ../../../logos_chain/core/[types, local_tree],
+  ../../../logos_chain/ledger/ledger,
   ../../../logos_chain/sync/[framing, types, ibd_client, ibd_server]
 from ../../../logos_chain/core/mantle/primitives import SlotNumber
 from ../../../logos_chain/core/mantle/tx_types import SignedMantleTx, encodeSignedMantleTx
@@ -107,6 +110,15 @@ proc downloadBlocksResponsesForRequest*(
     responses.add DownloadBlocksResponse(kind: dbrBlock, downloadedBlock: innerWire)
   responses.add DownloadBlocksResponse(kind: dbrNoMoreBlocks)
   responses
+
+proc initTestChain*(genesis: Block): Chain =
+  let genesisState = LedgerState.fromGenesis(
+    testSdpRegistry(), genesis.txs,
+  ).valueOr:
+    raise newException(AssertionDefect, "initTestChain: " & $error)
+  Chain.init(
+    genesis, Ledger[BlockId].init(blockId(genesis.header), genesisState),
+  )
 
 proc u32LengthPrefixedHex*(inner: seq[byte]): string =
   try:

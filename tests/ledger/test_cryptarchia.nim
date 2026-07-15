@@ -9,12 +9,12 @@
 {.used.}
 
 import
-  std/[os, strutils],
+  std/[os, sets, strutils],
   unittest2,
   results,
   poseidon2/types,          # `==` for F
   ../../logos_chain/ledger/
-    [balance, cryptarchia_state, locked_notes, types, utxo_store],
+    [balance, cryptarchia_state, types, utxo_store],
   ../../logos_chain/core/mantle/[primitives, operations, proofs, tx_hashing, utxo],
   ../../logos_chain/zk/zksign,
   ../zk/zksign_helpers,
@@ -99,17 +99,18 @@ suite "tryApplyTransfer — error paths":
     let
       input = mkUtxo(value = 100, pkSeed = 1)
       s0 = CryptarchiaState.init([input])
-      locked = LockedNotes.init([input.id])
       op = TransferPayload(
         inputs: Inputs(noteIds: @[input.id]),
         outputs: Outputs(notes: @[mkNote(100, pkSeed = 2)]),
       )
-      r = s0.tryApplyTransfer(
-        locked,
-        op,
-        sig = default(ZkSigProof),
-        txHash = mkTxHash(),
-      )
+    var locked = LockedNotes.init()
+    locked = locked.insert(input.id, initHashSet[DeclarationId]())
+    let r = s0.tryApplyTransfer(
+      locked,
+      op,
+      sig = default(ZkSigProof),
+      txHash = mkTxHash(),
+    )
     check r.isErr
     check r.error == LockedNote
 

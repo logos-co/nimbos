@@ -46,19 +46,19 @@ type
 
 
 type
-  SdpDeclarePayload* = object
+  DeclarationMessage* = object
     serviceType*: ServiceType
     locators*: seq[Locator]
     providerId*: ProviderId
-    zkId*: ZkId
     lockedNoteId*: NoteId
+    zkId*: ZkId
 
-  SdpWithdrawPayload* = object
+  WithdrawMessage* = object
     declarationId*: DeclarationId
     lockedNoteId*: NoteId
     nonce*: Nonce
 
-  SdpActivePayload* = object
+  ActiveMessage* = object
     declarationId*: DeclarationId
     nonce*: Nonce
     metadata*: Metadata
@@ -97,9 +97,9 @@ type
     of ChannelInscribe: channelInscribe*: ChannelInscribePayload
     of ChannelDeposit: channelDeposit*: ChannelDepositPayload
     of ChannelWithdraw: channelWithdraw*: ChannelWithdrawPayload
-    of SdpDeclare: sdpDeclare*: SdpDeclarePayload
-    of SdpWithdraw: sdpWithdraw*: SdpWithdrawPayload
-    of SdpActive: sdpActive*: SdpActivePayload
+    of SdpDeclare: sdpDeclare*: DeclarationMessage
+    of SdpWithdraw: sdpWithdraw*: WithdrawMessage
+    of SdpActive: sdpActive*: ActiveMessage
     of LeaderClaim: leaderClaim*: LeaderClaimPayload
     of ChannelConfig: channelConfig*: ChannelConfigPayload
 
@@ -129,16 +129,16 @@ func createChannelWithdrawOp*(payload: ChannelWithdrawPayload): Op =
     payload: OpPayload(kind: ChannelWithdraw, channelWithdraw: payload),
   )
 
-func createSdpDeclareOp*(payload: SdpDeclarePayload): Op =
+func createSdpDeclareOp*(payload: DeclarationMessage): Op =
   Op(opcode: OpSdpDeclare, payload: OpPayload(kind: SdpDeclare, sdpDeclare: payload))
 
-func createSdpWithdrawOp*(payload: SdpWithdrawPayload): Op =
+func createSdpWithdrawOp*(payload: WithdrawMessage): Op =
   Op(
     opcode: OpSdpWithdraw,
     payload: OpPayload(kind: SdpWithdraw, sdpWithdraw: payload),
   )
 
-func createSdpActiveOp*(payload: SdpActivePayload): Op =
+func createSdpActiveOp*(payload: ActiveMessage): Op =
   Op(opcode: OpSdpActive, payload: OpPayload(kind: SdpActive, sdpActive: payload))
 
 func createLeaderClaimOp*(payload: LeaderClaimPayload): Op =
@@ -200,7 +200,7 @@ func defaultOpForOpcode*(opcode: Opcode): Op =
       opIdNonce: 0'u32,
     ))
   of OpSdpDeclare:
-    createSdpDeclareOp(SdpDeclarePayload(
+    createSdpDeclareOp(DeclarationMessage(
       serviceType: default(ServiceType),
       locators: @[],
       providerId: default(ProviderId),
@@ -208,13 +208,13 @@ func defaultOpForOpcode*(opcode: Opcode): Op =
       lockedNoteId: default(LockedNoteId),
     ))
   of OpSdpWithdraw:
-    createSdpWithdrawOp(SdpWithdrawPayload(
+    createSdpWithdrawOp(WithdrawMessage(
       declarationId: default(DeclarationId),
       nonce: default(Nonce),
       lockedNoteId: default(LockedNoteId),
     ))
   of OpSdpActive:
-    createSdpActiveOp(SdpActivePayload(
+    createSdpActiveOp(ActiveMessage(
       declarationId: default(DeclarationId),
       nonce: default(Nonce),
       metadata: @[],
@@ -244,20 +244,25 @@ func encodeTransfer*(value: TransferPayload): seq[byte] =
   res.add(encodeOutputs(value.outputs))
   res
 
-func encodeSdpDeclare*(value: SdpDeclarePayload): seq[byte] =
+func encodeSdpDeclare*(value: DeclarationMessage): seq[byte] =
   ## SDPDeclare = ServiceType LocatorCount *Locator ProviderId ZkId LockedNoteId
-  doAssert value.locators.len <= MaxSdpLocators,
-    "SDPDeclare LocatorCount exceeds max supported locators"
   var res = @[encodeServiceType(value.serviceType)]
-  res.add(encodeLocatorCount(byte(value.locators.len)))
-  for locator in value.locators:
-    res.add(encodeLocator(locator))
+  res.add(encodeLocators(value.locators))
   res.add(encodeProviderId(value.providerId))
   res.add(encodeZkId(value.zkId))
   res.add(encodeLockedNoteId(value.lockedNoteId))
   res
 
-func encodeSdpWithdraw*(value: SdpWithdrawPayload): array[72, byte] =
+func declarationId*(declaration: DeclarationMessage): DeclarationId =
+  ## ``declaration_id``: wire ServiceType byte, ProviderId 32B, ZkId 32B,
+  ## then wire locators (u8 count + u16-prefixed multiaddr bytes), blake2b256.
+  var preimage = @[encodeServiceType(declaration.serviceType)]
+  preimage.add(encodeProviderId(declaration.providerId))
+  preimage.add(encodeZkId(declaration.zkId))
+  preimage.add(encodeLocators(declaration.locators))
+  blake2b256Hash(preimage)
+
+func encodeSdpWithdraw*(value: WithdrawMessage): array[72, byte] =
   ## SDPWithdraw = DeclarationId || Nonce || LockedNoteId
   var res: array[72, byte]
   res[0 ..< 32] = encodeDeclarationId(value.declarationId)
@@ -265,7 +270,7 @@ func encodeSdpWithdraw*(value: SdpWithdrawPayload): array[72, byte] =
   res[40 ..< 72] = encodeLockedNoteId(value.lockedNoteId)
   res
 
-func encodeSdpActive*(value: SdpActivePayload): seq[byte] =
+func encodeSdpActive*(value: ActiveMessage): seq[byte] =
   ## SDPActive = DeclarationId || Nonce || Metadata
   var res = @(encodeDeclarationId(value.declarationId))
   res.add(encodeNonce(value.nonce))
@@ -369,7 +374,7 @@ func decodeTransfer*(data: openArray[byte]): TransferPayload {.raises: [Decoding
   finishDecode(data, pos)
   TransferPayload(inputs: inputs, outputs: outputs)
 
-func decodeSdpDeclare*(data: openArray[byte]): SdpDeclarePayload {.raises: [DecodingError].} =
+func decodeSdpDeclare*(data: openArray[byte]): DeclarationMessage {.raises: [DecodingError].} =
   var pos = 0
   let serviceType = readServiceType(data, pos)
   let locatorCount = readByte(data, pos)
@@ -384,7 +389,7 @@ func decodeSdpDeclare*(data: openArray[byte]): SdpDeclarePayload {.raises: [Deco
   let zkId = decodeFieldElementAt(data, pos)
   let lockedNoteId = decodeFieldElementAt(data, pos)
   finishDecode(data, pos)
-  SdpDeclarePayload(
+  DeclarationMessage(
     serviceType: serviceType,
     locators: locators,
     providerId: providerKey,
@@ -392,25 +397,25 @@ func decodeSdpDeclare*(data: openArray[byte]): SdpDeclarePayload {.raises: [Deco
     lockedNoteId: lockedNoteId,
   )
 
-func decodeSdpWithdraw*(data: openArray[byte]): SdpWithdrawPayload {.raises: [DecodingError].} =
+func decodeSdpWithdraw*(data: openArray[byte]): WithdrawMessage {.raises: [DecodingError].} =
   var pos = 0
   let declarationId = readFixed[32](data, pos)
   let nonce = readLe[uint64](data, pos)
   let lockedNoteId = decodeFieldElementAt(data, pos)
   finishDecode(data, pos)
-  SdpWithdrawPayload(
+  WithdrawMessage(
     declarationId: declarationId,
     nonce: nonce,
     lockedNoteId: lockedNoteId,
   )
 
-func decodeSdpActive*(data: openArray[byte]): SdpActivePayload {.raises: [DecodingError].} =
+func decodeSdpActive*(data: openArray[byte]): ActiveMessage {.raises: [DecodingError].} =
   var pos = 0
   let declarationId = readFixed[32](data, pos)
   let nonce = readLe[uint64](data, pos)
   let metadata = readU32LeLenPrefixed(data, pos)
   finishDecode(data, pos)
-  SdpActivePayload(
+  ActiveMessage(
     declarationId: declarationId,
     nonce: nonce,
     metadata: metadata,
@@ -550,7 +555,7 @@ func readOpPayload*(data: openArray[byte], pos: var int, opcode: Opcode): OpPayl
     let lockedNoteId = decodeFieldElementAt(data, pos)
     OpPayload(
       kind: SdpDeclare,
-      sdpDeclare: SdpDeclarePayload(
+      sdpDeclare: DeclarationMessage(
         serviceType: serviceType,
         locators: locators,
         providerId: providerKey,
@@ -564,7 +569,7 @@ func readOpPayload*(data: openArray[byte], pos: var int, opcode: Opcode): OpPayl
     let lockedNoteId = decodeFieldElementAt(data, pos)
     OpPayload(
       kind: SdpWithdraw,
-      sdpWithdraw: SdpWithdrawPayload(
+      sdpWithdraw: WithdrawMessage(
         declarationId: declarationId, nonce: nonce, lockedNoteId: lockedNoteId,
       ),
     )
@@ -574,7 +579,7 @@ func readOpPayload*(data: openArray[byte], pos: var int, opcode: Opcode): OpPayl
     let metadata = readU32LeLenPrefixed(data, pos)
     OpPayload(
       kind: SdpActive,
-      sdpActive: SdpActivePayload(
+      sdpActive: ActiveMessage(
         declarationId: declarationId, nonce: nonce, metadata: metadata,
       ),
     )

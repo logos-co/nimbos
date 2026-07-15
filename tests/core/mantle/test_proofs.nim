@@ -65,7 +65,7 @@ suite "core/mantle/proofs":
         inputs: Inputs(noteIds: @[]),
         outputs: Outputs(notes: @[]),
       )),
-      createSdpActiveOp(SdpActivePayload(
+      createSdpActiveOp(ActiveMessage(
         declarationId: default(DeclarationId),
         nonce: default(Nonce),
         metadata: @[],
@@ -84,7 +84,7 @@ suite "core/mantle/proofs":
         inputs: Inputs(noteIds: @[]),
         outputs: Outputs(notes: @[]),
       )),
-      createSdpActiveOp(SdpActivePayload(
+      createSdpActiveOp(ActiveMessage(
         declarationId: default(DeclarationId),
         nonce: default(Nonce),
         metadata: @[],

@@ -12,14 +12,15 @@
 import results
 
 import
-  ./[balance, types, locked_notes, utxo_store],
-  ../core/mantle/[primitives, operations, proofs, utxo, tx_hashing],
-  ../zk/zksign
+  ./[balance, types, utxo_store, zksig_verify],
+  ./sdp/state as sdp_state,
+  ../core/mantle/[primitives, operations, proofs, utxo, tx_hashing]
 
-export types, utxo, primitives, utxo_store
+export types, utxo, primitives, utxo_store, sdp_state
 
-type CryptarchiaState* = object
-  utxos*: UtxoStore
+type
+  CryptarchiaState* = object
+    utxos*: UtxoStore
 
 func init*(_: typedesc[CryptarchiaState]): CryptarchiaState =
   CryptarchiaState(utxos: UtxoStore.init())
@@ -67,7 +68,7 @@ func applyTransferState*(
     pks = newSeqOfCap[ZkPublicKey](op.inputs.noteIds.len)
 
   for inputId in op.inputs.noteIds:
-    if lockedNotes.contains(inputId):
+    if inputId in lockedNotes:
       return err(LockedNote)
     let (newStore, removedUtxo) = s.utxos.remove(inputId).valueOr:
       return err(InvalidNote)
@@ -97,17 +98,7 @@ proc tryApplyTransfer*(
   ## `(new_state, sum(inputs) − sum(outputs))`. The returned balance may be
   ## positive (surplus → fees), zero (balanced), or negative (deficit).
   let r = ?s.applyTransferState(lockedNotes, op)
-
-  # `txHash` is a Blake2b-256 digest that may exceed the BN254 field order;
-  # reduce mod p so the prover and verifier agree on the signed Fr.
-  let msgFr = frFromBytesLEModOrder(txHash)
-  let input = zksignInput(r.pks, msgFr).valueOr:
-    return err(InvalidProof)
-  let verified = zksign.verify(sig, input).valueOr:
-    return err(VerifierNotInitialised)
-  if not verified:
-    return err(InvalidProof)
-
+  ?verifyZkSig(sig, txHash, r.pks)
   ok((r.state, r.balance))
 
 {.pop.}

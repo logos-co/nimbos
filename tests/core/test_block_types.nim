@@ -62,7 +62,7 @@ suite "core/types":
       )),
     )
     let txB = sampleTx(
-      createSdpActiveOp(SdpActivePayload(
+      createSdpActiveOp(ActiveMessage(
         declarationId: default(DeclarationId),
         nonce: 1'u64,
         metadata: @[],
@@ -90,14 +90,14 @@ suite "core/types":
       )),
     )
     let txB = sampleTx(
-      createSdpActiveOp(SdpActivePayload(
+      createSdpActiveOp(ActiveMessage(
         declarationId: default(DeclarationId),
         nonce: 2'u64,
         metadata: @[],
       )),
     )
     let txC = sampleTx(
-      createSdpWithdrawOp(SdpWithdrawPayload(
+      createSdpWithdrawOp(WithdrawMessage(
         declarationId: default(DeclarationId),
         lockedNoteId: default(NoteId),
         nonce: 3'u64,
