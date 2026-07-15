@@ -6,7 +6,7 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## `logos-blockchain-circuits` bundle layout: path helpers and version pin.
-## Per-circuit loaders (e.g. `zk/pol.loadVk`) consume these.
+## Per-circuit loaders (via `zk/util.loadVkFromPath`) consume these.
 
 {.push raises: [], gcsafe.}
 

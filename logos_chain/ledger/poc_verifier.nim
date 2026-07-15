@@ -21,10 +21,18 @@ export poc, results
 proc verifyProofOfClaim*(
     proof: ProofOfClaimProof, public: ProofOfClaimPublic
 ): Result[bool, PocLoadError] =
+  ## Out-of-modulus public hashes return `ok(false)`. `err(VkNotLoaded)` only
+  ## on missing startup init.
+  let voucherNullifier = frFromBytesLE(public.voucherNullifier).valueOr:
+    return ok(false)
+  let mantleTxHashFr = frFromBytesLE(public.mantleTxHash).valueOr:
+    return ok(false)
+  let voucherRoot = frFromBytesLE(public.voucherRoot).valueOr:
+    return ok(false)
   poc.verify(proof, PocVerifierInput(
-    voucherNullifier: frFromBytesLE(public.voucherNullifier).get,
-    mantleTxHashFr: frFromBytesLE(public.mantleTxHash).get,
-    voucherRoot: frFromBytesLE(public.voucherRoot).get,
+    voucherNullifier: voucherNullifier,
+    mantleTxHashFr: mantleTxHashFr,
+    voucherRoot: voucherRoot,
   ))
 
 {.pop.}

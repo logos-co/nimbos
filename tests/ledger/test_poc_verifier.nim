@@ -12,6 +12,7 @@ import
   std/[os, strutils],
   unittest2,
   stew/io2,
+  ../../logos_chain/core/crypto/types,
   ../../logos_chain/core/mantle/proofs,
   ../../logos_chain/ledger/poc_verifier,
   ../../logos_chain/zk/poc,
@@ -31,6 +32,13 @@ func toProofOfClaimPublic(s: openArray[FieldElement]): ProofOfClaimPublic =
     mantleTxHash: s[1].toBytes(),
     voucherRoot: s[2].toBytes(),
   )
+
+func outOfModulusHash(): ZkHash =
+  ## All-0xFF is guaranteed to exceed the BN254 scalar modulus.
+  var h: ZkHash
+  for i in 0 ..< h.len:
+    h[i] = 0xFF'u8
+  h
 
 suite "ledger/poc_verifier":
   var
@@ -69,5 +77,24 @@ suite "ledger/poc_verifier":
     badPublic.mantleTxHash = public.voucherRoot
     let r = verifyProofOfClaim(claimProof, badPublic)
     check r.isOk and not r.get
+
+  test "rejects out-of-modulus public hashes":
+    # Each public ZkHash goes through frFromBytesLE; all must reject cleanly.
+    let bad = outOfModulusHash()
+    block:
+      var badPublic = public
+      badPublic.voucherNullifier = bad
+      let r = verifyProofOfClaim(claimProof, badPublic)
+      check r.isOk and not r.get
+    block:
+      var badPublic = public
+      badPublic.mantleTxHash = bad
+      let r = verifyProofOfClaim(claimProof, badPublic)
+      check r.isOk and not r.get
+    block:
+      var badPublic = public
+      badPublic.voucherRoot = bad
+      let r = verifyProofOfClaim(claimProof, badPublic)
+      check r.isOk and not r.get
 
 {.pop.}

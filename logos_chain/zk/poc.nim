@@ -11,20 +11,12 @@
 {.push raises: [], gcsafe.}
 
 import
-  std/os,
-  results,
-  ./circuits,
-  ./groth16/[vk_json, verifier]
+  ./[circuits, util]
 
-export VKey, FieldElement, ProofBytesLen, vk_json, results
+export util
 
 type
-  PocLoadError* {.pure.} = enum
-    VkFileMissing
-    VkReadFailed
-    VkInvalid
-    VkAlreadyLoaded
-    VkNotLoaded
+  PocLoadError* = VkLoadError
 
   PocVerifierInput* = object
     ## PoC public-input vector. Field order is positional in the circuit's IC
@@ -34,36 +26,18 @@ type
     mantleTxHashFr*: FieldElement
     voucherRoot*: FieldElement
 
-# Singleton. `initVk` must run on the main thread at startup, before any
-# worker thread is spawned. `verify` is read-only and safe to call
-# concurrently afterwards. `resetVkForTesting` is test-only — never call
-# while workers are alive. The `cast(gcsafe)` blocks in init/verify rely on
-# this contract: under refc the singleton's seq is never mutated and never
-# freed, so concurrent reads do no GC operations.
+# Singleton. See `util` for the threading / GC-safety contract.
 var pocVk: Opt[VKey]
 
 proc loadVk*(circuitsDir: string): Result[VKey, PocLoadError] =
   ## Read + parse `<circuitsDir>/poc/verification_key.json`.
-  let path = pocVerificationKeyPath(circuitsDir)
-  if not fileExists(path):
-    return err(VkFileMissing)
-  let text =
-    try:
-      readFile(path)
-    except IOError, OSError:
-      return err(VkReadFailed)
-  let vk = parseVk(text).valueOr:
-    return err(VkInvalid)
-  ok(vk)
+  loadVkFromPath(pocVerificationKeyPath(circuitsDir))
 
 proc initVk*(vk: VKey): Result[void, PocLoadError] =
   ## Install the VK into the singleton. Reinitialisation returns
   ## `VkAlreadyLoaded` (use `resetVkForTesting` between test cases).
   {.cast(gcsafe).}:
-    if pocVk.isSome:
-      return err(VkAlreadyLoaded)
-    pocVk = Opt.some(vk)
-    ok()
+    installVk(pocVk, vk)
 
 proc loadAndInitVk*(circuitsDir: string): Result[void, PocLoadError] =
   ## Composition-root helper: `loadVk` then `initVk`, once at startup.
