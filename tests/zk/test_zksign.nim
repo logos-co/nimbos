@@ -14,7 +14,7 @@ import
   stew/io2,
   poseidon2/types,
   ../../logos_chain/core/crypto/types as crypto_types,
-  ../../logos_chain/zk/zksign,
+  ../../logos_chain/zk/[circuits, zksign],
   ./snarkjs_helpers
 
 const
@@ -39,15 +39,17 @@ suite "zk/zksign — loadVk":
 
   test "rejects garbage JSON":
     let dir = uniqueTmpDir("bad-vk")
+    let vkPath = zksignVerificationKeyPath(dir)
     check createPath(dir / "signature").isOk
-    check io2.writeFile(dir / "signature" / "verification_key.json", "not json {").isOk
+    check io2.writeFile(vkPath, "not json {").isOk
     check loadVk(dir).error == VkInvalid
 
   test "rejects JSON with wrong protocol":
     let dir = uniqueTmpDir("wrong-proto-vk")
+    let vkPath = zksignVerificationKeyPath(dir)
     check createPath(dir / "signature").isOk
     check io2.writeFile(
-      dir / "signature" / "verification_key.json",
+      vkPath,
       """{"protocol":"plonk","curve":"bn128","vk_alpha_1":["0","0","1"],""" &
       """"vk_beta_2":[["0","0"],["0","0"],["1","0"]],""" &
       """"vk_gamma_2":[["0","0"],["0","0"],["1","0"]],""" &
@@ -58,10 +60,11 @@ suite "zk/zksign — loadVk":
   test "accepts a canonical Groth16 VK":
     let
       dir = uniqueTmpDir("good-vk")
+      vkPath = zksignVerificationKeyPath(dir)
       vkBytes = readAllChars(fixtureVk).valueOr:
         raiseAssert "zksign fixture VK unreadable"
     check createPath(dir / "signature").isOk
-    check io2.writeFile(dir / "signature" / "verification_key.json", vkBytes).isOk
+    check io2.writeFile(vkPath, vkBytes).isOk
     let r = loadVk(dir)
     check r.isOk
     check r.get.curve == "bn128"
@@ -85,10 +88,11 @@ suite "zk/zksign — singleton lifecycle":
   test "loadAndInitVk composes load + init":
     let
       dir = uniqueTmpDir("compose-vk")
+      vkPath = zksignVerificationKeyPath(dir)
       vkBytes = readAllChars(fixtureVk).valueOr:
         raiseAssert "zksign fixture VK unreadable"
     check createPath(dir / "signature").isOk
-    check io2.writeFile(dir / "signature" / "verification_key.json", vkBytes).isOk
+    check io2.writeFile(vkPath, vkBytes).isOk
     check zksign.loadAndInitVk(dir).isOk
 
   test "resetVkForTesting clears prior install":

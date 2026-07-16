@@ -12,14 +12,12 @@
 {.push raises: [], gcsafe.}
 
 import
-  std/[algorithm, os],
-  results,
+  std/algorithm,
   stew/arrayops,
-  ./circuits,
-  ./groth16/[vk_json, verifier],
+  ./[circuits, util],
   ../core/crypto/types
 
-export VKey, FieldElement, ProofBytesLen, vk_json, results
+export util
 
 const
   ZkSignMaxKeys* = 32
@@ -27,12 +25,7 @@ const
     ## right-pad with `ZeroSecretKeyPublicKey`.
 
 type
-  ZkSignLoadError* {.pure.} = enum
-    VkFileMissing
-    VkReadFailed
-    VkInvalid
-    VkAlreadyLoaded
-    VkNotLoaded
+  ZkSignLoadError* = VkLoadError
 
   ZkSignVerifierInput* = object
     ## Public-input vector. Field order is positional in the circuit's IC —
@@ -40,36 +33,18 @@ type
     publicKeys*: array[ZkSignMaxKeys, FieldElement]
     msg*: FieldElement
 
-# Singleton. `initVk` must run on the main thread at startup, before any
-# worker thread is spawned. `verify` is read-only and safe to call
-# concurrently afterwards. `resetVkForTesting` is test-only — never call
-# while workers are alive. The `cast(gcsafe)` blocks rely on this contract:
-# under refc the singleton's seq is never mutated and never freed, so
-# concurrent reads do no GC operations.
+# Singleton. See `util` for the threading / GC-safety contract.
 var zksignVk: Opt[VKey]
 
 proc loadVk*(circuitsDir: string): Result[VKey, ZkSignLoadError] =
   ## Read + parse `<circuitsDir>/signature/verification_key.json`.
-  let path = zksignVerificationKeyPath(circuitsDir)
-  if not fileExists(path):
-    return err(VkFileMissing)
-  let text =
-    try:
-      readFile(path)
-    except IOError, OSError:
-      return err(VkReadFailed)
-  let vk = parseVk(text).valueOr:
-    return err(VkInvalid)
-  ok(vk)
+  loadVkFromPath(zksignVerificationKeyPath(circuitsDir))
 
 proc initVk*(vk: VKey): Result[void, ZkSignLoadError] =
   ## Install the VK into the singleton. Reinitialisation returns
   ## `VkAlreadyLoaded` (use `resetVkForTesting` between test cases).
   {.cast(gcsafe).}:
-    if zksignVk.isSome:
-      return err(VkAlreadyLoaded)
-    zksignVk = Opt.some(vk)
-    ok()
+    installVk(zksignVk, vk)
 
 proc loadAndInitVk*(circuitsDir: string): Result[void, ZkSignLoadError] =
   ## Composition-root helper: `loadVk` then `initVk`, once at startup.
@@ -78,7 +53,7 @@ proc loadAndInitVk*(circuitsDir: string): Result[void, ZkSignLoadError] =
 proc resetVkForTesting*() =
   ## Test-only: clear the singleton between cases. Not for production paths.
   {.cast(gcsafe).}:
-    zksignVk = Opt.none(VKey)
+    zksignVk.reset()
 
 proc zksignInput*(
     pks: openArray[ZkPublicKey], msg: FieldElement

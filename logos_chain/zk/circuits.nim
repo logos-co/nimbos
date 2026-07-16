@@ -6,7 +6,7 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## `logos-blockchain-circuits` bundle layout: path helpers and version pin.
-## Per-circuit loaders (e.g. `zk/pol.loadVk`) consume these.
+## Per-circuit loaders (via `zk/util.loadVkFromPath`) consume these.
 
 {.push raises: [], gcsafe.}
 
@@ -36,7 +36,10 @@ func polVerificationKeyPath*(dir: string): string =
 func zksignVerificationKeyPath*(dir: string): string =
   dir / "signature" / "verification_key.json"
 
-# Future per-circuit/per-artefact helpers (PoC, PoQ; zkey, witness_generator)
+func pocVerificationKeyPath*(dir: string): string =
+  dir / "poc" / "verification_key.json"
+
+# Future per-circuit/per-artefact helpers (PoQ; zkey, witness_generator)
 # land here as their verifiers/provers ship.
 
 proc verifyCircuitsVersion*(dir: string): Result[void, CircuitsBundleError] =

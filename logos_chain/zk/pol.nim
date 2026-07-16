@@ -11,20 +11,12 @@
 {.push raises: [], gcsafe.}
 
 import
-  std/os,
-  results,
-  ./circuits,
-  ./groth16/[vk_json, verifier]
+  ./[circuits, util]
 
-export VKey, FieldElement, ProofBytesLen, vk_json, results
+export util
 
 type
-  PolLoadError* {.pure.} = enum
-    VkFileMissing
-    VkReadFailed
-    VkInvalid
-    VkAlreadyLoaded
-    VkNotLoaded
+  PolLoadError* = VkLoadError
 
   PolVerifierInput* = object
     ## PoL public-input vector. Field order is positional in the circuit's IC
@@ -39,36 +31,18 @@ type
     leaderPk1*: FieldElement
     leaderPk2*: FieldElement
 
-# Singleton. `initVk` must run on the main thread at startup, before any
-# worker thread is spawned. `verify` is read-only and safe to call
-# concurrently afterwards. `resetVkForTesting` is test-only — never call
-# while workers are alive. The `cast(gcsafe)` blocks in init/verify rely on
-# this contract: under refc the singleton's seq is never mutated and never
-# freed, so concurrent reads do no GC operations.
+# Singleton. See `util` for the threading / GC-safety contract.
 var polVk: Opt[VKey]
 
 proc loadVk*(circuitsDir: string): Result[VKey, PolLoadError] =
   ## Read + parse `<circuitsDir>/pol/verification_key.json`.
-  let path = polVerificationKeyPath(circuitsDir)
-  if not fileExists(path):
-    return err(VkFileMissing)
-  let text =
-    try:
-      readFile(path)
-    except IOError, OSError:
-      return err(VkReadFailed)
-  let vk = parseVk(text).valueOr:
-    return err(VkInvalid)
-  ok(vk)
+  loadVkFromPath(polVerificationKeyPath(circuitsDir))
 
 proc initVk*(vk: VKey): Result[void, PolLoadError] =
   ## Install the VK into the singleton. Reinitialisation returns
   ## `VkAlreadyLoaded` (use `resetVkForTesting` between test cases).
   {.cast(gcsafe).}:
-    if polVk.isSome:
-      return err(VkAlreadyLoaded)
-    polVk = Opt.some(vk)
-    ok()
+    installVk(polVk, vk)
 
 proc loadAndInitVk*(circuitsDir: string): Result[void, PolLoadError] =
   ## Composition-root helper: `loadVk` then `initVk`, once at startup.
@@ -77,7 +51,7 @@ proc loadAndInitVk*(circuitsDir: string): Result[void, PolLoadError] =
 proc resetVkForTesting*() =
   ## Test-only: clear the singleton between cases. Not for production paths.
   {.cast(gcsafe).}:
-    polVk = Opt.none(VKey)
+    polVk.reset()
 
 proc verify*(
     proof: array[ProofBytesLen, byte],
