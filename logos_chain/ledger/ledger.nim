@@ -15,13 +15,13 @@ import
   std/[options, tables],
   ./[
     balance, types, cryptarchia_state, channel_state, mantle_state,
-    pol_verifier,
+    pol_verifier, leader_claim,
   ],
   ./sdp/[registry, ops],
   ../core/mantle/[tx_types, tx_hashing, operations, proofs],
   ../core/types
 
-export types, cryptarchia_state, registry, channel_state, mantle_state
+export types, cryptarchia_state, registry, channel_state, mantle_state, leader_claim
 
 type
   LedgerState* = object
@@ -156,6 +156,15 @@ proc tryApplyTx*(
         op.payload.channelWithdraw, proof.channelWithdrawOpProof, txHash,
       )
       s = LedgerState(cryptarchiaLedger: r.cs, mantleLedger: r.ms, sdp: s.sdp)
+    of LeaderClaim:
+      if proof.kind != opfLeaderClaim:
+        return err(InvalidProof)
+      let r =
+        ?s.cryptarchiaLedger.tryApplyLeaderClaim(
+          op.payload.leaderClaim, proof.proofOfClaimProof, txHash
+        )
+      s.cryptarchiaLedger = r.state
+      balance = ?balance.checkedAdd(r.balance)
     else:
       return err(UnsupportedOp)
   ok((state: s, balance: balance))

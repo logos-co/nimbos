@@ -12,28 +12,29 @@
 import results
 
 import
-  ./[balance, types, utxo_store, zksig_verify],
+  ./[balance, types, utxo_store, zksig_verify, leader_state],
   ./sdp/state as sdp_state,
   ../core/mantle/[primitives, operations, proofs, utxo, tx_hashing]
 
-export types, utxo, primitives, utxo_store, sdp_state
+export types, utxo, primitives, utxo_store, sdp_state, leader_state
 
 type
   CryptarchiaState* = object
     utxos*: UtxoStore
+    leader*: LeaderState
 
 func init*(_: typedesc[CryptarchiaState]): CryptarchiaState =
-  CryptarchiaState(utxos: UtxoStore.init())
+  CryptarchiaState(utxos: UtxoStore.init(), leader: LeaderState.init())
 
 func init*(_: typedesc[CryptarchiaState], utxos: UtxoStore): CryptarchiaState =
-  CryptarchiaState(utxos: utxos)
+  CryptarchiaState(utxos: utxos, leader: LeaderState.init())
 
 func init*(_: typedesc[CryptarchiaState], seed: openArray[Utxo]): CryptarchiaState =
   ## Builds a fresh store seeded with the given UTXOs (genesis-style).
   var s = UtxoStore.init()
   for u in seed:
     s = s.insert(u.id, u).store
-  CryptarchiaState(utxos: s)
+  CryptarchiaState(utxos: s, leader: LeaderState.init())
 
 func len*(s: CryptarchiaState): int =
   s.utxos.len
@@ -50,7 +51,7 @@ func latestUtxos*(s: CryptarchiaState): lent UtxoStore =
   s.utxos
 
 func `==`*(a, b: CryptarchiaState): bool =
-  a.utxos == b.utxos
+  a.utxos == b.utxos and a.leader == b.leader
 
 func applyTransferState*(
     s: sink CryptarchiaState,
@@ -72,7 +73,7 @@ func applyTransferState*(
       return err(LockedNote)
     let (newStore, removedUtxo) = s.utxos.remove(inputId).valueOr:
       return err(InvalidNote)
-    s = CryptarchiaState(utxos: newStore)
+    s = CryptarchiaState(utxos: newStore, leader: s.leader)
     balance = ?balance.checkedAdd(i128(removedUtxo.note.value))
     pks.add(removedUtxo.note.zkPublicKey)
 
@@ -82,7 +83,7 @@ func applyTransferState*(
       return err(ZeroValueNote)
     balance = ?balance.checkedSub(i128(outNote.value))
     let u = Utxo(opId: transferOpId, outputIndex: uint64(i), note: outNote)
-    s = CryptarchiaState(utxos: s.utxos.insert(u.id, u).store)
+    s = CryptarchiaState(utxos: s.utxos.insert(u.id, u).store, leader: s.leader)
 
   ok((s, balance, pks))
 

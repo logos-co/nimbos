@@ -55,6 +55,10 @@ type
     ThresholdUnmet ## Config/Withdraw signature count != channel threshold
     InvalidChannelConfig ## ChannelConfig has zero threshold or empty keys
     WithdrawNonceOverflow ## ChannelWithdraw incremented withdrawalNonce past uint32
+    DuplicatedVoucherNullifier ## leader-claim voucher nullifier already spent
+    RewardsRootMismatch ## leader-claim rewards root ≠ ledger snapshot
+    NoClaimableReward ## leader reward pool empty or all vouchers claimed
+    InvalidEpoch ## block header epoch regressed below ledger epoch
 
   LedgerConfig* = object
     ## Chain configuration. Currently empty — fields land with the modules
