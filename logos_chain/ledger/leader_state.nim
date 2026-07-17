@@ -9,9 +9,11 @@
 ##
 ## Spec: [Anonymous Leaders Reward Protocol v1.0.0](https://nomos-tech.notion.site/1-0-0-Anonymous-Leaders-Reward-Protocol-206261aa09df8120a49ffa49c71ba70d#240261aa09df80de83eace3d556eddfc)
 ##
-## One Merkle tree of voucher commitments is maintained across the full chain
-## history. ``voucherTree`` and ``voucherCmSetSize`` are snapshotted at each epoch
-## boundary; each claim debits a share of ``leadersRewards``.
+## One Merkle tree of voucher commitments spans the full chain. On the **first
+## block of each new epoch**, ``addEpochVouchers`` appends the departing epoch's
+## commitments and rolls its rewards into ``leadersRewards``. Until the next
+## epoch start, ``voucherTree`` / ``voucherCmSetSize`` stay fixed while claims
+## spend nullifiers and debit the pool.
 
 {.push raises: [], gcsafe.}
 
@@ -32,9 +34,7 @@ func asField*(voucher: RewardVoucher): FieldElement =
 
 type LeaderState* = object
   voucherTree*: VoucherMerkleTree
-    ## Voucher commitment tree snapshotted at the last epoch boundary.
   voucherCmSetSize*: uint64
-    ## ``|voucher_cm|`` snapshotted at the last epoch boundary.
   spentNullifiers*: seq[VoucherNullifier]
   leadersRewards*: Value
 
@@ -69,23 +69,10 @@ func addEpochVouchers*(
     vouchers: openArray[RewardVoucher],
     lastEpochRewards: Value,
 ): LeaderState =
-  ## First block of a new epoch: append the departing epoch's voucher
-  ## commitments, roll its rewards into ``leadersRewards``, and refresh the
-  ## snapshotted ``voucherCmSetSize``.
-  ##
-  ## TODO: wire from block validation on the first block of each new epoch once
-  ## epoch management is ready.
+  ## TODO: wire from ``tryApplyHeader`` once epoch management lands.
   s.voucherTree = s.voucherTree.insert(vouchers)
   s.voucherCmSetSize += uint64(vouchers.len)
   s.leadersRewards += lastEpochRewards
-  s
-
-func recordClaim*(
-    s: sink LeaderState, nf: VoucherNullifier, reward: Value
-): LeaderState =
-  ## Mark `nf` spent and debit `reward` from ``leadersRewards``.
-  s.spentNullifiers.add(nf)
-  s.leadersRewards -= reward
   s
 
 func tryRecordClaim*(
@@ -97,7 +84,9 @@ func tryRecordClaim*(
     return err(NoClaimableReward)
   if reward > s.leadersRewards:
     return err(BalanceOverflow)
-  ok((state: s.recordClaim(nf, reward), reward: reward))
+  s.spentNullifiers.add(nf)
+  s.leadersRewards -= reward
+  ok((state: s, reward: reward))
 
 func `==`*(a, b: LeaderState): bool =
   a.voucherTree == b.voucherTree and

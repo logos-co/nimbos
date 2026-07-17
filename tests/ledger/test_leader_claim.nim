@@ -104,7 +104,10 @@ suite "ledger/leader_state":
   test "rewardShare is stable across claims within an epoch":
     var s = makeLeaderState(4'u64, 100'u64)
     check s.rewardShare() == 25
-    s = s.recordClaim(frFromBytesLE([1'u8]).get, 25)
+    let r = s.tryRecordClaim(frFromBytesLE([1'u8]).get)
+    check r.isOk
+    s = r.get.state
+    check r.get.reward == 25
     check s.leadersRewards == 75
     check s.spentNullifiers.len == 1
     check s.rewardShare() == 25
@@ -123,7 +126,7 @@ suite "ledger/leader_state":
     check s.leadersRewards == 50
     check uint64(s.voucherTree.len()) == 3
 
-suite "ledger/leader_claim — applyLeaderClaimState":
+suite "ledger/leader_claim — applyLeaderClaim":
   test "mints reward UTXO and records nullifier":
     let
       nf = frFromBytesLE([7'u8]).get
@@ -134,7 +137,7 @@ suite "ledger/leader_claim — applyLeaderClaimState":
         publicKey: frFromBytesLE([9'u8]).get,
       )
       s0 = CryptarchiaState(utxos: UtxoStore.init(), leader: leader)
-      r = s0.applyLeaderClaimState(op)
+      r = s0.applyLeaderClaim(op)
     check r.isOk
     let res = r.get
     check res.balance == Balance.zero
@@ -150,7 +153,7 @@ suite "ledger/leader_claim — applyLeaderClaimState":
         voucherNullifier: frFromBytesLE([1'u8]).get,
         publicKey: default(ZkPublicKey),
       )
-      r = CryptarchiaState(utxos: UtxoStore.init(), leader: leader).applyLeaderClaimState(op)
+      r = CryptarchiaState(utxos: UtxoStore.init(), leader: leader).applyLeaderClaim(op)
     check r.isErr
     check r.error == NoClaimableReward
 
@@ -179,7 +182,7 @@ suite "ledger/leader_claim — tryApplyLeaderClaim":
       op = mkFixtureLeaderClaimOp(publicInputs, voucherTree.root(leader.voucherTree))
       txHash = fixtureTxHash(publicInputs)
       s0 = CryptarchiaState(utxos: UtxoStore.init(), leader: leader)
-      first = s0.applyLeaderClaimState(op)
+      first = s0.applyLeaderClaim(op)
     check first.isOk
     let second = first.get.state.tryApplyLeaderClaim(op, claimProof, txHash)
     check second.isErr
