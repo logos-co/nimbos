@@ -232,7 +232,7 @@ suite "applyChannelWithdraw — preserves leader":
         ),
       )
       leader = LeaderState.init().recordBlockLeader(default(RewardVoucher), 42)
-        .addEpochVouchers(1'u64)
+        .addEpochVouchers(1'u64).get
       cs = CryptarchiaState(utxos: UtxoStore.init(), leader: leader)
       op = ChannelWithdrawPayload(
         channel: cid,

@@ -138,7 +138,7 @@ suite "applyChannelDeposit — mutation and overflow (no verify)":
       chans = mkChanStore(cid)
       input = mkUtxo(value = 100, pkSeed = 1)
       leader = LeaderState.init().recordBlockLeader(default(RewardVoucher), 42)
-        .addEpochVouchers(1'u64)
+        .addEpochVouchers(1'u64).get
       cs = CryptarchiaState(
         utxos: UtxoStore.init().insert(input.id, input).store, leader: leader,
       )
