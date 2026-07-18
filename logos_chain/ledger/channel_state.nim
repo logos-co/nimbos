@@ -248,7 +248,7 @@ func applyChannelDeposit*(
       return err(InvalidNote)  # unreachable if validate passed
     store = newStore
     chan.balance = ?chan.balance.checkedAdd(removedUtxo.note.value)
-  ok((channels.insert(op.channel, chan), CryptarchiaState(utxos: store)))
+  ok((channels.insert(op.channel, chan), CryptarchiaState(utxos: store, leader: cs.leader)))
 
 func validateChannelWithdraw*(
     channels: ChannelStore,
@@ -292,6 +292,6 @@ func applyChannelWithdraw*(
     let u = Utxo(opId: withdrawOpId, outputIndex: uint64(i), note: outNote)
     store = store.insert(u.id, u).store
   chan.withdrawalNonce += 1
-  (channels.insert(op.channel, chan), CryptarchiaState(utxos: store))
+  (channels.insert(op.channel, chan), CryptarchiaState(utxos: store, leader: cs.leader))
 
 {.pop.}

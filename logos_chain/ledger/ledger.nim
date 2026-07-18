@@ -15,13 +15,13 @@ import
   std/[options, tables],
   ./[
     balance, types, cryptarchia_state, channel_state, mantle_state,
-    pol_verifier, leader_claim,
+    pol_verifier,
   ],
   ./sdp/[registry, ops],
   ../core/mantle/[tx_types, tx_hashing, operations, proofs],
   ../core/types
 
-export types, cryptarchia_state, registry, channel_state, mantle_state, leader_claim
+export types, cryptarchia_state, registry, channel_state, mantle_state
 
 type
   LedgerState* = object
@@ -50,11 +50,14 @@ func latestUtxos*(s: LedgerState): lent UtxoStore =
   s.cryptarchiaLedger.latestUtxos
 
 proc tryApplyHeader*(
-    state: sink LedgerState, slot: SlotNumber, proof: ProofOfLeadership
+    state: sink LedgerState,
+    slot: SlotNumber,
+    proof: ProofOfLeadership,
+    epoch: EpochNumber,
 ): Result[LedgerState, LedgerError] =
   ## Verifies the leader proof against the singleton PoL VK installed at
-  ## startup. Returns `InvalidProof` on rejection, `VerifierNotInitialised`
-  ## if the singleton wasn't installed.
+  ## startup. On success runs epoch-boundary hooks (SDP snapshots, leader
+  ## voucher roll-in) then stages this block's ``voucher_cm``.
   # Epoch-derived `LeaderPublic` fields (nonce, lottery, agedRoot) stay at
   # `default(FieldElement)` until `EpochState` lands.
   let
@@ -64,7 +67,13 @@ proc tryApplyHeader*(
       return err(VerifierNotInitialised)
   if not verified:
     return err(InvalidProof)
-  ok(state)
+  var s = state
+  s.cryptarchiaLedger.leader = s.cryptarchiaLedger.leader.addEpochVouchers(epoch)
+  onEpochStarted(s.sdp, epoch)
+  s.cryptarchiaLedger.leader = s.cryptarchiaLedger.leader.recordBlockLeader(
+    proof.leaderVoucher,
+  )
+  ok(s)
 
 proc tryApplyTx*(
     state: sink LedgerState,
@@ -159,12 +168,9 @@ proc tryApplyTx*(
     of LeaderClaim:
       if proof.kind != opfLeaderClaim:
         return err(InvalidProof)
-      let r =
-        ?s.cryptarchiaLedger.tryApplyLeaderClaim(
-          op.payload.leaderClaim, proof.proofOfClaimProof, txHash
-        )
-      s.cryptarchiaLedger = r.state
-      balance = ?balance.checkedAdd(r.balance)
+      s.cryptarchiaLedger = ?s.cryptarchiaLedger.tryApplyLeaderClaim(
+        op.payload.leaderClaim, proof.proofOfClaimProof, txHash,
+      )
     else:
       return err(UnsupportedOp)
   ok((state: s, balance: balance))
@@ -213,14 +219,10 @@ func config*[Id](l: Ledger[Id]): lent LedgerConfig =
 proc commitUpdate*[Id](
     l: var Ledger[Id],
     id: Id,
-    epoch: EpochNumber,
     state: sink LedgerState,
 ) =
-  ## Installs ``state`` at ``id`` and runs SDP epoch-boundary updates
-  ## (withdrawal finalization, epoch snapshots) once the block is accepted.
-  # TODO(EpochState): derive epoch from the consensus slot schedule and call
-  # onEpochStarted only when the epoch advances, not on every block commit.
-  onEpochStarted(state.sdp, epoch)
+  ## Installs ``state`` at ``id``. Epoch-boundary hooks run in
+  ## ``tryApplyHeader`` during ``prepareUpdate``.
   l.states[id] = state
 
 func pruneStateAt*[Id](l: var Ledger[Id], id: Id): bool =
@@ -261,8 +263,8 @@ proc fromGenesis*(
         ?applySdpDeclare(state.sdp, op.payload.sdpDeclare, epoch)
       else:
         return err(UnsupportedOp)
-  # TODO(EpochState): genesis epoch-boundary handling should follow the same
-  # consensus epoch schedule as commitUpdate once epoch management lands.
+  # TODO(EpochState): genesis SDP epoch-boundary handling should follow the
+  # consensus epoch schedule once epoch management lands.
   onEpochStarted(state.sdp, epoch = 0'u64)
   ok(state)
 
@@ -275,13 +277,12 @@ proc prepareUpdate*[Id](
     epoch: EpochNumber,
 ): Result[tuple[id: Id, state: LedgerState], LedgerError] =
   ## Validates a block's header + transactions against the parent state.
-  ## Caller invokes `commitUpdate` to install the result and run SDP
-  ## epoch-boundary updates, or drops it to reject.
+  ## Caller invokes `commitUpdate` to install the result, or drops it to reject.
   if parentId notin l.states:
     return err(ParentNotFound)
   let
     parent = l.states.getOrDefault(parentId)
-    afterHeader = ?parent.tryApplyHeader(slot, proof)
+    afterHeader = ?parent.tryApplyHeader(slot, proof, epoch)
     afterTxs = ?afterHeader.tryApplyTxns(txs, epoch, slot)
   ok((id: id, state: afterTxs))
 

@@ -13,7 +13,7 @@ import
   unittest2,
   results,
   ../../logos_chain/ledger/
-    [channel_state, cryptarchia_state, mantle_state, types],
+    [channel_state, cryptarchia_state, leader_state, mantle_state, types],
   ../../logos_chain/core/mantle/[primitives, operations, proofs],
   ../../logos_chain/zk/zksign,
   ../zk/[snarkjs_helpers, zksign_helpers],
@@ -131,6 +131,23 @@ suite "applyChannelDeposit — mutation and overflow (no verify)":
       )
       r = applyChannelDeposit(chans, cs, op)
     check r.error == BalanceOverflow
+
+  test "preserves LeaderState":
+    let
+      cid = mkChannelId(10)
+      chans = mkChanStore(cid)
+      input = mkUtxo(value = 100, pkSeed = 1)
+      leader = LeaderState.init().recordBlockLeader(default(RewardVoucher), 42)
+        .addEpochVouchers(1'u64)
+      cs = CryptarchiaState(
+        utxos: UtxoStore.init().insert(input.id, input).store, leader: leader,
+      )
+      op = ChannelDepositPayload(
+        channel: cid, inputs: @[input.id], metadata: @[],
+      )
+      r = applyChannelDeposit(chans, cs, op)
+    check r.isOk
+    check r.get.cs.leader == leader
 
 suite "MantleState.tryApplyChannelDeposit — verify wrapper (fixture-driven)":
   test "verify before VK install → VerifierNotInitialised":

@@ -18,11 +18,13 @@
 {.push raises: [], gcsafe.}
 
 import
+  std/sets,
   results,
-  ../core/mantle/primitives,
+  ../core/mantle/[primitives, operations, proofs],
   ../utils/dynamic_merkle_tree,
   ../zk/poseidon2/hasher,
-  ./types
+  ./types,
+  ./poc_verifier
 
 export primitives, results, types
 
@@ -32,30 +34,50 @@ type
 func asField*(voucher: RewardVoucher): FieldElement =
   frFromBytesLEModOrder(voucher)
 
+type LeaderPending = object
+  vouchers: seq[RewardVoucher]
+  reward: Value
+  lastEpoch: EpochNumber
+    ## TODO(EpochState): drop once epoch management derives the last-started
+    ## epoch from the consensus schedule instead of tracking it here.
+
 type LeaderState* = object
-  voucherTree*: VoucherMerkleTree
-  voucherCmSetSize*: uint64
-  spentNullifiers*: seq[VoucherNullifier]
-  leadersRewards*: Value
+  voucherTree: VoucherMerkleTree
+  voucherCmSetSize: uint64
+  spentNullifiers: HashSet[VoucherNullifier]
+  leadersRewards: Value
+  pending: LeaderPending
 
 func init*(_: typedesc[LeaderState]): LeaderState =
   let tree = VoucherMerkleTree.init()
   LeaderState(
     voucherTree: tree,
     voucherCmSetSize: 0,
-    spentNullifiers: @[],
+    spentNullifiers: initHashSet[VoucherNullifier](),
     leadersRewards: 0,
+    pending: LeaderPending(vouchers: @[], reward: 0, lastEpoch: 0),
   )
 
+func voucherTree*(s: LeaderState): lent VoucherMerkleTree =
+  s.voucherTree
+
+func leadersRewards*(s: LeaderState): Value =
+  s.leadersRewards
+
+func contains*(s: LeaderState, nf: VoucherNullifier): bool =
+  nf in s.spentNullifiers
+
 func rewardShare*(s: LeaderState): Value =
-  ## Per-voucher reward share (spec Leaders Reward):
+  ## Per-voucher reward share (spec Leaders Reward), using integer division:
   ##
   ## .. math::
-  ##   share = 0                         if |voucher_cm| = |voucher_nf|
-  ##   share = leaders_rewards / (|voucher_cm| - |voucher_nf|)  otherwise
+  ##   share = 0                                      if |voucher_cm| = |voucher_nf|
+  ##   share = \lfloor leaders\_rewards / n \rfloor   otherwise
   ##
-  ## Stable within an epoch: each claim debits ``leadersRewards`` and adds one
-  ## to ``|voucher_nf|``, so the quotient is unchanged when division is exact.
+  ## where ``n = |voucher_cm| - |voucher_nf|``. While ``leadersRewards = share * n``,
+  ## each claim keeps the same floor share. When the pool is not evenly divisible,
+  ## early claims take ``\lfloor R/n \rfloor`` and the final claim(s) receive a
+  ## larger residual (e.g. 100 / 3 → 33, 33, 34).
   let
     nCm = s.voucherCmSetSize
     nNf = uint64(s.spentNullifiers.len)
@@ -64,34 +86,70 @@ func rewardShare*(s: LeaderState): Value =
   else:
     s.leadersRewards div (nCm - nNf)
 
-func addEpochVouchers*(
+func recordBlockLeader*(
     s: sink LeaderState,
-    vouchers: openArray[RewardVoucher],
-    lastEpochRewards: Value,
+    voucher: RewardVoucher,
+    reward: Value = 0'u64,
 ): LeaderState =
-  ## TODO: wire from ``tryApplyHeader`` once epoch management lands.
-  s.voucherTree = s.voucherTree.insert(vouchers)
-  s.voucherCmSetSize += uint64(vouchers.len)
-  s.leadersRewards += lastEpochRewards
+  if voucher != default(RewardVoucher):
+    s.pending.vouchers.add(voucher)
+  s.pending.reward += reward
   s
 
-func tryRecordClaim*(
+func addEpochVouchers*(
+    s: sink LeaderState,
+    epoch: EpochNumber,
+): LeaderState =
+  if epoch <= s.pending.lastEpoch:
+    return s
+  s.voucherTree = s.voucherTree.insert(s.pending.vouchers)
+  s.voucherCmSetSize += uint64(s.pending.vouchers.len)
+  s.leadersRewards += s.pending.reward
+  s.pending.vouchers = @[]
+  s.pending.reward = 0
+  s.pending.lastEpoch = epoch
+  s
+
+func recordClaim*(
     s: sink LeaderState, nf: VoucherNullifier
-): Result[tuple[state: LeaderState, reward: Value], LedgerError] =
-  ## Compute per-voucher reward, validate the pool, then record the claim.
+): tuple[state: LeaderState, reward: Value] =
   let reward = s.rewardShare()
-  if reward == 0:
-    return err(NoClaimableReward)
-  if reward > s.leadersRewards:
-    return err(BalanceOverflow)
-  s.spentNullifiers.add(nf)
+  s.spentNullifiers.incl(nf)
   s.leadersRewards -= reward
-  ok((state: s, reward: reward))
+  (state: s, reward: reward)
+
+proc tryRecordClaim*(
+    s: sink LeaderState,
+    op: LeaderClaimPayload,
+    proof: ProofOfClaimProof,
+    txHash: ZkHash,
+): Result[tuple[state: LeaderState, reward: Value], LedgerError] =
+  if op.voucherNullifier in s:
+    return err(DuplicatedVoucherNullifier)
+  let rewardShare = s.rewardShare()
+  if rewardShare == 0:
+    return err(NoClaimableReward)
+  if rewardShare > s.leadersRewards:
+    return err(BalanceOverflow)
+  let rewardsRoot = root(s.voucherTree)
+  if op.rewardsRoot != rewardsRoot:
+    return err(RewardsRootMismatch)
+
+  let public = proofOfClaimPublic(op, rewardsRoot, txHash)
+  let verified = verifyProofOfClaim(proof, public).valueOr:
+    return err(VerifierNotInitialised)
+  if not verified:
+    return err(InvalidProof)
+
+  ok(s.recordClaim(op.voucherNullifier))
 
 func `==`*(a, b: LeaderState): bool =
   a.voucherTree == b.voucherTree and
     a.voucherCmSetSize == b.voucherCmSetSize and
     a.spentNullifiers == b.spentNullifiers and
-    a.leadersRewards == b.leadersRewards
+    a.leadersRewards == b.leadersRewards and
+    a.pending.vouchers == b.pending.vouchers and
+    a.pending.reward == b.pending.reward and
+    a.pending.lastEpoch == b.pending.lastEpoch
 
 {.pop.}

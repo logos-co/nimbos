@@ -58,7 +58,6 @@ type
     DuplicatedVoucherNullifier ## leader-claim voucher nullifier already spent
     RewardsRootMismatch ## leader-claim rewards root ≠ ledger snapshot
     NoClaimableReward ## leader reward pool empty or all vouchers claimed
-    InvalidEpoch ## block header epoch regressed below ledger epoch
 
   LedgerConfig* = object
     ## Chain configuration. Currently empty — fields land with the modules

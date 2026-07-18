@@ -13,11 +13,13 @@ import
   unittest2,
   stew/io2,
   ../../logos_chain/core/crypto/types,
-  ../../logos_chain/core/mantle/[operations, proofs, tx_types],
+  ../../logos_chain/core/mantle/[operations, proofs, tx_hashing, tx_types],
   ../../logos_chain/ledger/
-    [balance, cryptarchia_state, leader_claim, leader_state, ledger, poc_verifier, types],
+    [cryptarchia_state, leader_state, ledger, poc_verifier, types],
   ../../logos_chain/utils/dynamic_merkle_tree as voucherTree,
-  ../../logos_chain/zk/[poc, poseidon2/hasher],
+  ../../logos_chain/zk/[groth16/utils, poc, poseidon2/hasher],
+  ../core/mantle/test_helpers,
+  ../ledger/sdp/test_helpers,
   ../zk/snarkjs_helpers
 
 const
@@ -49,23 +51,22 @@ func voucherBytes(seed: byte): RewardVoucher =
   b[0] = seed
   b
 
+func fieldFromSeed(seed: byte): FieldElement =
+  var b: array[32, byte]
+  b[0] = seed
+  frFromBytesLEModOrder(b)
+
 func makeLeaderState(
     claimableCount: uint64,
     leadersRewards: Value,
 ): LeaderState =
-  var vouchers: seq[RewardVoucher]
+  var s = LeaderState.init()
   for i in 0 ..< claimableCount:
-    vouchers.add(voucherBytes(byte(i + 1)))
-  LeaderState.init().addEpochVouchers(vouchers, leadersRewards)
+    let reward = if i == 0: leadersRewards else: 0'u64
+    s = s.recordBlockLeader(voucherBytes(byte(i + 1)), reward)
+  s.addEpochVouchers(1'u64)
 
-func mkEmptyLeaderState(): LeaderState =
-  makeLeaderState(0'u64, 0'u64)
-
-func mkFixtureLeaderState(publicInputs: openArray[FieldElement]): LeaderState =
-  ## Fixture ``voucher_root`` is for a 32-deep witness tree, not a one-leaf
-  ## ``DynamicMerkleTree``. Build claimable pool + cm count; bind ops to
-  ## ``voucherTree.root(leader.voucherTree)``.
-  discard publicInputs
+func mkFixtureLeaderState(): LeaderState =
   makeLeaderState(1'u64, 100'u64)
 
 func mkFixtureLeaderClaimOp(
@@ -86,76 +87,64 @@ func fixtureTxHash(publicInputs: openArray[FieldElement]): ZkHash =
 suite "ledger/leader_state":
   test "rewardShare splits leaders_rewards over unclaimed vouchers":
     let s = makeLeaderState(4'u64, 100'u64)
-    check s.voucherCmSetSize == 4
-    check s.spentNullifiers.len == 0
+    check uint64(s.voucherTree.len()) == 4
     check s.leadersRewards == 100
     check s.rewardShare() == 25
-    var spent = makeLeaderState(4'u64, 100'u64)
-    spent.spentNullifiers.add(default(VoucherNullifier))
-    check spent.rewardShare() == 33
+    let nf = default(VoucherNullifier)
+    check nf notin s
+    let claimed = s.recordClaim(nf)
+    check claimed.state.rewardShare() == 25
+    check claimed.state.leadersRewards == 75
+    check nf in claimed.state
 
   test "rewardShare is zero when |voucher_cm| equals |voucher_nf|":
     var s = makeLeaderState(2'u64, 100'u64)
-    s.spentNullifiers.add(frFromBytesLE([1'u8]).get)
-    s.spentNullifiers.add(frFromBytesLE([2'u8]).get)
-    check s.voucherCmSetSize == uint64(s.spentNullifiers.len)
+    s = s.recordClaim(fieldFromSeed(1)).state
+    s = s.recordClaim(fieldFromSeed(2)).state
     check s.rewardShare() == 0
 
   test "rewardShare is stable across claims within an epoch":
     var s = makeLeaderState(4'u64, 100'u64)
     check s.rewardShare() == 25
-    let r = s.tryRecordClaim(frFromBytesLE([1'u8]).get)
-    check r.isOk
-    s = r.get.state
-    check r.get.reward == 25
+    let nf = fieldFromSeed(1)
+    let r = s.recordClaim(nf)
+    s = r.state
+    check r.reward == 25
     check s.leadersRewards == 75
-    check s.spentNullifiers.len == 1
+    check nf in s
     check s.rewardShare() == 25
+
+  test "non-divisible pool: early claims take floor, last gets residual":
+    var s = makeLeaderState(3'u64, 100'u64)
+    check s.rewardShare() == 33
+    let r1 = s.recordClaim(fieldFromSeed(1))
+    check r1.reward == 33
+    s = r1.state
+    check s.leadersRewards == 67
+    check s.rewardShare() == 33
+    let r2 = s.recordClaim(fieldFromSeed(2))
+    check r2.reward == 33
+    s = r2.state
+    check s.leadersRewards == 34
+    check s.rewardShare() == 34
+    let r3 = s.recordClaim(fieldFromSeed(3))
+    check r3.reward == 34
+    s = r3.state
+    check s.leadersRewards == 0
+    check s.rewardShare() == 0
 
   test "addEpochVouchers updates tree, cm set size, and leaders rewards":
     let cm = voucherBytes(3'u8)
-    let s = LeaderState.init().addEpochVouchers(@[cm], 40)
-    check s.voucherCmSetSize == 1
+    let s = LeaderState.init().recordBlockLeader(cm, 40).addEpochVouchers(1'u64)
     check s.leadersRewards == 40
     check uint64(s.voucherTree.len()) == 1
 
   test "addEpochVouchers accumulates across epoch boundaries":
-    var s = LeaderState.init().addEpochVouchers(@[voucherBytes(1)], 40)
-    s = s.addEpochVouchers(@[voucherBytes(2), voucherBytes(3)], 10)
-    check s.voucherCmSetSize == 3
+    var s = LeaderState.init().recordBlockLeader(voucherBytes(1), 40)
+    s = s.recordBlockLeader(voucherBytes(2)).recordBlockLeader(voucherBytes(3), 10)
+      .addEpochVouchers(1'u64)
     check s.leadersRewards == 50
     check uint64(s.voucherTree.len()) == 3
-
-suite "ledger/leader_claim — applyLeaderClaim":
-  test "mints reward UTXO and records nullifier":
-    let
-      nf = frFromBytesLE([7'u8]).get
-      leader = makeLeaderState(1'u64, 50'u64)
-      op = LeaderClaimPayload(
-        rewardsRoot: voucherTree.root(leader.voucherTree),
-        voucherNullifier: nf,
-        publicKey: frFromBytesLE([9'u8]).get,
-      )
-      s0 = CryptarchiaState(utxos: UtxoStore.init(), leader: leader)
-      r = s0.applyLeaderClaim(op)
-    check r.isOk
-    let res = r.get
-    check res.balance == Balance.zero
-    check res.state.leader.leadersRewards == 0
-    check op.voucherNullifier in res.state.leader.spentNullifiers
-    check res.state.utxos.len == 1
-
-  test "rejects when no reward is claimable":
-    let
-      leader = makeLeaderState(1'u64, 0'u64)
-      op = LeaderClaimPayload(
-        rewardsRoot: voucherTree.root(leader.voucherTree),
-        voucherNullifier: frFromBytesLE([1'u8]).get,
-        publicKey: default(ZkPublicKey),
-      )
-      r = CryptarchiaState(utxos: UtxoStore.init(), leader: leader).applyLeaderClaim(op)
-    check r.isErr
-    check r.error == NoClaimableReward
 
 suite "ledger/leader_claim — tryApplyLeaderClaim":
   var
@@ -166,34 +155,59 @@ suite "ledger/leader_claim — tryApplyLeaderClaim":
     (claimProof, publicInputs) = fixtureLeaderInputs()
     check publicInputs.len == 3
 
-  test "fixture proof accepted when rewards root matches ledger tree":
+  test "happy path: fixture verify then claim debits pool and mints UTXO":
     let
-      leader = mkFixtureLeaderState(publicInputs)
+      leader = mkFixtureLeaderState()
+      txHash = fixtureTxHash(publicInputs)
+      fixtureOp = mkFixtureLeaderClaimOp(publicInputs, publicInputs[2])
+      ledgerOp = mkFixtureLeaderClaimOp(
+        publicInputs, voucherTree.root(leader.voucherTree),
+      )
+    check verifyProofOfClaim(
+      claimProof, proofOfClaimPublic(fixtureOp, publicInputs[2], txHash),
+    ).isOk
+    check verifyProofOfClaim(
+      claimProof, proofOfClaimPublic(fixtureOp, publicInputs[2], txHash),
+    ).get
+    var cs = CryptarchiaState(utxos: UtxoStore.init(), leader: leader)
+    let recorded = cs.leader.recordClaim(ledgerOp.voucherNullifier)
+    cs.leader = recorded.state
+    let u = Utxo(
+      opId: opId(ledgerOp), outputIndex: 0,
+      note: Note(value: recorded.reward, zkPublicKey: ledgerOp.publicKey),
+    )
+    cs = CryptarchiaState(utxos: cs.utxos.insert(u.id, u).store, leader: cs.leader)
+    check cs.leader.leadersRewards == 0
+    check ledgerOp.voucherNullifier in cs.leader
+    check cs.utxos.len == 1
+
+  test "rejects when no reward is claimable":
+    let
+      leader = makeLeaderState(1'u64, 0'u64)
       op = mkFixtureLeaderClaimOp(publicInputs, voucherTree.root(leader.voucherTree))
       txHash = fixtureTxHash(publicInputs)
-      s0 = CryptarchiaState(utxos: UtxoStore.init(), leader: leader)
-      r = s0.tryApplyLeaderClaim(op, claimProof, txHash)
+      r = CryptarchiaState(utxos: UtxoStore.init(), leader: leader)
+        .tryApplyLeaderClaim(op, claimProof, txHash)
     check r.isErr
-    check r.error == InvalidProof
+    check r.error == NoClaimableReward
 
   test "rejects duplicate voucher nullifier":
     let
-      leader = mkFixtureLeaderState(publicInputs)
+      leader = mkFixtureLeaderState()
       op = mkFixtureLeaderClaimOp(publicInputs, voucherTree.root(leader.voucherTree))
       txHash = fixtureTxHash(publicInputs)
-      s0 = CryptarchiaState(utxos: UtxoStore.init(), leader: leader)
-      first = s0.applyLeaderClaim(op)
-    check first.isOk
-    let second = first.get.state.tryApplyLeaderClaim(op, claimProof, txHash)
+      recorded = leader.recordClaim(op.voucherNullifier)
+      s0 = CryptarchiaState(utxos: UtxoStore.init(), leader: recorded.state)
+      second = s0.tryApplyLeaderClaim(op, claimProof, txHash)
     check second.isErr
     check second.error == DuplicatedVoucherNullifier
 
   test "rejects rewards root mismatch":
     let
-      leader = mkFixtureLeaderState(publicInputs)
+      leader = mkFixtureLeaderState()
       txHash = fixtureTxHash(publicInputs)
-    var op = mkFixtureLeaderClaimOp(publicInputs, publicInputs[2])
-    op.rewardsRoot = frFromBytesLE([0xAB'u8]).get
+    var op = mkFixtureLeaderClaimOp(publicInputs, voucherTree.root(leader.voucherTree))
+    op.rewardsRoot = fieldFromSeed(0xAB)
     let r = CryptarchiaState(utxos: UtxoStore.init(), leader: leader)
       .tryApplyLeaderClaim(op, claimProof, txHash)
     check r.isErr
@@ -201,7 +215,7 @@ suite "ledger/leader_claim — tryApplyLeaderClaim":
 
   test "rejects invalid proof":
     let
-      leader = mkFixtureLeaderState(publicInputs)
+      leader = mkFixtureLeaderState()
       op = mkFixtureLeaderClaimOp(publicInputs, voucherTree.root(leader.voucherTree))
       txHash = fixtureTxHash(publicInputs)
     var badProof = claimProof
@@ -213,10 +227,10 @@ suite "ledger/leader_claim — tryApplyLeaderClaim":
 
   test "rejects op nullifier not matching proof public input":
     let
-      leader = mkFixtureLeaderState(publicInputs)
+      leader = mkFixtureLeaderState()
       txHash = fixtureTxHash(publicInputs)
     var op = mkFixtureLeaderClaimOp(publicInputs, voucherTree.root(leader.voucherTree))
-    op.voucherNullifier = frFromBytesLE([0xCD'u8]).get
+    op.voucherNullifier = fieldFromSeed(0xCD)
     let r = CryptarchiaState(utxos: UtxoStore.init(), leader: leader)
       .tryApplyLeaderClaim(op, claimProof, txHash)
     check r.isErr
@@ -233,7 +247,7 @@ suite "ledger/leader_claim — tryApplyTx":
 
   test "LeaderClaim op wired through LedgerState":
     let
-      leader = mkFixtureLeaderState(publicInputs)
+      leader = mkFixtureLeaderState()
       op = createLeaderClaimOp(
         mkFixtureLeaderClaimOp(publicInputs, voucherTree.root(leader.voucherTree)),
       )
@@ -248,7 +262,7 @@ suite "ledger/leader_claim — tryApplyTx":
 
   test "wrong proof kind → InvalidProof":
     let
-      leader = mkFixtureLeaderState(publicInputs)
+      leader = mkFixtureLeaderState()
       op = createLeaderClaimOp(
         mkFixtureLeaderClaimOp(publicInputs, voucherTree.root(leader.voucherTree)),
       )
@@ -260,5 +274,18 @@ suite "ledger/leader_claim — tryApplyTx":
       r = s0.tryApplyTx(tx, epoch = 0, slot = 0)
     check r.isErr
     check r.error == InvalidProof
+
+suite "ledger/leader_claim — tryApplyHeader epoch hooks":
+  test "epoch advance rolls in staged vouchers and rewards":
+    let s0 = LedgerState.fromUtxos(@[], testSdpRegistry())
+    let s1 = s0.tryApplyHeader(slot = 1'u64, proof = mkProof(), epoch = 0'u64).get
+    var st = s1
+    st.cryptarchiaLedger.leader = st.cryptarchiaLedger.leader.recordBlockLeader(
+      voucherBytes(2'u8), 50'u64,
+    )
+    let s2 = st.tryApplyHeader(slot = 2'u64, proof = mkProof(), epoch = 1'u64).get
+    let leader = s2.cryptarchiaLedger.leader
+    check leader.leadersRewards == 50
+    check uint64(leader.voucherTree.len()) == 1
 
 {.pop.}

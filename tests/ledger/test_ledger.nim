@@ -57,7 +57,7 @@ suite "tryApplyHeader":
     let
       u = mkUtxo()
       s0 = LedgerState.fromUtxos([u], testSdpRegistry())
-      r = s0.tryApplyHeader(slot = 1'u64, proof = mkProof())
+      r = s0.tryApplyHeader(slot = 1'u64, proof = mkProof(), epoch = 0'u64)
     check r.isOk
     check r.get.latestUtxos == s0.latestUtxos
 
@@ -66,7 +66,7 @@ suite "tryApplyHeader":
     let s0 = LedgerState.fromUtxos([mkUtxo()], testSdpRegistry())
     var bad = mkProof()
     bad.proof[0] = 0x01  # break the genesis sentinel so verify is invoked
-    let r = s0.tryApplyHeader(slot = 1'u64, proof = bad)
+    let r = s0.tryApplyHeader(slot = 1'u64, proof = bad, epoch = 0'u64)
     check r.error == VerifierNotInitialised
 
   test "returns InvalidProof when verifier rejects":
@@ -82,7 +82,7 @@ suite "tryApplyHeader":
     let s0 = LedgerState.fromUtxos([mkUtxo()], testSdpRegistry())
     var bad = mkProof()
     bad.proof[0] = 0x01  # bit-pattern can't be a valid compressed G1 point
-    let r = s0.tryApplyHeader(slot = 1'u64, proof = bad)
+    let r = s0.tryApplyHeader(slot = 1'u64, proof = bad, epoch = 0'u64)
     check r.error == InvalidProof
 
 suite "tryApplyTx — structural error paths":
@@ -108,30 +108,6 @@ suite "tryApplyTx — structural error paths":
       r = s0.tryApplyTx(tx, epoch = 0'u64, slot = 0'u64)
     check r.isErr
     check r.error == InvalidProof
-
-  test "unsupported op (LeaderClaim) → UnsupportedOp":
-    let
-      s0 = LedgerState.fromUtxos(@[], testSdpRegistry())
-      op = createLeaderClaimOp(
-        LeaderClaimPayload(
-          rewardsRoot: default(RewardsRoot),
-          voucherNullifier: default(VoucherNullifier),
-          publicKey: default(PublicKey),
-        )
-      )
-      tx = SignedMantleTx(
-        tx: MantleTx(ops: @[op]),
-        opProofs:
-          @[
-            OpProof(
-              kind: opfLeaderClaim,
-              proofOfClaimProof: default(ProofOfClaimProof),
-            )
-          ],
-      )
-      r = s0.tryApplyTx(tx, epoch = 0'u64, slot = 0'u64)
-    check r.isErr
-    check r.error == UnsupportedOp
 
   test "Transfer op with wrong proof kind → InvalidProof":
     let
@@ -174,7 +150,7 @@ suite "Ledger[Id] map ops":
     let
       id2 = mkId(0x02)
       st2 = LedgerState.fromUtxos(@[mkUtxo(value = 7, pkSeed = 7)], testSdpRegistry())
-    l.commitUpdate(id2, epoch = 1'u64, st2)
+    l.commitUpdate(id2, st2)
     check l.state(id2).isSome
     check l.state(id2).get.latestUtxos.len == 1
 
@@ -370,7 +346,7 @@ when false:
         )
       check r.isOk
       let prepared = r.get
-      l.commitUpdate(prepared.id, epoch = 1'u64, prepared.state)
+      l.commitUpdate(prepared.id, prepared.state)
       check l.state(mkId(0x02)).isSome
       check l.state(mkId(0x02)).get.latestUtxos.len == 1
       check not l.state(mkId(0x02)).get.latestUtxos.contains(input.id)
@@ -411,7 +387,7 @@ when false:
           epoch = 1'u64,
         )
       check r1.isOk
-      l.commitUpdate(r1.get.id, epoch = 1'u64, r1.get.state)
+      l.commitUpdate(r1.get.id, r1.get.state)
 
       let
         tx1OpId = opId(
@@ -436,7 +412,7 @@ when false:
           epoch = 1'u64,
         )
       check r2.isOk
-      l.commitUpdate(r2.get.id, epoch = 1'u64, r2.get.state)
+      l.commitUpdate(r2.get.id, r2.get.state)
 
       let
         tx2OpId = opId(
@@ -462,7 +438,7 @@ when false:
           epoch = 1'u64,
         )
       check r3.isOk
-      l.commitUpdate(r3.get.id, epoch = 1'u64, r3.get.state)
+      l.commitUpdate(r3.get.id, r3.get.state)
 
       check l.state(mkId(0x00)).isSome
       check l.state(mkId(0x01)).isSome
@@ -537,7 +513,7 @@ suite "tryApplyTx — SDP":
       epoch = 1'u64,
     )
     check r.isOk
-    l.commitUpdate(r.get.id, epoch = 1'u64, r.get.state)
+    l.commitUpdate(r.get.id, r.get.state)
     check declarationId(declaration) in l.state(mkId(0x11)).get.sdp.state.declarations
 
 {.pop.}
