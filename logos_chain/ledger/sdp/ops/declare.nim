@@ -70,10 +70,10 @@ proc validateSdpDeclare(
   ok()
 
 proc applySdpDeclare*(
-    registry: var SdpRegistry,
+    registry: sink SdpRegistry,
     declaration: DeclarationMessage,
     epoch: EpochNumber,
-): Result[void, LedgerError] =
+): Result[SdpRegistry, LedgerError] =
   ## Mutation only; assumes validation passed (or genesis trusted the op).
   if getParametersAt(registry, declaration.serviceType, epoch).isNone:
     return err(MissingServiceParameters)
@@ -97,16 +97,16 @@ proc applySdpDeclare*(
       nonce: 0'u64,
     ),
   )
-  ok()
+  ok(registry)
 
 proc tryApplySdpDeclare*(
-    registry: var SdpRegistry,
+    registry: sink SdpRegistry,
     declaration: DeclarationMessage,
     proof: ZkAndEd25519SigsProof,
     txHash: ZkHash,
     utxos: UtxoStore,
     epoch: EpochNumber,
-): Result[void, LedgerError] =
+): Result[SdpRegistry, LedgerError] =
   let minStake = getMinStakeAt(registry, epoch).valueOr:
     return err(MinStakeNotFound)
   ?validateSdpDeclare(

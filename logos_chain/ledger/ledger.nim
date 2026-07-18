@@ -99,7 +99,7 @@ proc tryApplyTx*(
     of SdpDeclare:
       if proof.kind != opfSdpDeclare:
         return err(InvalidProof)
-      ?tryApplySdpDeclare(
+      s.sdp = ?tryApplySdpDeclare(
         s.sdp,
         op.payload.sdpDeclare,
         proof.declarationProof,
@@ -110,7 +110,7 @@ proc tryApplyTx*(
     of SdpWithdraw:
       if proof.kind != opfSdpWithdraw:
         return err(InvalidProof)
-      ?tryApplySdpWithdraw(
+      s.sdp = ?tryApplySdpWithdraw(
         s.sdp,
         op.payload.sdpWithdraw,
         proof.sdpWithdrawProof,
@@ -121,7 +121,7 @@ proc tryApplyTx*(
     of SdpActive:
       if proof.kind != opfSdpActive:
         return err(InvalidProof)
-      ?tryApplySdpActive(
+      s.sdp = ?tryApplySdpActive(
         s.sdp,
         op.payload.sdpActive,
         proof.sdpActiveProof,
@@ -211,7 +211,7 @@ proc commitUpdate*[Id](
   ## (withdrawal finalization, epoch snapshots) once the block is accepted.
   # TODO(EpochState): derive epoch from the consensus slot schedule and call
   # onEpochStarted only when the epoch advances, not on every block commit.
-  onEpochStarted(state.sdp, epoch)
+  state.sdp = onEpochStarted(state.sdp, epoch)
   l.states[id] = state
 
 func pruneStateAt*[Id](l: var Ledger[Id], id: Id): bool =
@@ -249,12 +249,12 @@ proc fromGenesis*(
           state.mantleLedger.channels, op.payload.channelInscribe, slot,
         )
       of SdpDeclare:
-        ?applySdpDeclare(state.sdp, op.payload.sdpDeclare, epoch)
+        state.sdp = ?applySdpDeclare(state.sdp, op.payload.sdpDeclare, epoch)
       else:
         return err(UnsupportedOp)
   # TODO(EpochState): genesis epoch-boundary handling should follow the same
   # consensus epoch schedule as commitUpdate once epoch management lands.
-  onEpochStarted(state.sdp, epoch = 0'u64)
+  state.sdp = onEpochStarted(state.sdp, epoch = 0'u64)
   ok(state)
 
 proc prepareUpdate*[Id](

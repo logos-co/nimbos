@@ -63,16 +63,16 @@ func init*(
     lastEpochStarted: Opt.none(EpochNumber),
   )
 
-proc onEpochStarted*(
-    registry: var SdpRegistry,
+func onEpochStarted*(
+    registry: sink SdpRegistry,
     epoch: EpochNumber,
-) =
+): SdpRegistry =
   ## Runs withdrawal finalization and epoch snapshotting at an epoch boundary.
   ## No-op when ``epoch`` is not greater than ``lastEpochStarted``.
   ## TODO(EpochState): callers must pass the consensus epoch; rewind
   ## ``lastEpochStarted`` on reorgs once epoch management lands.
   if registry.lastEpochStarted.isSome and epoch <= registry.lastEpochStarted.get():
-    return
+    return registry
   if epoch == 0:
     var genesisSnap = registry.snapshots.mgetOrPut(
       ServiceType.bn, Table[EpochNumber, SdpState](),
@@ -81,7 +81,7 @@ proc onEpochStarted*(
     genesisSnap[1] = registry.state
     registry.snapshots[ServiceType.bn] = genesisSnap
     registry.lastEpochStarted = Opt.some(0'u64)
-    return
+    return registry
   let last = registry.lastEpochStarted
   registry.state = finalizeWithdrawals(registry.state, epoch)
   for service, params in registry.params.parameters.pairs:
@@ -97,6 +97,7 @@ proc onEpochStarted*(
         byEpoch.del(target)
     registry.snapshots[service] = byEpoch
   registry.lastEpochStarted = Opt.some(epoch)
+  registry
 
 
 func getEpochSnapshot*(
