@@ -64,7 +64,7 @@ func makeLeaderState(
   for i in 0 ..< claimableCount:
     let reward = if i == 0: leadersRewards else: 0'u64
     s = s.recordBlockLeader(voucherBytes(byte(i + 1)), reward)
-  s.addEpochVouchers(1'u64)
+  s.addEpochVouchers(1'u64).get
 
 func mkFixtureLeaderState(): LeaderState =
   makeLeaderState(1'u64, 100'u64)
@@ -135,14 +135,14 @@ suite "ledger/leader_state":
 
   test "addEpochVouchers updates tree, cm set size, and leaders rewards":
     let cm = voucherBytes(3'u8)
-    let s = LeaderState.init().recordBlockLeader(cm, 40).addEpochVouchers(1'u64)
+    let s = LeaderState.init().recordBlockLeader(cm, 40).addEpochVouchers(1'u64).get
     check s.leadersRewards == 40
     check uint64(s.voucherTree.len()) == 1
 
   test "addEpochVouchers accumulates across epoch boundaries":
     var s = LeaderState.init().recordBlockLeader(voucherBytes(1), 40)
     s = s.recordBlockLeader(voucherBytes(2)).recordBlockLeader(voucherBytes(3), 10)
-      .addEpochVouchers(1'u64)
+      .addEpochVouchers(1'u64).get
     check s.leadersRewards == 50
     check uint64(s.voucherTree.len()) == 3
 

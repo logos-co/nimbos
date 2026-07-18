@@ -19,6 +19,7 @@
 
 import
   std/sets,
+  intops,
   results,
   ../core/mantle/[primitives, operations, proofs],
   ../utils/dynamic_merkle_tree,
@@ -99,16 +100,19 @@ func recordBlockLeader*(
 func addEpochVouchers*(
     s: sink LeaderState,
     epoch: EpochNumber,
-): LeaderState =
+): Result[LeaderState, LedgerError] =
   if epoch <= s.pending.lastEpoch:
-    return s
+    return ok(s)
   s.voucherTree = s.voucherTree.insert(s.pending.vouchers)
   s.voucherCmSetSize += uint64(s.pending.vouchers.len)
-  s.leadersRewards += s.pending.reward
+  let (res, didOverflow) = overflowingAdd(s.leadersRewards, s.pending.reward)
+  if didOverflow:
+    return err(BalanceOverflow)
+  s.leadersRewards = res
   s.pending.vouchers = @[]
   s.pending.reward = 0
   s.pending.lastEpoch = epoch
-  s
+  ok(s)
 
 func recordClaim*(
     s: sink LeaderState, nf: VoucherNullifier

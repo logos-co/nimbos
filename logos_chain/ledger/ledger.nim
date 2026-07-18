@@ -68,7 +68,7 @@ proc tryApplyHeader*(
   if not verified:
     return err(InvalidProof)
   var s = state
-  s.cryptarchiaLedger.leader = s.cryptarchiaLedger.leader.addEpochVouchers(epoch)
+  s.cryptarchiaLedger.leader = ?s.cryptarchiaLedger.leader.addEpochVouchers(epoch)
   onEpochStarted(s.sdp, epoch)
   s.cryptarchiaLedger.leader = s.cryptarchiaLedger.leader.recordBlockLeader(
     proof.leaderVoucher,
