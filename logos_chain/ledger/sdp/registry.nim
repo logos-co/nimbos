@@ -90,7 +90,12 @@ proc onEpochStarted*(
     var byEpoch = registry.snapshots.mgetOrPut(
       service, Table[EpochNumber, SdpState](),
     )
-    byEpoch[epoch + 2] = registry.state
+    # Spec citation: "at epoch n, read the registry from the last block of finalized epoch n-2. 
+    # A message sent in epoch n appears in the snapshot for epoch n+2."
+    # Since onEpochStarted is called at the start of epoch `epoch`, registry.state represents
+    # the finalized state of the end of `epoch - 1`. We map this to target epoch `epoch + 1` 
+    # so that target epoch `T` reads the state finalized at the end of `T - 2`.
+    byEpoch[epoch + 1] = registry.state
     # Drop S_n for target epochs lastEpochStarted .. epoch - 1.
     for target in last.get(0'u64) .. epoch - 1:
       if target in byEpoch:
