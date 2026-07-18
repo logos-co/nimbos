@@ -7,7 +7,7 @@
 
 ## Leader reward pool + global voucher Merkle tree for `LeaderClaim` ops.
 ##
-## Spec: [Anonymous Leaders Reward Protocol v1.0.0](https://nomos-tech.notion.site/1-0-0-Anonymous-Leaders-Reward-Protocol-206261aa09df8120a49ffa49c71ba70d#240261aa09df80de83eace3d556eddfc)
+## Spec: [Anonymous Leaders Reward Protocol v1.0.0](https://github.com/logos-co/logos-lips/blob/b7602ed8a225d41ca0bfaaa432524dc84d2ded7e/docs/blockchain/raw/bedrock-anonymous-leaders-reward.md)
 ##
 ## One Merkle tree of voucher commitments spans the full chain. On the **first
 ## block of each new epoch**, ``addEpochVouchers`` appends the departing epoch's
