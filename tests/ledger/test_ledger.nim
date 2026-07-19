@@ -22,7 +22,16 @@ import
   ../../logos_chain/zk/pol,
   ../zk/[snarkjs_helpers, zksign_helpers],
   ./sdp/test_helpers,
-  ../core/mantle/test_helpers
+  ../core/mantle/test_helpers,
+  ../testutil
+
+func initLedger*(
+    id: TestId,
+    state: LedgerState,
+    config: LedgerConfig = LedgerConfig(),
+    leaderProofVerifier: LeaderProofVerifier = mockVerifyLeaderProof,
+): Ledger[TestId] =
+  Ledger[TestId].init(id, state, config, leaderProofVerifier)
 
 proc mkProvider(seed: byte): ProviderId =
   var bytes: array[EdPublicKeySize, byte]
@@ -165,12 +174,12 @@ suite "Ledger[Id] map ops":
     let
       seed = LedgerState.fromUtxos(@[mkUtxo()], testSdpRegistry())
       id = mkId(0x01)
-      l = Ledger[TestId].init(id, seed)
+      l = initLedger(id, seed)
     check l.state(id).isSome
     check l.state(mkId(0x02)).isNone
 
   test "commitUpdate overwrites":
-    var l = Ledger[TestId].init(mkId(0x01), LedgerState.fromUtxos(@[], testSdpRegistry()))
+    var l = initLedger(mkId(0x01), LedgerState.fromUtxos(@[], testSdpRegistry()))
     let
       id2 = mkId(0x02)
       st2 = LedgerState.fromUtxos(@[mkUtxo(value = 7, pkSeed = 7)], testSdpRegistry())
@@ -179,7 +188,7 @@ suite "Ledger[Id] map ops":
     check l.state(id2).get.latestUtxos.len == 1
 
   test "pruneStateAt removes existing, returns true; missing returns false":
-    var l = Ledger[TestId].init(mkId(0x01), LedgerState.fromUtxos(@[], testSdpRegistry()))
+    var l = initLedger(mkId(0x01), LedgerState.fromUtxos(@[], testSdpRegistry()))
     check l.pruneStateAt(mkId(0x01)) == true
     check l.state(mkId(0x01)).isNone
     check l.pruneStateAt(mkId(0x99)) == false
@@ -187,7 +196,7 @@ suite "Ledger[Id] map ops":
 suite "prepareUpdate — no-verify paths":
   test "parent missing → ParentNotFound":
     let
-      l = Ledger[TestId].init(mkId(0x01), LedgerState.fromUtxos(@[], testSdpRegistry()))
+      l = initLedger(mkId(0x01), LedgerState.fromUtxos(@[], testSdpRegistry()))
       r = l.prepareUpdate(
         id = mkId(0x02),
         parentId = mkId(0xff),
@@ -203,7 +212,7 @@ suite "prepareUpdate — no-verify paths":
     let
       parent = LedgerState.fromUtxos(@[mkUtxo()], testSdpRegistry())
       id0 = mkId(0x01)
-      l = Ledger[TestId].init(id0, parent)
+      l = initLedger(id0, parent)
       id1 = mkId(0x02)
       r = l.prepareUpdate(
         id = id1,
@@ -354,7 +363,7 @@ when false:
 
   suite "prepareUpdate — verify paths":
     test "happy path with one transfer + commit":
-      var l = Ledger[TestId].init(
+      var l = initLedger(
         mkId(0x01), LedgerState.fromUtxos([mkUtxo(value = 100, pkSeed = 1)], testSdpRegistry())
       )
       let
@@ -378,7 +387,7 @@ when false:
     test "unbalanced tx → UnbalancedTransaction":
       let
         input = mkUtxo(value = 100, pkSeed = 1)
-        l = Ledger[TestId].init(mkId(0x01), LedgerState.fromUtxos([input], testSdpRegistry()))
+        l = initLedger(mkId(0x01), LedgerState.fromUtxos([input], testSdpRegistry()))
         tx = mkTransferTx([input.id], [mkNote(50, pkSeed = 2)]) # 100 in, 50 out
         r = l.prepareUpdate(
           id = mkId(0x02),
@@ -394,7 +403,7 @@ when false:
     test "multi-block IBD: 3 prepare+commit cycles":
       # Walks the same prepare→commit sequence the chain module will eventually
       # drive. Each block consumes the prior block's output as its input.
-      var l = Ledger[TestId].init(
+      var l = initLedger(
         mkId(0x00), LedgerState.fromUtxos([mkUtxo(value = 100, pkSeed = 1)], testSdpRegistry())
       )
 
@@ -527,7 +536,7 @@ suite "tryApplyTx — SDP":
     )
     discard installTestDeclaration(parent.sdp, declaration, epoch = 1)
     let id0 = mkId(0x10)
-    var l = Ledger[TestId].init(id0, parent)
+    var l = initLedger(id0, parent)
     let r = l.prepareUpdate(
       id = mkId(0x11),
       parentId = id0,

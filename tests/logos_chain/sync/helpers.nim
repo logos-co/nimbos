@@ -117,7 +117,12 @@ proc initTestChain*(genesis: Block): Chain =
   ).valueOr:
     raise newException(AssertionDefect, "initTestChain: " & $error)
   Chain.init(
-    genesis, Ledger[BlockId].init(blockId(genesis.header), genesisState),
+    genesis,
+    Ledger[BlockId].init(
+      blockId(genesis.header),
+      genesisState,
+      leaderProofVerifier = mockVerifyLeaderProof,
+    ),
   )
 
 proc u32LengthPrefixedHex*(inner: seq[byte]): string =

@@ -18,6 +18,7 @@ import
 from ./types import
   Block, Header, ProofOfLeadership, createBlockRoot, ExpectedBedrockVersion,
   MaxBlockSize, header, blockId
+from ./crypto/types import Ed25519Signature, Ed25519PublicKey
 from ./mantle/primitives import MaxBlockTxs, SlotNumber
 from ./mantle/tx_types import SignedMantleTx, encodeSignedMantleTx
 
@@ -73,10 +74,8 @@ func validateBlockHeader(blk: Block, localTree: LocalTree): bool =
   if not verifyPoL(localTree, header(blk)):
     return false
 
-  # Genesis blocks carry no leader key and are unsigned by definition.
-  if header(blk).proofOfLeadership != default(ProofOfLeadership):
-    if not verify(blk.signature, blockId(header(blk)), header(blk).proofOfLeadership.leaderKey):
-      return false
+  if not verify(blk.signature, blockId(header(blk)), header(blk).proofOfLeadership.leaderKey):
+    return false
 
   true
 

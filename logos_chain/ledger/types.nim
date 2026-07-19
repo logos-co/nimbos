@@ -12,7 +12,10 @@
 
 {.push raises: [], gcsafe.}
 
-import results
+import
+  results,
+  ../core/types,
+  ./pol_verifier
 
 export results
 
@@ -56,6 +59,11 @@ type
     InvalidChannelConfig ## ChannelConfig has zero threshold or empty keys
     WithdrawNonceOverflow ## ChannelWithdraw incremented withdrawalNonce past uint32
 
+  LeaderProofVerifier* = proc(
+    proof: ProofOfLeadership, public: LeaderPublic
+  ): Result[bool, PolLoadError] {.gcsafe, raises: [].}
+
+type
   LedgerConfig* = object
     ## Chain configuration. Currently empty — fields land with the modules
     ## that need them (epoch, lottery, SDP, gas).
