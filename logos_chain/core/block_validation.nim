@@ -16,7 +16,8 @@ import
   libp2p/crypto/ed25519/ed25519
 
 from ./types import
-  Block, Header, createBlockRoot, ExpectedBedrockVersion, MaxBlockSize, header
+  Block, Header, ProofOfLeadership, createBlockRoot, ExpectedBedrockVersion,
+  MaxBlockSize, header, blockId
 from ./mantle/primitives import MaxBlockTxs, SlotNumber
 from ./mantle/tx_types import SignedMantleTx, encodeSignedMantleTx
 
@@ -37,7 +38,7 @@ func blockPayloadBytesLen(blk: Block): int =
   txBytesLen(blk.txs) + EdSignatureSize
 
 func verifyPoL(localTree: LocalTree, header: Header): bool =
-  ## TODO: implement `verifyPoL()`.
+  ## TODO: implement `verifyPoL()` when epoch state lands.
   discard localTree
   discard header
   true
@@ -71,6 +72,11 @@ func validateBlockHeader(blk: Block, localTree: LocalTree): bool =
 
   if not verifyPoL(localTree, header(blk)):
     return false
+
+  # Genesis blocks carry no leader key and are unsigned by definition.
+  if header(blk).proofOfLeadership != default(ProofOfLeadership):
+    if not verify(blk.signature, blockId(header(blk)), header(blk).proofOfLeadership.leaderKey):
+      return false
 
   true
 

@@ -18,10 +18,12 @@ import
   stew/byteutils as sbyteutils,
   ../chain/chain,
   ../core/block_validation,
+  ../ledger/ledger,
   ./[framing, syncer_types, types]
 
 from ../core/local_tree import
-  LocalTree, localTipId, latestImmutableBlockId, hasBlock, addBlockToTree
+  LocalTree, localTipId, latestImmutableBlockId, hasBlock, addBlockToTree,
+  getBlock
 from ../core/types import Block, BlockId, blockId, header
 from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
 
@@ -203,12 +205,35 @@ proc sendDownloadBlocksRequest*(
     await noCancel conn.close()
 
 proc onBlock(
-    localTree: LocalTree,
+    syncer: Syncer,
     blk: Block,
 ) {.raises: [InvalidBlock].} =
+  let localTree = syncer.localTree
   if not validateBlock(blk, localTree):
     raise newException(InvalidBlock, "invalid block")
+
+  let
+    parentBlockId = blk.header.parentBlock
+    blkId = blockId(blk.header)
+
+  # Validate the block execution against the ledger state
+  let updateResult = syncer.chain.ledger.prepareUpdate(
+    id = blkId,
+    parentId = parentBlockId,
+    slot = blk.header.slot,
+    proof = blk.header.proofOfLeadership,
+    txs = blk.txs,
+    epoch = 0'u64, # placeholder as epoch states land in separate PR
+  )
+  if updateResult.isErr:
+    raise newException(InvalidBlock, "ledger validation failed: " & $updateResult.error)
+
   discard addBlockToTree(localTree, blk)
+
+  # Commit the updated ledger state
+  let update = updateResult.get
+  syncer.chain.ledger.commitUpdate(update.id, epoch = 0'u64, update.state)
+
   var leaderKeyBytes: array[EdPublicKeySize, byte]
   doAssert toBytes(header(blk).proofOfLeadership.leaderKey, leaderKeyBytes) == EdPublicKeySize
   info "IBD ingested block",
@@ -285,7 +310,7 @@ proc downloadBlocks(
     for blk in blocks:
       latestDownloaded = Opt.some(blk)
       try:
-        onBlock(syncer.localTree, blk)
+        onBlock(syncer, blk)
         debug "IBD: block ingest ok", peer, blockId = sbyteutils.toHex(blockId(blk.header))
         if blockId(blk.header) == effectiveTarget.get:
           targetReached = true
