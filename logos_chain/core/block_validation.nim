@@ -20,7 +20,12 @@ from ./types import
   MaxBlockSize, header, blockId
 from ./crypto/types import Ed25519Signature, Ed25519PublicKey
 from ./mantle/primitives import MaxBlockTxs, SlotNumber
-from ./mantle/tx_types import SignedMantleTx, encodeSignedMantleTx
+from ./mantle/tx_types import
+  SignedMantleTx,
+  encodeSignedMantleTx,
+  isSupportedOpcode,
+  opPayloadToOpcode,
+  expectedOpProofKindForOpcode
 
 func wallclockSlot(): SlotNumber =
   ## TODO: implement `wallclock_time().to_slot()` from deployment genesis time
@@ -80,7 +85,17 @@ func validateBlockHeader(blk: Block, localTree: LocalTree): bool =
   true
 
 func validateBlockBody(blk: Block): bool =
-  discard blk # TODO: body checks
+  for tx in blk.txs:
+    if tx.tx.ops.len != tx.opProofs.len:
+      return false
+    for i in 0 ..< tx.tx.ops.len:
+      let op = tx.tx.ops[i]
+      if not isSupportedOpcode(op.opcode):
+        return false
+      if op.opcode != opPayloadToOpcode(op.payload):
+        return false
+      if tx.opProofs[i].kind != expectedOpProofKindForOpcode(op.opcode):
+        return false
   true
 
 func validateBlock*(blk: Block, localTree: LocalTree): bool =
