@@ -18,7 +18,7 @@
 {.push raises: [], gcsafe.}
 
 import
-  std/sets,
+  ../utils/hash_trie_map,
   intops,
   results,
   ../core/mantle/[primitives, operations, proofs],
@@ -45,7 +45,7 @@ type LeaderPending = object
 type LeaderState* = object
   voucherTree: VoucherMerkleTree
   voucherCmSetSize: uint64
-  spentNullifiers: HashSet[VoucherNullifier]
+  spentNullifiers: HashTrieMap[VoucherNullifier, tuple[]]
   leadersRewards: Value
   pending: LeaderPending
 
@@ -54,7 +54,7 @@ func init*(_: typedesc[LeaderState]): LeaderState =
   LeaderState(
     voucherTree: tree,
     voucherCmSetSize: 0,
-    spentNullifiers: initHashSet[VoucherNullifier](),
+    spentNullifiers: HashTrieMap[VoucherNullifier, tuple[]].init(),
     leadersRewards: 0,
     pending: LeaderPending(vouchers: @[], reward: 0, lastEpoch: 0),
   )
@@ -118,7 +118,7 @@ func recordClaim*(
     s: sink LeaderState, nf: VoucherNullifier
 ): tuple[state: LeaderState, reward: Value] =
   let reward = s.rewardShare()
-  s.spentNullifiers.incl(nf)
+  s.spentNullifiers = s.spentNullifiers.insert(nf, ())
   s.leadersRewards -= reward
   (state: s, reward: reward)
 
