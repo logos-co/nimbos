@@ -132,6 +132,7 @@ proc tryRecordClaim*(
   if op.voucherNullifier in s:
     return err(DuplicatedVoucherNullifier)
   let rewardShare = s.rewardShare()
+  # TODO: Wait for answer of spec team about reward 0 (whether zero payout claims should be allowed and nullified).
   if rewardShare == 0:
     return err(NoClaimableReward)
   let rewardsRoot = root(s.voucherTree)
