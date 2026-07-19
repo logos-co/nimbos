@@ -147,7 +147,8 @@ proc tryApplyTx*(
         s.cryptarchiaLedger, s.sdp.state.lockedNotes,
         op.payload.channelDeposit, proof.channelDepositProof, txHash,
       )
-      s = LedgerState(cryptarchiaLedger: r.cs, mantleLedger: r.ms, sdp: s.sdp)
+      s.cryptarchiaLedger = r.cs
+      s.mantleLedger = r.ms
     of ChannelWithdraw:
       if proof.kind != opfChannelWithdraw:
         return err(InvalidProof)
@@ -155,7 +156,8 @@ proc tryApplyTx*(
         s.cryptarchiaLedger,
         op.payload.channelWithdraw, proof.channelWithdrawOpProof, txHash,
       )
-      s = LedgerState(cryptarchiaLedger: r.cs, mantleLedger: r.ms, sdp: s.sdp)
+      s.cryptarchiaLedger = r.cs
+      s.mantleLedger = r.ms
     else:
       return err(UnsupportedOp)
   ok((state: s, balance: balance))
