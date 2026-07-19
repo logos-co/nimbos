@@ -212,6 +212,29 @@ suite "ledger/leader_claim — tryApplyLeaderClaim":
     check r.isErr
     check r.error == RewardsRootMismatch
 
+  test "rejects invalid proof":
+    let
+      leader = mkFixtureLeaderState()
+      op = mkFixtureLeaderClaimOp(publicInputs, voucherTree.root(leader.voucherTree))
+      txHash = fixtureTxHash(publicInputs)
+    var badProof = claimProof
+    badProof[0] = badProof[0] xor 0xFF'u8
+    let r = CryptarchiaState(utxos: UtxoStore.init(), leader: leader)
+      .tryApplyLeaderClaim(op, badProof, txHash)
+    check r.isErr
+    check r.error == InvalidProof
+
+  test "rejects op nullifier not matching proof public input":
+    let
+      leader = mkFixtureLeaderState()
+      txHash = fixtureTxHash(publicInputs)
+    var op = mkFixtureLeaderClaimOp(publicInputs, voucherTree.root(leader.voucherTree))
+    op.voucherNullifier = fieldFromSeed(0xCD)
+    let r = CryptarchiaState(utxos: UtxoStore.init(), leader: leader)
+      .tryApplyLeaderClaim(op, claimProof, txHash)
+    check r.isErr
+    check r.error == InvalidProof
+
 
 suite "ledger/leader_claim — tryApplyTx":
   var
