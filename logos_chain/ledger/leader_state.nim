@@ -114,7 +114,7 @@ func addEpochVouchers*(
   s.pending.lastEpoch = epoch
   ok(s)
 
-func recordClaim*(
+func recordClaim(
     s: sink LeaderState, nf: VoucherNullifier
 ): tuple[state: LeaderState, reward: Value] =
   let reward = s.rewardShare()
@@ -134,8 +134,6 @@ proc tryRecordClaim*(
   let rewardShare = s.rewardShare()
   if rewardShare == 0:
     return err(NoClaimableReward)
-  if rewardShare > s.leadersRewards:
-    return err(BalanceOverflow)
   let rewardsRoot = root(s.voucherTree)
   if op.rewardsRoot != rewardsRoot:
     return err(RewardsRootMismatch)

@@ -89,6 +89,19 @@ func fixtureTxHash(publicInputs: openArray[FieldElement]): ZkHash =
   ## so `proofOfClaimPublic` matches the fixture.
   encodeFieldElement(publicInputs[1])
 
+proc recordClaim(
+    s: sink LeaderState, nf: VoucherNullifier
+): tuple[state: LeaderState, reward: Value] =
+  let op = LeaderClaimPayload(
+    rewardsRoot: s.voucherTree.root(),
+    voucherNullifier: nf,
+    publicKey: default(ZkPublicKey),
+  )
+  let r = tryRecordClaim(s, op, default(ProofOfClaimProof), default(ZkHash), mockVerifyProofOfClaim)
+  if r.isErr:
+    doAssert false, "tryRecordClaim failed: " & $r.error
+  r.get
+
 suite "ledger/leader_state":
   test "rewardShare splits leaders_rewards over unclaimed vouchers":
     let s = makeLeaderState(4'u64, 100'u64)
