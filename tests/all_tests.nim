@@ -30,6 +30,7 @@ import # Unit test
   ./core/test_block_types,
   ./core/test_block_bincode,
   ./core/test_block_validation,
+  ./core/test_mempool,
   ./core/test_local_tree,
   ./consensus/test_clock,
   ./chain/test_genesis,

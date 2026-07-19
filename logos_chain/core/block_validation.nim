@@ -13,9 +13,16 @@
 
 {.push raises: [], gcsafe.}
 
+import
+  results,
+  ./local_tree,
+  ./mempool,
+  libp2p/crypto/ed25519/ed25519
+
 from ./types import
-  Block, createBlockRoot, ExpectedBedrockVersion, MaxBlockSize, header
-from ./mantle/primitives import MaxBlockTxs
+  Block, Header, Proposal, References, createBlockRoot, ExpectedBedrockVersion,
+  MaxBlockSize, header, blockId, Hash32
+from ./mantle/primitives import MaxBlockTxs, SlotNumber
 from ./mantle/tx_types import SignedMantleTx, encodeSignedMantleTx
 
 func txBytesLen(txs: openArray[SignedMantleTx]): int =
@@ -48,5 +55,44 @@ func validateBlockBody(blk: Block): bool =
 
 func validateBlock*(blk: Block): bool =
   validateBlockHeader(blk) and validateBlockBody(blk)
+
+func reconstructBlock*(
+    proposal: Proposal,
+    mempool: Mempool
+): Opt[Block] =
+  ## Reconstructs the block from proposal references using the mempool.
+  ## Returns Opt.none if any reference is missing or if we cannot retrieve it.
+  var txs: seq[SignedMantleTx]
+  for r in proposal.references:
+    if r == default(Hash32):
+      continue
+    let tx = mempool.get(r).valueOr:
+      return Opt.none(Block)
+    txs.add(tx)
+  
+  ok(Block(
+    header: proposal.header,
+    signature: proposal.signature,
+    txs: txs
+  ))
+
+func reconstructAndValidateProposal*(
+    proposal: Proposal,
+    localTree: LocalTree,
+    mempool: Mempool
+): Opt[Block] =
+  ## Validates the proposal signature, attempts block reconstruction from references,
+  ## and validates the reconstructed block against the localTree.
+  ## Returns the reconstructed Block on success.
+  let msgHash = blockId(proposal.header)
+  if not verify(proposal.signature, msgHash, proposal.header.proofOfLeadership.leaderKey):
+    return Opt.none(Block)
+    
+  let blk = reconstructBlock(proposal, mempool).valueOr:
+    return Opt.none(Block)
+  if not validateBlock(blk, localTree):
+    return Opt.none(Block)
+    
+  ok(blk)
 
 {.pop.}

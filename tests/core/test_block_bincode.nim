@@ -111,4 +111,20 @@ suite "core/block bincode (cryptarchia sync)":
     except BincodeError, IOError:
       fail getCurrentExceptionMsg()
 
+  test "serializeProposalToSeq / deserializeProposal roundtrip":
+    let
+      sm = minimalSignedTx()
+      h = sampleHeader([sm])
+      proposal = initProposal(h, [sm]).get()
+    try:
+      let serialized = serializeProposalToSeq(proposal, cfg)
+      check sizeof(proposal.references) == 32768
+      check serialized.len == 33129
+      let deserialized = deserializeProposal(serialized, cfg)
+      check deserialized.header == proposal.header
+      check deserialized.references == proposal.references
+      check deserialized.signature == proposal.signature
+    except BincodeError, IOError:
+      fail getCurrentExceptionMsg()
+
 {.pop.}

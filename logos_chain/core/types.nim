@@ -11,13 +11,14 @@
 {.push raises: [], gcsafe.}
 
 import
+  results,
   stew/[assign2, bitops2],
   bincode,
   ./crypto/hashing,
   ./mantle/[tx_types, tx_hashing, tx_bincode],
   libp2p/crypto/ed25519/ed25519
 
-export hashing, tx_types, tx_bincode
+export hashing, tx_types, tx_bincode, tx_hashing, results
 
 const
   ExpectedBedrockVersion* = 1'u8
@@ -57,6 +58,7 @@ type
 deriveBincode(ProofOfLeadership)
 deriveBincode(Header)
 deriveBincode(Block)
+deriveBincode(Proposal)
 
 template header*(blk: Block): auto = blk.header
 
@@ -150,5 +152,27 @@ func initHeader*(
     blockRoot: createBlockRoot(txs),
     proofOfLeadership: proofOfLeadership,
   )
+
+type
+  ProposalError* {.pure.} = enum
+    TooManyTransactions
+
+func createReferences(txs: openArray[SignedMantleTx]): Result[References, ProposalError] =
+  ## Constructs a references array from the given transactions.
+  ## Pads with zeros when necessary to match MaxBlockTxs.
+  if txs.len > MaxBlockTxs:
+    return err(ProposalError.TooManyTransactions)
+  var refs: References
+  for i, tx in txs:
+    refs[i] = mantleTxHash(tx.tx)
+  ok(refs)
+
+func initProposal*(
+    header: Header,
+    txs: openArray[SignedMantleTx],
+    signature: Ed25519Signature = DefaultEd25519Signature,
+): Result[Proposal, ProposalError] =
+  let refs = ? createReferences(txs)
+  ok(Proposal(header: header, references: refs, signature: signature))
 
 {.pop.}
