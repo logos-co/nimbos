@@ -14,7 +14,7 @@ import
   results,
   ../core/[types, local_tree, block_validation],
   ../deployment/deployment_settings,
-  ../ledger/ledger,
+  ../ledger/[ledger, stake_inference],
   ./genesis
 
 export genesis, local_tree
@@ -59,7 +59,7 @@ func ledgerConfig*(settings: DeploymentSettings): LedgerConfig =
       nonceBuffer: uint64(c.epochConfig.epochPeriodNonceBuffer),
       nonceStabilization: uint64(c.epochConfig.epochPeriodNonceStabilization)),
     slotActivationCoeff: c.slotActivationCoeff,
-    stakeInferenceLearningRate: c.learningRate,
+    learningRateFixed: fixedPoint(c.learningRate),
     faucetPk: Opt.some(c.genesisState.faucetZkPublicKey))
 
 func init*(
@@ -94,29 +94,29 @@ proc init*(T: type Chain, settings: DeploymentSettings): Result[T, string] =
       slotDurationSeconds: uint64(settings.time.slotDuration.seconds))))
 
 proc currentWallclockSlot*(chain: Chain): SlotNumber =
-  ## Slot containing the current system time; `WallclockUnbounded` when the
-  ## chain has no clock (zero slot duration).
+  ## Slot containing the current system time.
   wallclockSlot(uint64(max(getTime().toUnix(), 0'i64)), chain.slotConfig)
 
 proc tryApplyBlock*(
     chain: var Chain, blk: Block): Result[void, BlockApplyError] =
-  ## Full block ingestion: wallclock bound and stateless structure, ledger
-  ## transition against the parent state, tree acceptance, then commit.
-  let
-    hdr = header(blk)
-    id = blockId(hdr)
-    epoch = slotToEpoch(hdr.slot, chain.ledger.config.epochSchedule)
+  ## Full block ingestion in `valid_header` order.
+  template hdr: auto = header(blk)
+  let id = blockId(hdr)
   if chain.ledger.state(id).isSome:
     return err(BlockApplyError(kind: AlreadyApplied))
   if hdr.slot > chain.currentWallclockSlot():
     return err(BlockApplyError(kind: FutureSlot))
   if not validateBlock(blk):
     return err(BlockApplyError(kind: InvalidStructure))
+  # Tree admission runs before the leader proof is verified, so
+  # structurally invalid forks never reach the verifier.
+  if not chain.localTree.canExtend(hdr):
+    return err(BlockApplyError(kind: TreeRejected))
   # The ledger prepares without mutating, the tree mutates, the ledger
   # commits — a failure at any step leaves no partial state.
   let prepared = chain.ledger.prepareUpdate(
-      id, hdr.parentBlock, hdr.slot, hdr.proofOfLeadership, blk.txs,
-      epoch).valueOr:
+      id, hdr.parentBlock, hdr.slot, hdr.proofOfLeadership,
+      blk.txs).valueOr:
     return err(BlockApplyError(kind: LedgerRejected, ledgerError: error))
   if not chain.localTree.addBlockToTree(blk):
     return err(BlockApplyError(kind: TreeRejected))

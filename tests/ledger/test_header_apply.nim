@@ -108,6 +108,40 @@ suite "ledger/header apply (epoch pipeline)":
       s.epochs.activeEpoch.epoch == 2
       s.epochs.activeEpoch.totalStake == 166
 
+  test "sibling branches rotate their epoch state independently":
+    # The tracker is fork-local: children of the same parent state may land
+    # in different epochs without affecting each other or the parent.
+    let
+      parent = genesisLedgerState().tryApplyHeader(
+        5, sentinelProof(), testLedgerConfig).expect("valid")
+      stay = parent.tryApplyHeader(
+        50, sentinelProof(), testLedgerConfig).expect("valid")
+      jump = parent.tryApplyHeader(
+        250, sentinelProof(), testLedgerConfig).expect("rotation")
+    check:
+      stay.epochs.activeEpoch.epoch == 0
+      stay.sdp.lastEpochStarted.isNone
+      jump.epochs.activeEpoch.epoch == 2
+      jump.sdp.lastEpochStarted == Opt.some(EpochNumber(2))
+      parent.epochs.activeEpoch.epoch == 0
+      parent.epochs.lastAppliedSlot == 5
+
+  test "a note minted in epoch 0 enters the aged set only at epoch 2":
+    # The stake distribution for epoch n freezes at the start of epoch n-1,
+    # so a note minted mid-epoch-0 is absent from epoch 1's aged root and
+    # present in epoch 2's.
+    var s = genesisLedgerState()
+    let genesisRoot = s.cryptarchiaLedger.latestUtxos.root
+    s = s.tryApplyHeader(5, sentinelProof(), testLedgerConfig).expect("valid")
+    s.cryptarchiaLedger = CryptarchiaState.init(
+      [mkUtxo(value = 1000), mkUtxo(value = 50, pkSeed = 9)])
+    let mintedRoot = s.cryptarchiaLedger.latestUtxos.root
+    check mintedRoot != genesisRoot
+    s = s.tryApplyHeader(100, sentinelProof(), testLedgerConfig).expect("rotation")
+    check s.epochs.activeEpoch.agedUtxoRoot == genesisRoot
+    s = s.tryApplyHeader(200, sentinelProof(), testLedgerConfig).expect("rotation")
+    check s.epochs.activeEpoch.agedUtxoRoot == mintedRoot
+
   test "skipped epochs collapse the estimate with zero-density corrections":
     var s = genesisLedgerState()
     s = s.tryApplyHeader(5, sentinelProof(), testLedgerConfig).expect("valid")

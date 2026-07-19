@@ -91,7 +91,7 @@ func reqFloat*(root: YamlNode, path: openArray[string]): Result[float, string] =
 func reqUInt64*(root: YamlNode, path: openArray[string]): Result[uint64, string] =
   reqParsed(root, path, parseBiggestUInt, "non-negative integer")
 
-func parseDecimalRatio*(s: string): NonNegativeRatio {.raises: [ValueError].} =
+func parseDecimalRatio(s: string): NonNegativeRatio {.raises: [ValueError].} =
   ## Exact decimal-scalar → rational conversion (`"0.5"` → 5/10, `"1"` → 1/1).
   ## No float ever materialises, so consensus parameters parse
   ## deterministically on every platform and toolchain.

@@ -23,14 +23,9 @@ type
     nonceStabilization*: uint64
 
   SlotConfig* = object
-    ## Wallclock anchor for slot timing. A zero `slotDurationSeconds`
-    ## disables the wallclock bound.
+    ## Wallclock anchor for slot timing; `slotDurationSeconds` must be > 0.
     genesisTime*: WallclockSeconds ## start of the first epoch
     slotDurationSeconds*: uint64
-
-const WallclockUnbounded* = high(SlotNumber)
-  ## Sentinel slot meaning "no wallclock bound": produced by clockless
-  ## `SlotConfig`s and accepted by future-slot checks to disable them.
 
 func basePeriodLength*(securityParam: uint64, f: NonNegativeRatio): uint64 =
   ## ⌊k/f⌋ — expected slots to produce `k` blocks at slot-activation rate `f`.
@@ -70,9 +65,7 @@ func wallclockSlot*(
   if now < genesis: 0'u64 else: (now - genesis) div slotDuration
 
 func wallclockSlot*(now: WallclockSeconds, c: SlotConfig): SlotNumber =
-  ## Slot for `now` under `c`; `WallclockUnbounded` when the config carries
-  ## no clock (zero slot duration).
-  if c.slotDurationSeconds == 0: WallclockUnbounded
-  else: wallclockSlot(now, c.genesisTime, c.slotDurationSeconds)
+  ## Slot for `now` under `c`.
+  wallclockSlot(now, c.genesisTime, c.slotDurationSeconds)
 
 {.pop.}

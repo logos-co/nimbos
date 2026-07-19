@@ -12,7 +12,7 @@
 
 import
   results,
-  std/[options, tables],
+  std/tables,
   ./[
     balance, types, cryptarchia_state, channel_state, mantle_state,
     pol_verifier, epoch_state,
@@ -109,8 +109,8 @@ proc fromGenesis*(
         return err(UnsupportedOp)
   s.epochs = ?genesisEpochTracker(
     nonce, s.cryptarchiaLedger.latestUtxos.root, max(total, 1), cfg)
-  # Epochs 0 and 1 read the registry snapshot taken at genesis
-  # (bedrock-service-declaration-protocol.md, Registry Snapshots).
+  # Epochs 0 and 1 read the registry snapshot taken at genesis:
+  # https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/bedrock-service-declaration-protocol.md#snapshots
   onEpochStarted(s.sdp, genesisEpoch)
   ok(s)
 
@@ -128,9 +128,9 @@ proc tryApplyHeader*(
     slot, s.cryptarchiaLedger.latestUtxos.root, cfg)
   if s.epochs.activeEpoch.epoch > prevEpoch:
     # SDP epoch finalization is part of applying the first block of the new
-    # epoch (bedrock-v1.1-mantle-specification.md, SDP Epoch Finalization);
-    # reward distribution slots in ahead of the withdrawal removal once it
-    # lands.
+    # epoch; reward distribution slots in ahead of the withdrawal removal
+    # once it lands.
+    # https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md#sdp-epoch-finalization
     onEpochStarted(s.sdp, s.epochs.activeEpoch.epoch)
   let
     active = s.epochs.activeEpoch
@@ -231,7 +231,9 @@ proc tryApplyTx*(
         s.cryptarchiaLedger, s.sdp.state.lockedNotes,
         op.payload.channelDeposit, proof.channelDepositProof, txHash,
       )
-      s = LedgerState(cryptarchiaLedger: r.cs, mantleLedger: r.ms, sdp: s.sdp)
+      # Field-wise update: a whole-object constructor would reset omitted fields.
+      s.cryptarchiaLedger = r.cs
+      s.mantleLedger = r.ms
     of ChannelWithdraw:
       if proof.kind != opfChannelWithdraw:
         return err(InvalidProof)
@@ -239,7 +241,8 @@ proc tryApplyTx*(
         s.cryptarchiaLedger,
         op.payload.channelWithdraw, proof.channelWithdrawOpProof, txHash,
       )
-      s = LedgerState(cryptarchiaLedger: r.cs, mantleLedger: r.ms, sdp: s.sdp)
+      s.cryptarchiaLedger = r.cs
+      s.mantleLedger = r.ms
     else:
       return err(UnsupportedOp)
   ok((state: s, balance: balance))
@@ -247,13 +250,13 @@ proc tryApplyTx*(
 proc tryApplyTxns*(
     state: sink LedgerState,
     txs: openArray[SignedMantleTx],
-    epoch: EpochNumber,
     slot: SlotNumber,
 ): Result[LedgerState, LedgerError] =
-  ## Applies a block's transactions in order. Each tx must net to zero
-  ## balance — otherwise returns `UnbalancedTransaction` or
-  ## `InsufficientBalance`.
+  ## Applies a block's transactions in order under the state's active epoch;
+  ## each tx must net to zero balance.
   var s = state
+  # The state, not the caller, is the source of truth for the epoch.
+  let epoch = s.epochs.activeEpoch.epoch
   for tx in txs:
     let r = ?s.tryApplyTx(tx, epoch, slot)
     s = r.state
@@ -307,7 +310,6 @@ proc prepareUpdate*[Id](
     slot: SlotNumber,
     proof: ProofOfLeadership,
     txs: openArray[SignedMantleTx],
-    epoch: EpochNumber,
 ): Result[tuple[id: Id, state: LedgerState], LedgerError] =
   ## Validates a block's header + transactions against the parent state.
   ## Caller invokes `commitUpdate` to install the result and run SDP
@@ -317,7 +319,7 @@ proc prepareUpdate*[Id](
   let
     parent = l.states.getOrDefault(parentId)
     afterHeader = ?parent.tryApplyHeader(slot, proof, l.config)
-    afterTxs = ?afterHeader.tryApplyTxns(txs, epoch, slot)
+    afterTxs = ?afterHeader.tryApplyTxns(txs, slot)
   ok((id: id, state: afterTxs))
 
 {.pop.}

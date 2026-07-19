@@ -45,7 +45,7 @@ func withLottery(
   next.lottery1 = values.t1
   next
 
-func withLottery*(
+func withLottery(
     state: EpochState, totalStake: uint64, f: NonNegativeRatio,
 ): Result[EpochState, LedgerError] =
   ## Copy of `state` with `totalStake` and freshly derived (t₀, t₁).
@@ -124,13 +124,15 @@ func rotate(
   # running values when whole epochs passed without a block — nothing was
   # snapshotted then), refresh D from the observed density plus one
   # zero-density correction per skipped epoch, reseed the next snapshot.
-  let period = nonceContributionPeriod(cfg.epochSchedule)
+  let
+    period = nonceContributionPeriod(cfg.epochSchedule)
+    fFixed = fixedPoint(cfg.slotActivationCoeff)
   var stake = total_stake_inference(
     t.activeEpoch.totalStake, t.blockDensity.density, period,
-    cfg.stakeInferenceLearningRate, cfg.slotActivationCoeff)
+    cfg.learningRateFixed, fFixed)
   for _ in (t.activeEpoch.epoch + 1) ..< newEpoch:
     stake = total_stake_inference(
-      stake, 0, period, cfg.stakeInferenceLearningRate, cfg.slotActivationCoeff)
+      stake, 0, period, cfg.learningRateFixed, fFixed)
   let
     values = lottery_constants(cfg.slotActivationCoeff, stake).valueOr:
       return err(UnsupportedLotteryF)

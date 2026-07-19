@@ -12,7 +12,7 @@
 import
   stew/endians2,
   ../../logos_chain/consensus/clock,
-  ../../logos_chain/ledger/types,
+  ../../logos_chain/ledger/[stake_inference, types],
   ../../logos_chain/zk/poseidon2/hasher
 
 from ../../logos_chain/core/crypto/types import ZkPublicKey
@@ -28,7 +28,7 @@ const
   testLedgerConfig* = LedgerConfig(
     epochSchedule: testSchedule,
     slotActivationCoeff: NonNegativeRatio(num: 1, den: 10),
-    stakeInferenceLearningRate: NonNegativeRatio(num: 1, den: 1),
+    learningRateFixed: fixedPoint(NonNegativeRatio(num: 1, den: 1)),
     faucetPk: Opt.none(ZkPublicKey))
 
 func fe*(n: uint64): FieldElement =

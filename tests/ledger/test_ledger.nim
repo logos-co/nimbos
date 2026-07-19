@@ -47,6 +47,13 @@ proc mkState(utxos: openArray[Utxo]): LedgerState =
     utxos, default(FieldElement), testSdpRegistry(), testLedgerConfig
   ).expect("seed")
 
+proc mkFixtureTransferTx(input: Utxo): SignedMantleTx =
+  ## The exact tx shape the committed zksign fixture proof was generated for.
+  var tx = mkTransferTx(
+    [input.id], [Note(value: 100, zkPublicKey: default(ZkPublicKey))])
+  tx.opProofs[0].transferProof = loadProof(transferProofPath)
+  tx
+
 suite "LedgerState constructors and reads":
   test "fromUtxos with empty seq → empty state":
     let s = mkState(@[])
@@ -203,7 +210,6 @@ suite "prepareUpdate — no-verify paths":
         slot = 1'u64,
         proof = mkProof(),
         txs = @[],
-        epoch = 1'u64,
       )
     check r.isErr
     check r.error == ParentNotFound
@@ -220,7 +226,6 @@ suite "prepareUpdate — no-verify paths":
         slot = 1'u64,
         proof = mkProof(),
         txs = @[],
-        epoch = 1'u64,
       )
     check r.isOk
     let prepared = r.get
@@ -238,30 +243,34 @@ suite "tryApplyTx — happy path (Rust-generated fixture)":
     let
       input = mkUtxoWithPk(mkRealZkPubKey(1), value = 100)
       s0 = mkState([input])
-      outputNote = Note(value: 100, zkPublicKey: default(ZkPublicKey))
-      tx = SignedMantleTx(
-        tx: MantleTx(
-          ops:
-            @[
-              createTransferOp(
-                TransferPayload(
-                  inputs: Inputs(noteIds: @[input.id]),
-                  outputs: Outputs(notes: @[outputNote]),
-                )
-              )
-            ],
-        ),
-        opProofs: @[
-          OpProof(kind: opfTransfer, transferProof: loadProof(transferProofPath)),
-        ],
-      )
-      r = s0.tryApplyTx(tx, epoch = 0'u64, slot = 0'u64)
+      r = s0.tryApplyTx(mkFixtureTransferTx(input), epoch = 0'u64, slot = 0'u64)
     check r.isOk
 
     let res = r.get
     check res.balance == Balance.zero
     check res.state.latestUtxos.len == 1
     check not res.state.latestUtxos.contains(input.id)
+
+  test "tx application preserves the epoch tracker and SDP registry":
+    # Guards against ops rebuilding LedgerState and resetting omitted fields.
+    # Channel deposit/withdraw need a tx-level fixture (no Nim-side prover).
+    let
+      input = mkUtxoWithPk(mkRealZkPubKey(1), value = 100)
+      lockedElsewhere = mkUtxo(value = 50, pkSeed = 8)
+    var s0 = mkState([input, lockedElsewhere])
+    let declaration = DeclarationMessage(
+      serviceType: ServiceType.bn,
+      locators: @[],
+      providerId: mkProvider(8),
+      lockedNoteId: lockedElsewhere.id,
+      zkId: lockedElsewhere.note.zkPublicKey,
+    )
+    discard installTestDeclaration(s0.sdp, declaration, epoch = 1)
+    let r = s0.tryApplyTx(mkFixtureTransferTx(input), epoch = 0'u64, slot = 0'u64)
+    check r.isOk
+    let res = r.get
+    check res.state.epochs == s0.epochs
+    check declarationId(declaration) in res.state.sdp.state.declarations
 
 # Suites below need a valid `OpProof` per transfer op — i.e. a zksign proof
 # generated for that op's input pks + tx hash. nimbos has no Nim-side prover
@@ -338,7 +347,7 @@ when false:
         input = mkUtxo(value = 100, pkSeed = 1)
         s0 = mkState([input])
         tx = mkTransferTx([input.id], [mkNote(100, pkSeed = 2)])
-        r = s0.tryApplyTxns([tx], epoch = 0'u64, slot = 0'u64)
+        r = s0.tryApplyTxns([tx], slot = 0'u64)
       check r.isOk
       check r.get.latestUtxos.len == 1
 
@@ -348,7 +357,7 @@ when false:
         s0 = mkState([input])
         tx = mkTransferTx([input.id], [mkNote(60, pkSeed = 2), mkNote(50, pkSeed = 3)])
           # sum 110 > input 100
-        r = s0.tryApplyTxns([tx], epoch = 0'u64, slot = 0'u64)
+        r = s0.tryApplyTxns([tx], slot = 0'u64)
       check r.isErr
       check r.error == InsufficientBalance
 
@@ -357,7 +366,7 @@ when false:
         input = mkUtxo(value = 100, pkSeed = 1)
         s0 = mkState([input])
         tx = mkTransferTx([input.id], [mkNote(50, pkSeed = 2)]) # output 50 < input 100
-        r = s0.tryApplyTxns([tx], epoch = 0'u64, slot = 0'u64)
+        r = s0.tryApplyTxns([tx], slot = 0'u64)
       check r.isErr
       check r.error == UnbalancedTransaction
 
@@ -375,7 +384,6 @@ when false:
           slot = 1'u64,
           proof = mkProof(),
           txs = @[tx],
-          epoch = 1'u64,
         )
       check r.isOk
       let prepared = r.get
@@ -395,7 +403,6 @@ when false:
           slot = 1'u64,
           proof = mkProof(),
           txs = @[tx],
-          epoch = 1'u64,
         )
       check r.isErr
       check r.error == UnbalancedTransaction
@@ -417,7 +424,6 @@ when false:
           slot = 1'u64,
           proof = mkProof(),
           txs = @[tx1],
-          epoch = 1'u64,
         )
       check r1.isOk
       l.commitUpdate(r1.get.id, r1.get.state)
@@ -442,7 +448,6 @@ when false:
           slot = 2'u64,
           proof = mkProof(),
           txs = @[tx2],
-          epoch = 1'u64,
         )
       check r2.isOk
       l.commitUpdate(r2.get.id, r2.get.state)
@@ -468,7 +473,6 @@ when false:
           slot = 3'u64,
           proof = mkProof(),
           txs = @[tx3],
-          epoch = 1'u64,
         )
       check r3.isOk
       l.commitUpdate(r3.get.id, r3.get.state)
@@ -543,7 +547,6 @@ suite "tryApplyTx — SDP":
       slot = 1'u64,
       proof = mkProof(),
       txs = @[],
-      epoch = 1'u64,
     )
     check r.isOk
     l.commitUpdate(r.get.id, r.get.state)

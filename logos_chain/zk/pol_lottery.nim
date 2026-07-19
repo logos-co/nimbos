@@ -73,4 +73,8 @@ func lottery_constants*(
       return ok((t0: t0.toFieldElement, t1: t1.toFieldElement))
   err(cstring"unsupported slot activation coefficient f")
 
+func isSupportedLotteryF*(f: NonNegativeRatio): bool =
+  ## True when the table pins derived lottery constants for `f`.
+  lottery_constants(f, 1).isOk
+
 {.pop.}

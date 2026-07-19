@@ -26,7 +26,7 @@ const testChainSyncProtocol* = "/logos-blockchain-testnet-v0.1.2/chainsync/1.0.0
 
 proc initTestChain*(genesis: Block): Chain =
   ## Chain over the genesis block's ledger state (epochs seeded under
-  ## `testLedgerConfig`), without a wallclock.
+  ## `testLedgerConfig`).
   let state = LedgerState.fromGenesis(
       genesis.txs, default(FieldElement), testSdpRegistry(),
       testLedgerConfig).valueOr:
@@ -34,7 +34,7 @@ proc initTestChain*(genesis: Block): Chain =
   Chain.init(
     genesis,
     Ledger[BlockId].init(blockId(genesis.header), state, testLedgerConfig),
-    SlotConfig())
+    SlotConfig(genesisTime: 0, slotDurationSeconds: 1))
 
 func exampleBlockId*(fill: byte): BlockId =
   var id: BlockId

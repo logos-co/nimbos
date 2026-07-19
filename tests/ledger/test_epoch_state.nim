@@ -74,4 +74,21 @@ suite "ledger/epoch_state":
       updated.agedUtxoRoot == fe(9) # genesis root stays
       updated.nonce == fe(11) # nonce chases until slot 60
 
+  test "recordBlock rolls the entropy through accumulateNonce":
+    let
+      t = genesisEpochTracker(fe(7), fe(9), 1000, testLedgerConfig).expect(
+        "supported f")
+      next = t.recordBlock(5, fe(3))
+    check:
+      next.nonce == accumulateNonce(t.nonce, fe(3), 5)
+      next.blockDensity.density == 1
+      next.lastAppliedSlot == 5
+
+  test "advanceEpochs rejects a non-advancing slot":
+    let t = genesisEpochTracker(fe(7), fe(9), 1000, testLedgerConfig).expect(
+        "supported f").recordBlock(5, fe(3))
+    check:
+      t.advanceEpochs(5, fe(9), testLedgerConfig).error == InvalidSlot
+      t.advanceEpochs(3, fe(9), testLedgerConfig).error == InvalidSlot
+
 {.pop.}
