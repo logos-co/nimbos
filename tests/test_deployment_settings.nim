@@ -93,7 +93,7 @@ cryptarchia:
   security_param: 1
   slot_activation_coeff:
     numerator: 1
-    denominator: 1
+    denominator: 20
   learning_rate: 0.5
   sdp_config:
     service_params:
@@ -169,7 +169,7 @@ cryptarchia:
   security_param: 1
   slot_activation_coeff:
     numerator: 1
-    denominator: 1
+    denominator: 20
   learning_rate: 0.5
   sdp_config:
     service_params:
@@ -400,7 +400,7 @@ network:
   kademlia_protocol_name: /a/kad
   identify_protocol_name: /a/id
   chain_sync_protocol_name: /a/sync
-""" & "\n" & deploymentSettingsCryptarchiaBlock.replace("denominator: 1", "denominator: 0") &
+""" & "\n" & deploymentSettingsCryptarchiaBlock.replace("denominator: 20", "denominator: 0") &
       "\n" & deploymentSettingsTimeBlock & """
 mempool:
   pubsub_topic: /a/mem
@@ -412,6 +412,54 @@ mempool:
       v = validateDeploymentSettings(ds)
     check v.isErr
     check "cryptarchia.slot_activation_coeff.denominator must be > 0" in v.error
+
+  test "validateDeploymentSettings: slot coeff without pinned lottery constants":
+    let badYaml = deploymentSettingsBlendBlock & """
+network:
+  kademlia_protocol_name: /a/kad
+  identify_protocol_name: /a/id
+  chain_sync_protocol_name: /a/sync
+""" & "\n" & deploymentSettingsCryptarchiaBlock.replace("denominator: 20", "denominator: 7") &
+      "\n" & deploymentSettingsTimeBlock & """
+mempool:
+  pubsub_topic: /a/mem
+"""
+    let
+      ds = parseDeploymentSettings(badYaml).valueOr:
+        check false
+        return
+      v = validateDeploymentSettings(ds)
+    check v.isErr
+    check "pinned lottery constants" in v.error
+
+  test "validateDeploymentSettings: zero learning rate denominator":
+    var ds = parseDeploymentSettings(minimalValidYaml).valueOr:
+      check false
+      return
+    # The decimal parser never yields den == 0; guards direct construction.
+    ds.cryptarchia.learningRate.den = 0
+    let v = validateDeploymentSettings(ds)
+    check v.isErr
+    check "cryptarchia.learning_rate denominator must be > 0" in v.error
+
+  test "validateDeploymentSettings: sub-second time.slot_duration":
+    let badYaml = deploymentSettingsBlendBlock & """
+network:
+  kademlia_protocol_name: /a/kad
+  identify_protocol_name: /a/id
+  chain_sync_protocol_name: /a/sync
+""" & "\n" & deploymentSettingsCryptarchiaBlock &
+      "\n" & deploymentSettingsTimeBlock.replace("'1.0'", "'0.5'") & """
+mempool:
+  pubsub_topic: /a/mem
+"""
+    let
+      ds = parseDeploymentSettings(badYaml).valueOr:
+        check false
+        return
+      v = validateDeploymentSettings(ds)
+    check v.isErr
+    check "time.slot_duration must be at least 1s" in v.error
 
   test "parseDeploymentSettings: empty time.slot_duration":
     let badYaml = deploymentSettingsBlendBlock & """
