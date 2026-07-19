@@ -46,7 +46,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
       cfg.epochSchedule.epochLength == 6000
       cfg.epochSchedule.nonceContributionPeriod == 3600
       cfg.slotActivationCoeff == NonNegativeRatio(num: 1, den: 20)
-      cfg.stakeInferenceLearningRate == NonNegativeRatio(num: 5, den: 10)
+      cfg.learningRateFixed == 500 # fixedPoint(0.5)
 
   test "cryptarchiaParameter decodes the devnet ceremony values":
     let
@@ -125,7 +125,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
       r = chain.tryApplyBlock(b1)
     check r.isErr and r.error.kind == BlockApplyErrorKind.FutureSlot
 
-  test "tryApplyBlock reports an unknown parent from the ledger":
+  test "tryApplyBlock rejects an unknown parent at tree admission":
     var chain = Chain.init(ds).valueOr:
       check false
       return
@@ -137,7 +137,6 @@ suite "chain/epoch wiring (devnet deployment settings)":
       r = chain.tryApplyBlock(orphan)
     check:
       r.isErr
-      r.error.kind == BlockApplyErrorKind.LedgerRejected
-      r.error.ledgerError == LedgerError.ParentNotFound
+      r.error.kind == BlockApplyErrorKind.TreeRejected
 
 {.pop.}

@@ -16,8 +16,8 @@ const
   # k = 10, f = 1/2 → base period 20, TSI window 6·20 = 120 slots,
   # expected density = 120 · 500 / 1000 = 60 blocks.
   testPeriod = 120'u64
-  testBeta = NonNegativeRatio(num: 1, den: 1)
-  testF = NonNegativeRatio(num: 1, den: 2)
+  testBeta = fixedPoint(NonNegativeRatio(num: 1, den: 1))
+  testF = fixedPoint(NonNegativeRatio(num: 1, den: 2))
 
 suite "ledger/stake_inference":
   test "zero density collapses the estimate to the floor":
@@ -35,7 +35,7 @@ suite "ledger/stake_inference":
     check total_stake_inference(1000, 30, testPeriod, testBeta, testF) == 500
 
   test "smaller beta damps the correction":
-    let halfBeta = NonNegativeRatio(num: 1, den: 2)
+    let halfBeta = fixedPoint(NonNegativeRatio(num: 1, den: 2))
     # measured = 2× expected: error is −tse, correction −tse/2 → 1.5× estimate.
     check total_stake_inference(1000, 120, testPeriod, halfBeta, testF) == 1500
 
@@ -56,5 +56,8 @@ suite "ledger/stake_inference":
       fixedPoint(NonNegativeRatio(num: 1, den: 30)) == 33
       fixedPoint(NonNegativeRatio(num: 1, den: 20)) == 50
       fixedPoint(NonNegativeRatio(num: 1, den: 10)) == 100
+      # 17 fractional digits: the ×Precision product exceeds uint64
+      fixedPoint(NonNegativeRatio(
+        num: 99999999999999999'u64, den: 100000000000000000'u64)) == 999
 
 {.pop.}

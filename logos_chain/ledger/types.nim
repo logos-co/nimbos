@@ -66,8 +66,8 @@ type
     ## Chain configuration. Remaining fields land with the modules that
     ## need them (SDP, gas).
     epochSchedule*: EpochSchedule
-    slotActivationCoeff*: NonNegativeRatio ## f
-    stakeInferenceLearningRate*: NonNegativeRatio ## beta
+    slotActivationCoeff*: NonNegativeRatio ## f — exact, keyed into the lottery table
+    learningRateFixed*: uint64 ## fixedPoint(beta) — stake-inference input
     faucetPk*: Opt[ZkPublicKey] ## excluded from the genesis total-stake sum
 
 {.pop.}
