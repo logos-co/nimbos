@@ -30,7 +30,7 @@ import
 export primitives, results, types
 
 type
-  VoucherMerkleTree* = DynamicMerkleTree[RewardVoucher, Poseidon2Hasher]
+  VoucherMerkleTree = DynamicMerkleTree[RewardVoucher, Poseidon2Hasher]
 
 func asField*(voucher: RewardVoucher): FieldElement =
   frFromBytesLEModOrder(voucher)
@@ -90,7 +90,7 @@ func rewardShare*(s: LeaderState): Value =
 func recordBlockLeader*(
     s: sink LeaderState,
     voucher: RewardVoucher,
-    reward: Value = 0'u64,
+    reward: Value,
 ): LeaderState =
   if voucher != default(RewardVoucher):
     s.pending.vouchers.add(voucher)
@@ -127,6 +127,7 @@ proc tryRecordClaim*(
     op: LeaderClaimPayload,
     proof: ProofOfClaimProof,
     txHash: ZkHash,
+    verifyProof: ProofOfClaimVerifier = verifyProofOfClaim,
 ): Result[tuple[state: LeaderState, reward: Value], LedgerError] =
   if op.voucherNullifier in s:
     return err(DuplicatedVoucherNullifier)
@@ -140,7 +141,7 @@ proc tryRecordClaim*(
     return err(RewardsRootMismatch)
 
   let public = proofOfClaimPublic(op, rewardsRoot, txHash)
-  let verified = verifyProofOfClaim(proof, public).valueOr:
+  let verified = verifyProof(proof, public).valueOr:
     return err(VerifierNotInitialised)
   if not verified:
     return err(InvalidProof)

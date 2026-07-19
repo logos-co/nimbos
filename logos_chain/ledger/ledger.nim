@@ -70,8 +70,11 @@ proc tryApplyHeader*(
   var s = state
   s.cryptarchiaLedger.leader = ?s.cryptarchiaLedger.leader.addEpochVouchers(epoch)
   onEpochStarted(s.sdp, epoch)
+  # TODO: Block rewards stay 0'u64 until dynamic block rewards are implemented.
+  # Spec: https://github.com/logos-co/logos-lips/blob/b7602ed8a225d41ca0bfaaa432524dc84d2ded7e/docs/blockchain/raw/block-rewards.md
   s.cryptarchiaLedger.leader = s.cryptarchiaLedger.leader.recordBlockLeader(
     proof.leaderVoucher,
+    0'u64,
   )
   ok(s)
 

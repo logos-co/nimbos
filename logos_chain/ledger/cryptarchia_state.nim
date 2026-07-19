@@ -108,8 +108,9 @@ proc tryApplyLeaderClaim*(
     op: LeaderClaimPayload,
     proof: ProofOfClaimProof,
     txHash: ZkHash,
+    verifyProof: ProofOfClaimVerifier = verifyProofOfClaim,
 ): Result[CryptarchiaState, LedgerError] =
-  let (leader, reward) = ?s.leader.tryRecordClaim(op, proof, txHash)
+  let (leader, reward) = ?s.leader.tryRecordClaim(op, proof, txHash, verifyProof)
   let
     u = Utxo(
       opId: opId(op), outputIndex: 0,

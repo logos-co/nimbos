@@ -32,6 +32,11 @@ func proofOfClaimPublic*(
     mantleTxHash: encodeFieldElement(frFromBytesLEModOrder(txHash)),
   )
 
+type
+  ProofOfClaimVerifier* = proc(
+    proof: ProofOfClaimProof, public: ProofOfClaimPublic
+  ): Result[bool, PocLoadError] {.gcsafe, raises: [].}
+
 proc verifyProofOfClaim*(
     proof: ProofOfClaimProof, public: ProofOfClaimPublic
 ): Result[bool, PocLoadError] =
