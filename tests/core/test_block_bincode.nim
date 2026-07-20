@@ -115,12 +115,14 @@ suite "core/block bincode (cryptarchia sync)":
     let
       sm = minimalSignedTx()
       h = sampleHeader([sm])
-      proposal = initProposal(h, [sm]).get()
+    var proposal = new(Proposal)
+    proposal[] = initProposal(h, [sm]).get()
     try:
-      let serialized = serializeProposalToSeq(proposal, cfg)
-      check sizeof(proposal.references) == 32768
+      let serialized = serializeProposalToSeq(proposal[], cfg)
+      check sizeof(proposal[].references) == 32768
       check serialized.len == 33129
-      let deserialized = deserializeProposal(serialized, cfg)
+      var deserialized = new(Proposal)
+      deserialized[] = deserializeProposal(serialized, cfg)
       check deserialized.header == proposal.header
       check deserialized.references == proposal.references
       check deserialized.signature == proposal.signature

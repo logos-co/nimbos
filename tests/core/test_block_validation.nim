@@ -115,12 +115,13 @@ suite "core/block_validation — inclusive size and count bounds":
     header.proofOfLeadership.leaderKey = kp.pubkey
     
     let signature = kp.seckey.sign(blockId(header))
-    let proposal = initProposal(header, [sm], signature).get()
+    var proposal = new(Proposal)
+    proposal[] = initProposal(header, [sm], signature).get()
     
     var mempool = Mempool.init()
     check mempool.add(sm)
     
-    check reconstructAndValidateProposal(proposal, tree, mempool).isSome
+    check reconstructAndValidateProposal(proposal[], tree, mempool).isSome
     
   test "validateProposal rejects if signature is invalid":
     let
@@ -137,12 +138,13 @@ suite "core/block_validation — inclusive size and count bounds":
     header.proofOfLeadership.leaderKey = kp1.pubkey
     
     let signature = kp2.seckey.sign(blockId(header))
-    let proposal = initProposal(header, [sm], signature).get()
+    var proposal = new(Proposal)
+    proposal[] = initProposal(header, [sm], signature).get()
     
     var mempool = Mempool.init()
     check mempool.add(sm)
     
-    check reconstructAndValidateProposal(proposal, tree, mempool).isNone
+    check reconstructAndValidateProposal(proposal[], tree, mempool).isNone
 
   test "validateProposal rejects if referenced transaction is missing from mempool":
     let
@@ -158,9 +160,10 @@ suite "core/block_validation — inclusive size and count bounds":
     header.proofOfLeadership.leaderKey = kp.pubkey
     
     let signature = kp.seckey.sign(blockId(header))
-    let proposal = initProposal(header, [sm], signature).get()
+    var proposal = new(Proposal)
+    proposal[] = initProposal(header, [sm], signature).get()
     let mempool = Mempool.init()
     
-    check reconstructAndValidateProposal(proposal, tree, mempool).isNone
+    check reconstructAndValidateProposal(proposal[], tree, mempool).isNone
 
 {.pop.}
