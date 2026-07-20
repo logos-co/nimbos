@@ -193,15 +193,18 @@ suite "ledger/leader_claim — tryApplyLeaderClaim":
     check ledgerOp.voucherNullifier in state.leader
     check state.utxos.len == 1
 
-  test "rejects when no reward is claimable":
+  test "allows zero-reward claim":
     let
       leader = makeLeaderState(1'u64, 0'u64)
       op = mkFixtureLeaderClaimOp(publicInputs, voucherTree.root(leader.voucherTree))
       txHash = fixtureTxHash(publicInputs)
       r = CryptarchiaState(utxos: UtxoStore.init(), leader: leader)
         .tryApplyLeaderClaim(op, claimProof, txHash, mockVerifyProofOfClaim)
-    check r.isErr
-    check r.error == NoClaimableReward
+    check r.isOk
+    let state = r.get()
+    check state.leader.leadersRewards == 0
+    check op.voucherNullifier in state.leader
+    check state.utxos.len == 1
 
   test "rejects duplicate voucher nullifier":
     let
