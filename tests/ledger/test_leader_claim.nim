@@ -164,6 +164,18 @@ suite "ledger/leader_state":
     check s.leadersRewards == 50
     check s.voucherTree.len() == 3
 
+  test "addEpochVouchers returns InvalidEpoch for past epochs, no-op for current epoch":
+    let cm = voucherBytes(3'u8)
+    let s = LeaderState.init().recordBlockLeader(cm, 40).addEpochVouchers(5'u64).get
+    
+    let past = s.addEpochVouchers(4'u64)
+    check past.isErr
+    check past.error == InvalidEpoch
+    
+    let current = s.addEpochVouchers(5'u64)
+    check current.isOk
+    check current.get == s
+
 suite "ledger/leader_claim — tryApplyLeaderClaim":
   var
     claimProof: ProofOfClaimProof

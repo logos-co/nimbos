@@ -57,6 +57,7 @@ type
     WithdrawNonceOverflow ## ChannelWithdraw incremented withdrawalNonce past uint32
     DuplicatedVoucherNullifier ## leader-claim voucher nullifier already spent
     RewardsRootMismatch ## leader-claim rewards root ≠ ledger snapshot
+    InvalidEpoch ## epoch is in the past
 
   LedgerConfig* = object
     ## Chain configuration. Currently empty — fields land with the modules

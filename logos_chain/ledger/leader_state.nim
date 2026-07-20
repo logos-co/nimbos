@@ -44,7 +44,6 @@ type LeaderPending = object
 
 type LeaderState* = object
   voucherTree: VoucherMerkleTree
-  voucherCmSetSize: uint64
   spentNullifiers: HashTrieMap[VoucherNullifier, tuple[]]
   leadersRewards: Value
   pending: LeaderPending
@@ -53,7 +52,6 @@ func init*(_: typedesc[LeaderState]): LeaderState =
   let tree = VoucherMerkleTree.init()
   LeaderState(
     voucherTree: tree,
-    voucherCmSetSize: 0,
     spentNullifiers: HashTrieMap[VoucherNullifier, tuple[]].init(),
     leadersRewards: 0,
     pending: LeaderPending(vouchers: @[], reward: 0, lastEpoch: 0),
@@ -80,7 +78,7 @@ func rewardShare*(s: LeaderState): Value =
   ## early claims take ``\lfloor R/n \rfloor`` and the final claim(s) receive a
   ## larger residual (e.g. 100 / 3 → 33, 33, 34).
   let
-    nCm = s.voucherCmSetSize
+    nCm = uint64(s.voucherTree.len())
     nNf = uint64(s.spentNullifiers.len)
   if nCm == nNf:
     0'u64
@@ -101,10 +99,11 @@ func addEpochVouchers*(
     s: sink LeaderState,
     epoch: EpochNumber,
 ): Result[LeaderState, LedgerError] =
-  if epoch <= s.pending.lastEpoch:
+  if epoch < s.pending.lastEpoch:
+    return err(InvalidEpoch)
+  if epoch == s.pending.lastEpoch:
     return ok(s)
   s.voucherTree = s.voucherTree.insert(s.pending.vouchers)
-  s.voucherCmSetSize += uint64(s.pending.vouchers.len)
   let (res, didOverflow) = overflowingAdd(s.leadersRewards, s.pending.reward)
   if didOverflow:
     return err(BalanceOverflow)
@@ -145,7 +144,6 @@ proc tryRecordClaim*(
 
 func `==`*(a, b: LeaderState): bool =
   a.voucherTree == b.voucherTree and
-    a.voucherCmSetSize == b.voucherCmSetSize and
     a.spentNullifiers == b.spentNullifiers and
     a.leadersRewards == b.leadersRewards and
     a.pending.vouchers == b.pending.vouchers and
