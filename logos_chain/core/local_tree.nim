@@ -99,7 +99,8 @@ func latestImmutableBlockId*(localTree: LocalTree): BlockId =
   else:
     a.id
 
-func isAncestor*(localTree: LocalTree, ancestor: BlockId, descendant: BlockId): bool =
+func isAncestor*(localTree: LocalTree, ancestor: BlockId,
+    descendant: BlockId): bool =
   if ancestor == descendant:
     return localTree.hasBlock(ancestor)
   let start = localTree.blocks.getOrDefault(descendant, nil)
@@ -112,7 +113,8 @@ func isAncestor*(localTree: LocalTree, ancestor: BlockId, descendant: BlockId): 
     n = n.parent
   false
 
-func isFutureDescendantOfImmutable*(localTree: LocalTree, header: Header): bool =
+func isFutureDescendantOfImmutable*(localTree: LocalTree,
+    header: Header): bool =
   ## `height(B) > height(B_imm)` and `is_ancestor(B_imm, B)` over the parent
   ## chain (B is not yet in the tree).
   let parentHeight = blockHeight(localTree, header.parentBlock).valueOr:
@@ -177,6 +179,7 @@ proc addBlockToTree*(localTree: LocalTree, blk: Block): bool =
   let curTip = localTree.blocks.getOrDefault(localTree.tipId, nil)
   if curTip != nil and isStrictlyHigherTip(curTip, node):
     localTree.tipId = id
+    # TODO: Evict transactions in newly adopted canonical block from node.mempool
   true
 
 {.pop.}

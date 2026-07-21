@@ -15,7 +15,7 @@ import
   stew/byteutils,
   ./chain/chain,
   ./[conf, process_state],
-  ./core/[types, utils],
+  ./core/[types, utils, mempool],
   ./deployment/deployment_settings,
   ./networking/network,
   ./sync/syncer,
@@ -41,6 +41,7 @@ type
     config*: LBNodeConf
     deploymentSettings*: DeploymentSettings
     syncer*: Syncer
+    mempool*: Mempool
     metricsServer*: Opt[MetricsHttpServerRef]
     shutdownEvent*: AsyncEvent
 
@@ -155,6 +156,7 @@ proc init*(
     config: config,
     deploymentSettings: deploymentSettings,
     syncer: nodeSyncer,
+    mempool: Mempool.init(),
     shutdownEvent: newAsyncEvent())
 
 when defined(windows):
