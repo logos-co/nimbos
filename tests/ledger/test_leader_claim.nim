@@ -70,7 +70,7 @@ func makeLeaderState(
   for i in 0 ..< claimableCount:
     let reward = if i == 0: leadersRewards else: 0'u64
     s = s.recordBlockLeader(voucherBytes(byte(i + 1)), reward)
-  s.addEpochVouchers(1'u64).get
+  s.addEpochVouchers().get
 
 func mkFixtureLeaderState(): LeaderState =
   makeLeaderState(1'u64, 100'u64)
@@ -154,28 +154,16 @@ suite "ledger/leader_state":
 
   test "addEpochVouchers updates tree, cm set size, and leaders rewards":
     let cm = voucherBytes(3'u8)
-    let s = LeaderState.init().recordBlockLeader(cm, 40).addEpochVouchers(1'u64).get
+    let s = LeaderState.init().recordBlockLeader(cm, 40).addEpochVouchers().get
     check s.leadersRewards == 40
     check s.voucherTree.len() == 1
 
   test "addEpochVouchers accumulates across epoch boundaries":
     var s = LeaderState.init().recordBlockLeader(voucherBytes(1), 40)
     s = s.recordBlockLeader(voucherBytes(2), 0'u64).recordBlockLeader(voucherBytes(3), 10'u64)
-      .addEpochVouchers(1'u64).get
+      .addEpochVouchers().get
     check s.leadersRewards == 50
     check s.voucherTree.len() == 3
-
-  test "addEpochVouchers returns InvalidEpoch for past epochs, no-op for current epoch":
-    let cm = voucherBytes(3'u8)
-    let s = LeaderState.init().recordBlockLeader(cm, 40).addEpochVouchers(5'u64).get
-    
-    let past = s.addEpochVouchers(4'u64)
-    check past.isErr
-    check past.error == InvalidEpoch
-    
-    let current = s.addEpochVouchers(5'u64)
-    check current.isOk
-    check current.get == s
 
 suite "ledger/leader_claim — tryApplyLeaderClaim":
   var

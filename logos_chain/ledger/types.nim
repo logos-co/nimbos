@@ -60,7 +60,6 @@ type
     WithdrawNonceOverflow ## ChannelWithdraw incremented withdrawalNonce past uint32
     DuplicatedVoucherNullifier ## leader-claim voucher nullifier already spent
     RewardsRootMismatch ## leader-claim rewards root ≠ ledger snapshot
-    InvalidEpoch ## epoch is in the past
     UnsupportedLotteryF ## no lottery constants registered for the configured `f`
     InvalidSlot ## header slot is not strictly greater than the parent state's
     InputInGenesis ## genesis transfer consumes inputs; genesis may only mint

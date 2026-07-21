@@ -132,7 +132,7 @@ proc tryApplyHeader*(
     # once it lands.
     # https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md#sdp-epoch-finalization
     onEpochStarted(s.sdp, s.epochs.activeEpoch.epoch)
-    s.cryptarchiaLedger.leader = ?s.cryptarchiaLedger.leader.addEpochVouchers(s.epochs.activeEpoch.epoch)
+    s.cryptarchiaLedger.leader = ?s.cryptarchiaLedger.leader.addEpochVouchers()
 
   let
     active = s.epochs.activeEpoch

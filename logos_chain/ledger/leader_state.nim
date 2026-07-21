@@ -38,9 +38,6 @@ func asField*(voucher: RewardVoucher): FieldElement =
 type LeaderPending = object
   vouchers: seq[RewardVoucher]
   reward: Value
-  lastEpoch: EpochNumber
-    ## TODO(EpochState): drop once epoch management derives the last-started
-    ## epoch from the consensus schedule instead of tracking it here.
 
 type LeaderState* = object
   voucherTree: VoucherMerkleTree
@@ -54,7 +51,7 @@ func init*(_: typedesc[LeaderState]): LeaderState =
     voucherTree: tree,
     spentNullifiers: HashTrieMap[VoucherNullifier, tuple[]].init(),
     leadersRewards: 0,
-    pending: LeaderPending(vouchers: @[], reward: 0, lastEpoch: 0),
+    pending: LeaderPending(vouchers: @[], reward: 0),
   )
 
 func voucherTree*(s: LeaderState): lent VoucherMerkleTree =
@@ -97,12 +94,8 @@ func recordBlockLeader*(
 
 func addEpochVouchers*(
     s: sink LeaderState,
-    epoch: EpochNumber,
 ): Result[LeaderState, LedgerError] =
-  if epoch < s.pending.lastEpoch:
-    return err(InvalidEpoch)
-  if epoch == s.pending.lastEpoch:
-    return ok(s)
+  ## Note: This function is only called when a new epoch starts.
   s.voucherTree = s.voucherTree.insert(s.pending.vouchers)
   let (res, didOverflow) = overflowingAdd(s.leadersRewards, s.pending.reward)
   if didOverflow:
@@ -110,7 +103,6 @@ func addEpochVouchers*(
   s.leadersRewards = res
   s.pending.vouchers = @[]
   s.pending.reward = 0
-  s.pending.lastEpoch = epoch
   ok(s)
 
 func recordClaim(
@@ -147,7 +139,6 @@ func `==`*(a, b: LeaderState): bool =
     a.spentNullifiers == b.spentNullifiers and
     a.leadersRewards == b.leadersRewards and
     a.pending.vouchers == b.pending.vouchers and
-    a.pending.reward == b.pending.reward and
-    a.pending.lastEpoch == b.pending.lastEpoch
+    a.pending.reward == b.pending.reward
 
 {.pop.}
