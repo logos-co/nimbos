@@ -12,6 +12,7 @@ import
   results,
   bincode,
   ./types
+from ./crypto/types as crypto_types import isZero
 from ./mantle/primitives import SlotNumber
 
 export types.Block, types.Header, types.BlockId
@@ -120,10 +121,10 @@ func isFutureDescendantOfImmutable*(localTree: LocalTree, header: Header): bool 
   if candidateHeight <= localTree.latestImmutableHeight:
     return false
   let immId = latestImmutableBlockId(localTree)
-  if immId == default(BlockId):
+  if immId.isZero:
     return true
   var cur = header.parentBlock
-  while cur != default(BlockId):
+  while not cur.isZero:
     if cur == immId:
       return true
     let parentHeader = fetchParentHeader(localTree, cur).valueOr:
@@ -153,14 +154,22 @@ func lcaBlockIdAndHeight*(
       return Opt.none((BlockId, uint64))
   Opt.some((na.id, na.height))
 
+# https://github.com/logos-co/logos-lips/blob/d064449307d28a76b3555dc7b5064d15ee19d7f5/docs/blockchain/raw/cryptarchia-v1-protocol.md#block-header-validation
+func canExtend*(localTree: LocalTree, header: Header): bool =
+  if header.parentBlock.isZero:
+    return false
+  localTree.blocks.withValue(header.parentBlock, parent):
+    return header.slot > parent.blk.header.slot and
+      isFutureDescendantOfImmutable(localTree, header)
+  false
+
 proc addBlockToTree*(localTree: LocalTree, blk: Block): bool =
+  ## Inserts a block the caller already passed through `canExtend`; only
+  ## duplicate ids and unknown parents are guarded here.
   let id = blockId(blk.header)
   if localTree.blocks.hasKey(id):
     return false
-  let parentId = blk.header.parentBlock
-  if parentId == default(BlockId):
-    return false
-  let parent = localTree.blocks.getOrDefault(parentId, nil)
+  let parent = localTree.blocks.getOrDefault(blk.header.parentBlock, nil)
   if parent == nil:
     return false
   let node = BlockNode(id: id, blk: blk, parent: parent, height: parent.height + 1'u64)

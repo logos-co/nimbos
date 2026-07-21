@@ -95,6 +95,26 @@ suite "tryApplyTransfer — error paths":
       check r.isErr
       check r.error == InvalidNote
 
+  test "duplicate input in one op → InvalidNote":
+    # The first removal consumes the note, so the duplicate fails the UTXO
+    # lookup. The reference rejects the same shape (variant unspecified
+    # there; ours is pinned to InvalidNote).
+    let
+      seeded = mkUtxo(value = 100, pkSeed = 1)
+      s0 = CryptarchiaState.init([seeded])
+      op = TransferPayload(
+        inputs: Inputs(noteIds: @[seeded.id, seeded.id]),
+        outputs: Outputs(notes: @[mkNote(200, pkSeed = 2)]),
+      )
+      r = s0.tryApplyTransfer(
+        LockedNotes.init(),
+        op,
+        sig = default(ZkSigProof),
+        txHash = mkTxHash(),
+      )
+    check r.isErr
+    check r.error == InvalidNote
+
   test "locked input → LockedNote":
     let
       input = mkUtxo(value = 100, pkSeed = 1)

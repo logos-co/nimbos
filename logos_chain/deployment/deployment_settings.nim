@@ -22,6 +22,8 @@ import
   ../chain/genesis,
   ./deployment_settings_helpers
 
+from ../zk/pol_lottery import isSupportedLotteryF
+
 export
   dom,
   genesis,
@@ -64,10 +66,6 @@ type
     epochPeriodNonceBuffer*: int
     epochPeriodNonceStabilization*: int
 
-  SlotActivationCoeff* = object
-    numerator*: int
-    denominator*: int
-
   BnServiceParams* = object
     inactivityPeriod*: int
     epoch*: int
@@ -83,8 +81,8 @@ type
   CryptarchiaDeploymentSettings* = object
     epochConfig*: EpochConfig
     securityParam*: int
-    slotActivationCoeff*: SlotActivationCoeff
-    learningRate*: float
+    slotActivationCoeff*: NonNegativeRatio ## f — exact rational, no float
+    learningRate*: NonNegativeRatio ## beta — parsed exactly from the decimal scalar
     sdpConfig*: SdpConfig
     gossipsubProtocol*: string
     genesisState*: GenesisState
@@ -156,7 +154,7 @@ func deploymentSettingsFromYaml(root: YamlNode): Result[DeploymentSettings, stri
         scheduler: BlendScheduler(
           cover: BlendSchedulerCover(
             messageFrequencyPerRound: ? reqFloat(
-              root, ["blend", "core", "scheduler", "cover", "message_frequency_per_round"]),
+              root, ["blend", "core", "scheduler", "cover", "message_frequency_per_round"])
           ),
           delayer: BlendSchedulerDelayer(
             maximumReleaseDelayInRounds: ? reqInt(
@@ -183,11 +181,11 @@ func deploymentSettingsFromYaml(root: YamlNode): Result[DeploymentSettings, stri
           root, ["cryptarchia", "epoch_config", "epoch_period_nonce_stabilization"])
       ),
       securityParam: ? reqInt(root, ["cryptarchia", "security_param"]),
-      slotActivationCoeff: SlotActivationCoeff(
-        numerator: ? reqInt(root, ["cryptarchia", "slot_activation_coeff", "numerator"]),
-        denominator: ? reqInt(root, ["cryptarchia", "slot_activation_coeff", "denominator"])
+      slotActivationCoeff: NonNegativeRatio(
+        num: ? reqUInt64(root, ["cryptarchia", "slot_activation_coeff", "numerator"]),
+        den: ? reqUInt64(root, ["cryptarchia", "slot_activation_coeff", "denominator"])
       ),
-      learningRate: ? reqFloat(root, ["cryptarchia", "learning_rate"]),
+      learningRate: ? reqDecimalRatio(root, ["cryptarchia", "learning_rate"]),
       sdpConfig: SdpConfig(
         bn: BnServiceParams(
           inactivityPeriod: ? reqInt(
@@ -239,11 +237,15 @@ func validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
   need(ds.cryptarchia.epochConfig.epochPeriodNonceStabilization > 0,
     "cryptarchia.epoch_config.epoch_period_nonce_stabilization must be > 0")
   need(ds.cryptarchia.securityParam > 0, "cryptarchia.security_param must be > 0")
-  need(ds.cryptarchia.slotActivationCoeff.numerator > 0,
+  need(ds.cryptarchia.slotActivationCoeff.num > 0,
     "cryptarchia.slot_activation_coeff.numerator must be > 0")
-  need(ds.cryptarchia.slotActivationCoeff.denominator > 0,
+  need(ds.cryptarchia.slotActivationCoeff.den > 0,
     "cryptarchia.slot_activation_coeff.denominator must be > 0")
-  need(ds.cryptarchia.learningRate > 0.0, "cryptarchia.learning_rate must be > 0")
+  need(isSupportedLotteryF(ds.cryptarchia.slotActivationCoeff),
+    "cryptarchia.slot_activation_coeff must have pinned lottery constants")
+  need(ds.cryptarchia.learningRate.num > 0, "cryptarchia.learning_rate must be > 0")
+  need(ds.cryptarchia.learningRate.den > 0,
+    "cryptarchia.learning_rate denominator must be > 0")
   need(ds.cryptarchia.sdpConfig.bn.inactivityPeriod >= 2,
     "cryptarchia.sdp_config.service_params.BN.inactivity_period must be >= 2")
   need(ds.cryptarchia.sdpConfig.bn.epoch >= 0,
@@ -255,7 +257,10 @@ func validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
   need(ds.network.kademliaProtocolName.len > 0, "empty network.kademlia_protocol_name")
   need(ds.network.identifyProtocolName.len > 0, "empty network.identify_protocol_name")
   need(ds.network.chainSyncProtocolName.len > 0, "empty network.chain_sync_protocol_name")
-  need(ds.time.slotDuration > ZeroDuration, "time.slot_duration must be > 0")
+  # Sub-second durations would truncate to a zero slot length; the spec pins
+  # slot length at 1 second:
+  # https://github.com/logos-co/logos-lips/blob/d064449307d28a76b3555dc7b5064d15ee19d7f5/docs/blockchain/raw/cryptarchia-v1-protocol.md#constants
+  need(ds.time.slotDuration >= 1.seconds, "time.slot_duration must be at least 1s")
   need(ds.mempool.pubsubTopic.len > 0, "empty mempool.pubsub_topic")
   need(ds.cryptarchia.gossipsubProtocol.len > 0, "empty cryptarchia.gossipsub_protocol")
   need(ds.blend.common.protocolName.len > 0, "empty blend.common.protocol_name")

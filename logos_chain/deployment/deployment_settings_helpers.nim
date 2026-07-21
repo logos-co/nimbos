@@ -8,7 +8,7 @@
 {.push raises: [].}
 
 import
-  std/strutils,
+  std/[math, strutils],
   chronos,
   results,
   stew/byteutils,
@@ -19,7 +19,9 @@ import
   ../core/[types, mantle/tx_types],
   ../zk/poseidon2/hasher
 
-export genesis, chronos
+from ../core/utils import NonNegativeRatio
+
+export genesis, chronos, NonNegativeRatio
 
 func yamlGetPathNode*(root: YamlNode, keys: openArray[string]): Opt[YamlNode] =
   var cur = root
@@ -86,6 +88,33 @@ func reqInt*(root: YamlNode, path: openArray[string]): Result[int, string] =
 func reqFloat*(root: YamlNode, path: openArray[string]): Result[float, string] =
   reqParsed(root, path, parseFloat, "float")
 
+func reqUInt64*(root: YamlNode, path: openArray[string]): Result[uint64, string] =
+  reqParsed(root, path, parseBiggestUInt, "non-negative integer")
+
+func parseDecimalRatio(s: string): NonNegativeRatio {.raises: [ValueError].} =
+  ## Exact decimal-scalar → rational conversion (`"0.5"` → 5/10, `"1"` → 1/1).
+  ## No float ever materialises, so consensus parameters parse
+  ## deterministically on every platform and toolchain.
+  let t = strip(s)
+  if t.len == 0 or t.contains({'e', 'E', '-', '+'}):
+    raise newException(ValueError, "expected a plain non-negative decimal")
+  let parts = t.split('.')
+  case parts.len
+  of 1:
+    NonNegativeRatio(num: parseBiggestUInt(parts[0]), den: 1)
+  of 2:
+    if parts[1].len == 0 or parts[1].len > 18:
+      raise newException(ValueError, "unsupported decimal precision")
+    NonNegativeRatio(
+      num: parseBiggestUInt(parts[0] & parts[1]),
+      den: 10'u64 ^ parts[1].len)
+  else:
+    raise newException(ValueError, "malformed decimal")
+
+func reqDecimalRatio*(
+    root: YamlNode, path: openArray[string]): Result[NonNegativeRatio, string] =
+  reqParsed(root, path, parseDecimalRatio, "decimal ratio")
+
 proc parseSlotDurationSeconds*(s: string): Duration {.raises: [ValueError].} =
   ## ``time.slot_duration`` YAML scalar: seconds as a float (e.g. ``'1.0'``).
   let secs = parseFloat(s)
@@ -112,6 +141,16 @@ func parseByteSeqNode(node: YamlNode, path: string): Result[seq[byte], string] =
       return err("deployment-settings: byte out of range at " & path & "[" & $i & "]")
     bytes.add(byte(bVal))
   ok(bytes)
+
+func parseBytesNode(node: YamlNode, path: string): Result[seq[byte], string] =
+  ## Hex scalar (current cfgsync output) or per-byte integer sequence.
+  if node.kind == yScalar:
+    try:
+      ok(hexToSeqByte(node.content))
+    except ValueError:
+      err("deployment-settings: invalid hex at " & path)
+  else:
+    parseByteSeqNode(node, path)
 
 func parseHex32Node(node: YamlNode, path: string): Result[array[32, byte], string] =
   if node.kind != yScalar:
@@ -315,15 +354,7 @@ func parseGenesisOpPayload(
       return err("deployment-settings: missing channel inscribe fields at " & path)
     let signerNode = yamlGetPathNode(payload, ["signer"]).valueOr:
       return err("deployment-settings: missing channel inscribe fields at " & path)
-    let inscriptionBytes =
-      if inscriptionNode.kind == yScalar:
-        try:
-          Result[seq[byte], string].ok(hexToSeqByte(inscriptionNode.content))
-        except ValueError:
-          Result[seq[byte], string].err(
-            "deployment-settings: invalid inscription hex at " & path & ".inscription")
-      else:
-        parseByteSeqNode(inscriptionNode, path & ".inscription")
+    let inscriptionBytes = parseBytesNode(inscriptionNode, path & ".inscription")
     ok(createChannelInscribeOp(ChannelInscribePayload(
       channelId: ? parseHex32Node(channelIdNode, path & ".channel_id"),
       inscription: ? inscriptionBytes,

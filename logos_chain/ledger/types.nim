@@ -12,9 +12,12 @@
 
 {.push raises: [], gcsafe.}
 
-import results
+import
+  results,
+  ../core/crypto/types,
+  ../consensus/clock
 
-export results
+export results, clock
 
 type
   LedgerError* {.pure.} = enum
@@ -55,9 +58,16 @@ type
     ThresholdUnmet ## Config/Withdraw signature count != channel threshold
     InvalidChannelConfig ## ChannelConfig has zero threshold or empty keys
     WithdrawNonceOverflow ## ChannelWithdraw incremented withdrawalNonce past uint32
+    UnsupportedLotteryF ## no lottery constants registered for the configured `f`
+    InvalidSlot ## header slot is not strictly greater than the parent state's
+    InputInGenesis ## genesis transfer consumes inputs; genesis may only mint
 
   LedgerConfig* = object
-    ## Chain configuration. Currently empty — fields land with the modules
-    ## that need them (epoch, lottery, SDP, gas).
+    ## Chain configuration. Remaining fields land with the modules that
+    ## need them (SDP, gas).
+    epochSchedule*: EpochSchedule
+    slotActivationCoeff*: NonNegativeRatio ## f — exact, keyed into the lottery table
+    learningRateFixed*: uint64 ## fixedPoint(beta) — stake-inference input
+    faucetPk*: Opt[ZkPublicKey] ## excluded from the genesis total-stake sum
 
 {.pop.}
