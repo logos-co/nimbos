@@ -35,7 +35,6 @@ type
     lastEpochStarted*: Opt[EpochNumber]
       ## Highest epoch for which epoch-boundary processing has run.
       ## ``none`` until the first boundary.
-      ## TODO(EpochState): rewind on chain reorgs once epoch management lands.
 
 func validateInactivityPeriod*(params: ServiceParameters) =
   doAssert params.inactivityPeriod >= 2,
@@ -67,12 +66,13 @@ func onEpochStarted*(
     registry: sink SdpRegistry,
     epoch: EpochNumber,
 ): SdpRegistry =
-  ## Runs withdrawal finalization and epoch snapshotting at an epoch boundary.
-  ## No-op when ``epoch`` is not greater than ``lastEpochStarted``.
-  ## TODO(EpochState): callers must pass the consensus epoch; rewind
-  ## ``lastEpochStarted`` on reorgs once epoch management lands.
-  if registry.lastEpochStarted.isSome and epoch <= registry.lastEpochStarted.get():
-    return registry
+  ## Runs withdrawal finalization and epoch snapshotting at an epoch boundary;
+  ## ``epoch`` must advance past ``lastEpochStarted``.
+  # The registry is fork-local (copied with LedgerState per branch), so a
+  # reorg never needs to rewind lastEpochStarted; callers gate on epoch
+  # advancement, making a stale epoch a logic error.
+  doAssert registry.lastEpochStarted.isNone or epoch > registry.lastEpochStarted.get(),
+    "onEpochStarted: epoch must advance past lastEpochStarted"
   if epoch == 0:
     var genesisSnap = registry.snapshots.mgetOrPut(
       ServiceType.bn, Table[EpochNumber, SdpState](),

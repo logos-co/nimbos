@@ -12,59 +12,143 @@
 
 import
   results,
-  std/[options, tables],
+  std/tables,
   ./[
     balance, types, cryptarchia_state, channel_state, mantle_state,
-    pol_verifier,
+    pol_verifier, epoch_state,
   ],
   ./sdp/[registry, ops],
   ../core/mantle/[tx_types, tx_hashing, operations, proofs],
   ../core/types
 
-export types, cryptarchia_state, registry, channel_state, mantle_state
+from ../core/crypto/types import ZkPublicKey
+export types, cryptarchia_state, channel_state, mantle_state, epoch_state, registry
 
 type
   LedgerState* = object
     cryptarchiaLedger*: CryptarchiaState
     sdp*: SdpRegistry
     mantleLedger*: MantleState
+    epochs*: EpochTracker
 
   Ledger*[Id] = object
     states: Table[Id, LedgerState]
     config: LedgerConfig
 
-func fromUtxos*(
-    _: typedesc[LedgerState],
-    utxos: openArray[Utxo],
-    sdp: sink SdpRegistry,
-): LedgerState =
-  ## Builds a genesis-style state from the given UTXO set and SDP registry.
-  LedgerState(
-    cryptarchiaLedger: CryptarchiaState.init(utxos),
-    sdp: sdp,
-    mantleLedger: MantleState.init(),
-  )
-
 func latestUtxos*(s: LedgerState): lent UtxoStore =
   ## The live UTXO set.
   s.cryptarchiaLedger.latestUtxos
 
-proc tryApplyHeader*(
-    state: sink LedgerState, slot: SlotNumber, proof: ProofOfLeadership
+func stakeContribution(
+    value: uint64, pk: ZkPublicKey, faucetPk: Opt[ZkPublicKey]): uint64 =
+  ## A note's contribution to total stake — zero for the faucet note, whose
+  ## outsized mint would dominate the lottery.
+  if faucetPk.isSome and pk == faucetPk.get: 0'u64 else: value
+
+func fromUtxos*(
+    _: typedesc[LedgerState],
+    utxos: openArray[Utxo],
+    nonce: FieldElement,
+    sdp: sink SdpRegistry,
+    cfg: LedgerConfig,
 ): Result[LedgerState, LedgerError] =
-  ## Verifies the leader proof against the singleton PoL VK installed at
-  ## startup. Returns `InvalidProof` on rejection, `VerifierNotInitialised`
-  ## if the singleton wasn't installed.
-  # Epoch-derived `LeaderPublic` fields (nonce, lottery, agedRoot) stay at
-  # `default(FieldElement)` until `EpochState` lands.
+  ## Genesis-style state seeded with epoch bookkeeping from the UTXO set;
+  ## total stake is the faucet-filtered note sum, floored at 1.
+  var
+    s = LedgerState(
+      cryptarchiaLedger: CryptarchiaState.init(utxos),
+      sdp: sdp,
+      mantleLedger: MantleState.init())
+    total = 0'u64
+  for u in utxos:
+    let c = stakeContribution(u.note.value, u.note.zkPublicKey, cfg.faucetPk)
+    doAssert total <= uint64.high - c, "total stake overflows uint64"
+    total += c
+  s.epochs = ?genesisEpochTracker(
+    nonce, s.cryptarchiaLedger.latestUtxos.root, max(total, 1), cfg)
+  ok(s)
+
+proc fromGenesis*(
+    _: typedesc[LedgerState],
+    genesisTxs: openArray[SignedMantleTx],
+    nonce: FieldElement,
+    sdp: sink SdpRegistry,
+    cfg: LedgerConfig,
+): Result[LedgerState, LedgerError] =
+  ## Genesis state from the genesis block's transactions: ops run through the
+  ## pure transition cores (no proof or balance checks), then epochs are
+  ## seeded from the faucet-filtered stake and ceremony nonce.
+  const genesisEpoch = 0'u64
+  var
+    s = LedgerState(
+      cryptarchiaLedger: CryptarchiaState.init(),
+      sdp: sdp,
+      mantleLedger: MantleState.init())
+    total = 0'u64
+  for tx in genesisTxs:
+    for op in tx.tx.ops:
+      case op.payload.kind
+      of Transfer:
+        if op.payload.transfer.inputs.noteIds.len > 0:
+          return err(InputInGenesis)
+        for note in op.payload.transfer.outputs.notes:
+          let c = stakeContribution(note.value, note.zkPublicKey, cfg.faucetPk)
+          doAssert total <= uint64.high - c, "total stake overflows uint64"
+          total += c
+        let r = ?s.cryptarchiaLedger.applyTransferState(
+          s.sdp.state.lockedNotes, op.payload.transfer)
+        s.cryptarchiaLedger = r.state
+      of ChannelInscribe:
+        # Envelope validity (null channel, root parent, zero signer) is
+        # enforced at the chain layer when the ceremony is decoded.
+        s.mantleLedger.channels = applyChannelInscribe(
+          s.mantleLedger.channels, op.payload.channelInscribe, 0)
+      of SdpDeclare:
+        s.sdp = ?applySdpDeclare(s.sdp, op.payload.sdpDeclare, genesisEpoch)
+      else:
+        return err(UnsupportedOp)
+  s.epochs = ?genesisEpochTracker(
+    nonce, s.cryptarchiaLedger.latestUtxos.root, max(total, 1), cfg)
+  # Epochs 0 and 1 read the registry snapshot taken at genesis:
+  # https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/bedrock-service-declaration-protocol.md#snapshots
+  s.sdp = onEpochStarted(s.sdp, genesisEpoch)
+  ok(s)
+
+proc tryApplyHeader*(
+    state: sink LedgerState,
+    slot: SlotNumber,
+    proof: ProofOfLeadership,
+    cfg: LedgerConfig,
+): Result[LedgerState, LedgerError] =
+  ## Epoch pipeline for `slot`, leader-proof verification against the active
+  ## epoch state, then entropy/density bookkeeping.
+  var s = state
+  let prevEpoch = s.epochs.activeEpoch.epoch
+  s.epochs = ?s.epochs.advanceEpochs(
+    slot, s.cryptarchiaLedger.latestUtxos.root, cfg)
+  if s.epochs.activeEpoch.epoch > prevEpoch:
+    # SDP epoch finalization is part of applying the first block of the new
+    # epoch; reward distribution slots in ahead of the withdrawal removal
+    # once it lands.
+    # https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md#sdp-epoch-finalization
+    s.sdp = onEpochStarted(s.sdp, s.epochs.activeEpoch.epoch)
   let
-    public =
-      LeaderPublic(slot: slot, latestRoot: state.cryptarchiaLedger.latestUtxos.root)
+    active = s.epochs.activeEpoch
+    public = LeaderPublic(
+      slot: slot,
+      epochNonce: active.nonce,
+      lottery0: active.lottery0,
+      lottery1: active.lottery1,
+      agedRoot: active.agedUtxoRoot,
+      latestRoot: s.cryptarchiaLedger.latestUtxos.root)
     verified = verifyLeaderProof(proof, public).valueOr:
       return err(VerifierNotInitialised)
   if not verified:
     return err(InvalidProof)
-  ok(state)
+  let entropy = frFromBytesLE(proof.entropyContribution).valueOr:
+    return err(InvalidProof)
+  s.epochs = s.epochs.recordBlock(slot, entropy)
+  ok(s)
 
 proc tryApplyTx*(
     state: sink LedgerState,
@@ -147,6 +231,7 @@ proc tryApplyTx*(
         s.cryptarchiaLedger, s.sdp.state.lockedNotes,
         op.payload.channelDeposit, proof.channelDepositProof, txHash,
       )
+      # Field-wise update: a whole-object constructor would reset omitted fields.
       s.cryptarchiaLedger = r.cs
       s.mantleLedger = r.ms
     of ChannelWithdraw:
@@ -165,13 +250,13 @@ proc tryApplyTx*(
 proc tryApplyTxns*(
     state: sink LedgerState,
     txs: openArray[SignedMantleTx],
-    epoch: EpochNumber,
     slot: SlotNumber,
 ): Result[LedgerState, LedgerError] =
-  ## Applies a block's transactions in order. Each tx must net to zero
-  ## balance — otherwise returns `UnbalancedTransaction` or
-  ## `InsufficientBalance`.
+  ## Applies a block's transactions in order under the state's active epoch;
+  ## each tx must net to zero balance.
   var s = state
+  # The state, not the caller, is the source of truth for the epoch.
+  let epoch = s.epochs.activeEpoch.epoch
   for tx in txs:
     let r = ?s.tryApplyTx(tx, epoch, slot)
     s = r.state
@@ -203,17 +288,13 @@ func state*[Id](l: Ledger[Id], id: Id): Opt[LedgerState] =
 func config*[Id](l: Ledger[Id]): lent LedgerConfig =
   l.config
 
-proc commitUpdate*[Id](
+func commitUpdate*[Id](
     l: var Ledger[Id],
     id: Id,
-    epoch: EpochNumber,
     state: sink LedgerState,
 ) =
-  ## Installs ``state`` at ``id`` and runs SDP epoch-boundary updates
-  ## (withdrawal finalization, epoch snapshots) once the block is accepted.
-  # TODO(EpochState): derive epoch from the consensus slot schedule and call
-  # onEpochStarted only when the epoch advances, not on every block commit.
-  state.sdp = onEpochStarted(state.sdp, epoch)
+  ## Installs ``state`` at ``id``. Epoch-boundary effects were already
+  ## applied by `tryApplyHeader` when the state was prepared.
   l.states[id] = state
 
 func pruneStateAt*[Id](l: var Ledger[Id], id: Id): bool =
@@ -223,49 +304,12 @@ func pruneStateAt*[Id](l: var Ledger[Id], id: Id): bool =
   else:
     false
 
-proc fromGenesis*(
-    _: typedesc[LedgerState],
-    sdp: sink SdpRegistry,
-    genesisTxs: openArray[SignedMantleTx],
-): Result[LedgerState, LedgerError] =
-  ## Builds genesis ledger state from the genesis block's transactions.
-  ## Ops run through pure transition cores (no proof or balance checks).
-  var state = LedgerState(
-    cryptarchiaLedger: CryptarchiaState.init(),
-    sdp: sdp,
-    mantleLedger: MantleState.init(),
-  )
-  const
-    epoch = 0'u64
-    slot = 0'u64
-  for tx in genesisTxs:
-    for op in tx.tx.ops:
-      case op.payload.kind
-      of Transfer:
-        let r = ?state.cryptarchiaLedger.applyTransferState(
-          state.sdp.state.lockedNotes, op.payload.transfer,
-        )
-        state.cryptarchiaLedger = r.state
-      of ChannelInscribe:
-        state.mantleLedger.channels = applyChannelInscribe(
-          state.mantleLedger.channels, op.payload.channelInscribe, slot,
-        )
-      of SdpDeclare:
-        state.sdp = ?applySdpDeclare(state.sdp, op.payload.sdpDeclare, epoch)
-      else:
-        return err(UnsupportedOp)
-  # TODO(EpochState): genesis epoch-boundary handling should follow the same
-  # consensus epoch schedule as commitUpdate once epoch management lands.
-  state.sdp = onEpochStarted(state.sdp, epoch = 0'u64)
-  ok(state)
-
 proc prepareUpdate*[Id](
     l: Ledger[Id],
     id, parentId: Id,
     slot: SlotNumber,
     proof: ProofOfLeadership,
     txs: openArray[SignedMantleTx],
-    epoch: EpochNumber,
 ): Result[tuple[id: Id, state: LedgerState], LedgerError] =
   ## Validates a block's header + transactions against the parent state.
   ## Caller invokes `commitUpdate` to install the result and run SDP
@@ -274,8 +318,8 @@ proc prepareUpdate*[Id](
     return err(ParentNotFound)
   let
     parent = l.states.getOrDefault(parentId)
-    afterHeader = ?parent.tryApplyHeader(slot, proof)
-    afterTxs = ?afterHeader.tryApplyTxns(txs, epoch, slot)
+    afterHeader = ?parent.tryApplyHeader(slot, proof, l.config)
+    afterTxs = ?afterHeader.tryApplyTxns(txs, slot)
   ok((id: id, state: afterTxs))
 
 {.pop.}
