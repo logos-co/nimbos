@@ -16,7 +16,7 @@ import
 
 export results
 
-const ExpectedCircuitsVersion* = "v0.5.1"
+const ExpectedCircuitsVersion* = "v0.5.3"
   ## Pinned bundle version. Bump requires re-running setup + revalidating
   ## committed test vectors against the new VK.
 
@@ -33,6 +33,7 @@ func circuitsVersionPath*(dir: string): string =
 func polVerificationKeyPath*(dir: string): string =
   dir / "pol" / "verification_key.json"
 
+# The bundle ships the ZkSig circuit under `signature/`.
 func zksignVerificationKeyPath*(dir: string): string =
   dir / "signature" / "verification_key.json"
 

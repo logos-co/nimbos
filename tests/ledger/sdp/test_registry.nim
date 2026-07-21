@@ -65,7 +65,7 @@ suite "ledger/sdp/registry":
     onEpochStarted(seeded.registry, 7)
     check getDeclaration(seeded.registry.state, seeded.declId).isNone
 
-  test "onEpochStarted skips finalization when epoch unchanged":
+  test "onEpochStarted asserts when the epoch does not advance":
     var seeded = seedDeclaration(pkSeed = 31, declareEpoch = 1)
     let withdraw = WithdrawMessage(
       declarationId: seeded.declId,
@@ -78,8 +78,8 @@ suite "ledger/sdp/registry":
     check getDeclaration(seeded.registry.state, seeded.declId).isSome
     onEpochStarted(seeded.registry, 7)
     check getDeclaration(seeded.registry.state, seeded.declId).isNone
-    onEpochStarted(seeded.registry, 7)
-    check getDeclaration(seeded.registry.state, seeded.declId).isNone
+    expect AssertionDefect:
+      onEpochStarted(seeded.registry, 7)
 
 suite "ledger/sdp/registry — epoch snapshots":
   test "epochs 0 and 1 use genesis snapshot":

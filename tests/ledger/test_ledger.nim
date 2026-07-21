@@ -24,12 +24,7 @@ import
   ./sdp/test_helpers,
   ../core/mantle/test_helpers
 
-proc mkProvider(seed: byte): ProviderId =
-  var bytes: array[EdPublicKeySize, byte]
-  bytes[0] = seed
-  var key: ProviderId
-  doAssert key.init(bytes)
-  key
+from ./test_helpers import testLedgerConfig
 
 const
   testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
@@ -38,16 +33,37 @@ const
   zksignFixtureVk = zksignFixtureDir / "verification_key.json"
   transferProofPath = zksignFixtureDir / "proof.json"
 
+proc mkProvider(seed: byte): ProviderId =
+  var bytes: array[EdPublicKeySize, byte]
+  bytes[0] = seed
+  var key: ProviderId
+  doAssert key.init(bytes)
+  key
+
+proc mkState(utxos: openArray[Utxo]): LedgerState =
+  ## Epoch-seeded genesis-style state under `testLedgerConfig` (zero nonce);
+  ## the bare, un-seeded constructor no longer exists.
+  LedgerState.fromUtxos(
+    utxos, default(FieldElement), testSdpRegistry(), testLedgerConfig
+  ).expect("seed")
+
+proc mkFixtureTransferTx(input: Utxo): SignedMantleTx =
+  ## The exact tx shape the committed zksign fixture proof was generated for.
+  var tx = mkTransferTx(
+    [input.id], [Note(value: 100, zkPublicKey: default(ZkPublicKey))])
+  tx.opProofs[0].transferProof = loadProof(transferProofPath)
+  tx
+
 suite "LedgerState constructors and reads":
   test "fromUtxos with empty seq → empty state":
-    let s = LedgerState.fromUtxos(@[], testSdpRegistry())
+    let s = mkState(@[])
     check s.latestUtxos.len == 0
 
   test "fromUtxos with N utxos → state populated":
     let
       u1 = mkUtxo(value = 50, pkSeed = 1)
       u2 = mkUtxo(value = 100, pkSeed = 2)
-      s = LedgerState.fromUtxos([u1, u2], testSdpRegistry())
+      s = mkState([u1, u2])
     check s.latestUtxos.len == 2
     check s.latestUtxos.contains(u1.id)
     check s.latestUtxos.contains(u2.id)
@@ -56,17 +72,17 @@ suite "tryApplyHeader":
   test "genesis-sentinel proof returns state unchanged":
     let
       u = mkUtxo()
-      s0 = LedgerState.fromUtxos([u], testSdpRegistry())
-      r = s0.tryApplyHeader(slot = 1'u64, proof = mkProof(), epoch = 0'u64)
+      s0 = mkState([u])
+      r = s0.tryApplyHeader(slot = 1'u64, proof = mkProof(), cfg = testLedgerConfig)
     check r.isOk
     check r.get.latestUtxos == s0.latestUtxos
 
   test "returns VerifierNotInitialised when VK singleton missing":
     pol.resetVkForTesting()
-    let s0 = LedgerState.fromUtxos([mkUtxo()], testSdpRegistry())
+    let s0 = mkState([mkUtxo()])
     var bad = mkProof()
     bad.proof[0] = 0x01  # break the genesis sentinel so verify is invoked
-    let r = s0.tryApplyHeader(slot = 1'u64, proof = bad, epoch = 0'u64)
+    let r = s0.tryApplyHeader(slot = 1'u64, proof = bad, cfg = testLedgerConfig)
     check r.error == VerifierNotInitialised
 
   test "returns InvalidProof when verifier rejects":
@@ -79,10 +95,10 @@ suite "tryApplyHeader":
       return
     check pol.initVk(vk).isOk
 
-    let s0 = LedgerState.fromUtxos([mkUtxo()], testSdpRegistry())
+    let s0 = mkState([mkUtxo()])
     var bad = mkProof()
     bad.proof[0] = 0x01  # bit-pattern can't be a valid compressed G1 point
-    let r = s0.tryApplyHeader(slot = 1'u64, proof = bad, epoch = 0'u64)
+    let r = s0.tryApplyHeader(slot = 1'u64, proof = bad, cfg = testLedgerConfig)
     check r.error == InvalidProof
 
 suite "tryApplyTx — structural error paths":
@@ -90,7 +106,7 @@ suite "tryApplyTx — structural error paths":
   test "ops/proofs count mismatch → InvalidProof":
     let
       input = mkUtxo(value = 100, pkSeed = 1)
-      s0 = LedgerState.fromUtxos([input], testSdpRegistry())
+      s0 = mkState([input])
       tx = SignedMantleTx(
         tx: MantleTx(
           ops:
@@ -109,10 +125,11 @@ suite "tryApplyTx — structural error paths":
     check r.isErr
     check r.error == InvalidProof
 
+
   test "Transfer op with wrong proof kind → InvalidProof":
     let
       input = mkUtxo(value = 100, pkSeed = 1)
-      s0 = LedgerState.fromUtxos([input], testSdpRegistry())
+      s0 = mkState([input])
       tx = SignedMantleTx(
         tx: MantleTx(
           ops:
@@ -139,23 +156,23 @@ suite "tryApplyTx — structural error paths":
 suite "Ledger[Id] map ops":
   test "init seeds one (id, state); state(id) returns Some":
     let
-      seed = LedgerState.fromUtxos(@[mkUtxo()], testSdpRegistry())
+      seed = mkState(@[mkUtxo()])
       id = mkId(0x01)
-      l = Ledger[TestId].init(id, seed)
+      l = Ledger[TestId].init(id, seed, testLedgerConfig)
     check l.state(id).isSome
     check l.state(mkId(0x02)).isNone
 
   test "commitUpdate overwrites":
-    var l = Ledger[TestId].init(mkId(0x01), LedgerState.fromUtxos(@[], testSdpRegistry()))
+    var l = Ledger[TestId].init(mkId(0x01), mkState(@[]), testLedgerConfig)
     let
       id2 = mkId(0x02)
-      st2 = LedgerState.fromUtxos(@[mkUtxo(value = 7, pkSeed = 7)], testSdpRegistry())
+      st2 = mkState(@[mkUtxo(value = 7, pkSeed = 7)])
     l.commitUpdate(id2, st2)
     check l.state(id2).isSome
     check l.state(id2).get.latestUtxos.len == 1
 
   test "pruneStateAt removes existing, returns true; missing returns false":
-    var l = Ledger[TestId].init(mkId(0x01), LedgerState.fromUtxos(@[], testSdpRegistry()))
+    var l = Ledger[TestId].init(mkId(0x01), mkState(@[]), testLedgerConfig)
     check l.pruneStateAt(mkId(0x01)) == true
     check l.state(mkId(0x01)).isNone
     check l.pruneStateAt(mkId(0x99)) == false
@@ -163,23 +180,22 @@ suite "Ledger[Id] map ops":
 suite "prepareUpdate — no-verify paths":
   test "parent missing → ParentNotFound":
     let
-      l = Ledger[TestId].init(mkId(0x01), LedgerState.fromUtxos(@[], testSdpRegistry()))
+      l = Ledger[TestId].init(mkId(0x01), mkState(@[]), testLedgerConfig)
       r = l.prepareUpdate(
         id = mkId(0x02),
         parentId = mkId(0xff),
         slot = 1'u64,
         proof = mkProof(),
         txs = @[],
-        epoch = 1'u64,
       )
     check r.isErr
     check r.error == ParentNotFound
 
   test "empty tx list → state unchanged, no commit":
     let
-      parent = LedgerState.fromUtxos(@[mkUtxo()], testSdpRegistry())
+      parent = mkState(@[mkUtxo()])
       id0 = mkId(0x01)
-      l = Ledger[TestId].init(id0, parent)
+      l = Ledger[TestId].init(id0, parent, testLedgerConfig)
       id1 = mkId(0x02)
       r = l.prepareUpdate(
         id = id1,
@@ -187,7 +203,6 @@ suite "prepareUpdate — no-verify paths":
         slot = 1'u64,
         proof = mkProof(),
         txs = @[],
-        epoch = 1'u64,
       )
     check r.isOk
     let prepared = r.get
@@ -204,31 +219,35 @@ suite "tryApplyTx — happy path (Rust-generated fixture)":
   test "single OpTransfer (balanced) verifies and clears the input":
     let
       input = mkUtxoWithPk(mkRealZkPubKey(1), value = 100)
-      s0 = LedgerState.fromUtxos([input], testSdpRegistry())
-      outputNote = Note(value: 100, zkPublicKey: default(ZkPublicKey))
-      tx = SignedMantleTx(
-        tx: MantleTx(
-          ops:
-            @[
-              createTransferOp(
-                TransferPayload(
-                  inputs: Inputs(noteIds: @[input.id]),
-                  outputs: Outputs(notes: @[outputNote]),
-                )
-              )
-            ],
-        ),
-        opProofs: @[
-          OpProof(kind: opfTransfer, transferProof: loadProof(transferProofPath)),
-        ],
-      )
-      r = s0.tryApplyTx(tx, epoch = 0'u64, slot = 0'u64)
+      s0 = mkState([input])
+      r = s0.tryApplyTx(mkFixtureTransferTx(input), epoch = 0'u64, slot = 0'u64)
     check r.isOk
 
     let res = r.get
     check res.balance == Balance.zero
     check res.state.latestUtxos.len == 1
     check not res.state.latestUtxos.contains(input.id)
+
+  test "tx application preserves the epoch tracker and SDP registry":
+    # Guards against ops rebuilding LedgerState and resetting omitted fields.
+    # Channel deposit/withdraw need a tx-level fixture (no Nim-side prover).
+    let
+      input = mkUtxoWithPk(mkRealZkPubKey(1), value = 100)
+      lockedElsewhere = mkUtxo(value = 50, pkSeed = 8)
+    var s0 = mkState([input, lockedElsewhere])
+    let declaration = DeclarationMessage(
+      serviceType: ServiceType.bn,
+      locators: @[],
+      providerId: mkProvider(8),
+      lockedNoteId: lockedElsewhere.id,
+      zkId: lockedElsewhere.note.zkPublicKey,
+    )
+    discard installTestDeclaration(s0.sdp, declaration, epoch = 1)
+    let r = s0.tryApplyTx(mkFixtureTransferTx(input), epoch = 0'u64, slot = 0'u64)
+    check r.isOk
+    let res = r.get
+    check res.state.epochs == s0.epochs
+    check declarationId(declaration) in res.state.sdp.state.declarations
 
 # Suites below need a valid `OpProof` per transfer op — i.e. a zksign proof
 # generated for that op's input pks + tx hash. nimbos has no Nim-side prover
@@ -239,7 +258,7 @@ when false:
       let
         in1 = mkUtxo(value = 100, pkSeed = 1)
         in2 = mkUtxo(value = 50, pkSeed = 2)
-        s0 = LedgerState.fromUtxos([in1, in2], testSdpRegistry())
+        s0 = mkState([in1, in2])
         op1 = createTransferOp(
           TransferPayload(
             inputs: Inputs(noteIds: @[in1.id]),
@@ -273,7 +292,7 @@ when false:
       let
         in1 = mkUtxo(value = 100, pkSeed = 1)
         in2 = mkUtxo(value = 50, pkSeed = 2)
-        s0 = LedgerState.fromUtxos([in1, in2], testSdpRegistry())
+        s0 = mkState([in1, in2])
         op1 = createTransferOp(
           TransferPayload(
             inputs: Inputs(noteIds: @[in1.id]),
@@ -303,35 +322,35 @@ when false:
     test "balanced tx → state advances":
       let
         input = mkUtxo(value = 100, pkSeed = 1)
-        s0 = LedgerState.fromUtxos([input], testSdpRegistry())
+        s0 = mkState([input])
         tx = mkTransferTx([input.id], [mkNote(100, pkSeed = 2)])
-        r = s0.tryApplyTxns([tx], epoch = 0'u64, slot = 0'u64)
+        r = s0.tryApplyTxns([tx], slot = 0'u64)
       check r.isOk
       check r.get.latestUtxos.len == 1
 
     test "underspending (output > input) → UnbalancedTransaction":
       let
         input = mkUtxo(value = 100, pkSeed = 1)
-        s0 = LedgerState.fromUtxos([input], testSdpRegistry())
+        s0 = mkState([input])
         tx = mkTransferTx([input.id], [mkNote(60, pkSeed = 2), mkNote(50, pkSeed = 3)])
           # sum 110 > input 100
-        r = s0.tryApplyTxns([tx], epoch = 0'u64, slot = 0'u64)
+        r = s0.tryApplyTxns([tx], slot = 0'u64)
       check r.isErr
       check r.error == InsufficientBalance
 
     test "overspending (input > output) → UnbalancedTransaction":
       let
         input = mkUtxo(value = 100, pkSeed = 1)
-        s0 = LedgerState.fromUtxos([input], testSdpRegistry())
+        s0 = mkState([input])
         tx = mkTransferTx([input.id], [mkNote(50, pkSeed = 2)]) # output 50 < input 100
-        r = s0.tryApplyTxns([tx], epoch = 0'u64, slot = 0'u64)
+        r = s0.tryApplyTxns([tx], slot = 0'u64)
       check r.isErr
       check r.error == UnbalancedTransaction
 
   suite "prepareUpdate — verify paths":
     test "happy path with one transfer + commit":
       var l = Ledger[TestId].init(
-        mkId(0x01), LedgerState.fromUtxos([mkUtxo(value = 100, pkSeed = 1)], testSdpRegistry())
+        mkId(0x01), mkState([mkUtxo(value = 100, pkSeed = 1)]), testLedgerConfig
       )
       let
         input = mkUtxo(value = 100, pkSeed = 1)
@@ -342,7 +361,6 @@ when false:
           slot = 1'u64,
           proof = mkProof(),
           txs = @[tx],
-          epoch = 1'u64,
         )
       check r.isOk
       let prepared = r.get
@@ -354,7 +372,7 @@ when false:
     test "unbalanced tx → UnbalancedTransaction":
       let
         input = mkUtxo(value = 100, pkSeed = 1)
-        l = Ledger[TestId].init(mkId(0x01), LedgerState.fromUtxos([input], testSdpRegistry()))
+        l = Ledger[TestId].init(mkId(0x01), mkState([input]), testLedgerConfig)
         tx = mkTransferTx([input.id], [mkNote(50, pkSeed = 2)]) # 100 in, 50 out
         r = l.prepareUpdate(
           id = mkId(0x02),
@@ -362,7 +380,6 @@ when false:
           slot = 1'u64,
           proof = mkProof(),
           txs = @[tx],
-          epoch = 1'u64,
         )
       check r.isErr
       check r.error == UnbalancedTransaction
@@ -371,7 +388,7 @@ when false:
       # Walks the same prepare→commit sequence the chain module will eventually
       # drive. Each block consumes the prior block's output as its input.
       var l = Ledger[TestId].init(
-        mkId(0x00), LedgerState.fromUtxos([mkUtxo(value = 100, pkSeed = 1)], testSdpRegistry())
+        mkId(0x00), mkState([mkUtxo(value = 100, pkSeed = 1)]), testLedgerConfig
       )
 
       # Block 1: spend genesis utxo into a new note (pk=2)
@@ -384,7 +401,6 @@ when false:
           slot = 1'u64,
           proof = mkProof(),
           txs = @[tx1],
-          epoch = 1'u64,
         )
       check r1.isOk
       l.commitUpdate(r1.get.id, r1.get.state)
@@ -409,7 +425,6 @@ when false:
           slot = 2'u64,
           proof = mkProof(),
           txs = @[tx2],
-          epoch = 1'u64,
         )
       check r2.isOk
       l.commitUpdate(r2.get.id, r2.get.state)
@@ -435,7 +450,6 @@ when false:
           slot = 3'u64,
           proof = mkProof(),
           txs = @[tx3],
-          epoch = 1'u64,
         )
       check r3.isOk
       l.commitUpdate(r3.get.id, r3.get.state)
@@ -453,7 +467,7 @@ when false:
 suite "tryApplyTx — SDP":
   test "declare locks note; withdraw unlocks after finalization":
     let input = mkUtxo(value = 200, pkSeed = 1)
-    var state = LedgerState.fromUtxos([input], testSdpRegistry())
+    var state = mkState([input])
     let declaration = DeclarationMessage(
       serviceType: ServiceType.bn,
       locators: @[],
@@ -493,7 +507,7 @@ suite "tryApplyTx — SDP":
 
   test "prepareUpdate commits registry state from parent":
     let input = mkUtxo(value = 200, pkSeed = 3)
-    var parent = LedgerState.fromUtxos([input], testSdpRegistry())
+    var parent = mkState([input])
     let declaration = DeclarationMessage(
       serviceType: ServiceType.bn,
       locators: @[],
@@ -503,14 +517,13 @@ suite "tryApplyTx — SDP":
     )
     discard installTestDeclaration(parent.sdp, declaration, epoch = 1)
     let id0 = mkId(0x10)
-    var l = Ledger[TestId].init(id0, parent)
+    var l = Ledger[TestId].init(id0, parent, testLedgerConfig)
     let r = l.prepareUpdate(
       id = mkId(0x11),
       parentId = id0,
       slot = 1'u64,
       proof = mkProof(),
       txs = @[],
-      epoch = 1'u64,
     )
     check r.isOk
     l.commitUpdate(r.get.id, r.get.state)

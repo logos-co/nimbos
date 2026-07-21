@@ -20,7 +20,8 @@ import
   ../../logos_chain/zk/[groth16/utils, poc, poseidon2/hasher],
   ../core/mantle/test_helpers,
   ../ledger/sdp/test_helpers,
-  ../zk/snarkjs_helpers
+  ../zk/snarkjs_helpers,
+  ./test_helpers
 
 const
   testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
@@ -305,13 +306,13 @@ suite "ledger/leader_claim — tryApplyTx":
 
 suite "ledger/leader_claim — tryApplyHeader epoch hooks":
   test "epoch advance rolls in staged vouchers and rewards":
-    let s0 = LedgerState.fromUtxos(@[], testSdpRegistry())
-    let s1 = s0.tryApplyHeader(slot = 1'u64, proof = mkProof(), epoch = 0'u64).get
+    let s0 = LedgerState.fromUtxos(@[], default(FieldElement), testSdpRegistry(), testLedgerConfig).get
+    let s1 = s0.tryApplyHeader(slot = 1'u64, proof = mkProof(), cfg = testLedgerConfig).get
     var st = s1
     st.cryptarchiaLedger.leader = st.cryptarchiaLedger.leader.recordBlockLeader(
       voucherBytes(2'u8), 50'u64,
     )
-    let s2 = st.tryApplyHeader(slot = 2'u64, proof = mkProof(), epoch = 1'u64).get
+    let s2 = st.tryApplyHeader(slot = 100'u64, proof = mkProof(), cfg = testLedgerConfig).get
     let leader = s2.cryptarchiaLedger.leader
     check leader.leadersRewards == 50
     check leader.voucherTree.len() == 1

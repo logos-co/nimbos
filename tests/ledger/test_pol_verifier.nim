@@ -116,6 +116,18 @@ suite "ledger/pol_verifier":
     let r = verifyLeaderProof(polProof, badPublic)
     check r.isOk and not r.get
 
+  test "rejects wrong agedRoot":
+    var badPublic = public
+    badPublic.agedRoot = public.lottery0  # any different valid Fr
+    let r = verifyLeaderProof(polProof, badPublic)
+    check r.isOk and not r.get
+
+  test "rejects wrong latestRoot":
+    var badPublic = public
+    badPublic.latestRoot = public.lottery0  # any different valid Fr
+    let r = verifyLeaderProof(polProof, badPublic)
+    check r.isOk and not r.get
+
   test "rejects mutated leaderKey":
     var badPol = polProof
     var raw: array[32, byte]
