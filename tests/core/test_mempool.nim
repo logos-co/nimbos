@@ -45,3 +45,45 @@ suite "core/mempool":
 
     # Double remove
     check m.remove(hash1) == false
+
+  test "selectTxsForProposal FIFO ordering":
+    var m = Mempool.init()
+    
+    let tx1 = minimalSignedTx()
+    var tx2 = minimalSignedTx()
+    tx2.tx.ops.add(createLeaderClaimOp(LeaderClaimPayload(
+      rewardsRoot: default(RewardsRoot),
+      voucherNullifier: default(VoucherNullifier),
+      publicKey: default(ZkPublicKey),
+    )))
+    
+    check m.add(tx1) == true
+    check m.add(tx2) == true
+
+    # Selection returns both in FIFO order (tx1 then tx2)
+    let selectedAll = m.selectTxsForProposal()
+    check selectedAll.len == 2
+    check mantleTxHash(selectedAll[0].tx) == mantleTxHash(tx1.tx)
+    check mantleTxHash(selectedAll[1].tx) == mantleTxHash(tx2.tx)
+
+  test "pruneQueue retains active transactions after removal":
+    var m = Mempool.init()
+    let tx1 = minimalSignedTx()
+    var tx2 = minimalSignedTx()
+    tx2.tx.ops.add(createLeaderClaimOp(LeaderClaimPayload(
+      rewardsRoot: default(RewardsRoot),
+      voucherNullifier: default(VoucherNullifier),
+      publicKey: default(ZkPublicKey),
+    )))
+
+    check m.add(tx1) == true
+    check m.add(tx2) == true
+
+    # Remove tx1 and manually trigger pruneQueue
+    check m.remove(mantleTxHash(tx1.tx)) == true
+    m.pruneQueue()
+
+    # selectTxsForProposal must still return tx2
+    let remaining = m.selectTxsForProposal()
+    check remaining.len == 1
+    check mantleTxHash(remaining[0].tx) == mantleTxHash(tx2.tx)

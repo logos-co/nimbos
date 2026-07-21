@@ -10,13 +10,16 @@
 {.push raises: [], gcsafe.}
 
 import
-  std/tables,
+  std/[deques, tables],
   results,
   ./types
+
+from ./mantle/primitives import MaxBlockTxs
 
 type
   Mempool* = object
     txs: Table[Hash32, SignedMantleTx]
+    queue: Deque[Hash32]
 
 func init*(_: typedesc[Mempool]): Mempool =
   Mempool()
@@ -26,6 +29,7 @@ proc add*(m: var Mempool, tx: SignedMantleTx): bool =
   if hash in m.txs:
     return false
   m.txs[hash] = tx
+  m.queue.addLast(hash)
   true
 
 func contains*(m: Mempool, hash: Hash32): bool =
@@ -37,12 +41,37 @@ func get*(m: Mempool, hash: Hash32): Opt[SignedMantleTx] =
   else:
     err()
 
+proc pruneQueue*(m: var Mempool) =
+  ## Compacts the queue by dropping dead hashes of removed transactions.
+  var newQueue = initDeque[Hash32]()
+  for hash in m.queue:
+    if hash in m.txs:
+      newQueue.addLast(hash)
+  m.queue = newQueue
+
 proc remove*(m: var Mempool, hash: Hash32): bool =
   if hash in m.txs:
     m.txs.del(hash)
+    # Prune queue when dead hashes exceed active items to bound memory growth
+    # while avoiding frequent O(N) queue compaction on every single remove.
+    if m.queue.len > 2 * m.txs.len + 100:
+      m.pruneQueue()
     true
   else:
     false
+
+func selectTxsForProposal*(
+    m: Mempool,
+): seq[SignedMantleTx] =
+  ## Selects up to MaxBlockTxs transactions in FIFO order.
+  ## Read-only zero-allocation traversal.
+  var selected: seq[SignedMantleTx]
+  for hash in m.queue:
+    if selected.len >= MaxBlockTxs:
+      break
+    if hash in m.txs:
+      selected.add(m.txs.getOrDefault(hash))
+  selected
 
 func len*(m: Mempool): int =
   m.txs.len
