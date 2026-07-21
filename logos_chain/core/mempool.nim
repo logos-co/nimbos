@@ -17,6 +17,9 @@ import
 from ./mantle/primitives import MaxBlockTxs
 
 type
+  MempoolError* = enum
+    TxNotFound
+
   Mempool* = object
     txs: Table[Hash32, SignedMantleTx]
     queue: Deque[Hash32]
@@ -35,11 +38,10 @@ proc add*(m: var Mempool, tx: SignedMantleTx): bool =
 func contains*(m: Mempool, hash: Hash32): bool =
   hash in m.txs
 
-func get*(m: Mempool, hash: Hash32): Opt[SignedMantleTx] =
-  if hash in m.txs:
-    ok(m.txs.getOrDefault(hash))
-  else:
-    err()
+func get*(m: Mempool, hash: Hash32): Result[SignedMantleTx, MempoolError] =
+  m.txs.withValue(hash, val):
+    return ok(val)
+  err(TxNotFound)
 
 proc pruneQueue*(m: var Mempool) =
   ## Compacts the queue by dropping dead hashes of removed transactions.
@@ -64,13 +66,13 @@ func selectTxsForProposal*(
     m: Mempool,
 ): seq[SignedMantleTx] =
   ## Selects up to MaxBlockTxs transactions in FIFO order.
-  ## Read-only zero-allocation traversal.
+  ## Read-only zero-allocation traversal using withValue.
   var selected: seq[SignedMantleTx]
   for hash in m.queue:
     if selected.len >= MaxBlockTxs:
       break
-    if hash in m.txs:
-      selected.add(m.txs.getOrDefault(hash))
+    m.txs.withValue(hash, val):
+      selected.add(val)
   selected
 
 func len*(m: Mempool): int =

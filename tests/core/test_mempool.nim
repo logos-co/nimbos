@@ -37,6 +37,7 @@ suite "core/mempool":
     var missingHash: Hash32
     missingHash[0] = 99'u8
     check m.get(missingHash).isErr
+    check m.get(missingHash).error == TxNotFound
 
     # Remove transaction
     check m.remove(hash1) == true
