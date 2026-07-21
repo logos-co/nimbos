@@ -333,7 +333,6 @@ proc prepareUpdate*[Id](
     return err(ParentNotFound)
   let
     parent = l.states.getOrDefault(parentId)
-  let
     afterHeader = ?parent.tryApplyHeader(slot, proof, l.config)
     afterTxs = ?afterHeader.tryApplyTxns(txs, slot)
   ok((id: id, state: afterTxs))
