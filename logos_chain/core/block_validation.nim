@@ -14,6 +14,9 @@
 {.push raises: [], gcsafe.}
 
 import
+  results,
+  ./local_tree,
+  ../ledger/ledger,
   libp2p/crypto/ed25519/ed25519
 
 from ./types import
@@ -41,12 +44,6 @@ func validateBlockHeader(blk: Block): bool =
   if header(blk).bedrockVersion != ExpectedBedrockVersion:
     return false
 
-  if blockPayloadBytesLen(blk) >= MaxBlockSize:
-    return false
-
-  if blk.txs.len >= MaxBlockTxs:
-    return false
-
   if createBlockRoot(blk.txs) != header(blk).blockRoot:
     return false
 
@@ -56,6 +53,12 @@ func validateBlockHeader(blk: Block): bool =
   true
 
 func validateBlockBody(blk: Block): bool =
+  if blockPayloadBytesLen(blk) >= MaxBlockSize:
+    return false
+
+  if blk.txs.len >= MaxBlockTxs:
+    return false
+
   for tx in blk.txs:
     if tx.tx.ops.len != tx.opProofs.len:
       return false
@@ -71,5 +74,40 @@ func validateBlockBody(blk: Block): bool =
 
 func validateBlock*(blk: Block): bool =
   validateBlockHeader(blk) and validateBlockBody(blk)
+
+type
+  BlockValidationErrorKind* {.pure.} = enum
+    InvalidBlockStructure
+    TreeAdmissionRejected
+    HeaderRejected
+    TransactionsRejected
+
+  BlockValidationError* = object
+    case kind*: BlockValidationErrorKind
+    of BlockValidationErrorKind.HeaderRejected, BlockValidationErrorKind.TransactionsRejected:
+      ledgerError*: LedgerError
+    else:
+      discard
+
+proc validateBlockAndTransactions*(
+    blk: Block,
+    localTree: LocalTree,
+    ledger: Ledger[BlockId],
+): Result[tuple[id: BlockId, state: LedgerState], BlockValidationError] =
+  ## Performs stateless structural checks, localTree tip extension verification,
+  ## and stateful ledger validation (Proof of Leadership and Mantle txs).
+  if not validateBlock(blk):
+    return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))
+  if not localTree.canExtend(blk.header):
+    return err(BlockValidationError(kind: BlockValidationErrorKind.TreeAdmissionRejected))
+    
+  let parent = ledger.state(blk.header.parentBlock).valueOr:
+    return err(BlockValidationError(kind: BlockValidationErrorKind.TreeAdmissionRejected))
+  let afterHeader = parent.tryApplyHeader(blk.header.slot, blk.header.proofOfLeadership, ledger.config).valueOr:
+    return err(BlockValidationError(kind: BlockValidationErrorKind.HeaderRejected, ledgerError: error))
+  let afterTxs = afterHeader.tryApplyTxns(blk.txs, blk.header.slot).valueOr:
+    return err(BlockValidationError(kind: BlockValidationErrorKind.TransactionsRejected, ledgerError: error))
+    
+  ok((id: blockId(blk.header), state: afterTxs))
 
 {.pop.}
