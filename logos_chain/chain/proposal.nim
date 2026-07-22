@@ -9,7 +9,7 @@
 
 import
   results,
-  ../core/[types, local_tree, block_validation],
+  ../core/[local_tree, block_validation],
   ../ledger/ledger,
   ../mempool
 
