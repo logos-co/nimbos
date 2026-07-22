@@ -6,9 +6,9 @@
 # at your option, this file may not be copied, modified, or distributed except according to these terms.
 
 ## Stateless structural checks of Bedrock `valid_header(B)`. The stateful
-## half (parent linkage, slot ordering, wallclock bound, leader proof) is
-## owned by the `Chain.tryApplyBlock` composition: ledger `prepareUpdate`
-## plus `LocalTree.addBlockToTree`.
+## half (parent linkage, slot ordering, wallclock bound, leader proof verification
+## via `verifyLeaderProof` in `ledger.nim`) is owned by the `Chain.tryApplyBlock`
+## composition: ledger `prepareUpdate` plus `LocalTree.addBlockToTree`.
 ## Spec: [1.1.1 Block Construction, Validation and Execution](https://nomos-tech.notion.site/1-1-1-Block-Construction-Validation-and-Execution-269261aa09df807185a9e0764acffe22)
 
 {.push raises: [], gcsafe.}
