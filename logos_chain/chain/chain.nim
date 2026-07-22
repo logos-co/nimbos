@@ -53,9 +53,9 @@ func ledgerConfig*(settings: DeploymentSettings): LedgerConfig =
   LedgerConfig(
     epochSchedule: EpochSchedule(
       basePeriodLength:
-        basePeriodLength(uint64(c.securityParam), c.slotActivationCoeff),
+    basePeriodLength(uint64(c.securityParam), c.slotActivationCoeff),
       stakeDistributionStabilization:
-        uint64(c.epochConfig.epochStakeDistributionStabilization),
+    uint64(c.epochConfig.epochStakeDistributionStabilization),
       nonceBuffer: uint64(c.epochConfig.epochPeriodNonceBuffer),
       nonceStabilization: uint64(c.epochConfig.epochPeriodNonceStabilization)),
     slotActivationCoeff: c.slotActivationCoeff,
@@ -106,15 +106,18 @@ proc tryApplyBlock*(
     return err(BlockApplyError(kind: AlreadyApplied))
   if hdr.slot > chain.currentWallclockSlot():
     return err(BlockApplyError(kind: FutureSlot))
-  let prepared = validateBlockAndTransactions(blk, chain.localTree, chain.ledger).valueOr:
+  let prepared = validateBlockAndTransactions(blk, chain.localTree,
+      chain.ledger).valueOr:
     case error.kind
     of BlockValidationErrorKind.InvalidBlockStructure:
       return err(BlockApplyError(kind: InvalidStructure))
     of BlockValidationErrorKind.TreeAdmissionRejected:
       return err(BlockApplyError(kind: TreeRejected))
-    of BlockValidationErrorKind.HeaderRejected, BlockValidationErrorKind.TransactionsRejected:
-      return err(BlockApplyError(kind: LedgerRejected, ledgerError: error.ledgerError))
-      
+    of BlockValidationErrorKind.HeaderRejected,
+        BlockValidationErrorKind.TransactionsRejected:
+      return err(BlockApplyError(kind: LedgerRejected,
+          ledgerError: error.ledgerError))
+
   if not chain.localTree.addBlockToTree(blk):
     return err(BlockApplyError(kind: TreeRejected))
   chain.ledger.commitUpdate(prepared.id, prepared.state)

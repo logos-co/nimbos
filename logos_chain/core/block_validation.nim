@@ -16,7 +16,6 @@
 import
   results,
   ./local_tree,
-  ../mempool,
   ../ledger/ledger,
   libp2p/crypto/ed25519/ed25519
 
@@ -58,13 +57,6 @@ func validateBlock*(blk: Block): bool =
   validateBlockHeader(blk) and validateBlockBody(blk)
 
 type
-  ProposalValidationError* = enum
-    MissingReference
-    InvalidBlockStructure
-    TreeAdmissionRejected
-    HeaderRejected
-    TransactionsRejected
-
   BlockValidationErrorKind* {.pure.} = enum
     InvalidBlockStructure
     TreeAdmissionRejected
@@ -78,26 +70,6 @@ type
     else:
       discard
 
-func reconstructBlock*(
-    proposal: Proposal,
-    mempool: Mempool
-): Result[Block, ProposalValidationError] =
-  ## Reconstructs the block from proposal references using the mempool.
-  ## Returns error if any reference is missing or if we cannot retrieve it.
-  var txs: seq[SignedMantleTx]
-  for r in proposal.references:
-    if r == static(default(Hash32)):
-      continue
-    let tx = mempool.get(r).valueOr:
-      return err(MissingReference)
-    txs.add(tx)
-  
-  ok(Block(
-    header: proposal.header,
-    signature: proposal.signature,
-    txs: txs
-  ))
-
 proc validateBlockAndTransactions*(
     blk: Block,
     localTree: LocalTree,
@@ -110,36 +82,13 @@ proc validateBlockAndTransactions*(
   if not localTree.canExtend(blk.header):
     return err(BlockValidationError(kind: BlockValidationErrorKind.TreeAdmissionRejected))
     
-  let
-    parent = ledger.state(blk.header.parentBlock).valueOr:
-      return err(BlockValidationError(kind: BlockValidationErrorKind.TreeAdmissionRejected))
-    afterHeader = parent.tryApplyHeader(blk.header.slot, blk.header.proofOfLeadership, ledger.config).valueOr:
-      return err(BlockValidationError(kind: BlockValidationErrorKind.HeaderRejected, ledgerError: error))
-    afterTxs = afterHeader.tryApplyTxns(blk.txs, blk.header.slot).valueOr:
-      return err(BlockValidationError(kind: BlockValidationErrorKind.TransactionsRejected, ledgerError: error))
-      
+  let parent = ledger.state(blk.header.parentBlock).valueOr:
+    return err(BlockValidationError(kind: BlockValidationErrorKind.TreeAdmissionRejected))
+  let afterHeader = parent.tryApplyHeader(blk.header.slot, blk.header.proofOfLeadership, ledger.config).valueOr:
+    return err(BlockValidationError(kind: BlockValidationErrorKind.HeaderRejected, ledgerError: error))
+  let afterTxs = afterHeader.tryApplyTxns(blk.txs, blk.header.slot).valueOr:
+    return err(BlockValidationError(kind: BlockValidationErrorKind.TransactionsRejected, ledgerError: error))
+    
   ok((id: blockId(blk.header), state: afterTxs))
-
-proc reconstructAndValidateProposal*(
-    proposal: Proposal,
-    localTree: LocalTree,
-    ledger: Ledger[BlockId],
-    mempool: Mempool
-): Result[Block, ProposalValidationError] =
-  ## Attempts block reconstruction from references, validates the reconstructed
-  ## block against the localTree, and statefully verifies the leader proof and transactions sequence.
-  ## Returns the reconstructed Block on success.
-  let blk = ? reconstructBlock(proposal, mempool)
-  discard validateBlockAndTransactions(blk, localTree, ledger).valueOr:
-    case error.kind
-    of BlockValidationErrorKind.InvalidBlockStructure:
-      return err(InvalidBlockStructure)
-    of BlockValidationErrorKind.TreeAdmissionRejected:
-      return err(TreeAdmissionRejected)
-    of BlockValidationErrorKind.HeaderRejected:
-      return err(HeaderRejected)
-    of BlockValidationErrorKind.TransactionsRejected:
-      return err(TransactionsRejected)
-  ok(blk)
 
 {.pop.}

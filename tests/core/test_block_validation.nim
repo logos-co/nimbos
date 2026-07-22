@@ -39,7 +39,7 @@ func mkSizedTx(bytes: int): SignedMantleTx =
 =======
   ../../logos_chain/core/[types, block_validation, local_tree],
   ../../logos_chain/mempool,
-  ../../logos_chain/chain/genesis,
+  ../../logos_chain/chain/[genesis, proposal],
   ../../logos_chain/ledger/ledger
 from ../../logos_chain/core/crypto/types import FieldElement
 from ../../logos_chain/core/mantle/primitives import SlotNumber
