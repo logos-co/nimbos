@@ -22,12 +22,10 @@ import
   ./sync/syncer,
   ./zk/[circuits, pol, poc, zksign]
 
-from ./core/types as coreTypes import Block, blockId
-from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
-from libp2p/protocols/pubsub/gossipsub import
-  TopicParams, init
-
 from std/random import randomize
+from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
+from libp2p/protocols/pubsub/gossipsub import TopicParams, init
+from ./core/types as coreTypes import Block, blockId
 
 export
   osproc, chronos, presto, server, conf,

@@ -14,9 +14,9 @@ import
   results,
   stew/[assign2, bitops2],
   bincode,
+  libp2p/crypto/ed25519/ed25519,
   ./crypto/hashing,
-  ./mantle/[tx_types, tx_hashing, tx_bincode],
-  libp2p/crypto/ed25519/ed25519
+  ./mantle/[tx_types, tx_hashing, tx_bincode]
 
 export hashing, tx_types, tx_bincode, tx_hashing, results
 

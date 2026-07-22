@@ -15,9 +15,9 @@
 
 import
   results,
+  libp2p/crypto/ed25519/ed25519,
   ./local_tree,
-  ../ledger/ledger,
-  libp2p/crypto/ed25519/ed25519
+  ../ledger/ledger
 
 from ./types import
   Block, Header, Proposal, References, createBlockRoot, ExpectedBedrockVersion,
