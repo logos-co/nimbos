@@ -17,7 +17,7 @@ import
 from ./core/mantle/primitives import MaxBlockTxs
 
 type
-  MempoolError* = enum
+  MempoolError* {.pure.} = enum
     TxNotFound
 
   Mempool* = object
@@ -41,7 +41,7 @@ func contains*(m: Mempool, hash: Hash32): bool =
 func get*(m: Mempool, hash: Hash32): Result[SignedMantleTx, MempoolError] =
   m.txs.withValue(hash, val):
     return ok(val)
-  err(TxNotFound)
+  err(MempoolError.TxNotFound)
 
 proc pruneQueue*(m: var Mempool) =
   ## Compacts the queue by dropping dead hashes of removed transactions.

@@ -3,7 +3,7 @@
 # Licensed and distributed under either of
 #   * MIT license (license terms in the root directory or at https://opensource.org/licenses/MIT).
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
-# at your option, this file may not be copied, modified, or distributed except according to these terms.
+# at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## Stateless structural checks of Bedrock `valid_header(B)`. The stateful
 ## half (parent linkage, slot ordering, wallclock bound, leader proof) is
@@ -82,13 +82,17 @@ proc validateBlockAndTransactions*(
   if not localTree.canExtend(blk.header):
     return err(BlockValidationError(kind: BlockValidationErrorKind.TreeAdmissionRejected))
     
-  let parent = ledger.state(blk.header.parentBlock).valueOr:
-    return err(BlockValidationError(kind: BlockValidationErrorKind.TreeAdmissionRejected))
-  let afterHeader = parent.tryApplyHeader(blk.header.slot, blk.header.proofOfLeadership, ledger.config).valueOr:
-    return err(BlockValidationError(kind: BlockValidationErrorKind.HeaderRejected, ledgerError: error))
-  let afterTxs = afterHeader.tryApplyTxns(blk.txs, blk.header.slot).valueOr:
-    return err(BlockValidationError(kind: BlockValidationErrorKind.TransactionsRejected, ledgerError: error))
-    
-  ok((id: blockId(blk.header), state: afterTxs))
+  let id = blockId(blk.header)
+  let prepared = ledger.prepareUpdate(
+    id, blk.header.parentBlock, blk.header.slot, blk.header.proofOfLeadership, blk.txs
+  ).valueOr:
+    if error == LedgerError.ParentNotFound:
+      return err(BlockValidationError(kind: BlockValidationErrorKind.TreeAdmissionRejected))
+    elif error in {LedgerError.InvalidSlot, LedgerError.InvalidProof}:
+      return err(BlockValidationError(kind: BlockValidationErrorKind.HeaderRejected, ledgerError: error))
+    else:
+      return err(BlockValidationError(kind: BlockValidationErrorKind.TransactionsRejected, ledgerError: error))
+      
+  ok(prepared)
 
 {.pop.}
