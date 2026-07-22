@@ -47,12 +47,12 @@ proc validateSdpActive(
   ok()
 
 proc tryApplySdpActive*(
-    registry: var SdpRegistry,
+    registry: sink SdpRegistry,
     active: ActiveMessage,
     proof: ZkSigProof,
     txHash: Hash32,
     epoch: EpochNumber,
-): Result[void, LedgerError] =
+): Result[SdpRegistry, LedgerError] =
   ?validateSdpActive(active, proof, txHash, registry.state)
   let declaration = registry.state.declarations.getOrDefault(active.declarationId)
   let params = getParametersAt(
@@ -68,6 +68,6 @@ proc tryApplySdpActive*(
   updated.nonce = active.nonce
   updated.active = Opt.some(epoch)
   registry.state = insertDeclaration(registry.state, active.declarationId, updated)
-  ok()
+  ok(registry)
 
 {.pop.}

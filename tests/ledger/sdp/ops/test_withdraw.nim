@@ -33,7 +33,8 @@ suite "ledger/sdp/ops/withdraw":
     )
     installTestWithdraw(seeded.registry, withdraw, 15)
 
-    check execWithdraw(seeded, withdraw, 16).isErr
+    var seededCopy = seeded
+    check execWithdraw(seededCopy, withdraw, 16).isErr
 
     var replay = withdraw
     replay.nonce = 0

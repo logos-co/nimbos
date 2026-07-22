@@ -62,10 +62,10 @@ func init*(
     lastEpochStarted: Opt.none(EpochNumber),
   )
 
-proc onEpochStarted*(
-    registry: var SdpRegistry,
+func onEpochStarted*(
+    registry: sink SdpRegistry,
     epoch: EpochNumber,
-) =
+): SdpRegistry =
   ## Runs withdrawal finalization and epoch snapshotting at an epoch boundary;
   ## ``epoch`` must advance past ``lastEpochStarted``.
   # The registry is fork-local (copied with LedgerState per branch), so a
@@ -81,7 +81,7 @@ proc onEpochStarted*(
     genesisSnap[1] = registry.state
     registry.snapshots[ServiceType.bn] = genesisSnap
     registry.lastEpochStarted = Opt.some(0'u64)
-    return
+    return registry
   let last = registry.lastEpochStarted
   for service, params in registry.params.parameters.pairs:
     if params.epoch > epoch:
@@ -106,6 +106,7 @@ proc onEpochStarted*(
     registry.snapshots[service] = byEpoch
   registry.state = finalizeWithdrawals(registry.state, epoch)
   registry.lastEpochStarted = Opt.some(epoch)
+  registry
 
 
 func getEpochSnapshot*(
