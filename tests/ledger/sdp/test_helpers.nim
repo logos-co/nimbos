@@ -112,11 +112,11 @@ type SeededDeclaration* = object
   declId*: DeclarationId
 
 proc execDeclare*(
-    registry: var SdpRegistry,
+    registry: sink SdpRegistry,
     declaration: DeclarationMessage,
     store: UtxoStore,
     epoch: EpochNumber,
-): Result[void, LedgerError] =
+): Result[SdpRegistry, LedgerError] =
   tryApplySdpDeclare(
     registry,
     declaration,
@@ -127,10 +127,10 @@ proc execDeclare*(
   )
 
 proc execWithdraw*(
-    seeded: var SeededDeclaration,
+    seeded: sink SeededDeclaration,
     withdraw: WithdrawMessage,
     epoch: EpochNumber,
-): Result[void, LedgerError] =
+): Result[SdpRegistry, LedgerError] =
   tryApplySdpWithdraw(
     seeded.registry,
     withdraw,
@@ -141,10 +141,10 @@ proc execWithdraw*(
   )
 
 proc execActive*(
-    seeded: var SeededDeclaration,
+    seeded: sink SeededDeclaration,
     active: ActiveMessage,
     epoch: EpochNumber,
-): Result[void, LedgerError] =
+): Result[SdpRegistry, LedgerError] =
   tryApplySdpActive(
     seeded.registry,
     active,

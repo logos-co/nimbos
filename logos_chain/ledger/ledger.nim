@@ -105,14 +105,14 @@ proc fromGenesis*(
         s.mantleLedger.channels = applyChannelInscribe(
           s.mantleLedger.channels, op.payload.channelInscribe, 0)
       of SdpDeclare:
-        ?applySdpDeclare(s.sdp, op.payload.sdpDeclare, genesisEpoch)
+        s.sdp = ?applySdpDeclare(s.sdp, op.payload.sdpDeclare, genesisEpoch)
       else:
         return err(UnsupportedOp)
   s.epochs = ?genesisEpochTracker(
     nonce, s.cryptarchiaLedger.latestUtxos.root, max(total, 1), cfg)
   # Epochs 0 and 1 read the registry snapshot taken at genesis:
   # https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/bedrock-service-declaration-protocol.md#snapshots
-  onEpochStarted(s.sdp, genesisEpoch)
+  s.sdp = onEpochStarted(s.sdp, genesisEpoch)
   ok(s)
 
 proc tryApplyHeader*(
@@ -133,7 +133,7 @@ proc tryApplyHeader*(
     # epoch; reward distribution slots in ahead of the withdrawal removal
     # once it lands.
     # https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md#sdp-epoch-finalization
-    onEpochStarted(s.sdp, s.epochs.activeEpoch.epoch)
+    s.sdp = onEpochStarted(s.sdp, s.epochs.activeEpoch.epoch)
   let
     active = s.epochs.activeEpoch
     public = LeaderPublic(
@@ -185,7 +185,7 @@ proc tryApplyTx*(
     of SdpDeclare:
       if proof.kind != opfSdpDeclare:
         return err(InvalidProof)
-      ?tryApplySdpDeclare(
+      s.sdp = ?tryApplySdpDeclare(
         s.sdp,
         op.payload.sdpDeclare,
         proof.declarationProof,
@@ -196,7 +196,7 @@ proc tryApplyTx*(
     of SdpWithdraw:
       if proof.kind != opfSdpWithdraw:
         return err(InvalidProof)
-      ?tryApplySdpWithdraw(
+      s.sdp = ?tryApplySdpWithdraw(
         s.sdp,
         op.payload.sdpWithdraw,
         proof.sdpWithdrawProof,
@@ -207,7 +207,7 @@ proc tryApplyTx*(
     of SdpActive:
       if proof.kind != opfSdpActive:
         return err(InvalidProof)
-      ?tryApplySdpActive(
+      s.sdp = ?tryApplySdpActive(
         s.sdp,
         op.payload.sdpActive,
         proof.sdpActiveProof,
