@@ -12,9 +12,9 @@
 import
   std/[deques, tables],
   results,
-  ./types
+  ./core/types
 
-from ./mantle/primitives import MaxBlockTxs
+from ./core/mantle/primitives import MaxBlockTxs
 
 type
   MempoolError* = enum

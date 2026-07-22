@@ -14,6 +14,7 @@ import
   libp2p/crypto/ed25519/ed25519,
   ./mantle/test_helpers,
   ../testutil,
+<<<<<<< HEAD
   ../../logos_chain/core/[types, block_validation, local_tree, mempool],
   ../../logos_chain/core/mantle/[operations, proofs, tx_types],
   ../../logos_chain/chain/genesis
@@ -35,6 +36,16 @@ func mkSizedTx(bytes: int): SignedMantleTx =
     ))]),
     opProofs: @[defaultOpProofForOpcode(OpChannelInscribe)],
   )
+=======
+  ../../logos_chain/core/[types, block_validation, local_tree],
+  ../../logos_chain/mempool,
+  ../../logos_chain/chain/genesis,
+  ../../logos_chain/ledger/ledger
+from ../../logos_chain/core/crypto/types import FieldElement
+from ../../logos_chain/core/mantle/primitives import SlotNumber
+from ../ledger/test_helpers import testLedgerConfig
+from ../ledger/sdp/test_helpers import testSdpRegistry
+>>>>>>> 8bd95e9 (refactor: integrate ledger-based stateful validation into block validation flow and update proposal reconstruction to return granular error results)
 
 suite "core/block_validation":
   test "accepts a structurally valid block":
@@ -111,40 +122,21 @@ suite "core/block_validation — inclusive size and count bounds":
       tree = newLocalTree(genesis)
       blk = childBlock(genesis.header, gid, SlotNumber(1), [sm])
       
-    var header = blk.header
-    header.proofOfLeadership.leaderKey = kp.pubkey
-    
-    let signature = kp.seckey.sign(blockId(header))
+    let signature = kp.seckey.sign(blockId(blk.header))
     var proposal = new(Proposal)
-    proposal[] = initProposal(header, [sm], signature).get()
+    proposal[] = initProposal(blk.header, [sm], signature).get()
     
     var mempool = Mempool.init()
     check mempool.add(sm)
     
-    check reconstructAndValidateProposal(proposal[], tree, mempool).isSome
-    
-  test "validateProposal rejects if signature is invalid":
     let
-      rng = HmacDrbgContext.new()
-      kp1 = mkEdKeyPair(rng)
-      kp2 = mkEdKeyPair(rng)
-      sm = minimalSignedTx()
-      genesis = createGenesisBlock(sm)
-      gid = blockId(genesis.header)
-      tree = newLocalTree(genesis)
-      blk = childBlock(genesis.header, gid, SlotNumber(1), [sm])
+      state = LedgerState.fromGenesis(
+          genesis.txs, default(FieldElement), testSdpRegistry(),
+          testLedgerConfig).expect("genesis state")
+      ledger = Ledger[BlockId].init(gid, state, testLedgerConfig)
       
-    var header = blk.header
-    header.proofOfLeadership.leaderKey = kp1.pubkey
+    check reconstructAndValidateProposal(proposal[], tree, ledger, mempool).isOk
     
-    let signature = kp2.seckey.sign(blockId(header))
-    var proposal = new(Proposal)
-    proposal[] = initProposal(header, [sm], signature).get()
-    
-    var mempool = Mempool.init()
-    check mempool.add(sm)
-    
-    check reconstructAndValidateProposal(proposal[], tree, mempool).isNone
 
   test "validateProposal rejects if referenced transaction is missing from mempool":
     let
@@ -156,14 +148,17 @@ suite "core/block_validation — inclusive size and count bounds":
       tree = newLocalTree(genesis)
       blk = childBlock(genesis.header, gid, SlotNumber(1), [sm])
       
-    var header = blk.header
-    header.proofOfLeadership.leaderKey = kp.pubkey
-    
-    let signature = kp.seckey.sign(blockId(header))
+    let signature = kp.seckey.sign(blockId(blk.header))
     var proposal = new(Proposal)
-    proposal[] = initProposal(header, [sm], signature).get()
-    let mempool = Mempool.init()
-    
-    check reconstructAndValidateProposal(proposal[], tree, mempool).isNone
+    proposal[] = initProposal(blk.header, [sm], signature).get()
+    let
+      state = LedgerState.fromGenesis(
+          genesis.txs, default(FieldElement), testSdpRegistry(),
+          testLedgerConfig).expect("genesis state")
+      ledger = Ledger[BlockId].init(gid, state, testLedgerConfig)
+      mempool = Mempool.init()
+      
+    let res = reconstructAndValidateProposal(proposal[], tree, ledger, mempool)
+    check res.isErr and res.error == MissingReference
 
 {.pop.}

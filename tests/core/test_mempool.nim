@@ -11,7 +11,8 @@
 import
   unittest2,
   ../testutil,
-  ../../logos_chain/core/[types, mempool]
+  ../../logos_chain/core/types,
+  ../../logos_chain/mempool
 
 suite "core/mempool":
   test "mempool lifecycle (add, contains, get, remove, len)":
