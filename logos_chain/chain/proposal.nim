@@ -14,6 +14,7 @@ import
   ../mempool
 
 from ../core/types import Block, Proposal, Hash32, header, blockId
+from ../core/crypto/types import isZero
 from ../core/mantle/tx_types import SignedMantleTx
 
 type
@@ -32,7 +33,7 @@ func reconstructBlock*(
   ## Returns error if any reference is missing or if we cannot retrieve it.
   var txs: seq[SignedMantleTx]
   for r in proposal.references:
-    if r == static(default(Hash32)):
+    if r.isZero():
       continue
     let tx = mempool.get(r).valueOr:
       return err(ProposalValidationError.MissingReference)
