@@ -8,7 +8,6 @@ blend:
     scheduler:
       cover:
         message_frequency_per_round: 1.0
-        intervals_for_safety_buffer: 1
       delayer:
         maximum_release_delay_in_rounds: 1
     minimum_messages_coefficient: 1
@@ -26,7 +25,7 @@ cryptarchia:
   security_param: 1
   slot_activation_coeff:
     numerator: 1
-    denominator: 1
+    denominator: 20
   learning_rate: 0.5
   sdp_config:
     service_params:

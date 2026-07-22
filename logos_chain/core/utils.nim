@@ -24,6 +24,11 @@ template newClone*[T](x: ref T): ref T =
 template lenu64*(x: untyped): untyped =
   uint64(len(x))
 
+type NonNegativeRatio* = object
+  ## Exact rational for consensus parameters (`f`, `beta`). Derived integers
+  ## use `num`/`den` arithmetic directly — no float ever materialises.
+  num*, den*: uint64
+
 const
   # http://facweb.cs.depaul.edu/sjost/it212/documents/ascii-pr.htm
   PrintableAsciiChars* = {' '..'~'}

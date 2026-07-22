@@ -27,10 +27,13 @@ type
   ProofOfLeadershipProof* = CompressedGroth16Proof
 
   ProofOfLeadership* = object
-    leaderVoucher*: RewardVoucher
-    entropyContribution*: ZkHash
+    # Declaration order IS the bincode wire order (the derive serializes
+    # fields in order). The BLOCK_ID_V1 hash preimage uses a different,
+    # spec-defined order — see `blockId`.
     proof*: ProofOfLeadershipProof
+    entropyContribution*: ZkHash
     leaderKey*: Ed25519PublicKey
+    leaderVoucher*: RewardVoucher
 
   BlockId* = Hash32
   

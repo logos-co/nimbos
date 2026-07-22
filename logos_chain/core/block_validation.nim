@@ -5,32 +5,26 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to these terms.
 
-## Bedrock `valid_header(B)` from block construction / validation spec.
+## Stateless structural checks of Bedrock `valid_header(B)`. The stateful
+## half (parent linkage, slot ordering, wallclock bound, leader proof) is
+## owned by the `Chain.tryApplyBlock` composition: ledger `prepareUpdate`
+## plus `LocalTree.addBlockToTree`.
 ## Spec: [1.1.1 Block Construction, Validation and Execution](https://nomos-tech.notion.site/1-1-1-Block-Construction-Validation-and-Execution-269261aa09df807185a9e0764acffe22)
 
 {.push raises: [], gcsafe.}
 
 import
-  results,
-  ./local_tree,
   libp2p/crypto/ed25519/ed25519
 
 from ./types import
-  Block, Header, ProofOfLeadership, createBlockRoot, ExpectedBedrockVersion,
-  MaxBlockSize, header, blockId
-from ./crypto/types import Ed25519Signature, Ed25519PublicKey
-from ./mantle/primitives import MaxBlockTxs, SlotNumber
+  Block, createBlockRoot, ExpectedBedrockVersion, MaxBlockSize, header, blockId
+from ./mantle/primitives import MaxBlockTxs
 from ./mantle/tx_types import
   SignedMantleTx,
   encodeSignedMantleTx,
   isSupportedOpcode,
   opPayloadToOpcode,
   expectedOpProofKindForOpcode
-
-func wallclockSlot(): SlotNumber =
-  ## TODO: implement `wallclock_time().to_slot()` from deployment genesis time
-  ## and slot duration.
-  high(SlotNumber)
 
 func txBytesLen(txs: openArray[SignedMantleTx]): int =
   var total = 0
@@ -43,13 +37,7 @@ func blockPayloadBytesLen(blk: Block): int =
   ## IBD additionally caps the full bincode wire blob (header framing + signature + txs).
   txBytesLen(blk.txs) + EdSignatureSize
 
-func verifyPoL(localTree: LocalTree, header: Header): bool =
-  ## TODO: implement `verifyPoL()` when epoch state lands.
-  discard localTree
-  discard header
-  true
-
-func validateBlockHeader(blk: Block, localTree: LocalTree): bool =
+func validateBlockHeader(blk: Block): bool =
   if header(blk).bedrockVersion != ExpectedBedrockVersion:
     return false
 
@@ -60,23 +48,6 @@ func validateBlockHeader(blk: Block, localTree: LocalTree): bool =
     return false
 
   if createBlockRoot(blk.txs) != header(blk).blockRoot:
-    return false
-
-  let parentHeader = fetchParentHeader(localTree, header(blk).parentBlock).valueOr:
-    return false
-  if header(blk).slot <= parentHeader.slot:
-    return false
-
-  if wallclockSlot() < header(blk).slot:
-    return false
-
-  if not hasBlock(localTree, header(blk).parentBlock):
-    return false
-
-  if not isFutureDescendantOfImmutable(localTree, header(blk)):
-    return false
-
-  if not verifyPoL(localTree, header(blk)):
     return false
 
   if not verify(blk.signature, blockId(header(blk)), header(blk).proofOfLeadership.leaderKey):
@@ -98,7 +69,7 @@ func validateBlockBody(blk: Block): bool =
         return false
   true
 
-func validateBlock*(blk: Block, localTree: LocalTree): bool =
-  validateBlockHeader(blk, localTree) and validateBlockBody(blk)
+func validateBlock*(blk: Block): bool =
+  validateBlockHeader(blk) and validateBlockBody(blk)
 
 {.pop.}
