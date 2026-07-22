@@ -89,13 +89,13 @@ func localTipId*(localTree: LocalTree): BlockId =
 func latestImmutableBlockId*(localTree: LocalTree): BlockId =
   let tip = localTree.blocks.getOrDefault(localTree.tipId, nil)
   if tip == nil:
-    return default(BlockId)
+    return static(default(BlockId))
   let h = localTree.latestImmutableHeight
   if tip.height < h:
     return tip.id
   let a = ancestorAtHeight(tip, h)
   if a == nil:
-    default(BlockId)
+    static(default(BlockId))
   else:
     a.id
 

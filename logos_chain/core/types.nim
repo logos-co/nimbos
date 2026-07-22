@@ -77,7 +77,7 @@ func createBlockRoot*(txs: openArray[SignedMantleTx]): Hash32 =
     "tx set exceeds MaxBlockTxs (" & $MaxBlockTxs & "): " & $txs.len
 
   if txs.len == 0:
-    return default(Hash32)
+    return static(default(Hash32))
 
   let paddedLen = nextPow2(txs.len.uint64).int
   var level = newSeq[Hash32](paddedLen)

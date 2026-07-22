@@ -64,7 +64,7 @@ func reconstructBlock*(
   ## Returns Opt.none if any reference is missing or if we cannot retrieve it.
   var txs: seq[SignedMantleTx]
   for r in proposal.references:
-    if r == default(Hash32):
+    if r == static(default(Hash32)):
       continue
     let tx = mempool.get(r).valueOr:
       return Opt.none(Block)
