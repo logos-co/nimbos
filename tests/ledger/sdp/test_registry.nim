@@ -112,33 +112,32 @@ suite "ledger/sdp/registry — epoch snapshots":
   test "takes S_n when epoch n-2 starts":
     var registry = testSdpRegistry()
     registry = onEpochStarted(registry, 1)
-    check getEpochSnapshot(registry.snapshots, ServiceType.bn, 3).isSome
+    check getEpochSnapshot(registry.snapshots, ServiceType.bn, 2).isSome
 
   test "takes next snapshot and prunes ended epoch on boundary":
     var registry = testSdpRegistry()
     registry = onEpochStarted(registry, 1)
-    check getEpochSnapshot(registry.snapshots, ServiceType.bn, 3).isSome
+    check getEpochSnapshot(registry.snapshots, ServiceType.bn, 2).isSome
 
     registry = onEpochStarted(registry, 2)
+    check getEpochSnapshot(registry.snapshots, ServiceType.bn, 2).isSome
     check getEpochSnapshot(registry.snapshots, ServiceType.bn, 3).isSome
-    check getEpochSnapshot(registry.snapshots, ServiceType.bn, 4).isSome
 
     registry = onEpochStarted(registry, 3)
+    check getEpochSnapshot(registry.snapshots, ServiceType.bn, 2).isNone
     check getEpochSnapshot(registry.snapshots, ServiceType.bn, 3).isSome
     check getEpochSnapshot(registry.snapshots, ServiceType.bn, 4).isSome
-    check getEpochSnapshot(registry.snapshots, ServiceType.bn, 5).isSome
 
     registry = onEpochStarted(registry, 4)
     check getEpochSnapshot(registry.snapshots, ServiceType.bn, 3).isNone
     check getEpochSnapshot(registry.snapshots, ServiceType.bn, 4).isSome
     check getEpochSnapshot(registry.snapshots, ServiceType.bn, 5).isSome
-    check getEpochSnapshot(registry.snapshots, ServiceType.bn, 6).isSome
 
   test "snapshots are isolated from later live state":
     var registry = testSdpRegistry()
     registry = onEpochStarted(registry, 1)
-    let snap3 = getEpochSnapshot(registry.snapshots, ServiceType.bn, 3).get()
-    check snap3.declarations.len == 0
+    let snap2 = getEpochSnapshot(registry.snapshots, ServiceType.bn, 2).get()
+    check snap2.declarations.len == 0
 
     var declId: DeclarationId
     declId[0] = 1
@@ -157,7 +156,7 @@ suite "ledger/sdp/registry — epoch snapshots":
       ),
     )
     check registry.state.declarations.len == 1
-    check getEpochSnapshot(registry.snapshots, ServiceType.bn, 3).get()
+    check getEpochSnapshot(registry.snapshots, ServiceType.bn, 2).get()
       .declarations.len == 0
 
   test "retains at most three epoch snapshots in steady state":
@@ -171,17 +170,15 @@ suite "ledger/sdp/registry — epoch snapshots":
     registry = onEpochStarted(registry, 1)
     registry = onEpochStarted(registry, 2)
     registry = onEpochStarted(registry, 3)
-    check registry.snapshots.getOrDefault(ServiceType.bn).len == 3
+    check registry.snapshots.getOrDefault(ServiceType.bn).len == 2
     check getEpochSnapshot(registry.snapshots, ServiceType.bn, 3).isSome
     check getEpochSnapshot(registry.snapshots, ServiceType.bn, 4).isSome
-    check getEpochSnapshot(registry.snapshots, ServiceType.bn, 5).isSome
 
     registry = onEpochStarted(registry, 7)
     let byEpoch = registry.snapshots.getOrDefault(ServiceType.bn)
     check byEpoch.len == 1
     check getEpochSnapshot(registry.snapshots, ServiceType.bn, 3).isNone
     check getEpochSnapshot(registry.snapshots, ServiceType.bn, 4).isNone
-    check getEpochSnapshot(registry.snapshots, ServiceType.bn, 5).isNone
-    check getEpochSnapshot(registry.snapshots, ServiceType.bn, 9).isSome
+    check getEpochSnapshot(registry.snapshots, ServiceType.bn, 8).isSome
 
 {.pop.}
