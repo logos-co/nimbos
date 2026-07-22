@@ -74,7 +74,7 @@ func applyTransferState*(
       return err(LockedNote)
     let (newStore, removedUtxo) = s.utxos.remove(inputId).valueOr:
       return err(InvalidNote)
-    s = CryptarchiaState(utxos: newStore, leader: s.leader)
+    s.utxos = newStore
     balance = ?balance.checkedAdd(i128(removedUtxo.note.value))
     pks.add(removedUtxo.note.zkPublicKey)
 
@@ -84,7 +84,7 @@ func applyTransferState*(
       return err(ZeroValueNote)
     balance = ?balance.checkedSub(i128(outNote.value))
     let u = Utxo(opId: transferOpId, outputIndex: uint64(i), note: outNote)
-    s = CryptarchiaState(utxos: s.utxos.insert(u.id, u).store, leader: s.leader)
+    s.utxos = s.utxos.insert(u.id, u).store
 
   ok((s, balance, pks))
 

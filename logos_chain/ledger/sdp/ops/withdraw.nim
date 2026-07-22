@@ -46,13 +46,13 @@ proc validateSdpWithdraw(
   ok(declareInfo)
 
 proc tryApplySdpWithdraw*(
-    registry: var SdpRegistry,
+    registry: sink SdpRegistry,
     withdraw: WithdrawMessage,
     proof: ZkSigProof,
     txHash: ZkHash,
     utxos: UtxoStore,
     epoch: EpochNumber,
-): Result[void, LedgerError] =
+): Result[SdpRegistry, LedgerError] =
   var declaration = ?validateSdpWithdraw(
     withdraw, proof, txHash, utxos, registry.state,
   )
@@ -61,6 +61,6 @@ proc tryApplySdpWithdraw*(
   registry.state = insertDeclaration(
     registry.state, withdraw.declarationId, declaration,
   )
-  ok()
+  ok(registry)
 
 {.pop.}

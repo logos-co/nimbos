@@ -56,7 +56,8 @@ suite "ledger/sdp/ops/declare":
       zkId: utxo.note.zkPublicKey,
     )
     var registry = testSdpRegistry()
-    check execDeclare(registry, declaration, store, 1).isErr
+    var registryCopy = registry
+    check execDeclare(registryCopy, declaration, store, 1).isErr
 
     var missingNote = declaration
     missingNote.lockedNoteId = frFromBytesLE([byte(99)]).get

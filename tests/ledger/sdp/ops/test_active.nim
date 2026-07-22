@@ -22,7 +22,8 @@ suite "ledger/sdp/ops/active":
       metadata: @[],
     )
     unknown.declarationId[0] = byte(77)
-    check execActive(seeded, unknown, 15).isErr
+    var seededCopy = seeded
+    check execActive(seededCopy, unknown, 15).isErr
 
     let stale = ActiveMessage(
       declarationId: seeded.declId,

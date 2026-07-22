@@ -235,20 +235,18 @@ proc validateChannelDeposit*(
 
 func applyChannelDeposit*(
     channels: ChannelStore,
-    cs: CryptarchiaState,
+    cs: sink CryptarchiaState,
     op: ChannelDepositPayload,
 ): Result[tuple[channels: ChannelStore, cs: CryptarchiaState], LedgerError] =
   ## Mutation-with-overflow-check; assumes `validateChannelDeposit` passed.
   ## Removes inputs and credits the channel balance.
-  var
-    store = cs.utxos
-    chan = channels.getOrDefault(op.channel)
+  var chan = channels.getOrDefault(op.channel)
   for inputId in op.inputs:
-    let (newStore, removedUtxo) = store.remove(inputId).valueOr:
+    let (newStore, removedUtxo) = cs.utxos.remove(inputId).valueOr:
       return err(InvalidNote)  # unreachable if validate passed
-    store = newStore
+    cs.utxos = newStore
     chan.balance = ?chan.balance.checkedAdd(removedUtxo.note.value)
-  ok((channels.insert(op.channel, chan), CryptarchiaState(utxos: store, leader: cs.leader)))
+  ok((channels.insert(op.channel, chan), cs))
 
 func validateChannelWithdraw*(
     channels: ChannelStore,
@@ -278,20 +276,18 @@ func validateChannelWithdraw*(
 
 func applyChannelWithdraw*(
     channels: ChannelStore,
-    cs: CryptarchiaState,
+    cs: sink CryptarchiaState,
     op: ChannelWithdrawPayload,
 ): tuple[channels: ChannelStore, cs: CryptarchiaState] =
   ## Mutation only; assumes `validateChannelWithdraw` passed. Drains the
   ## channel balance, bumps the nonce, inserts output UTXOs.
-  var
-    chan = channels.getOrDefault(op.channel)
-    store = cs.utxos
+  var chan = channels.getOrDefault(op.channel)
   let withdrawOpId = opId(op)
   for i, outNote in op.outputs:
     chan.balance -= outNote.value
     let u = Utxo(opId: withdrawOpId, outputIndex: uint64(i), note: outNote)
-    store = store.insert(u.id, u).store
+    cs.utxos = cs.utxos.insert(u.id, u).store
   chan.withdrawalNonce += 1
-  (channels.insert(op.channel, chan), CryptarchiaState(utxos: store, leader: cs.leader))
+  (channels.insert(op.channel, chan), cs)
 
 {.pop.}
