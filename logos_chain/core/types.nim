@@ -170,7 +170,7 @@ func createReferences(txs: openArray[SignedMantleTx]): Result[References, Propos
 func initProposal*(
     header: Header,
     txs: openArray[SignedMantleTx],
-    signature: Ed25519Signature = DefaultEd25519Signature,
+    signature: Ed25519Signature,
 ): Result[Proposal, ProposalError] =
   let refs = ? createReferences(txs)
   ok(Proposal(header: header, references: refs, signature: signature))

@@ -116,7 +116,7 @@ suite "core/block bincode (cryptarchia sync)":
       sm = minimalSignedTx()
       h = sampleHeader([sm])
     var proposal = new(Proposal)
-    proposal[] = initProposal(h, [sm]).get()
+    proposal[] = initProposal(h, [sm], DefaultEd25519Signature).get()
     try:
       let serialized = serializeProposalToSeq(proposal[], cfg)
       check sizeof(proposal[].references) == 32768
