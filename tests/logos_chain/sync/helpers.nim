@@ -33,7 +33,8 @@ proc initTestChain*(genesis: Block): Chain =
     raiseAssert "initTestChain: " & $error
   Chain.init(
     genesis,
-    Ledger[BlockId].init(blockId(genesis.header), state, testLedgerConfig, mockVerifyLeaderProof),
+    Ledger[BlockId].init(blockId(genesis.header), state, testLedgerConfig,
+        mockVerifyLeaderProof),
     SlotConfig(genesisTime: 0, slotDurationSeconds: 1))
 
 func exampleBlockId*(fill: byte): BlockId =
@@ -43,7 +44,8 @@ func exampleBlockId*(fill: byte): BlockId =
   id
 
 func exampleGetTipTipFixture*(): Tip =
-  Tip(tip: exampleBlockId(0xAB'u8), slot: SlotNumber(12_345'u64), height: 999'u64)
+  Tip(tip: exampleBlockId(0xAB'u8), slot: SlotNumber(12_345'u64),
+      height: 999'u64)
 
 proc exampleSerializedGetTipResponseTipWire*(): Opt[seq[byte]] =
   let resp = GetTipResponse(kind: gtrTip, tipData: exampleGetTipTipFixture())
@@ -76,8 +78,10 @@ func downloadBlocksRequestEqual*(a, b: DownloadBlocksRequest): bool =
   a.knownBlocks.additionalBlocks == b.knownBlocks.additionalBlocks
 
 func blockDownloadWireEqual*(a, b: Block): bool =
-  a.header == b.header and a.signature == b.signature and a.txs.len == b.txs.len and
-  (0 ..< a.txs.len).allIt(encodeSignedMantleTx(a.txs[it]) == encodeSignedMantleTx(b.txs[it]))
+  a.header == b.header and a.signature == b.signature and a.txs.len ==
+      b.txs.len and
+  (0 ..< a.txs.len).allIt(encodeSignedMantleTx(a.txs[it]) ==
+      encodeSignedMantleTx(b.txs[it]))
 
 func downloadBlocksResponseEqual*(a, b: DownloadBlocksResponse): bool =
   if a.kind != b.kind:
@@ -120,10 +124,10 @@ proc downloadBlocksResponsesForRequest*(
     except BincodeError, IOError:
       fail getCurrentExceptionMsg()
     check innerWire.len > 0 and innerWire.len <= MaxBlockSize
-    responses.add DownloadBlocksResponse(kind: dbrBlock, downloadedBlock: innerWire)
+    responses.add DownloadBlocksResponse(kind: dbrBlock,
+        downloadedBlock: innerWire)
   responses.add DownloadBlocksResponse(kind: dbrNoMoreBlocks)
   responses
-
 
 proc u32LengthPrefixedHex*(inner: seq[byte]): string =
   try:

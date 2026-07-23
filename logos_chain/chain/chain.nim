@@ -12,9 +12,10 @@
 import
   std/times,
   results,
-  ../core/[types, local_tree, block_validation],
+  ../core/[types, local_tree],
   ../deployment/deployment_settings,
   ../ledger/[ledger, stake_inference],
+  ./block_validation,
   ./genesis
 
 export genesis, local_tree
@@ -110,18 +111,15 @@ proc tryApplyBlock*(
     return err(BlockApplyError(kind: AlreadyApplied))
   if hdr.slot > chain.currentWallclockSlot():
     return err(BlockApplyError(kind: FutureSlot))
-  if not validateBlock(blk):
-    return err(BlockApplyError(kind: InvalidStructure))
-  # Tree admission runs before the leader proof is verified, so
-  # structurally invalid forks never reach the verifier.
-  if not chain.localTree.canExtend(hdr):
-    return err(BlockApplyError(kind: TreeRejected))
-  # The ledger prepares without mutating, the tree mutates, the ledger
-  # commits — a failure at any step leaves no partial state.
-  let prepared = chain.ledger.prepareUpdate(
-      id, hdr.parentBlock, hdr.slot, hdr.proofOfLeadership,
-      blk.txs).valueOr:
-    return err(BlockApplyError(kind: LedgerRejected, ledgerError: error))
+  let prepared = validateBlockAndTransactions(blk, chain.localTree, chain.ledger).valueOr:
+    case error.kind
+    of BlockValidationErrorKind.InvalidBlockStructure:
+      return err(BlockApplyError(kind: InvalidStructure))
+    of BlockValidationErrorKind.TreeAdmissionRejected:
+      return err(BlockApplyError(kind: TreeRejected))
+    of BlockValidationErrorKind.HeaderRejected,
+        BlockValidationErrorKind.TransactionsRejected:
+      return err(BlockApplyError(kind: LedgerRejected, ledgerError: error.ledgerError))
   if not chain.localTree.addBlockToTree(blk):
     return err(BlockApplyError(kind: TreeRejected))
   chain.ledger.commitUpdate(prepared.id, prepared.state)

@@ -11,7 +11,8 @@
 import
   unittest2,
   ../testutil,
-  ../../logos_chain/core/[types, block_validation],
+  ../../logos_chain/core/types,
+  ../../logos_chain/chain/block_validation,
   ../../logos_chain/chain/genesis
 from ../../logos_chain/core/mantle/primitives import SlotNumber
 

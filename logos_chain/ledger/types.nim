@@ -67,8 +67,6 @@ type
   LeaderProofVerifier* = proc(
     proof: ProofOfLeadership, public: LeaderPublic
   ): Result[bool, PolLoadError] {.gcsafe, raises: [].}
-
-type
   LedgerConfig* = object
     ## Chain configuration. Remaining fields land with the modules that
     ## need them (SDP, gas).

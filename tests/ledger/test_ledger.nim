@@ -25,7 +25,7 @@ import
   ../core/mantle/test_helpers,
   ../testutil
 
-func initLedger*(
+func initLedger(
     id: TestId,
     state: LedgerState,
     config: LedgerConfig = LedgerConfig(),

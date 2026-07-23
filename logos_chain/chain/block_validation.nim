@@ -3,11 +3,11 @@
 # Licensed and distributed under either of
 #   * MIT license (license terms in the root directory or at https://opensource.org/licenses/MIT).
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
-# at your option, this file may not be copied, modified, or distributed except according to these terms.
+# at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## Stateless structural checks of Bedrock `valid_header(B)`. The stateful
 ## half (parent linkage, slot ordering, wallclock bound, leader proof verification
-## via `verifyLeaderProof` in `ledger.nim`) is owned by the `Chain.tryApplyBlock`
+## called during `tryApplyHeader` in `ledger.nim`) is owned by the `Chain.tryApplyBlock`
 ## composition: ledger `prepareUpdate` plus `LocalTree.addBlockToTree`.
 ## Spec: [1.1.1 Block Construction, Validation and Execution](https://nomos-tech.notion.site/1-1-1-Block-Construction-Validation-and-Execution-269261aa09df807185a9e0764acffe22)
 
@@ -15,14 +15,14 @@
 
 import
   results,
-  ./local_tree,
+  ../core/local_tree,
   ../ledger/ledger,
   libp2p/crypto/ed25519/ed25519
 
-from ./types import
+from ../core/types import
   Block, createBlockRoot, ExpectedBedrockVersion, MaxBlockSize, header, blockId
-from ./mantle/primitives import MaxBlockTxs
-from ./mantle/tx_types import
+from ../core/mantle/primitives import MaxBlockTxs
+from ../core/mantle/tx_types import
   SignedMantleTx,
   encodeSignedMantleTx,
   isSupportedOpcode,
@@ -101,13 +101,17 @@ proc validateBlockAndTransactions*(
   if not localTree.canExtend(blk.header):
     return err(BlockValidationError(kind: BlockValidationErrorKind.TreeAdmissionRejected))
     
-  let parent = ledger.state(blk.header.parentBlock).valueOr:
-    return err(BlockValidationError(kind: BlockValidationErrorKind.TreeAdmissionRejected))
-  let afterHeader = parent.tryApplyHeader(blk.header.slot, blk.header.proofOfLeadership, ledger.config).valueOr:
-    return err(BlockValidationError(kind: BlockValidationErrorKind.HeaderRejected, ledgerError: error))
-  let afterTxs = afterHeader.tryApplyTxns(blk.txs, blk.header.slot).valueOr:
-    return err(BlockValidationError(kind: BlockValidationErrorKind.TransactionsRejected, ledgerError: error))
-    
-  ok((id: blockId(blk.header), state: afterTxs))
+  let id = blockId(blk.header)
+  let prepared = ledger.prepareUpdate(
+    id, blk.header.parentBlock, blk.header.slot, blk.header.proofOfLeadership, blk.txs
+  ).valueOr:
+    if error == LedgerError.ParentNotFound:
+      return err(BlockValidationError(kind: BlockValidationErrorKind.TreeAdmissionRejected))
+    elif error in {LedgerError.InvalidSlot, LedgerError.InvalidProof}:
+      return err(BlockValidationError(kind: BlockValidationErrorKind.HeaderRejected, ledgerError: error))
+    else:
+      return err(BlockValidationError(kind: BlockValidationErrorKind.TransactionsRejected, ledgerError: error))
+      
+  ok(prepared)
 
 {.pop.}

@@ -110,7 +110,10 @@ func minimalSignedTx*(): SignedMantleTx =
     opProofs: @[],
   )
 
-let testBlockKeyPair* = EdKeyPair.random(newBearSslRng(HmacDrbgContext.new()))
+let testBlockKeyPair = block:
+  var rngRef = new(HmacDrbgContext)
+  rngRef[] = HmacDrbgContext.init([9'u8])
+  EdKeyPair.random(newBearSslRng(rngRef))
 
 proc childBlock*(
     parentHdr: Header,
