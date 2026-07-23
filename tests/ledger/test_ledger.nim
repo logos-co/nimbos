@@ -296,7 +296,7 @@ when false:
         )
         tx = SignedMantleTx(
           tx:
-            MantleTx(ops: @[op1, op2], permanentStorageGasPrice: 0, executionGasPrice: 0),
+            MantleTx(ops: @[op1, op2]),
           opProofs:
             @[
               OpProof(kind: opfTransfer, transferProof: default(ZkSigProof)),
@@ -330,7 +330,7 @@ when false:
         )
         tx = SignedMantleTx(
           tx:
-            MantleTx(ops: @[op1, op2], permanentStorageGasPrice: 0, executionGasPrice: 0),
+            MantleTx(ops: @[op1, op2]),
           opProofs:
             @[
               OpProof(kind: opfTransfer, transferProof: default(ZkSigProof)),
@@ -351,7 +351,7 @@ when false:
       check r.isOk
       check r.get.latestUtxos.len == 1
 
-    test "underspending (output > input) → UnbalancedTransaction":
+    test "underspending (output > input) → InsufficientBalance":
       let
         input = mkUtxo(value = 100, pkSeed = 1)
         s0 = mkState([input])
@@ -361,14 +361,14 @@ when false:
       check r.isErr
       check r.error == InsufficientBalance
 
-    test "overspending (input > output) → UnbalancedTransaction":
+    test "surplus below fee (input > output) → InsufficientBalance":
       let
         input = mkUtxo(value = 100, pkSeed = 1)
         s0 = mkState([input])
-        tx = mkTransferTx([input.id], [mkNote(50, pkSeed = 2)]) # output 50 < input 100
+        tx = mkTransferTx([input.id], [mkNote(50, pkSeed = 2)]) # surplus 50 < fee
         r = s0.tryApplyTxns([tx], slot = 0'u64)
       check r.isErr
-      check r.error == UnbalancedTransaction
+      check r.error == InsufficientBalance
 
   suite "prepareUpdate — verify paths":
     test "happy path with one transfer + commit":
@@ -392,7 +392,7 @@ when false:
       check l.state(mkId(0x02)).get.latestUtxos.len == 1
       check not l.state(mkId(0x02)).get.latestUtxos.contains(input.id)
 
-    test "unbalanced tx → UnbalancedTransaction":
+    test "surplus below fee → InsufficientBalance":
       let
         input = mkUtxo(value = 100, pkSeed = 1)
         l = Ledger[TestId].init(mkId(0x01), mkState([input]), testLedgerConfig)
@@ -405,7 +405,7 @@ when false:
           txs = @[tx],
         )
       check r.isErr
-      check r.error == UnbalancedTransaction
+      check r.error == InsufficientBalance
 
     test "multi-block IBD: 3 prepare+commit cycles":
       # Walks the same prepare→commit sequence the chain module will eventually

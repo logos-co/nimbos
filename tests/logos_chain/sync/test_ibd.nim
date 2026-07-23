@@ -263,7 +263,7 @@ suite "sync/initial_block_download (IBD requester loop)":
       sm = minimalSignedTx()
       genesis = createGenesisBlock(sm)
       gid = blockId(genesis.header)
-      b1 = childBlock(genesis.header, gid, SlotNumber(1), [sm])
+      b1 = childBlock(genesis.header, gid, SlotNumber(1), [])
     var serverChain = initTestChain(genesis)
     check serverChain.localTree.addBlockToTree(b1)
     let b1id = blockId(b1.header)
