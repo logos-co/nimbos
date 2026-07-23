@@ -14,11 +14,14 @@ import
   libp2p/crypto/ed25519/ed25519,
   ./mantle/test_helpers,
   ../testutil,
-<<<<<<< HEAD
-  ../../logos_chain/core/[types, block_validation, local_tree, mempool],
-  ../../logos_chain/core/mantle/[operations, proofs, tx_types],
-  ../../logos_chain/chain/genesis
+  ../../logos_chain/core/[types, local_tree, mempool],
+  ../../logos_chain/core/mantle/[operations, proofs, primitives, tx_types],
+  ../../logos_chain/chain/[block_validation, genesis, proposal],
+  ../../logos_chain/ledger/ledger
+from ../../logos_chain/core/crypto/types import FieldElement
 from ../../logos_chain/core/mantle/primitives import MaxBlockTxs, SlotNumber
+from ../ledger/test_helpers import testLedgerConfig
+from ../ledger/sdp/test_helpers import testSdpRegistry
 
 const inscribeTxFraming = 166
   ## OpCount, Opcode, ChannelId, the u32 inscription length, Parent, Signer
@@ -36,16 +39,6 @@ func mkSizedTx(bytes: int): SignedMantleTx =
     ))]),
     opProofs: @[defaultOpProofForOpcode(OpChannelInscribe)],
   )
-=======
-  ../../logos_chain/core/[types, block_validation, local_tree],
-  ../../logos_chain/mempool,
-  ../../logos_chain/chain/[genesis, proposal],
-  ../../logos_chain/ledger/ledger
-from ../../logos_chain/core/crypto/types import FieldElement
-from ../../logos_chain/core/mantle/primitives import SlotNumber
-from ../ledger/test_helpers import testLedgerConfig
-from ../ledger/sdp/test_helpers import testSdpRegistry
->>>>>>> 8bd95e9 (refactor: integrate ledger-based stateful validation into block validation flow and update proposal reconstruction to return granular error results)
 
 suite "core/block_validation":
   test "accepts a structurally valid block":

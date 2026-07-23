@@ -9,9 +9,10 @@
 
 import
   results,
-  ../core/[local_tree, block_validation],
+  ../core/local_tree,
   ../ledger/ledger,
-  ../mempool
+  ../mempool,
+  ./block_validation
 
 from ../core/types import Block, Proposal, Hash32, header, blockId
 from ../core/crypto/types import isZero

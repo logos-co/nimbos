@@ -12,9 +12,10 @@
 import
   std/times,
   results,
-  ../core/[types, local_tree, block_validation],
+  ../core/[types, local_tree],
   ../deployment/deployment_settings,
   ../ledger/[ledger, stake_inference],
+  ./block_validation,
   ./genesis
 
 export genesis, local_tree
