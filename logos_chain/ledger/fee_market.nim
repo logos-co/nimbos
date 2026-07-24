@@ -25,25 +25,27 @@ type
     storageGasConsumedInEpoch*: Gas ## running counter, reset at rotation
 
 const
-  # execution-market.md:180-193, names from the spec's reference code
-  # (EXECUTION_ prefix disambiguates from the storage market's constants).
+  # Names from the spec's reference code (EXECUTION_ prefix disambiguates
+  # from the storage market's constants):
+  # https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/execution-market.md#base-fee-update-rule
   EXECUTION_EMA_DENOMINATOR = 10'u64
   EXECUTION_EMA_PREV_WEIGHT = 9'u64
   # 7 * G_target and 8 * G_target for G_target = 1,596,730 = G_max/2
-  # (execution-market.md:97-98). Diverges from the reference implementation
-  # and the spec's own reference code (:183-184), which embed 11_176_760 /
-  # 12_773_440 (G_target 1,596,680, half the stale G_max); upstream is
-  # updating the spec to these values.
+  # (https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/execution-market.md#notation).
+  # Diverges from the reference implementation and the spec's own reference
+  # code, which embed 11_176_760 / 12_773_440 (G_target 1,596,680, half the
+  # stale G_max); upstream is updating the spec to these values.
   EXECUTION_BASE_FEE_NUMERATOR = 11_177_110'u64
   EXECUTION_BASE_FEE_DENOMINATOR = 12_773_840'u64
 
-  # storage-markets.md:194-206
+  # https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/storage-markets.md#implementation
   STORAGE_EMA_DENOMINATOR = 2'u64
-  STORAGE_CLAMP_DENOMINATOR = 8'u64
-  STORAGE_CLAMP_DOWN_NUMERATOR = 7'u64
-  STORAGE_CLAMP_UP_NUMERATOR = 9'u64
+  STORAGE_CLAMP_DENOMINATOR = u128(8)
+  STORAGE_CLAMP_DOWN_NUMERATOR = u128(7)
+  STORAGE_CLAMP_UP_NUMERATOR = u128(9)
 
-  # Both markets open at price 1 (execution-market.md:94, storage-markets.md:104).
+  # Both markets open at price 1:
+  # https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/storage-markets.md#protocol-constants
   GENESIS_EXECUTION_BASE_FEE = GasPrice(1)
   GENESIS_STORAGE_GAS_PRICE = GasPrice(1)
 
@@ -58,39 +60,44 @@ func gasPrices*(m: FeeMarket): GasPrices =
     storageGasPrice: m.storageGasPrice)
 
 func update_g_avg_num*(prev_g_avg_num: Gas, block_gas_used: Gas): Gas =
-  ## Per-block execution-gas EMA step (execution-market.md reference code).
+  ## Per-block execution-gas EMA step.
+  ## https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/execution-market.md#base-fee-update-rule
   let numerator = u128(block_gas_used) +
     u128(EXECUTION_EMA_PREV_WEIGHT) * u128(prev_g_avg_num)
+  # numerator <= 10 * uint64.max, so the quotient always fits in uint64.
   (numerator div u128(EXECUTION_EMA_DENOMINATOR)).truncate(uint64)
 
 func update_base_fee*(base_fee: GasPrice, g_avg: Gas): GasPrice =
   ## Per-block base-fee update from the current gas EMA.
+  ## https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/execution-market.md#base-fee-update-rule
   let numerator = u128(base_fee) *
     (u128(EXECUTION_BASE_FEE_NUMERATOR) + u128(g_avg))
   (numerator div u128(EXECUTION_BASE_FEE_DENOMINATOR)).truncate(uint64)
 
 func update_usage*(total_gas_consumed, previous_usage: Gas): Gas =
-  ## Per-epoch storage-gas EMA step (storage-markets.md reference code).
-  (u128(total_gas_consumed) + u128(previous_usage))
-    .div(u128(STORAGE_EMA_DENOMINATOR)).truncate(uint64)
+  ## Per-epoch storage-gas EMA step.
+  ## https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/storage-markets.md#implementation
+  # Overflow-safe floor((a + b) / 2); valid only for a denominator of 2.
+  static: doAssert STORAGE_EMA_DENOMINATOR == 2
+  (total_gas_consumed and previous_usage) +
+    ((total_gas_consumed xor previous_usage) shr 1)
 
 func update_storage_price*(
     prev_price: GasPrice, total_gas_consumed, usage: Gas): GasPrice =
   ## Per-epoch price update; `usage` is the already-updated EMA.
+  ## https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/storage-markets.md#implementation
   # Without this guard the clamp-down branch fires on every empty epoch and
   # floors the genesis price to zero.
   if usage == 0:
     return prev_price
   let
-    comparator = u128(STORAGE_CLAMP_DENOMINATOR) * u128(total_gas_consumed)
+    comparator = STORAGE_CLAMP_DENOMINATOR * u128(total_gas_consumed)
     price = u128(prev_price)
     newPrice =
-      if comparator <= u128(STORAGE_CLAMP_DOWN_NUMERATOR) * u128(usage):
-        price * u128(STORAGE_CLAMP_DOWN_NUMERATOR) div
-          u128(STORAGE_CLAMP_DENOMINATOR)
-      elif comparator >= u128(STORAGE_CLAMP_UP_NUMERATOR) * u128(usage):
-        price * u128(STORAGE_CLAMP_UP_NUMERATOR) div
-          u128(STORAGE_CLAMP_DENOMINATOR)
+      if comparator <= STORAGE_CLAMP_DOWN_NUMERATOR * u128(usage):
+        price * STORAGE_CLAMP_DOWN_NUMERATOR div STORAGE_CLAMP_DENOMINATOR
+      elif comparator >= STORAGE_CLAMP_UP_NUMERATOR * u128(usage):
+        price * STORAGE_CLAMP_UP_NUMERATOR div STORAGE_CLAMP_DENOMINATOR
       else:
         price * u128(total_gas_consumed) div u128(usage)
   newPrice.truncate(uint64)
