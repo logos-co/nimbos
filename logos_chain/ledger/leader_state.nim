@@ -87,8 +87,7 @@ func recordBlockLeader*(
     voucher: RewardVoucher,
     reward: Value,
 ): LeaderState =
-  if voucher != default(RewardVoucher):
-    s.pending.vouchers.add(voucher)
+  s.pending.vouchers.add(voucher)
   s.pending.reward += reward
   s
 

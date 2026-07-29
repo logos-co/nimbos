@@ -303,6 +303,7 @@ suite "ledger/leader_claim — tryApplyHeader epoch hooks":
     let s2 = st.tryApplyHeader(slot = 100'u64, proof = mkProof(), cfg = testLedgerConfig).get
     let leader = s2.cryptarchiaLedger.leader
     check leader.leadersRewards == 50
-    check leader.voucherTree.len() == 1
+    # Both the slot-1 header's voucher and the manually staged one roll in.
+    check leader.voucherTree.len() == 2
 
 {.pop.}
