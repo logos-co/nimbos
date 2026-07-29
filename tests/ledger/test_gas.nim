@@ -106,19 +106,35 @@ suite "gas: fee-market genesis state":
       m.gasPrices.storageGasPrice == GasPrice(1)
 
 suite "gas: execution market update":
-  test "sub-target block floors the base fee to zero":
+  test "sub-target block cannot push the base fee below 1":
     check:
-      update_g_avg_num(0, 590) == Gas(59)
-      update_base_fee(1, 59) == GasPrice(0)
+      update_g_avg(0, 590) == Gas(59)
+      update_base_fee(1, 59) == GasPrice(1)
     let m = FeeMarket(averageExecutionGas: 0, executionBaseFee: 1)
       .updateExecutionMarket(590)
     check:
       m.averageExecutionGas == Gas(59)
-      m.executionBaseFee == GasPrice(0)
+      m.executionBaseFee == GasPrice(1)
+
+  test "an idle run of blocks holds the base fee at its floor":
+    # Upward rounding keeps the market alive: without it the first sub-target
+    # block would floor the genesis fee to an absorbing 0.
+    var m = FeeMarket.init()
+    for _ in 0 ..< 100:
+      m = m.updateExecutionMarket(0)
+    check:
+      m.averageExecutionGas == Gas(0)
+      m.executionBaseFee == GasPrice(1)
+
+  test "sustained full blocks raise the base fee off its floor":
+    var m = FeeMarket.init()
+    for _ in 0 ..< 100:
+      m = m.updateExecutionMarket(MAX_EXECUTION_GAS_PER_BLOCK)
+    check m.executionBaseFee > GasPrice(1)
 
   test "at-target block holds the base fee near its previous value":
     check:
-      update_g_avg_num(0, 3_193_460) == Gas(319_346)
+      update_g_avg(0, 3_193_460) == Gas(319_346)
       update_base_fee(1000, 319_346) == GasPrice(900)
     let m = FeeMarket(averageExecutionGas: 0, executionBaseFee: 1000)
       .updateExecutionMarket(3_193_460)
@@ -151,7 +167,12 @@ suite "gas: storage market update":
   test "mid-range consumption tracks the ratio":
     check:
       update_usage(600, 500) == Gas(550)
-      update_storage_price(1000, 600, 550) == GasPrice(1090)
+      update_storage_price(1000, 600, 550) == GasPrice(1091) # ceil(600000/550)
+
+  test "the genesis price is a floor that heavy usage can still leave":
+    check:
+      update_storage_price(1, 0, 500) == GasPrice(1) # ceil(7/8), not 0
+      update_storage_price(1, 1000, 500) == GasPrice(2) # ceil(9/8), not 1
 
   test "updateStorageMarket consumes and resets the epoch counter":
     let m = FeeMarket(
@@ -159,7 +180,7 @@ suite "gas: storage market update":
       .updateStorageMarket()
     check:
       m.storageGasEma == Gas(550)
-      m.storageGasPrice == GasPrice(1090)
+      m.storageGasPrice == GasPrice(1091)
       m.storageGasConsumedInEpoch == Gas(0)
 
   test "hold-guard sanity pair":
