@@ -31,8 +31,9 @@ type
     InvalidProof ## ZK multi-sig or leader-proof verify failed
     BalanceOverflow ## add/sub overflowed during balance math
     UnsupportedOp ## Op kind not yet wired in this ledger version
-    UnbalancedTransaction ## inputs - outputs > fees
     InsufficientBalance ## not enough balance for the requested debit
+    GasOverflow ## gas or fee arithmetic exceeded uint64
+    TooMuchExecutionGas ## block's summed execution gas exceeds the per-block limit
     VerifierNotInitialised ## per-circuit VK singleton wasn't installed at
       ## node startup — wiring bug, not adversarial input
     # SDP (Service Declaration Protocol)
@@ -66,7 +67,7 @@ type
 
   LedgerConfig* = object
     ## Chain configuration. Remaining fields land with the modules that
-    ## need them (SDP, gas).
+    ## need them (SDP).
     epochSchedule*: EpochSchedule
     slotActivationCoeff*: NonNegativeRatio ## f — exact, keyed into the lottery table
     learningRateFixed*: uint64 ## fixedPoint(beta) — stake-inference input

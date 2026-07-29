@@ -37,6 +37,10 @@ func checkedAdd*(a, b: Balance): Result[Balance, LedgerError] =
   else:
     ok(a + b)
 
+func covers*(balance: Balance, cost: uint64): bool =
+  ## True when `balance` can pay `cost`.
+  balance >= cost.to(Balance)
+
 func checkedSub*(a, b: Balance): Result[Balance, LedgerError] =
   ## Returns `a - b`, or `BalanceOverflow` when the result falls outside
   ## `[Balance.low, Balance.high]`.
