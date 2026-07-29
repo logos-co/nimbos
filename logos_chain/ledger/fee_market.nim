@@ -28,12 +28,12 @@ const
   # Names from the spec's reference code (EXECUTION_ prefix disambiguates
   # from the storage market's constants):
   # https://github.com/logos-co/logos-lips/blob/38916aa474164ac4acd81e62d19715e17626be17/docs/blockchain/raw/execution-market.md#base-fee-update-rule
-  EXECUTION_EMA_DENOMINATOR = 10'u64
-  EXECUTION_EMA_PREV_WEIGHT = 9'u64
+  EXECUTION_EMA_DENOMINATOR = u128(10)
+  EXECUTION_EMA_PREV_WEIGHT = u128(9)
   # 7 * G_target and 8 * G_target for G_target = 1,596,730 = G_max/2
   # (https://github.com/logos-co/logos-lips/blob/38916aa474164ac4acd81e62d19715e17626be17/docs/blockchain/raw/execution-market.md#notation).
-  EXECUTION_BASE_FEE_NUMERATOR = 11_177_110'u64
-  EXECUTION_BASE_FEE_DENOMINATOR = 12_773_840'u64
+  EXECUTION_BASE_FEE_NUMERATOR = u128(11_177_110)
+  EXECUTION_BASE_FEE_DENOMINATOR = u128(12_773_840)
 
   # https://github.com/logos-co/logos-lips/blob/38916aa474164ac4acd81e62d19715e17626be17/docs/blockchain/raw/storage-markets.md#implementation
   STORAGE_EMA_DENOMINATOR = 2'u64
@@ -63,22 +63,22 @@ func ceil_div(numerator, denominator: UInt128): UInt128 =
   # and would make execution and storage permanently free. The two gas EMAs
   # are measurements, not prices, and stay floored — rounding those up would
   # pin them at 1 on an idle network.
-  (numerator + denominator - u128(1)) div denominator
+  const One = u128(1)
+  (numerator + denominator - One) div denominator
 
 func update_g_avg*(prev_g_avg: Gas, block_gas_used: Gas): Gas =
   ## Per-block execution-gas EMA step.
   ## https://github.com/logos-co/logos-lips/blob/38916aa474164ac4acd81e62d19715e17626be17/docs/blockchain/raw/execution-market.md#base-fee-update-rule
   let numerator = u128(block_gas_used) +
-    u128(EXECUTION_EMA_PREV_WEIGHT) * u128(prev_g_avg)
+    EXECUTION_EMA_PREV_WEIGHT * u128(prev_g_avg)
   # numerator <= 10 * uint64.max, so the quotient always fits in uint64.
-  (numerator div u128(EXECUTION_EMA_DENOMINATOR)).truncate(uint64)
+  (numerator div EXECUTION_EMA_DENOMINATOR).truncate(uint64)
 
 func update_base_fee*(base_fee: GasPrice, g_avg: Gas): GasPrice =
   ## Per-block base-fee update from the current gas EMA.
   ## https://github.com/logos-co/logos-lips/blob/38916aa474164ac4acd81e62d19715e17626be17/docs/blockchain/raw/execution-market.md#base-fee-update-rule
-  let numerator = u128(base_fee) *
-    (u128(EXECUTION_BASE_FEE_NUMERATOR) + u128(g_avg))
-  ceil_div(numerator, u128(EXECUTION_BASE_FEE_DENOMINATOR)).truncate(uint64)
+  let numerator = u128(base_fee) * (EXECUTION_BASE_FEE_NUMERATOR + u128(g_avg))
+  ceil_div(numerator, EXECUTION_BASE_FEE_DENOMINATOR).truncate(uint64)
 
 func update_usage*(total_gas_consumed, previous_usage: Gas): Gas =
   ## Per-epoch storage-gas EMA step.
@@ -97,17 +97,19 @@ func update_storage_price*(
   if usage == 0:
     return prev_price
   let
-    comparator = STORAGE_CLAMP_DENOMINATOR * u128(total_gas_consumed)
+    consumed = u128(total_gas_consumed)
+    ema = u128(usage)
     price = u128(prev_price)
+    comparator = STORAGE_CLAMP_DENOMINATOR * consumed
     newPrice =
-      if comparator <= STORAGE_CLAMP_DOWN_NUMERATOR * u128(usage):
+      if comparator <= STORAGE_CLAMP_DOWN_NUMERATOR * ema:
         ceil_div(
           price * STORAGE_CLAMP_DOWN_NUMERATOR, STORAGE_CLAMP_DENOMINATOR)
-      elif comparator >= STORAGE_CLAMP_UP_NUMERATOR * u128(usage):
+      elif comparator >= STORAGE_CLAMP_UP_NUMERATOR * ema:
         ceil_div(
           price * STORAGE_CLAMP_UP_NUMERATOR, STORAGE_CLAMP_DENOMINATOR)
       else:
-        ceil_div(price * u128(total_gas_consumed), u128(usage))
+        ceil_div(price * consumed, ema)
   newPrice.truncate(uint64)
 
 func updateExecutionMarket*(m: FeeMarket, blockExecutionGas: Gas): FeeMarket =
