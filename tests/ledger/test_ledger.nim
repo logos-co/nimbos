@@ -125,29 +125,6 @@ suite "tryApplyTx — structural error paths":
     check r.isErr
     check r.error == InvalidProof
 
-  test "unsupported op (LeaderClaim) → UnsupportedOp":
-    let
-      s0 = mkState(@[])
-      op = createLeaderClaimOp(
-        LeaderClaimPayload(
-          rewardsRoot: default(RewardsRoot),
-          voucherNullifier: default(VoucherNullifier),
-          publicKey: default(PublicKey),
-        )
-      )
-      tx = SignedMantleTx(
-        tx: MantleTx(ops: @[op]),
-        opProofs:
-          @[
-            OpProof(
-              kind: opfLeaderClaim,
-              proofOfClaimProof: default(ProofOfClaimProof),
-            )
-          ],
-      )
-      r = s0.tryApplyTx(tx, epoch = 0'u64, slot = 0'u64)
-    check r.isErr
-    check r.error == UnsupportedOp
 
   test "Transfer op with wrong proof kind → InvalidProof":
     let

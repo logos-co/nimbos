@@ -142,6 +142,7 @@ proc tryApplyHeader*(
     # once it lands.
     # https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md#sdp-epoch-finalization
     s.sdp = onEpochStarted(s.sdp, s.epochs.activeEpoch.epoch)
+    s.cryptarchiaLedger.leader = ?s.cryptarchiaLedger.leader.addEpochVouchers()
   let
     active = s.epochs.activeEpoch
     public = LeaderPublic(
@@ -155,6 +156,14 @@ proc tryApplyHeader*(
       return err(VerifierNotInitialised)
   if not verified:
     return err(InvalidProof)
+
+  # TODO: Block rewards stay 0'u64 until dynamic block rewards are implemented.
+  # Spec: https://github.com/logos-co/logos-lips/blob/b7602ed8a225d41ca0bfaaa432524dc84d2ded7e/docs/blockchain/raw/block-rewards.md
+  s.cryptarchiaLedger.leader = s.cryptarchiaLedger.leader.recordBlockLeader(
+    proof.leaderVoucher,
+    0'u64,
+  )
+
   let entropy = frFromBytesLE(proof.entropyContribution).valueOr:
     return err(InvalidProof)
   s.epochs = s.epochs.recordBlock(slot, entropy)
@@ -272,6 +281,12 @@ proc tryApplyTx*(
       )
       s.cryptarchiaLedger = r.cs
       s.mantleLedger = r.ms
+    of LeaderClaim:
+      if proof.kind != opfLeaderClaim:
+        return err(InvalidProof)
+      s.cryptarchiaLedger = ?s.cryptarchiaLedger.tryApplyLeaderClaim(
+        op.payload.leaderClaim, proof.proofOfClaimProof, txHash,
+      )
     else:
       return err(UnsupportedOp)
   ok((state: s, balance: balance, executionGas: txExecutionGas))
@@ -369,8 +384,7 @@ proc prepareUpdate*[Id](
     txs: openArray[SignedMantleTx],
 ): Result[tuple[id: Id, state: LedgerState], LedgerError] =
   ## Validates a block's header + transactions against the parent state.
-  ## Caller invokes `commitUpdate` to install the result and run SDP
-  ## epoch-boundary updates, or drops it to reject.
+  ## Caller invokes `commitUpdate` to install the result, or drops it to reject.
   if parentId notin l.states:
     return err(ParentNotFound)
   let

@@ -14,7 +14,7 @@ import
   bearssl/rand,
   libp2p/crypto/ed25519/ed25519,
   ../../logos_chain/ledger/
-    [channel_state, cryptarchia_state, mantle_state, types],
+    [channel_state, cryptarchia_state, leader_state, mantle_state, types],
   ../../logos_chain/core/mantle/[primitives, operations, proofs],
   ../core/mantle/test_helpers
 
@@ -216,5 +216,30 @@ suite "MantleState.tryApplyChannelWithdraw":
       )
       r = m.tryApplyChannelWithdraw(cs, op, proof, txHash)
     check r.error == WithdrawNonceOverflow
+
+suite "applyChannelWithdraw — preserves leader":
+  test "LeaderState survives mutation":
+    let
+      cid = mkChannelId(20)
+      chans = HashTrieMap[ChannelId, ChannelState].init().insert(
+        cid,
+        ChannelState(
+          accreditedKeys: @[],
+          configurationThreshold: 1,
+          withdrawThreshold: 1,
+          balance: 100,
+          withdrawalNonce: 0,
+        ),
+      )
+      leader = LeaderState.init().recordBlockLeader(default(RewardVoucher), 42)
+        .addEpochVouchers().get
+      cs = CryptarchiaState(utxos: UtxoStore.init(), leader: leader)
+      op = ChannelWithdrawPayload(
+        channel: cid,
+        outputs: @[mkNote(50, pkSeed = 1)],
+        opIdNonce: 0,
+      )
+      (_, newCs) = applyChannelWithdraw(chans, cs, op)
+    check newCs.leader == leader
 
 {.pop.}

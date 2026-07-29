@@ -12,11 +12,30 @@
 
 import
   results,
-  ../core/mantle/proofs,
+  ../core/mantle/[operations, proofs],
+  ../core/crypto/types,
   ../zk/poc,
   ../zk/poseidon2/hasher
 
 export poc, results
+
+func proofOfClaimPublic*(
+    op: LeaderClaimPayload,
+    rewardsRoot: RewardsRoot,
+    txHash: ZkHash,
+): ProofOfClaimPublic =
+  ## Assemble mantle `ProofOfClaimPublic` for Groth16 verify. `rewardsRoot`
+  ## is the ledger snapshot (must match `op.rewardsRoot` before calling).
+  ProofOfClaimPublic(
+    voucherNullifier: encodeFieldElement(op.voucherNullifier),
+    voucherRoot: encodeFieldElement(rewardsRoot),
+    mantleTxHash: encodeFieldElement(frFromBytesLEModOrder(txHash)),
+  )
+
+type
+  ProofOfClaimVerifier* = proc(
+    proof: ProofOfClaimProof, public: ProofOfClaimPublic
+  ): Result[bool, PocLoadError] {.gcsafe, raises: [].}
 
 proc verifyProofOfClaim*(
     proof: ProofOfClaimProof, public: ProofOfClaimPublic

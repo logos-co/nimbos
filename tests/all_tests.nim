@@ -58,6 +58,7 @@ import # Unit test
   ./ledger/test_channel_round_robin,
   ./ledger/test_pol_verifier,
   ./ledger/test_poc_verifier,
+  ./ledger/test_leader_claim,
   ./logos_chain/sync/test_framing,
   ./logos_chain/sync/test_types,
   ./logos_chain/sync/test_ibd,

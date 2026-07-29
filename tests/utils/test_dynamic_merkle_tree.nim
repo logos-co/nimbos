@@ -79,6 +79,17 @@ suite "DynamicMerkleTree insert / path / verify":
       check p.isSome
       check Poseidon2Hasher.verifyPath(p.get, asField(items[i]), t.root)
 
+  test "batch insert matches repeated single inserts":
+    var items: seq[FItem]
+    for i in 0 ..< 20:
+      items.add(FItem(v: frFomInt(i + 1)))
+    var oneByOne = DynamicMerkleTree[FItem, Poseidon2Hasher].init()
+    for item in items:
+      oneByOne = oneByOne.insert(item).tree
+    let batch = DynamicMerkleTree[FItem, Poseidon2Hasher].init().insert(items)
+    check oneByOne == batch
+    check batch.len == items.len
+
   test "persistence: parent tree unchanged by child insert":
     let
       t0 = DynamicMerkleTree[FItem, Poseidon2Hasher].init()

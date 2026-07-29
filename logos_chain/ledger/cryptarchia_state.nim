@@ -5,35 +5,37 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-## `CryptarchiaState` — UTXO bookkeeping + `tryApplyTransfer`.
+## `CryptarchiaState` — UTXO bookkeeping, `tryApplyTransfer`, and `tryApplyLeaderClaim`.
 
 {.push raises: [], gcsafe.}
 
 import results
 
 import
-  ./[balance, types, utxo_store, zksig_verify],
+  ./[balance, types, utxo_store, zksig_verify, leader_state, poc_verifier],
   ./sdp/state as sdp_state,
-  ../core/mantle/[primitives, operations, proofs, utxo, tx_hashing]
+  ../core/mantle/[primitives, operations, proofs, utxo, tx_hashing],
+  ../utils/dynamic_merkle_tree as voucherTree
 
-export types, utxo, primitives, utxo_store, sdp_state
+export types, utxo, primitives, utxo_store, sdp_state, leader_state
 
 type
   CryptarchiaState* = object
     utxos*: UtxoStore
+    leader*: LeaderState
 
 func init*(_: typedesc[CryptarchiaState]): CryptarchiaState =
-  CryptarchiaState(utxos: UtxoStore.init())
+  CryptarchiaState(utxos: UtxoStore.init(), leader: LeaderState.init())
 
 func init*(_: typedesc[CryptarchiaState], utxos: UtxoStore): CryptarchiaState =
-  CryptarchiaState(utxos: utxos)
+  CryptarchiaState(utxos: utxos, leader: LeaderState.init())
 
 func init*(_: typedesc[CryptarchiaState], seed: openArray[Utxo]): CryptarchiaState =
   ## Builds a fresh store seeded with the given UTXOs (genesis-style).
   var s = UtxoStore.init()
   for u in seed:
     s = s.insert(u.id, u).store
-  CryptarchiaState(utxos: s)
+  CryptarchiaState(utxos: s, leader: LeaderState.init())
 
 func len*(s: CryptarchiaState): int =
   s.utxos.len
@@ -50,7 +52,7 @@ func latestUtxos*(s: CryptarchiaState): lent UtxoStore =
   s.utxos
 
 func `==`*(a, b: CryptarchiaState): bool =
-  a.utxos == b.utxos
+  a.utxos == b.utxos and a.leader == b.leader
 
 func applyTransferState*(
     s: sink CryptarchiaState,
@@ -100,5 +102,21 @@ proc tryApplyTransfer*(
   let r = ?s.applyTransferState(lockedNotes, op)
   ?verifyZkSig(sig, txHash, r.pks)
   ok((r.state, r.balance))
+
+proc tryApplyLeaderClaim*(
+    s: sink CryptarchiaState,
+    op: LeaderClaimPayload,
+    proof: ProofOfClaimProof,
+    txHash: ZkHash,
+    verifyProof: ProofOfClaimVerifier = verifyProofOfClaim,
+): Result[CryptarchiaState, LedgerError] =
+  let (leader, reward) = ?s.leader.tryRecordClaim(op, proof, txHash, verifyProof)
+  let
+    u = Utxo(
+      opId: opId(op), outputIndex: 0,
+      note: Note(value: reward, zkPublicKey: op.publicKey),
+    )
+    newStore = s.utxos.insert(u.id, u).store
+  ok(CryptarchiaState(utxos: newStore, leader: leader))
 
 {.pop.}

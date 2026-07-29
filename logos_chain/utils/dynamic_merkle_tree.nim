@@ -204,6 +204,13 @@ func insert*[Item, Hash](t: DynamicMerkleTree[Item, Hash]; item: sink Item):
      count: t.count + 1),
    leafIndex)
 
+func insert*[Item, Hash](t: sink DynamicMerkleTree[Item, Hash]; items: openArray[Item]):
+    DynamicMerkleTree[Item, Hash] =
+  ## Append every item in order; equivalent to repeated single ``insert``.
+  for item in items:
+    t = t.insert(item).tree
+  t
+
 func remove*[Item, Hash](t: DynamicMerkleTree[Item, Hash]; leafIndex: int):
     DynamicMerkleTree[Item, Hash] =
   ## Nulls the leaf and pushes ``leafIndex`` onto the hole heap.
