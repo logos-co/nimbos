@@ -126,11 +126,12 @@ proc extendChainAfterGenesis*(
     tree: LocalTree, genesis: Block, extraBlocks: int,
 ): BlockId =
   ## Add ``extraBlocks`` descendants on top of ``genesis``; return the tip id.
-  let sm = minimalSignedTx()
+  # Empty blocks: these exercise sync only, and a tx that can't cover its gas
+  # fails ledger validation.
   var parentHdr = genesis.header
   var parentId = blockId(genesis.header)
   for slot in 1 .. extraBlocks:
-    let blk = childBlock(parentHdr, parentId, SlotNumber(slot.uint64), [sm])
+    let blk = childBlock(parentHdr, parentId, SlotNumber(slot.uint64), [])
     check tree.addBlockToTree(blk)
     parentHdr = blk.header
     parentId = blockId(blk.header)

@@ -15,14 +15,16 @@ import
   std/tables,
   ./[
     balance, types, cryptarchia_state, channel_state, mantle_state,
-    pol_verifier, epoch_state,
+    pol_verifier, epoch_state, fee_market,
   ],
   ./sdp/[registry, ops],
-  ../core/mantle/[tx_types, tx_hashing, operations, proofs],
+  ../core/mantle/[tx_types, tx_hashing, operations, proofs, gas],
   ../core/types
 
 from ../core/crypto/types import ZkPublicKey
-export types, cryptarchia_state, channel_state, mantle_state, epoch_state, registry
+export
+  types, cryptarchia_state, channel_state, mantle_state, epoch_state, registry,
+  fee_market, gas
 
 type
   LedgerState* = object
@@ -30,6 +32,7 @@ type
     sdp*: SdpRegistry
     mantleLedger*: MantleState
     epochs*: EpochTracker
+    feeMarket*: FeeMarket
 
   Ledger*[Id] = object
     states: Table[Id, LedgerState]
@@ -58,7 +61,8 @@ func fromUtxos*(
     s = LedgerState(
       cryptarchiaLedger: CryptarchiaState.init(utxos),
       sdp: sdp,
-      mantleLedger: MantleState.init())
+      mantleLedger: MantleState.init(),
+      feeMarket: FeeMarket.init())
     total = 0'u64
   for u in utxos:
     let c = stakeContribution(u.note.value, u.note.zkPublicKey, cfg.faucetPk)
@@ -83,7 +87,8 @@ proc fromGenesis*(
     s = LedgerState(
       cryptarchiaLedger: CryptarchiaState.init(),
       sdp: sdp,
-      mantleLedger: MantleState.init())
+      mantleLedger: MantleState.init(),
+      feeMarket: FeeMarket.init())
     total = 0'u64
   for tx in genesisTxs:
     for op in tx.tx.ops:
@@ -127,6 +132,11 @@ proc tryApplyHeader*(
   s.epochs = ?s.epochs.advanceEpochs(
     slot, s.cryptarchiaLedger.latestUtxos.root, cfg)
   if s.epochs.activeEpoch.epoch > prevEpoch:
+    # Storage-market update runs once per crossed epoch: the first iteration
+    # consumes the finished epoch's usage counter, later iterations (skipped
+    # empty epochs) run with a zero counter, per the per-epoch timeframe.
+    for _ in prevEpoch ..< s.epochs.activeEpoch.epoch:
+      s.feeMarket = s.feeMarket.updateStorageMarket()
     # SDP epoch finalization is part of applying the first block of the new
     # epoch; reward distribution slots in ahead of the withdrawal removal
     # once it lands.
@@ -150,25 +160,44 @@ proc tryApplyHeader*(
   s.epochs = s.epochs.recordBlock(slot, entropy)
   ok(s)
 
+func multisigThreshold(s: LedgerState, op: Op): uint16 =
+  ## Signature count the ledger will verify for a channel multisig op —
+  ## the channel's threshold as of the pre-op state, 0 when absent.
+  case op.payload.kind
+  of ChannelConfig:
+    let ch = s.mantleLedger.channels.get(op.payload.channelConfig.channel).valueOr:
+      return 0'u16
+    ch.configurationThreshold
+  of ChannelWithdraw:
+    let ch = s.mantleLedger.channels.get(op.payload.channelWithdraw.channel).valueOr:
+      return 0'u16
+    ch.withdrawThreshold
+  else:
+    0'u16
+
 proc tryApplyTx*(
     state: sink LedgerState,
     tx: SignedMantleTx,
     epoch: EpochNumber,
     slot: SlotNumber,
-): Result[tuple[state: LedgerState, balance: Balance], LedgerError] =
-  ## Applies one transaction. Returns the new state and Transfer-only
-  ## balance delta. `slot` is used by channel ops for sequencer rotation.
+): Result[tuple[state: LedgerState, balance: Balance, executionGas: Gas], LedgerError] =
+  ## Applies one transaction; the returned balance is the Transfer-only
+  ## delta. `slot` is used by channel ops for sequencer rotation.
   if tx.tx.ops.len != tx.opProofs.len:
     return err(InvalidProof)
 
   var
     s = state
     balance = Balance.zero
+    txExecutionGas = Gas(0)
   let txHash = mantleTxHash(tx.tx)
   for i in 0 ..< tx.tx.ops.len:
     let
       op = tx.tx.ops[i]
       proof = tx.opProofs[i]
+      opGas = execution_gas(op, s.multisigThreshold(op))
+    txExecutionGas = txExecutionGas.checkedAdd(opGas).valueOr:
+      return err(GasOverflow)
     case op.payload.kind
     of Transfer:
       if proof.kind != opfTransfer:
@@ -245,7 +274,19 @@ proc tryApplyTx*(
       s.mantleLedger = r.ms
     else:
       return err(UnsupportedOp)
-  ok((state: s, balance: balance))
+  ok((state: s, balance: balance, executionGas: txExecutionGas))
+
+func mandatory_fees(
+    executionGas, storageGas: Gas, prices: GasPrices
+): Result[GasCost, LedgerError] =
+  let
+    executionCost = executionGas.checkedMul(prices.executionBaseFee).valueOr:
+      return err(GasOverflow)
+    storageCost = storageGas.checkedMul(prices.storageGasPrice).valueOr:
+      return err(GasOverflow)
+    total = executionCost.checkedAdd(storageCost).valueOr:
+      return err(GasOverflow)
+  ok(total)
 
 proc tryApplyTxns*(
     state: sink LedgerState,
@@ -253,17 +294,33 @@ proc tryApplyTxns*(
     slot: SlotNumber,
 ): Result[LedgerState, LedgerError] =
   ## Applies a block's transactions in order under the state's active epoch;
-  ## each tx must net to zero balance.
-  var s = state
+  ## each tx's transfer surplus must cover its total gas cost.
+  var
+    s = state
+    blockExecutionGas = Gas(0)
   # The state, not the caller, is the source of truth for the epoch.
-  let epoch = s.epochs.activeEpoch.epoch
+  let
+    epoch = s.epochs.activeEpoch.epoch
+    prices = s.feeMarket.gasPrices
   for tx in txs:
-    let r = ?s.tryApplyTx(tx, epoch, slot)
+    let
+      r = ?s.tryApplyTx(tx, epoch, slot)
+      storageGas = Gas(encodeSignedMantleTx(tx).len)
+      totalCost = ?mandatory_fees(r.executionGas, storageGas, prices)
     s = r.state
-    if r.balance > Balance.zero:
-      return err(UnbalancedTransaction)
-    if r.balance < Balance.zero:
+    if not r.balance.covers(totalCost):
       return err(InsufficientBalance)
+    blockExecutionGas = blockExecutionGas.checkedAdd(r.executionGas).valueOr:
+      return err(GasOverflow)
+    if blockExecutionGas > MAX_EXECUTION_GAS_PER_BLOCK:
+      return err(TooMuchExecutionGas)
+    # Per-epoch usage counter driving the storage market (spec C_usage).
+    # Diverges from the reference implementation, which never accumulates
+    # it and therefore holds its storage price at 1 indefinitely.
+    s.feeMarket.storageGasConsumedInEpoch =
+      s.feeMarket.storageGasConsumedInEpoch.checkedAdd(storageGas).valueOr:
+        return err(GasOverflow)
+  s.feeMarket = s.feeMarket.updateExecutionMarket(blockExecutionGas)
   ok(s)
 
 func init*[Id](
