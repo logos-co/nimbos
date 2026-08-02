@@ -194,7 +194,7 @@ suite "applyChannelWithdraw — released notes rejoin the regular note set":
       )
       owned = seedChannelNotes([(note, cid)])
     check cs.applyTransferState(LockedNotes.init(), owned, transfer).error ==
-      ChannelNoteSpend
+    ChannelNoteSpend
 
     let released = applyChannelWithdraw(owned, op).expect("owned by cid")
     check cs.applyTransferState(LockedNotes.init(), released, transfer).isOk
@@ -205,8 +205,8 @@ suite "applyChannelWithdraw — released notes rejoin the regular note set":
       kp = mkEdKeyPair(rng)
       cid = mkChannelId(21)
       note = mkUtxo(value = 50, pkSeed = 1)
-      leader = LeaderState.init().recordBlockLeader(default(RewardVoucher), 42)
-        .addEpochVouchers().get
+      leader = LeaderState.init().recordBlockLeader(default(RewardVoucher))
+        .addPendingRewards(42).addEpochVouchers().get
       cs = CryptarchiaState(
         utxos: UtxoStore.init().insert(note.id, note).store, leader: leader)
       txHash = mkTxHash()

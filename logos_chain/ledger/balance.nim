@@ -13,6 +13,8 @@ import results, stint
 
 import ./types
 
+from ../core/mantle/primitives import Value
+
 export stint
 
 type
@@ -40,6 +42,14 @@ func checkedAdd*(a, b: Balance): Result[Balance, LedgerError] =
 func covers*(balance: Balance, cost: uint64): bool =
   ## True when `balance` can pay `cost`.
   balance >= cost.to(Balance)
+
+func truncateToValue*(b: Balance): Value =
+  ## Low 64 bits of a non-negative balance.
+  # Stint's signed `truncate` goes through `abs`, so the sign has to be a
+  # precondition rather than a wrap: every call site runs after `covers`,
+  # which already establishes b >= 0.
+  doAssert b >= Balance.zero, "truncateToValue on a negative balance"
+  b.truncate(uint64)
 
 func checkedSub*(a, b: Balance): Result[Balance, LedgerError] =
   ## Returns `a - b`, or `BalanceOverflow` when the result falls outside

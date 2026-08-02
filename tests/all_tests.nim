@@ -47,6 +47,7 @@ import # Unit test
   ./ledger/test_cryptarchia,
   ./ledger/test_ledger,
   ./ledger/test_gas,
+  ./ledger/test_block_rewards,
   ./ledger/test_block_density,
   ./ledger/test_stake_inference,
   ./ledger/test_epoch_state,

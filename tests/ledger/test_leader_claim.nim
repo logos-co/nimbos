@@ -13,7 +13,7 @@ import
   unittest2,
   stew/io2,
   ../../logos_chain/core/crypto/types,
-  ../../logos_chain/core/mantle/[operations, proofs, tx_types],
+  ../../logos_chain/core/mantle/[operations, proofs, tx_hashing, tx_types],
   ../../logos_chain/ledger/
     [cryptarchia_state, leader_state, ledger, poc_verifier, types],
   ../../logos_chain/utils/dynamic_merkle_tree as voucherTree,
@@ -68,9 +68,8 @@ func makeLeaderState(
 ): LeaderState =
   var s = LeaderState.init()
   for i in 0 ..< claimableCount:
-    let reward = if i == 0: leadersRewards else: 0'u64
-    s = s.recordBlockLeader(voucherBytes(byte(i + 1)), reward)
-  s.addEpochVouchers().get
+    s = s.recordBlockLeader(voucherBytes(byte(i + 1)))
+  s.addPendingRewards(leadersRewards).addEpochVouchers().get
 
 func mkFixtureLeaderState(): LeaderState =
   makeLeaderState(1'u64, 100'u64)
@@ -154,14 +153,16 @@ suite "ledger/leader_state":
 
   test "addEpochVouchers updates tree, cm set size, and leaders rewards":
     let cm = voucherBytes(3'u8)
-    let s = LeaderState.init().recordBlockLeader(cm, 40).addEpochVouchers().get
+    let s = LeaderState.init().recordBlockLeader(cm)
+      .addPendingRewards(40).addEpochVouchers().get
     check s.leadersRewards == 40
     check s.voucherTree.len() == 1
 
   test "addEpochVouchers accumulates across epoch boundaries":
-    var s = LeaderState.init().recordBlockLeader(voucherBytes(1), 40)
-    s = s.recordBlockLeader(voucherBytes(2), 0'u64).recordBlockLeader(voucherBytes(3), 10'u64)
-      .addEpochVouchers().get
+    var s = LeaderState.init().recordBlockLeader(voucherBytes(1))
+      .addPendingRewards(40)
+    s = s.recordBlockLeader(voucherBytes(2)).recordBlockLeader(voucherBytes(3))
+      .addPendingRewards(10).addEpochVouchers().get
     check s.leadersRewards == 50
     check s.voucherTree.len() == 3
 
@@ -206,6 +207,27 @@ suite "ledger/leader_claim — tryApplyLeaderClaim":
     check state.leader.leadersRewards == 0
     check op.voucherNullifier in state.leader
     check state.utxos.len == 1
+
+  test "a 300 pool over 3 vouchers mints a 100-value note":
+    let
+      leader = makeLeaderState(3'u64, 300'u64)
+      op = mkFixtureLeaderClaimOp(publicInputs, voucherTree.root(leader.voucherTree))
+      txHash = fixtureTxHash(publicInputs)
+    check leader.rewardShare() == 100
+    let r = CryptarchiaState(utxos: UtxoStore.init(), leader: leader)
+      .tryApplyLeaderClaim(op, claimProof, txHash, mockVerifyProofOfClaim)
+    check r.isOk
+    let
+      state = r.get
+      minted = Utxo(
+        opId: opId(op),
+        outputIndex: 0,
+        note: Note(value: 100, zkPublicKey: op.publicKey),
+      )
+    check:
+      state.leader.leadersRewards == 200
+      state.leader.rewardShare() == 100 # unchanged for the remaining vouchers
+      state.utxos.get(minted.id) == Opt.some(minted)
 
   test "rejects duplicate voucher nullifier":
     let
@@ -297,9 +319,8 @@ suite "ledger/leader_claim — tryApplyHeader epoch hooks":
     let s0 = LedgerState.fromUtxos(@[], default(FieldElement), testSdpRegistry(), testLedgerConfig).get
     let s1 = s0.tryApplyHeader(slot = 1'u64, proof = mkProof(), cfg = testLedgerConfig).get
     var st = s1
-    st.cryptarchiaLedger.leader = st.cryptarchiaLedger.leader.recordBlockLeader(
-      voucherBytes(2'u8), 50'u64,
-    )
+    st.cryptarchiaLedger.leader = st.cryptarchiaLedger.leader
+      .recordBlockLeader(voucherBytes(2'u8)).addPendingRewards(50'u64)
     let s2 = st.tryApplyHeader(slot = 100'u64, proof = mkProof(), cfg = testLedgerConfig).get
     let leader = s2.cryptarchiaLedger.leader
     check leader.leadersRewards == 50

@@ -15,7 +15,7 @@ import
   std/tables,
   ./[
     balance, types, cryptarchia_state, channel_state, mantle_state,
-    pol_verifier, epoch_state, fee_market,
+    pol_verifier, epoch_state, fee_market, block_rewards,
   ],
   ./sdp/[registry, ops],
   ../core/mantle/[tx_types, tx_hashing, operations, proofs, gas],
@@ -24,7 +24,7 @@ import
 from ../core/crypto/types import ZkPublicKey
 export
   types, cryptarchia_state, channel_state, mantle_state, epoch_state, registry,
-  fee_market, gas
+  fee_market, block_rewards, gas
 
 type
   LedgerState* = object
@@ -33,6 +33,8 @@ type
     mantleLedger*: MantleState
     epochs*: EpochTracker
     feeMarket*: FeeMarket
+    blockNumber*: uint64 ## applied-block count; genesis state = 0
+    feeWindow*: FeeWindow
 
   Ledger*[Id] = object
     states: Table[Id, LedgerState]
@@ -158,12 +160,8 @@ proc tryApplyHeader*(
   if not verified:
     return err(InvalidProof)
 
-  # TODO: Block rewards stay 0'u64 until dynamic block rewards are implemented.
-  # Spec: https://github.com/logos-co/logos-lips/blob/b7602ed8a225d41ca0bfaaa432524dc84d2ded7e/docs/blockchain/raw/block-rewards.md
-  s.cryptarchiaLedger.leader = s.cryptarchiaLedger.leader.recordBlockLeader(
-    proof.leaderVoucher,
-    0'u64,
-  )
+  s.cryptarchiaLedger.leader =
+    s.cryptarchiaLedger.leader.recordBlockLeader(proof.leaderVoucher)
 
   let entropy = frFromBytesLE(proof.entropyContribution).valueOr:
     return err(InvalidProof)
@@ -298,6 +296,27 @@ func mandatory_fees(
       return err(GasOverflow)
   ok(total)
 
+func creditBlockRewards*(
+    state: sink LedgerState, totalFeeBurned, totalFeeTip: GasCost
+): Result[LedgerState, LedgerError] =
+  ## Closes one block: records its burned fees and credits the leader pool.
+  # The window write precedes both reads: the emission formula's per-block
+  # term is this block's own burned total, and the window sum includes it.
+  var s = state
+  s.blockNumber += 1
+  s.feeWindow = s.feeWindow.update(s.blockNumber, totalFeeBurned)
+  let
+    # The blend share stays unassigned until service-reward distribution lands.
+    (_, leaderShare) = block_reward(
+      s.epochs.activeEpoch.totalStake,
+      s.feeWindow.summedFees,
+      s.feeWindow.feeAt(s.blockNumber))
+    leaderReward = leaderShare.checkedAdd(totalFeeTip).valueOr:
+      return err(GasOverflow)
+  s.cryptarchiaLedger.leader =
+    s.cryptarchiaLedger.leader.addPendingRewards(leaderReward)
+  ok(s)
+
 proc tryApplyTxns*(
     state: sink LedgerState,
     txs: openArray[SignedMantleTx],
@@ -308,6 +327,8 @@ proc tryApplyTxns*(
   var
     s = state
     blockExecutionGas = Gas(0)
+    totalFeeBurned = GasCost(0)
+    totalFeeTip = GasCost(0)
   # The state, not the caller, is the source of truth for the epoch.
   let
     epoch = s.epochs.activeEpoch.epoch
@@ -320,6 +341,14 @@ proc tryApplyTxns*(
     s = r.state
     if not r.balance.covers(totalCost):
       return err(InsufficientBalance)
+    totalFeeBurned = totalFeeBurned.checkedAdd(totalCost).valueOr:
+      return err(GasOverflow)
+    # The surplus above the mandatory fee is the tip. `covers` compares the
+    # full balance, so only a balance past the truncation width can underflow.
+    let tip = r.balance.truncateToValue().checkedSub(totalCost).valueOr:
+      return err(GasOverflow)
+    totalFeeTip = totalFeeTip.checkedAdd(tip).valueOr:
+      return err(GasOverflow)
     blockExecutionGas = blockExecutionGas.checkedAdd(r.executionGas).valueOr:
       return err(GasOverflow)
     if blockExecutionGas > MAX_EXECUTION_GAS_PER_BLOCK:
@@ -330,6 +359,7 @@ proc tryApplyTxns*(
     s.feeMarket.storageGasConsumedInEpoch =
       s.feeMarket.storageGasConsumedInEpoch.checkedAdd(storageGas).valueOr:
         return err(GasOverflow)
+  s = ?s.creditBlockRewards(totalFeeBurned, totalFeeTip)
   s.feeMarket = s.feeMarket.updateExecutionMarket(blockExecutionGas)
   ok(s)
 

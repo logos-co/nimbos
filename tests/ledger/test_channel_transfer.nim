@@ -256,7 +256,7 @@ suite "MantleState.tryApplyChannelTransfer":
       kp2 = mkEdKeyPair(rng)
       cid = mkChannelId(15)
       note = mkUtxo(value = 100, pkSeed = 1)
-      leader = LeaderState.init().recordBlockLeader(default(RewardVoucher), 42)
+      leader = LeaderState.init().recordBlockLeader(default(RewardVoucher)).addPendingRewards(42)
         .addEpochVouchers().get
       cs = CryptarchiaState(
         utxos: UtxoStore.init().insert(note.id, note).store, leader: leader)
