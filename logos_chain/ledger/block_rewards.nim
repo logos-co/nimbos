@@ -12,10 +12,13 @@
 {.push raises: [], gcsafe.}
 
 import
+  std/sequtils,
   stint,
   ../core/mantle/[gas, primitives]
 
 const
+  # Parameter values:
+  # https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/block-rewards.md#parametrization
   WINDOW_SIZE = 120 ## blocks of burned fees the emission formula looks back over
   # Names verbatim from the spec's integer formulation:
   # https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/block-rewards.md#float-precision-for-implementation
@@ -35,22 +38,14 @@ type FeeWindow* = object
   ## `blockNumber mod WINDOW_SIZE`; zero-initialised at genesis.
   entries: array[WINDOW_SIZE, GasCost]
 
-func update*(
-    w: sink FeeWindow, blockNumber: uint64, burned: GasCost
-): FeeWindow =
+func update*(w: var FeeWindow, blockNumber: uint64, burned: GasCost) =
   ## Records `burned` in `blockNumber`'s slot, evicting the entry 120 blocks back.
   w.entries[blockNumber mod WINDOW_SIZE] = burned
-  w
 
 func summedFees*(w: FeeWindow): UInt128 =
   ## Burned fees summed over the whole window.
   # 120 * uint64.high needs 71 bits — the sum is only ever consumed in u128.
-  for e in w.entries:
-    result += u128(e)
-
-func feeAt*(w: FeeWindow, blockNumber: uint64): GasCost =
-  ## Burned fees recorded for `blockNumber`.
-  w.entries[blockNumber mod WINDOW_SIZE]
+  w.entries.foldl(a + u128(b), u128(0))
 
 func block_reward*(
     totalStake: uint64, sumFees: UInt128, lastBurnedFee: GasCost
@@ -70,7 +65,13 @@ func block_reward*(
     # recycling (a = 0).
     rewardNumerator = INFLATION_NUMERATOR * a +
       INFLATION_DENOMINATOR * (A_SCALE - a) * u128(lastBurnedFee)
-    shareDenominator = INFLATION_DENOMINATOR * A_SCALE * SHARE_DENOMINATOR
+  const shareDenominator = INFLATION_DENOMINATOR * A_SCALE * SHARE_DENOMINATOR
+  # rewardNumerator caps at INFLATION_DENOMINATOR * A_SCALE * uint64.high
+  # (a = 0, the whole u64 range burned), so a share fraction below one keeps
+  # each share inside uint64: the truncations cannot drop bits.
+  static:
+    doAssert LEADER_SHARE_NUMERATOR < SHARE_DENOMINATOR
+    doAssert BLEND_SHARE_NUMERATOR < SHARE_DENOMINATOR
   # Each share truncates once, at the end; the 0-1 unit remainder is dropped.
   (blend: (rewardNumerator * BLEND_SHARE_NUMERATOR div shareDenominator)
      .truncate(uint64),

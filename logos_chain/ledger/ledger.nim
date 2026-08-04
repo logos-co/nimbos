@@ -300,17 +300,17 @@ func creditBlockRewards*(
     state: sink LedgerState, totalFeeBurned, totalFeeTip: GasCost
 ): Result[LedgerState, LedgerError] =
   ## Closes one block: records its burned fees and credits the leader pool.
-  # The window write precedes both reads: the emission formula's per-block
-  # term is this block's own burned total, and the window sum includes it.
+  # The window write comes first: the sum the emission formula sees includes
+  # this block's own burned total.
   var s = state
   s.blockNumber += 1
-  s.feeWindow = s.feeWindow.update(s.blockNumber, totalFeeBurned)
+  s.feeWindow.update(s.blockNumber, totalFeeBurned)
   let
     # The blend share stays unassigned until service-reward distribution lands.
     (_, leaderShare) = block_reward(
       s.epochs.activeEpoch.totalStake,
       s.feeWindow.summedFees,
-      s.feeWindow.feeAt(s.blockNumber))
+      totalFeeBurned)
     leaderReward = leaderShare.checkedAdd(totalFeeTip).valueOr:
       return err(GasOverflow)
   s.cryptarchiaLedger.leader =

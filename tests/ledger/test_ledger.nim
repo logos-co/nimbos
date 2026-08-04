@@ -657,15 +657,13 @@ suite "block rewards — per-block leader crediting":
     s = s.tryApplyHeader(100'u64, mkProof(), testLedgerConfig).expect("rotation")
     check s.cryptarchiaLedger.leader.leadersRewards == emission
 
-  test "each applied block advances the number and writes its window slot":
+  test "each applied block advances the block number":
     var s = mkState([mkUtxo()])
     check s.blockNumber == 0'u64
     s = s.tryApplyTxns(noTxs, slot = 1'u64).expect("block 1")
     s = s.tryApplyTxns(noTxs, slot = 2'u64).expect("block 2")
     check:
       s.blockNumber == 2'u64
-      s.feeWindow.feeAt(1) == GasCost(0)
-      s.feeWindow.feeAt(2) == GasCost(0)
       s.feeWindow.summedFees == u128(0)
 
   test "burned fees enter the window and tips top up the leader share":
@@ -678,7 +676,6 @@ suite "block rewards — per-block leader crediting":
       ).expect("credited")
     check:
       s1.blockNumber == 1'u64
-      s1.feeWindow.feeAt(1) == GasCost(700)
       s1.feeWindow.summedFees == u128(700)
       s1.cryptarchiaLedger.leader.leadersRewards == 0
     let rolled = s1.tryApplyHeader(100'u64, mkProof(), testLedgerConfig)
