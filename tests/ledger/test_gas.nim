@@ -74,15 +74,17 @@ suite "gas: per-operation execution gas":
       execution_gas(defaultOpForOpcode(OpChannelConfig), 1) == Gas(56)
       execution_gas(defaultOpForOpcode(OpChannelDeposit), 0) == Gas(590)
       execution_gas(defaultOpForOpcode(OpChannelWithdraw), 1) == Gas(56)
+      execution_gas(defaultOpForOpcode(OpChannelTransfer), 1) == Gas(56)
       execution_gas(defaultOpForOpcode(OpSdpDeclare), 0) == Gas(646)
       execution_gas(defaultOpForOpcode(OpSdpWithdraw), 0) == Gas(590)
       execution_gas(defaultOpForOpcode(OpSdpActive), 0) == Gas(590)
       execution_gas(defaultOpForOpcode(OpLeaderClaim), 0) == Gas(580)
 
-  test "channel config/withdraw scale with the multisig threshold":
+  test "channel config/withdraw/transfer scale with the multisig threshold":
     let
       cfg = defaultOpForOpcode(OpChannelConfig)
       wdr = defaultOpForOpcode(OpChannelWithdraw)
+      trf = defaultOpForOpcode(OpChannelTransfer)
     check:
       execution_gas(cfg, 0) == Gas(0)
       execution_gas(cfg, 1) == Gas(56)
@@ -92,6 +94,43 @@ suite "gas: per-operation execution gas":
       execution_gas(wdr, 1) == Gas(56)
       execution_gas(wdr, 3) == Gas(168)
       execution_gas(wdr, uint16.high) == Gas(3_669_960)
+      execution_gas(trf, 0) == Gas(0)
+      execution_gas(trf, 1) == Gas(56)
+      execution_gas(trf, 3) == Gas(168)
+      execution_gas(trf, uint16.high) == Gas(3_669_960)
+
+  test "withdraw and transfer bill against transferThreshold, 0 when absent":
+    let
+      rng = HmacDrbgContext.new()
+      kp = mkEdKeyPair(rng)
+      cid = mkChannelId(0x41)
+      configured = MantleState.init().tryApplyChannelConfig(
+        ChannelConfigPayload(
+          channel: cid,
+          keys: @[kp.pubkey],
+          configurationThreshold: 1,
+          transferThreshold: 3,
+        ),
+        ChannelMultiSigProof(), default(Hash32), blockSlot = 0'u64,
+      ).expect("valid config")
+      chan = configured.channels.getOrDefault(cid)
+    check chan.transferThreshold == 3
+    check execution_gas(
+      createChannelWithdrawOp(
+        ChannelWithdrawPayload(channel: cid, inputs: @[])),
+      chan.transferThreshold) == Gas(168)
+    check execution_gas(
+      createChannelTransferOp(
+        ChannelTransferPayload(channel: cid, inputs: @[], outputs: @[])),
+      chan.transferThreshold) == Gas(168)
+    # A channel that doesn't exist yet bills a zero multiplier — the same
+    # just-in-time path a first ChannelConfig takes.
+    let absent = MantleState.init().channels.getOrDefault(mkChannelId(0x42))
+    check absent.transferThreshold == 0
+    check execution_gas(
+      createChannelTransferOp(
+        ChannelTransferPayload(channel: cid, inputs: @[], outputs: @[])),
+      absent.transferThreshold) == Gas(0)
 
 suite "gas: fee-market genesis state":
   test "FeeMarket.init opens both markets at price 1, counters at 0":

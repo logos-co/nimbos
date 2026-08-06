@@ -13,11 +13,13 @@ import
   unittest2,
   results,
   stew/io2,
+  bearssl/rand,
   libp2p/crypto/ed25519/ed25519,
   ../../logos_chain/ledger/
     [balance, cryptarchia_state, ledger, types],
   ../../logos_chain/ledger/sdp/[ops, registry, state],
-  ../../logos_chain/core/mantle/[primitives, operations, proofs, tx_types, utxo],
+  ../../logos_chain/core/mantle/
+    [primitives, operations, proofs, tx_hashing, tx_types, utxo],
   ../../logos_chain/core/types,
   ../../logos_chain/zk/pol,
   ../zk/[snarkjs_helpers, zksign_helpers],
@@ -152,6 +154,114 @@ suite "tryApplyTx — structural error paths":
       r = s0.tryApplyTx(tx, epoch = 0'u64, slot = 0'u64)
     check r.isErr
     check r.error == InvalidProof
+
+suite "tryApplyTx — channel ops":
+  proc mkChannelState(
+      utxos: openArray[Utxo],
+      cid: ChannelId,
+      key: Ed25519PublicKey,
+      owned: openArray[Utxo],
+  ): LedgerState =
+    ## Ledger seeded with a 1-of-1 channel that already owns `owned`.
+    var s = mkState(utxos)
+    s.mantleLedger = MantleState.init().tryApplyChannelConfig(
+      ChannelConfigPayload(
+        channel: cid,
+        keys: @[key],
+        configurationThreshold: 1,
+        transferThreshold: 1,
+      ),
+      # A just-in-time created channel has no accredited keys to check the
+      # proof against, so the tx hash is immaterial here.
+      ChannelMultiSigProof(), default(Hash32), blockSlot = 0'u64,
+    ).expect("valid config")
+    for u in owned:
+      s.mantleLedger.channelNotes =
+        s.mantleLedger.channelNotes.registerChannelNote(u.id, cid)
+          .expect("fresh note")
+    s
+
+  test "ChannelTransfer op with wrong proof kind → InvalidProof":
+    let
+      s0 = mkState(@[])
+      tx = SignedMantleTx(
+        tx: MantleTx(ops: @[createChannelTransferOp(ChannelTransferPayload(
+          channel: mkChannelId(1), inputs: @[], outputs: @[]))]),
+        opProofs: @[OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))],
+      )
+      r = s0.tryApplyTx(tx, epoch = 0'u64, slot = 0'u64)
+    check r.error == InvalidProof
+
+  test "ChannelWithdraw contributes nothing to the transaction balance":
+    let
+      rng = HmacDrbgContext.new()
+      kp = mkEdKeyPair(rng)
+      cid = mkChannelId(2)
+      note = mkUtxo(value = 100, pkSeed = 1)
+      s0 = mkChannelState([note], cid, kp.pubkey, [note])
+      body = MantleTx(ops: @[createChannelWithdrawOp(
+        ChannelWithdrawPayload(channel: cid, inputs: @[note.id]))])
+      txHash = mantleTxHash(body)
+      tx = SignedMantleTx(
+        tx: body,
+        opProofs: @[OpProof(
+          kind: opfChannelWithdraw,
+          channelWithdrawOpProof: ChannelMultiSigProof(
+            signatures: @[sign(kp.seckey, txHash)],
+            indexes: @[ChannelKeyIndex(0)]))],
+      )
+      r = s0.tryApplyTx(tx, epoch = 0'u64, slot = 0'u64)
+    check r.isOk
+    let res = r.get
+    # Bridged funds never enter or leave the UTXO set, so a channel op can
+    # never fund its own fees — a Transfer op in the same tx must.
+    check res.balance == Balance.zero
+    check res.executionGas == Gas(56)
+    check res.state.latestUtxos.len == 1
+    check res.state.latestUtxos.contains(note.id)
+    check res.state.mantleLedger.channelNotes.isEmpty
+
+  test "ChannelTransfer keeps the balance at zero while rewriting the notes":
+    let
+      rng = HmacDrbgContext.new()
+      kp = mkEdKeyPair(rng)
+      cid = mkChannelId(3)
+      note = mkUtxo(value = 100, pkSeed = 1)
+      reassigned = mkNote(100, pkSeed = 2)
+      s0 = mkChannelState([note], cid, kp.pubkey, [note])
+      op = ChannelTransferPayload(
+        channel: cid, inputs: @[note.id], outputs: @[reassigned])
+      body = MantleTx(ops: @[createChannelTransferOp(op)])
+      txHash = mantleTxHash(body)
+      tx = SignedMantleTx(
+        tx: body,
+        opProofs: @[OpProof(
+          kind: opfChannelTransfer,
+          channelTransferOpProof: ChannelMultiSigProof(
+            signatures: @[sign(kp.seckey, txHash)],
+            indexes: @[ChannelKeyIndex(0)]))],
+      )
+      r = s0.tryApplyTx(tx, epoch = 0'u64, slot = 0'u64)
+    check r.isOk
+    let
+      res = r.get
+      minted = Utxo(opId: opId(op), outputIndex: 0, note: reassigned)
+    check res.balance == Balance.zero
+    check res.executionGas == Gas(56)
+    check not res.state.latestUtxos.contains(note.id)
+    check res.state.latestUtxos.contains(minted.id)
+    check res.state.mantleLedger.channelNotes.isChannelNoteOf(minted.id, cid)
+
+  test "a regular Transfer cannot spend a channel note → ChannelNoteSpend":
+    let
+      rng = HmacDrbgContext.new()
+      kp = mkEdKeyPair(rng)
+      cid = mkChannelId(4)
+      note = mkUtxo(value = 100, pkSeed = 1)
+      s0 = mkChannelState([note], cid, kp.pubkey, [note])
+      tx = mkTransferTx([note.id], [mkNote(100, pkSeed = 2)])
+      r = s0.tryApplyTx(tx, epoch = 0'u64, slot = 0'u64)
+    check r.error == ChannelNoteSpend
 
 suite "Ledger[Id] map ops":
   test "init seeds one (id, state); state(id) returns Some":
@@ -483,7 +593,7 @@ suite "tryApplyTx — SDP":
       outputs: Outputs(notes: @[mkNote(200, pkSeed = 2)]),
     )
     let locked = state.cryptarchiaLedger.applyTransferState(
-      state.sdp.state.lockedNotes, spendOp,
+      state.sdp.state.lockedNotes, state.mantleLedger.channelNotes, spendOp,
     )
     check locked.isErr
     check locked.error == LedgerError.LockedNote
@@ -495,13 +605,13 @@ suite "tryApplyTx — SDP":
     )
     installTestWithdraw(state.sdp, withdraw, epoch = 5)
     let stillLocked = state.cryptarchiaLedger.applyTransferState(
-      state.sdp.state.lockedNotes, spendOp,
+      state.sdp.state.lockedNotes, state.mantleLedger.channelNotes, spendOp,
     )
     check stillLocked.isErr
 
     state.sdp.state = finalizeWithdrawals(state.sdp.state, 7)
     let unlocked = state.cryptarchiaLedger.applyTransferState(
-      state.sdp.state.lockedNotes, spendOp,
+      state.sdp.state.lockedNotes, state.mantleLedger.channelNotes, spendOp,
     )
     check unlocked.isOk
 

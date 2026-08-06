@@ -20,15 +20,15 @@ import
 proc seedMantle(
     cid: ChannelId, keys: openArray[Ed25519PublicKey],
     configThreshold = ConfigurationThreshold(1),
-    withdrawThreshold = WithdrawThreshold(1),
+    transferThreshold = TransferThreshold(1),
 ): MantleState =
   let seedOp = ChannelConfigPayload(
     channel: cid, keys: @keys,
     configurationThreshold: configThreshold,
-    withdrawThreshold: withdrawThreshold,
+    transferThreshold: transferThreshold,
   )
   MantleState.init().tryApplyChannelConfig(
-    seedOp, ChannelWithdrawOpProof(), mkTxHash(), blockSlot = 0'u64,
+    seedOp, ChannelMultiSigProof(), mkTxHash(), blockSlot = 0'u64,
   ).get
 
 suite "MantleState.tryApplyChannelConfig — JIT creation":
@@ -44,15 +44,15 @@ suite "MantleState.tryApplyChannelConfig — JIT creation":
         postingTimeframe: 100,
         postingTimeout: 10,
         configurationThreshold: 2,
-        withdrawThreshold: 1,
+        transferThreshold: 1,
       )
       r = MantleState.init().tryApplyChannelConfig(
-        op, ChannelWithdrawOpProof(), mkTxHash(), blockSlot = 5'u64)
+        op, ChannelMultiSigProof(), mkTxHash(), blockSlot = 5'u64)
     check r.isOk
     let chan = r.get.channels.getOrDefault(cid)
     check chan.accreditedKeys == @[kp1.pubkey, kp2.pubkey]
     check chan.configurationThreshold == 2
-    check chan.withdrawThreshold == 1
+    check chan.transferThreshold == 1
     check chan.postingTimeframe == 100
     check chan.postingTimeout == 10
     check chan.tipSlot == 5'u64
@@ -65,13 +65,13 @@ suite "MantleState.tryApplyChannelConfig — JIT creation":
         channel: mkChannelId(2),
         keys: @[kp.pubkey],
         configurationThreshold: 0,
-        withdrawThreshold: 1,
+        transferThreshold: 1,
       )
       r = MantleState.init().tryApplyChannelConfig(
-        op, ChannelWithdrawOpProof(), mkTxHash(), blockSlot = 0'u64)
+        op, ChannelMultiSigProof(), mkTxHash(), blockSlot = 0'u64)
     check r.error == InvalidChannelConfig
 
-  test "withdrawThreshold == 0 → InvalidChannelConfig":
+  test "transferThreshold == 0 → InvalidChannelConfig":
     let
       rng = HmacDrbgContext.new()
       kp = mkEdKeyPair(rng)
@@ -79,10 +79,10 @@ suite "MantleState.tryApplyChannelConfig — JIT creation":
         channel: mkChannelId(3),
         keys: @[kp.pubkey],
         configurationThreshold: 1,
-        withdrawThreshold: 0,
+        transferThreshold: 0,
       )
       r = MantleState.init().tryApplyChannelConfig(
-        op, ChannelWithdrawOpProof(), mkTxHash(), blockSlot = 0'u64)
+        op, ChannelMultiSigProof(), mkTxHash(), blockSlot = 0'u64)
     check r.error == InvalidChannelConfig
 
   test "empty keys → InvalidChannelConfig":
@@ -91,10 +91,10 @@ suite "MantleState.tryApplyChannelConfig — JIT creation":
         channel: mkChannelId(4),
         keys: @[],
         configurationThreshold: 1,
-        withdrawThreshold: 1,
+        transferThreshold: 1,
       )
       r = MantleState.init().tryApplyChannelConfig(
-        op, ChannelWithdrawOpProof(), mkTxHash(), blockSlot = 0'u64)
+        op, ChannelMultiSigProof(), mkTxHash(), blockSlot = 0'u64)
     check r.error == InvalidChannelConfig
 
   test "configurationThreshold > keys.len → InvalidChannelConfig":
@@ -106,13 +106,13 @@ suite "MantleState.tryApplyChannelConfig — JIT creation":
         channel: mkChannelId(5),
         keys: @[kp1.pubkey, kp2.pubkey],
         configurationThreshold: 3,
-        withdrawThreshold: 1,
+        transferThreshold: 1,
       )
       r = MantleState.init().tryApplyChannelConfig(
-        op, ChannelWithdrawOpProof(), mkTxHash(), blockSlot = 0'u64)
+        op, ChannelMultiSigProof(), mkTxHash(), blockSlot = 0'u64)
     check r.error == InvalidChannelConfig
 
-  test "withdrawThreshold > keys.len → InvalidChannelConfig":
+  test "transferThreshold > keys.len is accepted — reconfiguration can lower it":
     let
       rng = HmacDrbgContext.new()
       kp1 = mkEdKeyPair(rng)
@@ -121,11 +121,12 @@ suite "MantleState.tryApplyChannelConfig — JIT creation":
         channel: mkChannelId(6),
         keys: @[kp1.pubkey, kp2.pubkey],
         configurationThreshold: 1,
-        withdrawThreshold: 3,
+        transferThreshold: 3,
       )
       r = MantleState.init().tryApplyChannelConfig(
-        op, ChannelWithdrawOpProof(), mkTxHash(), blockSlot = 0'u64)
-    check r.error == InvalidChannelConfig
+        op, ChannelMultiSigProof(), mkTxHash(), blockSlot = 0'u64)
+    check r.isOk
+    check r.get.channels.getOrDefault(mkChannelId(6)).transferThreshold == 3
 
 suite "MantleState.tryApplyChannelConfig — existing channel":
   test "valid threshold signatures → config overwrites accreditedKeys":
@@ -141,9 +142,9 @@ suite "MantleState.tryApplyChannelConfig — existing channel":
         channel: cid,
         keys: @[kp3.pubkey],
         configurationThreshold: 1,
-        withdrawThreshold: 1,
+        transferThreshold: 1,
       )
-      proof = ChannelWithdrawOpProof(
+      proof = ChannelMultiSigProof(
         signatures: @[sign(kp1.seckey, txHash), sign(kp2.seckey, txHash)],
         indexes: @[ChannelKeyIndex(0), ChannelKeyIndex(1)],
       )
@@ -165,9 +166,9 @@ suite "MantleState.tryApplyChannelConfig — existing channel":
         channel: cid,
         keys: @[kp1.pubkey],
         configurationThreshold: 1,
-        withdrawThreshold: 1,
+        transferThreshold: 1,
       )
-      proof = ChannelWithdrawOpProof(
+      proof = ChannelMultiSigProof(
         signatures: @[sign(kp1.seckey, txHash)],
         indexes: @[ChannelKeyIndex(0)],
       )
@@ -184,9 +185,9 @@ suite "MantleState.tryApplyChannelConfig — existing channel":
       txHash = mkTxHash()
       op = ChannelConfigPayload(
         channel: cid, keys: @[kp1.pubkey],
-        configurationThreshold: 1, withdrawThreshold: 1,
+        configurationThreshold: 1, transferThreshold: 1,
       )
-      proof = ChannelWithdrawOpProof(
+      proof = ChannelMultiSigProof(
         signatures: @[sign(kp1.seckey, txHash), sign(kp2.seckey, txHash)],
         indexes: @[ChannelKeyIndex(0), ChannelKeyIndex(99)],
       )
@@ -203,9 +204,9 @@ suite "MantleState.tryApplyChannelConfig — existing channel":
       txHash = mkTxHash(seed = 0x10)
       op = ChannelConfigPayload(
         channel: cid, keys: @[kp1.pubkey],
-        configurationThreshold: 1, withdrawThreshold: 1,
+        configurationThreshold: 1, transferThreshold: 1,
       )
-      proof = ChannelWithdrawOpProof(
+      proof = ChannelMultiSigProof(
         signatures: @[
           sign(kp1.seckey, mkTxHash(seed = 0xEE)),  # wrong msg
           sign(kp2.seckey, txHash),

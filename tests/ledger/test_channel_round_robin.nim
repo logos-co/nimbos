@@ -27,12 +27,10 @@ proc mkChan(
     tipSequencerStartingSlot: SlotNumber(tipSequencerStartingSlot),
     postingTimeframe: PostingTimeframe(postingTimeframe),
     postingTimeout: PostingTimeout(postingTimeout),
-    balance: 0,
-    withdrawalNonce: 0,
     accreditedKeys: newSeq[Ed25519PublicKey](numKeys),
     configurationThreshold: 0,
     tipMessage: default(Hash32),
-    withdrawThreshold: 0,
+    transferThreshold: 0,
   )
 
 suite "round_robin — infinite timeframe (postingTimeframe=0)":

@@ -14,12 +14,12 @@ import
   ../../../logos_chain/ledger/sdp/[registry, ops, state],
   ../../../logos_chain/core/crypto/types,
   ../../../logos_chain/core/mantle/[operations, proofs, utxo],
-  ../../../logos_chain/ledger/utxo_store,
+  ../../../logos_chain/ledger/[channel_notes, utxo_store],
   ../../../logos_chain/zk/poseidon2/hasher,
   ../../../logos_chain/deployment/deployment_settings as deploy,
   ./test_utxo_helpers
 
-export ops, utxo, utxo_store, operations
+export ops, utxo, utxo_store, operations, channel_notes
 
 func testSdpConfig*(): deploy.SdpConfig =
   deploy.SdpConfig(
@@ -116,6 +116,7 @@ proc execDeclare*(
     declaration: DeclarationMessage,
     store: UtxoStore,
     epoch: EpochNumber,
+    channelNotes = ChannelNotes.init(),
 ): Result[SdpRegistry, LedgerError] =
   tryApplySdpDeclare(
     registry,
@@ -123,6 +124,7 @@ proc execDeclare*(
     defaultDeclareProof(),
     mkTxHash(),
     store,
+    channelNotes,
     epoch,
   )
 

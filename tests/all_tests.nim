@@ -55,6 +55,7 @@ import # Unit test
   ./ledger/test_channel_config,
   ./ledger/test_channel_deposit,
   ./ledger/test_channel_withdraw,
+  ./ledger/test_channel_transfer,
   ./ledger/test_channel_round_robin,
   ./ledger/test_pol_verifier,
   ./ledger/test_poc_verifier,

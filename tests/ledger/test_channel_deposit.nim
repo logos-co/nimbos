@@ -14,7 +14,7 @@ import
   results,
   ../../logos_chain/ledger/
     [channel_state, cryptarchia_state, leader_state, mantle_state, types],
-  ../../logos_chain/core/mantle/[primitives, operations, proofs],
+  ../../logos_chain/core/mantle/[primitives, operations, proofs, tx_hashing, utxo],
   ../../logos_chain/zk/zksign,
   ../zk/[snarkjs_helpers, zksign_helpers],
   ../core/mantle/test_helpers
@@ -26,20 +26,18 @@ const
   fixtureProof = zksignFixtureDir / "proof.json"
   fixturePublic = zksignFixtureDir / "public.json"
 
-proc mkChanStore(cid: ChannelId, balance = TokenValue(0)): ChannelStore =
+proc mkChanStore(cid: ChannelId): ChannelStore =
   HashTrieMap[ChannelId, ChannelState].init().insert(
     cid,
     ChannelState(
       accreditedKeys: @[],
       configurationThreshold: 1,
-      withdrawThreshold: 1,
-      balance: balance,
-      withdrawalNonce: 0,
+      transferThreshold: 1,
     ),
   )
 
-proc mkMantle(cid: ChannelId, balance = TokenValue(0)): MantleState =
-  MantleState(channels: mkChanStore(cid, balance))
+proc mkMantle(cid: ChannelId): MantleState =
+  MantleState(channels: mkChanStore(cid), channelNotes: ChannelNotes.init())
 
 suite "validateChannelDeposit — structural checks (no VK)":
   # These paths all short-circuit before sig verify, so a default sig is
@@ -56,7 +54,7 @@ suite "validateChannelDeposit — structural checks (no VK)":
         metadata: @[],
       )
       r = validateChannelDeposit(
-        chans, cs, LockedNotes.init(), op,
+        chans, ChannelNotes.init(), cs, LockedNotes.init(), op,
         default(ZkSigProof), mkTxHash())
     check r.error == ChannelNotFound
 
@@ -70,7 +68,7 @@ suite "validateChannelDeposit — structural checks (no VK)":
         channel: cid, inputs: @[input.id, input.id], metadata: @[],
       )
       r = validateChannelDeposit(
-        chans, cs, LockedNotes.init(), op,
+        chans, ChannelNotes.init(), cs, LockedNotes.init(), op,
         default(ZkSigProof), mkTxHash())
     check r.error == DoubleSpend
 
@@ -84,7 +82,7 @@ suite "validateChannelDeposit — structural checks (no VK)":
         channel: cid, inputs: @[missing.id], metadata: @[],
       )
       r = validateChannelDeposit(
-        chans, cs, LockedNotes.init(), op,
+        chans, ChannelNotes.init(), cs, LockedNotes.init(), op,
         default(ZkSigProof), mkTxHash())
     check r.error == InvalidNote
 
@@ -97,45 +95,79 @@ suite "validateChannelDeposit — structural checks (no VK)":
       op = ChannelDepositPayload(
         channel: cid, inputs: @[input.id], metadata: @[],
       )
-    var locked = LockedNotes.init()
-    locked = locked.insert(input.id, initHashSet[DeclarationId]())
-    let r = validateChannelDeposit(
-      chans, cs, locked, op,
-      default(ZkSigProof), mkTxHash())
+      locked = LockedNotes.init().insert(input.id, initHashSet[DeclarationId]())
+      r = validateChannelDeposit(
+        chans, ChannelNotes.init(), cs, locked, op,
+        default(ZkSigProof), mkTxHash())
     check r.error == LockedNote
 
-suite "applyChannelDeposit — mutation and overflow (no verify)":
-  test "happy: inputs consumed, channel balance credited":
+  test "input already owned by a channel → ChannelNoteSpend":
     let
       cid = mkChannelId(5)
       chans = mkChanStore(cid)
       input = mkUtxo(value = 100, pkSeed = 1)
       cs = CryptarchiaState.init([input])
+      notes = ChannelNotes.init().registerChannelNote(input.id, cid)
+        .expect("fresh note")
       op = ChannelDepositPayload(
         channel: cid, inputs: @[input.id], metadata: @[],
       )
-      r = applyChannelDeposit(chans, cs, op)
-    check r.isOk
-    let (newChans, newCs) = r.get
-    check newCs.len == 0
-    check newChans.getOrDefault(cid).balance == 100
+      r = validateChannelDeposit(
+        chans, notes, cs, LockedNotes.init(), op,
+        default(ZkSigProof), mkTxHash())
+    check r.error == ChannelNoteSpend
 
-  test "balance overflow on channel credit → BalanceOverflow":
+suite "applyChannelDeposit — consume and re-create (no verify)":
+  test "inputs are spent and re-minted as channel notes under the deposit OpId":
     let
       cid = mkChannelId(6)
-      chans = mkChanStore(cid, balance = high(uint64) - 50)
-      input = mkUtxo(value = 100, pkSeed = 1)
-      cs = CryptarchiaState.init([input])
+      in0 = mkUtxo(value = 100, pkSeed = 1)
+      in1 = mkUtxo(value = 250, pkSeed = 2)
+      cs = CryptarchiaState.init([in0, in1])
       op = ChannelDepositPayload(
+        channel: cid, inputs: @[in0.id, in1.id], metadata: @[],
+      )
+      r = applyChannelDeposit(ChannelNotes.init(), cs, op)
+    check r.isOk
+    let
+      (notes, newCs) = r.get
+      recreated0 = Utxo(opId: opId(op), outputIndex: 0, note: in0.note)
+      recreated1 = Utxo(opId: opId(op), outputIndex: 1, note: in1.note)
+    check newCs.len == 2
+    check not newCs.utxos.contains(in0.id)
+    check not newCs.utxos.contains(in1.id)
+    # Value and ZkPublicKey survive; only the NoteId is new, which restarts
+    # ageing and stops the signed deposit from being replayed.
+    check newCs.utxos.get(recreated0.id) == Opt.some(recreated0)
+    check newCs.utxos.get(recreated1.id) == Opt.some(recreated1)
+    check notes.isChannelNoteOf(recreated0.id, cid)
+    check notes.isChannelNoteOf(recreated1.id, cid)
+    check notes.len == 2
+
+  test "deposit → withdraw → replaying the deposit fails on the spent input":
+    let
+      cid = mkChannelId(7)
+      input = mkUtxo(value = 100, pkSeed = 1)
+      chans = mkChanStore(cid)
+      cs = CryptarchiaState.init([input])
+      depositOp = ChannelDepositPayload(
         channel: cid, inputs: @[input.id], metadata: @[],
       )
-      r = applyChannelDeposit(chans, cs, op)
-    check r.error == BalanceOverflow
+      deposited = applyChannelDeposit(ChannelNotes.init(), cs, depositOp)
+        .expect("deposit applies")
+      channelNote = Utxo(opId: opId(depositOp), outputIndex: 0, note: input.note)
+      withdrawOp = ChannelWithdrawPayload(
+        channel: cid, inputs: @[channelNote.id])
+      released = applyChannelWithdraw(deposited.channelNotes, withdrawOp)
+        .expect("owned by cid")
+      replay = validateChannelDeposit(
+        chans, released, deposited.cs, LockedNotes.init(), depositOp,
+        default(ZkSigProof), mkTxHash())
+    check replay.error == InvalidNote
 
   test "preserves LeaderState":
     let
-      cid = mkChannelId(10)
-      chans = mkChanStore(cid)
+      cid = mkChannelId(8)
       input = mkUtxo(value = 100, pkSeed = 1)
       leader = LeaderState.init().recordBlockLeader(default(RewardVoucher), 42)
         .addEpochVouchers().get
@@ -145,7 +177,7 @@ suite "applyChannelDeposit — mutation and overflow (no verify)":
       op = ChannelDepositPayload(
         channel: cid, inputs: @[input.id], metadata: @[],
       )
-      r = applyChannelDeposit(chans, cs, op)
+      r = applyChannelDeposit(ChannelNotes.init(), cs, op)
     check r.isOk
     check r.get.cs.leader == leader
 
@@ -153,7 +185,7 @@ suite "MantleState.tryApplyChannelDeposit — verify wrapper (fixture-driven)":
   test "verify before VK install → VerifierNotInitialised":
     zksign.resetVkForTesting()
     let
-      cid = mkChannelId(7)
+      cid = mkChannelId(12)
       m = mkMantle(cid)
       input = mkUtxo(value = 100, pkSeed = 1)
       cs = CryptarchiaState.init([input])
@@ -168,7 +200,7 @@ suite "MantleState.tryApplyChannelDeposit — verify wrapper (fixture-driven)":
   test "bad signature → InvalidProof":
     check installZksignVk(fixtureVk)
     let
-      cid = mkChannelId(8)
+      cid = mkChannelId(13)
       m = mkMantle(cid)
       input = mkUtxo(value = 100, pkSeed = 1)
       cs = CryptarchiaState.init([input])
@@ -194,8 +226,12 @@ suite "MantleState.tryApplyChannelDeposit — verify wrapper (fixture-driven)":
       )
       r = m.tryApplyChannelDeposit(cs, LockedNotes.init(), op, sig, txHash)
     check r.isOk
-    let (newMs, newCs) = r.get
-    check newMs.channels.getOrDefault(cid).balance == 100
-    check newCs.len == 0
+    let
+      (newMs, newCs) = r.get
+      recreated = Utxo(opId: opId(op), outputIndex: 0, note: input.note)
+    check newCs.len == 1
+    check not newCs.utxos.contains(input.id)
+    check newCs.utxos.get(recreated.id) == Opt.some(recreated)
+    check newMs.channelNotes.isChannelNoteOf(recreated.id, cid)
 
 {.pop.}
