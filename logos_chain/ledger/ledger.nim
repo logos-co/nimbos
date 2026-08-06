@@ -354,8 +354,6 @@ proc tryApplyTxns*(
     if blockExecutionGas > MAX_EXECUTION_GAS_PER_BLOCK:
       return err(TooMuchExecutionGas)
     # Per-epoch usage counter driving the storage market (spec C_usage).
-    # Diverges from the reference implementation, which never accumulates
-    # it and therefore holds its storage price at 1 indefinitely.
     s.feeMarket.storageGasConsumedInEpoch =
       s.feeMarket.storageGasConsumedInEpoch.checkedAdd(storageGas).valueOr:
         return err(GasOverflow)
