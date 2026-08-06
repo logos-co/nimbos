@@ -31,6 +31,7 @@ const
   EXECUTION_CHANNEL_CONFIG_GAS = Gas(56)
   EXECUTION_CHANNEL_DEPOSIT_GAS = Gas(590)
   EXECUTION_CHANNEL_WITHDRAW_GAS = Gas(56)
+  EXECUTION_CHANNEL_TRANSFER_GAS = Gas(56)
   EXECUTION_SDP_DECLARE_GAS = Gas(646)
   EXECUTION_SDP_WITHDRAW_GAS = Gas(590)
   EXECUTION_SDP_ACTIVE_GAS = Gas(590)
@@ -48,16 +49,16 @@ func checkedMul*(a: Gas, b: GasPrice): Opt[GasCost] =
   if a != 0 and b > uint64.high div a: Opt.none(GasCost) else: Opt.some(a * b)
 
 func execution_gas*(op: Op, multisigThreshold: uint16): Gas =
-  ## Execution gas for one operation. `multisigThreshold` is the multisig
-  ## signature count verified for channel config/withdraw; ignored otherwise.
-  # Channel config/withdraw scale with the threshold (one 56-gas unit per
-  # Ed25519 verification, per the spec's Gas Determination).
+  ## Execution gas for one operation. `multisigThreshold` scales the channel
+  ## config/withdraw/transfer cost; ignored otherwise.
+  # One 56-gas unit per Ed25519 verification, per the spec's Gas Determination.
   case op.payload.kind
   of Transfer: EXECUTION_TRANSFER_GAS
   of ChannelInscribe: EXECUTION_CHANNEL_INSCRIBE_GAS
   of ChannelConfig: EXECUTION_CHANNEL_CONFIG_GAS * Gas(multisigThreshold)
   of ChannelDeposit: EXECUTION_CHANNEL_DEPOSIT_GAS
   of ChannelWithdraw: EXECUTION_CHANNEL_WITHDRAW_GAS * Gas(multisigThreshold)
+  of ChannelTransfer: EXECUTION_CHANNEL_TRANSFER_GAS * Gas(multisigThreshold)
   of SdpDeclare: EXECUTION_SDP_DECLARE_GAS
   of SdpWithdraw: EXECUTION_SDP_WITHDRAW_GAS
   of SdpActive: EXECUTION_SDP_ACTIVE_GAS

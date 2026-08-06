@@ -5,23 +5,22 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-## Spec: [v1.5.0 Mantle](https://nomos-tech.notion.site/1-5-0-Mantle-33d261aa09df8051b0d0cd4d5ddade85)
-## Channel Operations section.
+## Spec: [Mantle — Channel Operations](https://github.com/logos-co/logos-lips/blob/master/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md#channel-operations)
 
 {.push raises: [], gcsafe.}
 
 import
-  std/sets,
+  std/[sequtils, sets],
   intops,
   results,
   libp2p/crypto/ed25519/ed25519,
-  ./[types, cryptarchia_state],
+  ./[types, channel_notes, cryptarchia_state],
   ../core/[utils],
   ../core/mantle/[primitives, operations, proofs, tx_hashing, utxo],
   ../utils/hash_trie_map,
   ../zk/zksign
 
-export hash_trie_map
+export hash_trie_map, channel_notes
 
 type
   ChannelState* = object
@@ -33,9 +32,7 @@ type
     tipSequencerStartingSlot*: SlotNumber
     postingTimeframe*: PostingTimeframe
     postingTimeout*: PostingTimeout
-    balance*: TokenValue
-    withdrawalNonce*: uint32
-    withdrawThreshold*: WithdrawThreshold
+    transferThreshold*: TransferThreshold
 
   ChannelStore* = HashTrieMap[ChannelId, ChannelState]
 
@@ -48,7 +45,7 @@ func default_channel*(
     blockSlot: SlotNumber, keys: openArray[Ed25519PublicKey]
 ): ChannelState =
   ## Factory for a brand-new channel: thresholds = 1, no rotation, no
-  ## liveness timeout, zero balance.
+  ## liveness timeout.
   ChannelState(
     accreditedKeys: @keys,
     configurationThreshold: 1,
@@ -58,9 +55,7 @@ func default_channel*(
     tipSequencerStartingSlot: blockSlot,
     postingTimeframe: 0,
     postingTimeout: 0,
-    balance: 0,
-    withdrawalNonce: 0,
-    withdrawThreshold: 1,
+    transferThreshold: 1,
   )
 
 func round_robin*(
@@ -95,13 +90,13 @@ func round_robin*(
     (chan.tipSequencer, chan.tipSequencerStartingSlot)
 
 func verifyChannelMultiSig(
-    proof: ChannelWithdrawOpProof,
+    proof: ChannelMultiSigProof,
     keys: openArray[Ed25519PublicKey],
     threshold: uint16,
     txHash: Hash32,
 ): Result[void, LedgerError] =
   doAssert proof.signatures.len == proof.indexes.len,
-    "ChannelWithdrawOpProof: signatures and indexes length mismatch"
+    "ChannelMultiSigProof: signatures and indexes length mismatch"
   if proof.signatures.len != int(threshold):
     return err(ThresholdUnmet)
   for i, idx in proof.indexes:
@@ -109,6 +104,32 @@ func verifyChannelMultiSig(
       return err(InvalidProof)
     if not verify(proof.signatures[i], txHash, keys[idx]):
       return err(InvalidProof)
+  ok()
+
+func assert_spendable(
+    channelNotes: ChannelNotes,
+    utxos: UtxoStore,
+    lockedNotes: LockedNotes,
+    inputs: openArray[NoteId],
+    channel: Opt[ChannelId],
+): Result[void, LedgerError] =
+  ## Spendability of `inputs`: unique, unlocked and unspent. With `channel`
+  ## set they must be its channel notes, otherwise no channel may own them.
+  var seen = initHashSet[NoteId](inputs.len)
+  for inputId in inputs:
+    if seen.containsOrIncl(inputId):
+      return err(DoubleSpend)
+  for inputId in inputs:
+    if inputId in lockedNotes:
+      return err(LockedNote)
+    if inputId notin utxos:
+      return err(InvalidNote)
+  let owner = channel.valueOr:
+    if inputs.anyIt(channelNotes.isChannelNote(it)):
+      return err(ChannelNoteSpend)
+    return ok()
+  if not inputs.allIt(channelNotes.isChannelNoteOf(it, owner)):
+    return err(NotAChannelNote)
   ok()
 
 func validateChannelInscribe*(
@@ -156,7 +177,7 @@ func applyChannelInscribe*(
 func validateChannelConfig*(
     channels: ChannelStore,
     op: ChannelConfigPayload,
-    proof: ChannelWithdrawOpProof,
+    proof: ChannelMultiSigProof,
     txHash: Hash32,
 ): Result[void, LedgerError] =
   ## Read-only checks for ChannelConfig. Validates well-formedness, and if
@@ -166,12 +187,13 @@ func validateChannelConfig*(
   ## authenticate against.
   if op.keys.len == 0:
     return err(InvalidChannelConfig)
-  # A threshold larger than `keys.len` can never be met — the resulting
-  # channel would be permanently unreconfigurable and its funds unwithdrawable.
+  # A configuration threshold larger than `keys.len` can never be met — the
+  # resulting channel would be permanently unreconfigurable. An unreachable
+  # transfer threshold is allowed: reconfiguration can still lower it.
   if op.configurationThreshold == 0 or
       op.configurationThreshold.int > op.keys.len:
     return err(InvalidChannelConfig)
-  if op.withdrawThreshold == 0 or op.withdrawThreshold.int > op.keys.len:
+  if op.transferThreshold == 0:
     return err(InvalidChannelConfig)
 
   channels.get(op.channel).isErrOr:
@@ -194,13 +216,14 @@ func applyChannelConfig*(
   chan.tipSequencerStartingSlot = blockSlot
   chan.postingTimeframe = op.postingTimeframe
   chan.postingTimeout = op.postingTimeout
-  chan.withdrawThreshold = op.withdrawThreshold
+  chan.transferThreshold = op.transferThreshold
   chan.tipSlot = blockSlot
   chan.tipMessage = opId(op)
   channels.insert(op.channel, chan)
 
 proc validateChannelDeposit*(
     channels: ChannelStore,
+    channelNotes: ChannelNotes,
     cs: CryptarchiaState,
     lockedNotes: LockedNotes,
     op: ChannelDepositPayload,
@@ -210,18 +233,13 @@ proc validateChannelDeposit*(
   ## Read-only checks for ChannelDeposit.
   if op.channel notin channels:
     return err(ChannelNotFound)
-
-  var seen: HashSet[NoteId]
-  for inputId in op.inputs:
-    if seen.containsOrIncl(inputId):
-      return err(DoubleSpend)
+  ?assert_spendable(
+    channelNotes, cs.utxos, lockedNotes, op.inputs, Opt.none(ChannelId))
 
   var pks = newSeqOfCap[ZkPublicKey](op.inputs.len)
   for inputId in op.inputs:
-    if inputId in lockedNotes:
-      return err(LockedNote)
     let utxo = cs.utxos.get(inputId).valueOr:
-      return err(InvalidNote)
+      return err(InvalidNote) # unreachable: assert_spendable checked presence
     pks.add(utxo.note.zkPublicKey)
 
   let
@@ -234,60 +252,108 @@ proc validateChannelDeposit*(
   ok()
 
 func applyChannelDeposit*(
-    channels: ChannelStore,
+    channelNotes: ChannelNotes,
     cs: sink CryptarchiaState,
     op: ChannelDepositPayload,
-): Result[tuple[channels: ChannelStore, cs: CryptarchiaState], LedgerError] =
-  ## Mutation-with-overflow-check; assumes `validateChannelDeposit` passed.
-  ## Removes inputs and credits the channel balance.
-  var chan = channels.getOrDefault(op.channel)
-  for inputId in op.inputs:
+): Result[tuple[channelNotes: ChannelNotes, cs: CryptarchiaState], LedgerError] =
+  ## Mutation only; assumes `validateChannelDeposit` passed. Consumes the
+  ## inputs and re-creates identical notes under the deposit's OpId.
+  # The fresh NoteId resets ageing and blocks deposit replay.
+  var notes = channelNotes
+  let depositOpId = opId(op)
+  for i, inputId in op.inputs:
     let (newStore, removedUtxo) = cs.utxos.remove(inputId).valueOr:
-      return err(InvalidNote)  # unreachable if validate passed
-    cs.utxos = newStore
-    chan.balance = ?chan.balance.checkedAdd(removedUtxo.note.value)
-  ok((channels.insert(op.channel, chan), cs))
+      return err(InvalidNote) # unreachable if validate passed
+    let
+      u = Utxo(opId: depositOpId, outputIndex: uint64(i), note: removedUtxo.note)
+      uid = u.id
+    cs.utxos = newStore.insert(uid, u).store
+    notes = ?notes.registerChannelNote(uid, op.channel)
+  ok((notes, cs))
 
 func validateChannelWithdraw*(
     channels: ChannelStore,
+    channelNotes: ChannelNotes,
+    cs: CryptarchiaState,
+    lockedNotes: LockedNotes,
     op: ChannelWithdrawPayload,
-    proof: ChannelWithdrawOpProof,
+    proof: ChannelMultiSigProof,
     txHash: Hash32,
 ): Result[void, LedgerError] =
   ## Read-only checks for ChannelWithdraw.
   let chan = channels.get(op.channel).valueOr:
     return err(ChannelNotFound)
+  ?assert_spendable(
+    channelNotes, cs.utxos, lockedNotes, op.inputs, Opt.some(op.channel))
+  ?verifyChannelMultiSig(
+    proof, chan.accreditedKeys, chan.transferThreshold, txHash)
+  ok()
 
+func applyChannelWithdraw*(
+    channelNotes: ChannelNotes, op: ChannelWithdrawPayload
+): Result[ChannelNotes, LedgerError] =
+  ## Mutation only; assumes `validateChannelWithdraw` passed. Releases the
+  ## inputs; the UTXO set is untouched.
+  # Notes keep their NoteId, value and ZkPublicKey, so ageing never resets.
+  var notes = channelNotes
+  for inputId in op.inputs:
+    notes = ?notes.unregisterChannelNote(inputId, op.channel)
+  ok(notes)
+
+func validateChannelTransfer*(
+    channels: ChannelStore,
+    channelNotes: ChannelNotes,
+    cs: CryptarchiaState,
+    lockedNotes: LockedNotes,
+    op: ChannelTransferPayload,
+    proof: ChannelMultiSigProof,
+    txHash: Hash32,
+): Result[void, LedgerError] =
+  ## Read-only checks for ChannelTransfer.
   var outflow: TokenValue = 0
   for outNote in op.outputs:
     if outNote.value == 0:
       return err(ZeroValueNote)
     outflow = ?outflow.checkedAdd(outNote.value)
 
-  if chan.withdrawalNonce != op.opIdNonce:
-    return err(InvalidWithdrawNonce)
-  if chan.withdrawalNonce == high(uint32):
-    return err(WithdrawNonceOverflow)
-  if outflow > chan.balance:
-    return err(InsufficientBalance)
+  let chan = channels.get(op.channel).valueOr:
+    return err(ChannelNotFound)
+  ?assert_spendable(
+    channelNotes, cs.utxos, lockedNotes, op.inputs, Opt.some(op.channel))
+
+  var inflow: TokenValue = 0
+  for inputId in op.inputs:
+    let utxo = cs.utxos.get(inputId).valueOr:
+      return err(InvalidNote) # unreachable: assert_spendable checked presence
+    inflow = ?inflow.checkedAdd(utxo.note.value)
+  if inflow != outflow:
+    return err(UnbalancedTransfer)
+
   ?verifyChannelMultiSig(
-    proof, chan.accreditedKeys, chan.withdrawThreshold, txHash)
+    proof, chan.accreditedKeys, chan.transferThreshold, txHash)
   ok()
 
-func applyChannelWithdraw*(
-    channels: ChannelStore,
+func applyChannelTransfer*(
+    channelNotes: ChannelNotes,
     cs: sink CryptarchiaState,
-    op: ChannelWithdrawPayload,
-): tuple[channels: ChannelStore, cs: CryptarchiaState] =
-  ## Mutation only; assumes `validateChannelWithdraw` passed. Drains the
-  ## channel balance, bumps the nonce, inserts output UTXOs.
-  var chan = channels.getOrDefault(op.channel)
-  let withdrawOpId = opId(op)
+    op: ChannelTransferPayload,
+): Result[tuple[channelNotes: ChannelNotes, cs: CryptarchiaState], LedgerError] =
+  ## Mutation only; assumes `validateChannelTransfer` passed. Reassigns the
+  ## inputs' value to the outputs' keys, which stay owned by the channel.
+  var notes = channelNotes
+  for inputId in op.inputs:
+    let (newStore, _) = cs.utxos.remove(inputId).valueOr:
+      return err(InvalidNote) # unreachable if validate passed
+    cs.utxos = newStore
+    notes = ?notes.unregisterChannelNote(inputId, op.channel)
+
+  let transferOpId = opId(op)
   for i, outNote in op.outputs:
-    chan.balance -= outNote.value
-    let u = Utxo(opId: withdrawOpId, outputIndex: uint64(i), note: outNote)
-    cs.utxos = cs.utxos.insert(u.id, u).store
-  chan.withdrawalNonce += 1
-  (channels.insert(op.channel, chan), cs)
+    let
+      u = Utxo(opId: transferOpId, outputIndex: uint64(i), note: outNote)
+      uid = u.id
+    cs.utxos = cs.utxos.insert(uid, u).store
+    notes = ?notes.registerChannelNote(uid, op.channel)
+  ok((notes, cs))
 
 {.pop.}

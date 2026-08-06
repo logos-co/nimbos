@@ -6,13 +6,12 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## `MantleState` bundles all Mantle-side sub-states under one composite:
-## `channels` now, SDP and leader sub-states in later PRs.
+## channels and their notes now, SDP and leader sub-states in later PRs.
 
 {.push raises: [], gcsafe.}
 
 import
   results,
-  std/sets,
   ./[channel_state, cryptarchia_state, types],
   ../core/mantle/[primitives, operations, proofs]
 
@@ -21,9 +20,13 @@ export channel_state
 type
   MantleState* = object
     channels*: ChannelStore
+    channelNotes*: ChannelNotes
 
 func init*(_: typedesc[MantleState]): MantleState =
-  MantleState(channels: HashTrieMap[ChannelId, ChannelState].init())
+  MantleState(
+    channels: HashTrieMap[ChannelId, ChannelState].init(),
+    channelNotes: ChannelNotes.init(),
+  )
 
 func tryApplyChannelInscribe*(
     ms: sink MantleState,
@@ -40,7 +43,7 @@ func tryApplyChannelInscribe*(
 func tryApplyChannelConfig*(
     ms: sink MantleState,
     op: ChannelConfigPayload,
-    proof: ChannelWithdrawOpProof,
+    proof: ChannelMultiSigProof,
     txHash: Hash32,
     blockSlot: SlotNumber,
 ): Result[MantleState, LedgerError] =
@@ -57,25 +60,42 @@ proc tryApplyChannelDeposit*(
     sig: ZkSigProof,
     txHash: Hash32,
 ): Result[tuple[ms: MantleState, cs: CryptarchiaState], LedgerError] =
-  ## ChannelDeposit — consumes input UTXOs from cryptarchia and credits the
-  ## channel balance. Validate-then-apply.
-  ?validateChannelDeposit(ms.channels, cs, lockedNotes, op, sig, txHash)
-  let (newChans, newCs) = ?applyChannelDeposit(ms.channels, cs, op)
-  ms.channels = newChans
-  ok((ms, newCs))
+  ## ChannelDeposit — consumes the input UTXOs and re-creates them as channel
+  ## notes. Validate-then-apply.
+  ?validateChannelDeposit(
+    ms.channels, ms.channelNotes, cs, lockedNotes, op, sig, txHash)
+  let r = ?applyChannelDeposit(ms.channelNotes, cs, op)
+  ms.channelNotes = r.channelNotes
+  ok((ms, r.cs))
 
 func tryApplyChannelWithdraw*(
     ms: sink MantleState,
-    cs: sink CryptarchiaState,
+    cs: CryptarchiaState,
+    lockedNotes: LockedNotes,
     op: ChannelWithdrawPayload,
-    proof: ChannelWithdrawOpProof,
+    proof: ChannelMultiSigProof,
+    txHash: Hash32,
+): Result[MantleState, LedgerError] =
+  ## ChannelWithdraw — releases the inputs from the channel; the UTXO set is
+  ## untouched. Validate-then-apply.
+  ?validateChannelWithdraw(
+    ms.channels, ms.channelNotes, cs, lockedNotes, op, proof, txHash)
+  ms.channelNotes = ?applyChannelWithdraw(ms.channelNotes, op)
+  ok(ms)
+
+func tryApplyChannelTransfer*(
+    ms: sink MantleState,
+    cs: sink CryptarchiaState,
+    lockedNotes: LockedNotes,
+    op: ChannelTransferPayload,
+    proof: ChannelMultiSigProof,
     txHash: Hash32,
 ): Result[tuple[ms: MantleState, cs: CryptarchiaState], LedgerError] =
-  ## ChannelWithdraw — drains the channel balance and inserts output UTXOs
-  ## into cryptarchia. Validate-then-apply.
-  ?validateChannelWithdraw(ms.channels, op, proof, txHash)
-  let (newChans, newCs) = applyChannelWithdraw(ms.channels, cs, op)
-  ms.channels = newChans
-  ok((ms, newCs))
+  ## ChannelTransfer — reassigns channel funds to new keys. Validate-then-apply.
+  ?validateChannelTransfer(
+    ms.channels, ms.channelNotes, cs, lockedNotes, op, proof, txHash)
+  let r = ?applyChannelTransfer(ms.channelNotes, cs, op)
+  ms.channelNotes = r.channelNotes
+  ok((ms, r.cs))
 
 {.pop.}

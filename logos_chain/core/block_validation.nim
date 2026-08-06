@@ -36,10 +36,11 @@ func validateBlockHeader(blk: Block): bool =
   if header(blk).bedrockVersion != ExpectedBedrockVersion:
     return false
 
-  if blockPayloadBytesLen(blk) >= MaxBlockSize:
+  # Both bounds are inclusive: a block sitting exactly on the limit is valid.
+  if blockPayloadBytesLen(blk) > MaxBlockSize:
     return false
 
-  if blk.txs.len >= MaxBlockTxs:
+  if blk.txs.len > MaxBlockTxs:
     return false
 
   if createBlockRoot(blk.txs) != header(blk).blockRoot:

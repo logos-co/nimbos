@@ -444,7 +444,7 @@ func parseGenesisOpProof(
         ed25519Sig: ? parseEd25519SignatureNode(edNode, path & ".ed25519_sig"),
       ),
     ))
-  of opfChannelWithdraw, opfChannelConfig:
+  of opfChannelWithdraw, opfChannelTransfer, opfChannelConfig:
     ok(expectedDefaultProof)
 
 func validateCryptarchiaGenesisYaml*(root: YamlNode): Result[void, string] =

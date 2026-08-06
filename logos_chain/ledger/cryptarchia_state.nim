@@ -12,12 +12,15 @@
 import results
 
 import
-  ./[balance, types, utxo_store, zksig_verify, leader_state, poc_verifier],
+  ./[
+    balance, channel_notes, types, utxo_store, zksig_verify, leader_state,
+    poc_verifier,
+  ],
   ./sdp/state as sdp_state,
   ../core/mantle/[primitives, operations, proofs, utxo, tx_hashing],
   ../utils/dynamic_merkle_tree as voucherTree
 
-export types, utxo, primitives, utxo_store, sdp_state, leader_state
+export types, utxo, primitives, utxo_store, sdp_state, leader_state, channel_notes
 
 type
   CryptarchiaState* = object
@@ -57,6 +60,7 @@ func `==`*(a, b: CryptarchiaState): bool =
 func applyTransferState*(
     s: sink CryptarchiaState,
     lockedNotes: LockedNotes,
+    channelNotes: ChannelNotes,
     op: TransferPayload,
 ): Result[
   tuple[state: CryptarchiaState, balance: Balance, pks: seq[ZkPublicKey]],
@@ -72,6 +76,10 @@ func applyTransferState*(
   for inputId in op.inputs.noteIds:
     if inputId in lockedNotes:
       return err(LockedNote)
+    # A channel note is owned by its channel and only CHANNEL_TRANSFER or
+    # CHANNEL_WITHDRAW may move it.
+    if channelNotes.isChannelNote(inputId):
+      return err(ChannelNoteSpend)
     let (newStore, removedUtxo) = s.utxos.remove(inputId).valueOr:
       return err(InvalidNote)
     s.utxos = newStore
@@ -91,6 +99,7 @@ func applyTransferState*(
 proc tryApplyTransfer*(
     s: sink CryptarchiaState,
     lockedNotes: LockedNotes,
+    channelNotes: ChannelNotes,
     op: TransferPayload,
     sig: ZkSigProof,
     txHash: ZkHash,
@@ -99,7 +108,7 @@ proc tryApplyTransfer*(
   ## ZkSig over the collected input pks. Returns
   ## `(new_state, sum(inputs) − sum(outputs))`. The returned balance may be
   ## positive (surplus → fees), zero (balanced), or negative (deficit).
-  let r = ?s.applyTransferState(lockedNotes, op)
+  let r = ?s.applyTransferState(lockedNotes, channelNotes, op)
   ?verifyZkSig(sig, txHash, r.pks)
   ok((r.state, r.balance))
 
