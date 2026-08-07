@@ -47,17 +47,33 @@ suite "core/mantle/proofs":
 
     check proofType(OpProof(
       kind: opfChannelWithdraw,
-      channelWithdrawOpProof: ChannelWithdrawOpProof(signatures: @[], indexes: @[]),
+      channelWithdrawOpProof: ChannelMultiSigProof(signatures: @[], indexes: @[]),
+    )) == ptChannelWithdraw
+    check proofType(OpProof(
+      kind: opfChannelTransfer,
+      channelTransferOpProof: ChannelMultiSigProof(signatures: @[], indexes: @[]),
     )) == ptChannelWithdraw
     check proofType(OpProof(
       kind: opfChannelConfig,
-      channelConfigOpProof: ChannelWithdrawOpProof(signatures: @[], indexes: @[]),
+      channelConfigOpProof: ChannelMultiSigProof(signatures: @[], indexes: @[]),
     )) == ptChannelWithdraw
 
     check proofType(OpProof(
       kind: opfLeaderClaim,
       proofOfClaimProof: DefaultCompressedGroth16Proof,
     )) == ptProofOfClaim
+
+  test "the three channel multisig ops share one proof type on the wire":
+    let
+      proof = ChannelMultiSigProof(signatures: @[], indexes: @[])
+      encoded = encodeChannelMultiSigProof(proof.signatures, proof.indexes)
+    check encodeOpProof(
+      OpProof(kind: opfChannelWithdraw, channelWithdrawOpProof: proof)) == encoded
+    check encodeOpProof(
+      OpProof(kind: opfChannelTransfer, channelTransferOpProof: proof)) == encoded
+    check encodeOpProof(
+      OpProof(kind: opfChannelConfig, channelConfigOpProof: proof)) == encoded
+    check decodeOpProof(encoded, opfChannelTransfer).channelTransferOpProof == proof
 
   test "encodeOpsProofs requires proofs length == op count":
     let ops = @[

@@ -18,6 +18,7 @@ const allOpcodes = [
   OpChannelInscribe,
   OpChannelDeposit,
   OpChannelWithdraw,
+  OpChannelTransfer,
   OpSdpDeclare,
   OpSdpWithdraw,
   OpSdpActive,
@@ -37,6 +38,9 @@ proc checkOpProofEqual(a, b: OpProof) =
   of opfChannelWithdraw:
     check a.channelWithdrawOpProof.signatures == b.channelWithdrawOpProof.signatures
     check a.channelWithdrawOpProof.indexes == b.channelWithdrawOpProof.indexes
+  of opfChannelTransfer:
+    check a.channelTransferOpProof.signatures == b.channelTransferOpProof.signatures
+    check a.channelTransferOpProof.indexes == b.channelTransferOpProof.indexes
   of opfSdpDeclare:
     check a.declarationProof.zkSig == b.declarationProof.zkSig
     check a.declarationProof.ed25519Sig == b.declarationProof.ed25519Sig
@@ -65,6 +69,8 @@ proc checkOpEqual(a, b: Op) =
     check a.payload.channelDeposit == b.payload.channelDeposit
   of ChannelWithdraw:
     check a.payload.channelWithdraw == b.payload.channelWithdraw
+  of ChannelTransfer:
+    check a.payload.channelTransfer == b.payload.channelTransfer
   of SdpDeclare:
     check a.payload.sdpDeclare.serviceType == b.payload.sdpDeclare.serviceType
     check a.payload.sdpDeclare.locators == b.payload.sdpDeclare.locators

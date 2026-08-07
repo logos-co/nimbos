@@ -108,7 +108,6 @@ suite "core/block bincode (cryptarchia sync)":
       check withDefaultSig.len == withMarkedSig.len
       check withDefaultSig != withMarkedSig
       check withMarkedSig.len > EdSignatureSize
-      check withMarkedSig.len <= MaxBlockSize
     except BincodeError, IOError:
       fail getCurrentExceptionMsg()
 

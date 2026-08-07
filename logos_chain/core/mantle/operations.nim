@@ -41,8 +41,13 @@ type
 type
   ChannelWithdrawPayload* = object
     channel*: ChannelId
+    inputs*: seq[NoteId]
+
+type
+  ChannelTransferPayload* = object
+    channel*: ChannelId
+    inputs*: seq[NoteId]
     outputs*: seq[Note]
-    opIdNonce*: uint32
 
 
 type
@@ -76,7 +81,7 @@ type
     postingTimeframe*: PostingTimeframe
     postingTimeout*: PostingTimeout
     configurationThreshold*: ConfigurationThreshold
-    withdrawThreshold*: WithdrawThreshold
+    transferThreshold*: TransferThreshold
 
 
 type
@@ -85,6 +90,7 @@ type
     ChannelInscribe
     ChannelDeposit
     ChannelWithdraw
+    ChannelTransfer
     SdpDeclare
     SdpWithdraw
     SdpActive
@@ -97,6 +103,7 @@ type
     of ChannelInscribe: channelInscribe*: ChannelInscribePayload
     of ChannelDeposit: channelDeposit*: ChannelDepositPayload
     of ChannelWithdraw: channelWithdraw*: ChannelWithdrawPayload
+    of ChannelTransfer: channelTransfer*: ChannelTransferPayload
     of SdpDeclare: sdpDeclare*: DeclarationMessage
     of SdpWithdraw: sdpWithdraw*: WithdrawMessage
     of SdpActive: sdpActive*: ActiveMessage
@@ -129,6 +136,12 @@ func createChannelWithdrawOp*(payload: ChannelWithdrawPayload): Op =
     payload: OpPayload(kind: ChannelWithdraw, channelWithdraw: payload),
   )
 
+func createChannelTransferOp*(payload: ChannelTransferPayload): Op =
+  Op(
+    opcode: OpChannelTransfer,
+    payload: OpPayload(kind: ChannelTransfer, channelTransfer: payload),
+  )
+
 func createSdpDeclareOp*(payload: DeclarationMessage): Op =
   Op(opcode: OpSdpDeclare, payload: OpPayload(kind: SdpDeclare, sdpDeclare: payload))
 
@@ -157,6 +170,7 @@ func opPayloadToOpcode*(p: OpPayload): Opcode =
   of ChannelInscribe: OpChannelInscribe
   of ChannelDeposit: OpChannelDeposit
   of ChannelWithdraw: OpChannelWithdraw
+  of ChannelTransfer: OpChannelTransfer
   of SdpDeclare: OpSdpDeclare
   of SdpWithdraw: OpSdpWithdraw
   of SdpActive: OpSdpActive
@@ -167,7 +181,8 @@ func isSupportedOpcode*(opcode: Opcode): bool =
   ## True when opcode is part of the currently supported Mantle operation set.
   case opcode
   of OpTransfer, OpChannelInscribe, OpChannelDeposit, OpChannelWithdraw,
-     OpSdpDeclare, OpSdpWithdraw, OpSdpActive, OpLeaderClaim, OpChannelConfig:
+     OpChannelTransfer, OpSdpDeclare, OpSdpWithdraw, OpSdpActive, OpLeaderClaim,
+     OpChannelConfig:
     true
   else:
     false
@@ -196,8 +211,13 @@ func defaultOpForOpcode*(opcode: Opcode): Op =
   of OpChannelWithdraw:
     createChannelWithdrawOp(ChannelWithdrawPayload(
       channel: default(ChannelId),
+      inputs: @[],
+    ))
+  of OpChannelTransfer:
+    createChannelTransferOp(ChannelTransferPayload(
+      channel: default(ChannelId),
+      inputs: @[],
       outputs: @[],
-      opIdNonce: 0'u32,
     ))
   of OpSdpDeclare:
     createSdpDeclareOp(DeclarationMessage(
@@ -232,7 +252,7 @@ func defaultOpForOpcode*(opcode: Opcode): Op =
       postingTimeframe: default(PostingTimeframe),
       postingTimeout: default(PostingTimeout),
       configurationThreshold: default(ConfigurationThreshold),
-      withdrawThreshold: default(WithdrawThreshold),
+      transferThreshold: default(TransferThreshold),
     ))
   else:
     doAssert false, "unknown opcode for default op: " & $opcode
@@ -286,10 +306,16 @@ func encodeLeaderClaim*(value: LeaderClaimPayload): array[96, byte] =
   res
 
 func encodeChannelWithdraw*(value: ChannelWithdrawPayload): seq[byte] =
-  ## ChannelWithdraw = ChannelId || Outputs || OpIdNonce
+  ## ChannelWithdraw = ChannelId || Inputs
   var res = @(encodeChannelId(value.channel))
+  res.add(encodeInputs(value.inputs))
+  res
+
+func encodeChannelTransfer*(value: ChannelTransferPayload): seq[byte] =
+  ## ChannelTransfer = ChannelId || Inputs || Outputs
+  var res = @(encodeChannelId(value.channel))
+  res.add(encodeInputs(value.inputs))
   res.add(encodeOutputs(Outputs(notes: value.outputs)))
-  res.add(@(encodeOpIdNonce(value.opIdNonce)))
   res
 
 func encodeChannelDeposit*(value: ChannelDepositPayload): seq[byte] =
@@ -301,7 +327,7 @@ func encodeChannelDeposit*(value: ChannelDepositPayload): seq[byte] =
 
 func encodeChannelConfig*(value: ChannelConfigPayload): seq[byte] =
   ## ChannelConfig = ChannelId || KeyCount || *Signer || PostingTimeframe ||
-  ##                 PostingTimeout || ConfigThreshold || WithdrawThreshold
+  ##                 PostingTimeout || ConfigThreshold || TransferThreshold
   doAssert value.keys.len <= int(high(uint16)),
     "ChannelConfig: KeyCount exceeds UINT16 range"
   var res = @(encodeChannelId(value.channel))
@@ -311,7 +337,7 @@ func encodeChannelConfig*(value: ChannelConfigPayload): seq[byte] =
   res.add(encodePostingTimeframe(value.postingTimeframe))
   res.add(encodePostingTimeout(value.postingTimeout))
   res.add(encodeConfigurationThreshold(value.configurationThreshold))
-  res.add(encodeWithdrawThreshold(value.withdrawThreshold))
+  res.add(encodeTransferThreshold(value.transferThreshold))
   res
 
 func encodeChannelInscribe*(value: ChannelInscribePayload): seq[byte] =
@@ -327,6 +353,7 @@ func encodeOpPayload*(payload: OpPayload): seq[byte] =
   ##             ChannelInscribe /
   ##             ChannelDeposit /
   ##             ChannelWithdraw /
+  ##             ChannelTransfer /
   ##             SDPDeclare /
   ##             SDPWithdraw /
   ##             SDPActive /
@@ -340,7 +367,9 @@ func encodeOpPayload*(payload: OpPayload): seq[byte] =
   of ChannelDeposit:
     encodeChannelDeposit(payload.channelDeposit)
   of ChannelWithdraw:
-    @(encodeChannelWithdraw(payload.channelWithdraw))
+    encodeChannelWithdraw(payload.channelWithdraw)
+  of ChannelTransfer:
+    encodeChannelTransfer(payload.channelTransfer)
   of SdpDeclare:
     encodeSdpDeclare(payload.sdpDeclare)
   of SdpWithdraw:
@@ -435,14 +464,21 @@ func decodeLeaderClaim*(data: openArray[byte]): LeaderClaimPayload {.raises: [De
 
 func decodeChannelWithdraw*(data: openArray[byte]): ChannelWithdrawPayload {.raises: [DecodingError].} =
   var pos = 0
-  let channel = readFixed[32](data, pos)
-  let outputs = readOutputs(data, pos)
-  let opIdNonce = readLe[uint32](data, pos)
+  let
+    channel = readFixed[32](data, pos)
+    inputs = readInputs(data, pos)
   finishDecode(data, pos)
-  ChannelWithdrawPayload(
-    channel: channel,
-    outputs: outputs.notes,
-    opIdNonce: opIdNonce,
+  ChannelWithdrawPayload(channel: channel, inputs: inputs.noteIds)
+
+func decodeChannelTransfer*(data: openArray[byte]): ChannelTransferPayload {.raises: [DecodingError].} =
+  var pos = 0
+  let
+    channel = readFixed[32](data, pos)
+    inputs = readInputs(data, pos)
+    outputs = readOutputs(data, pos)
+  finishDecode(data, pos)
+  ChannelTransferPayload(
+    channel: channel, inputs: inputs.noteIds, outputs: outputs.notes,
   )
 
 func decodeChannelDeposit*(data: openArray[byte]): ChannelDepositPayload {.raises: [DecodingError].} =
@@ -469,7 +505,7 @@ func decodeChannelConfig*(data: openArray[byte]): ChannelConfigPayload {.raises:
   let postingTimeframe = PostingTimeframe(readLe[uint32](data, pos))
   let postingTimeout = PostingTimeout(readLe[uint32](data, pos))
   let configurationThreshold = ConfigurationThreshold(readLe[uint16](data, pos))
-  let withdrawThreshold = WithdrawThreshold(readLe[uint16](data, pos))
+  let transferThreshold = TransferThreshold(readLe[uint16](data, pos))
   finishDecode(data, pos)
   ChannelConfigPayload(
     channel: channel,
@@ -477,7 +513,7 @@ func decodeChannelConfig*(data: openArray[byte]): ChannelConfigPayload {.raises:
     postingTimeframe: postingTimeframe,
     postingTimeout: postingTimeout,
     configurationThreshold: configurationThreshold,
-    withdrawThreshold: withdrawThreshold,
+    transferThreshold: transferThreshold,
   )
 
 func decodeChannelInscribe*(data: openArray[byte]): ChannelInscribePayload {.raises: [DecodingError].} =
@@ -531,13 +567,24 @@ func readOpPayload*(data: openArray[byte], pos: var int, opcode: Opcode): OpPayl
       channelDeposit: ChannelDepositPayload(channel: channel, inputs: inputs, metadata: metadata),
     )
   of OpChannelWithdraw:
-    let channel = readFixed[32](data, pos)
-    let outputs = readOutputs(data, pos)
-    let opIdNonce = readLe[uint32](data, pos)
+    let
+      channel = readFixed[32](data, pos)
+      inputs = readInputs(data, pos)
     OpPayload(
       kind: ChannelWithdraw,
       channelWithdraw: ChannelWithdrawPayload(
-        channel: channel, outputs: outputs.notes, opIdNonce: opIdNonce,
+        channel: channel, inputs: inputs.noteIds,
+      ),
+    )
+  of OpChannelTransfer:
+    let
+      channel = readFixed[32](data, pos)
+      inputs = readInputs(data, pos)
+      outputs = readOutputs(data, pos)
+    OpPayload(
+      kind: ChannelTransfer,
+      channelTransfer: ChannelTransferPayload(
+        channel: channel, inputs: inputs.noteIds, outputs: outputs.notes,
       ),
     )
   of OpSdpDeclare:
@@ -607,7 +654,7 @@ func readOpPayload*(data: openArray[byte], pos: var int, opcode: Opcode): OpPayl
     let postingTimeframe = PostingTimeframe(readLe[uint32](data, pos))
     let postingTimeout = PostingTimeout(readLe[uint32](data, pos))
     let configurationThreshold = ConfigurationThreshold(readLe[uint16](data, pos))
-    let withdrawThreshold = WithdrawThreshold(readLe[uint16](data, pos))
+    let transferThreshold = TransferThreshold(readLe[uint16](data, pos))
     OpPayload(
       kind: ChannelConfig,
       channelConfig: ChannelConfigPayload(
@@ -616,7 +663,7 @@ func readOpPayload*(data: openArray[byte], pos: var int, opcode: Opcode): OpPayl
         postingTimeframe: postingTimeframe,
         postingTimeout: postingTimeout,
         configurationThreshold: configurationThreshold,
-        withdrawThreshold: withdrawThreshold,
+        transferThreshold: transferThreshold,
       ),
     )
   else:

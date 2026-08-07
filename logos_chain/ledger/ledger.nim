@@ -101,7 +101,8 @@ proc fromGenesis*(
           doAssert total <= uint64.high - c, "total stake overflows uint64"
           total += c
         let r = ?s.cryptarchiaLedger.applyTransferState(
-          s.sdp.state.lockedNotes, op.payload.transfer)
+          s.sdp.state.lockedNotes, s.mantleLedger.channelNotes,
+          op.payload.transfer)
         s.cryptarchiaLedger = r.state
       of ChannelInscribe:
         # Envelope validity (null channel, root parent, zero signer) is
@@ -180,7 +181,11 @@ func multisigThreshold(s: LedgerState, op: Op): uint16 =
   of ChannelWithdraw:
     let ch = s.mantleLedger.channels.get(op.payload.channelWithdraw.channel).valueOr:
       return 0'u16
-    ch.withdrawThreshold
+    ch.transferThreshold
+  of ChannelTransfer:
+    let ch = s.mantleLedger.channels.get(op.payload.channelTransfer.channel).valueOr:
+      return 0'u16
+    ch.transferThreshold
   else:
     0'u16
 
@@ -207,31 +212,28 @@ proc tryApplyTx*(
       opGas = execution_gas(op, s.multisigThreshold(op))
     txExecutionGas = txExecutionGas.checkedAdd(opGas).valueOr:
       return err(GasOverflow)
+    if proof.kind != expectedOpProofKindForOpcode(op.opcode):
+      return err(InvalidProof)
     case op.payload.kind
     of Transfer:
-      if proof.kind != opfTransfer:
-        return err(InvalidProof)
       let r =
         ?s.cryptarchiaLedger.tryApplyTransfer(
-          s.sdp.state.lockedNotes,
+          s.sdp.state.lockedNotes, s.mantleLedger.channelNotes,
           op.payload.transfer, proof.transferProof, txHash,
         )
       s.cryptarchiaLedger = r.state
       balance = ?balance.checkedAdd(r.balance)
     of SdpDeclare:
-      if proof.kind != opfSdpDeclare:
-        return err(InvalidProof)
       s.sdp = ?tryApplySdpDeclare(
         s.sdp,
         op.payload.sdpDeclare,
         proof.declarationProof,
         txHash,
         s.cryptarchiaLedger.latestUtxos,
+        s.mantleLedger.channelNotes,
         epoch,
       )
     of SdpWithdraw:
-      if proof.kind != opfSdpWithdraw:
-        return err(InvalidProof)
       s.sdp = ?tryApplySdpWithdraw(
         s.sdp,
         op.payload.sdpWithdraw,
@@ -241,8 +243,6 @@ proc tryApplyTx*(
         epoch,
       )
     of SdpActive:
-      if proof.kind != opfSdpActive:
-        return err(InvalidProof)
       s.sdp = ?tryApplySdpActive(
         s.sdp,
         op.payload.sdpActive,
@@ -251,20 +251,14 @@ proc tryApplyTx*(
         epoch,
       )
     of ChannelInscribe:
-      if proof.kind != opfChannelInscribe:
-        return err(InvalidProof)
       s.mantleLedger = ?s.mantleLedger.tryApplyChannelInscribe(
         op.payload.channelInscribe, proof.ed25519SigProof, txHash, slot,
       )
     of ChannelConfig:
-      if proof.kind != opfChannelConfig:
-        return err(InvalidProof)
       s.mantleLedger = ?s.mantleLedger.tryApplyChannelConfig(
         op.payload.channelConfig, proof.channelConfigOpProof, txHash, slot,
       )
     of ChannelDeposit:
-      if proof.kind != opfChannelDeposit:
-        return err(InvalidProof)
       let r = ?s.mantleLedger.tryApplyChannelDeposit(
         s.cryptarchiaLedger, s.sdp.state.lockedNotes,
         op.payload.channelDeposit, proof.channelDepositProof, txHash,
@@ -273,17 +267,18 @@ proc tryApplyTx*(
       s.cryptarchiaLedger = r.cs
       s.mantleLedger = r.ms
     of ChannelWithdraw:
-      if proof.kind != opfChannelWithdraw:
-        return err(InvalidProof)
-      let r = ?s.mantleLedger.tryApplyChannelWithdraw(
-        s.cryptarchiaLedger,
+      s.mantleLedger = ?s.mantleLedger.tryApplyChannelWithdraw(
+        s.cryptarchiaLedger, s.sdp.state.lockedNotes,
         op.payload.channelWithdraw, proof.channelWithdrawOpProof, txHash,
+      )
+    of ChannelTransfer:
+      let r = ?s.mantleLedger.tryApplyChannelTransfer(
+        s.cryptarchiaLedger, s.sdp.state.lockedNotes,
+        op.payload.channelTransfer, proof.channelTransferOpProof, txHash,
       )
       s.cryptarchiaLedger = r.cs
       s.mantleLedger = r.ms
     of LeaderClaim:
-      if proof.kind != opfLeaderClaim:
-        return err(InvalidProof)
       s.cryptarchiaLedger = ?s.cryptarchiaLedger.tryApplyLeaderClaim(
         op.payload.leaderClaim, proof.proofOfClaimProof, txHash,
       )

@@ -52,13 +52,16 @@ type
     LockedNoteIdMismatch
     DeclarationNotInLockedNote
     ActivityRejected
-    ChannelNotFound ## ChannelDeposit/Withdraw references a missing ChannelId
+    ChannelNotFound ## channel op references a missing ChannelId
     InvalidParent ## ChannelInscribe parent doesn't match the channel's tipMessage
     UnauthorizedSigner ## ChannelInscribe signer isn't the round-robin sequencer
-    InvalidWithdrawNonce ## ChannelWithdraw opIdNonce != channel's withdrawalNonce
-    ThresholdUnmet ## Config/Withdraw signature count != channel threshold
+    ThresholdUnmet ## Config/Withdraw/Transfer signature count != channel threshold
     InvalidChannelConfig ## ChannelConfig has zero threshold or empty keys
-    WithdrawNonceOverflow ## ChannelWithdraw incremented withdrawalNonce past uint32
+    ChannelNoteSpend ## channel note used where a channel-free note is required
+    AlreadyChannelNote ## NoteId is already registered to a channel
+    EmptyInputs ## Deposit/Withdraw/Transfer must consume at least one note
+    NotAChannelNote ## Withdraw/Transfer input isn't owned by the named channel
+    UnbalancedTransfer ## ChannelTransfer input sum != output sum
     DuplicatedVoucherNullifier ## leader-claim voucher nullifier already spent
     RewardsRootMismatch ## leader-claim rewards root ≠ ledger snapshot
     UnsupportedLotteryF ## no lottery constants registered for the configured `f`

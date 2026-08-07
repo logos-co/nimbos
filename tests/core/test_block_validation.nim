@@ -12,8 +12,26 @@ import
   unittest2,
   ../testutil,
   ../../logos_chain/core/[types, block_validation],
+  ../../logos_chain/core/mantle/[operations, proofs, tx_types],
   ../../logos_chain/chain/genesis
-from ../../logos_chain/core/mantle/primitives import SlotNumber
+from ../../logos_chain/core/mantle/primitives import MaxBlockTxs, SlotNumber
+
+const inscribeTxFraming = 166
+  ## OpCount, Opcode, ChannelId, the u32 inscription length, Parent, Signer
+  ## and the 64-byte Ed25519 proof — everything but the inscription itself.
+
+func mkSizedTx(bytes: int): SignedMantleTx =
+  ## ChannelInscribe transaction padded to encode to exactly `bytes`.
+  doAssert bytes >= inscribeTxFraming
+  SignedMantleTx(
+    tx: MantleTx(ops: @[createChannelInscribeOp(ChannelInscribePayload(
+      channelId: default(ChannelId),
+      inscription: newSeq[byte](bytes - inscribeTxFraming),
+      parent: default(Parent),
+      signer: default(Signer),
+    ))]),
+    opProofs: @[defaultOpProofForOpcode(OpChannelInscribe)],
+  )
 
 suite "core/block_validation":
   test "accepts a structurally valid block":
@@ -38,5 +56,46 @@ suite "core/block_validation":
     var b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [sm])
     b1.header.blockRoot[0] = b1.header.blockRoot[0] xor 0xff'u8
     check not validateBlock(b1)
+
+suite "core/block_validation — inclusive size and count bounds":
+  test "a block whose tx bytes are exactly MaxBlockSize is accepted":
+    let
+      genesis = createGenesisBlock(minimalSignedTx())
+      # Only the serialized transactions count; header and block signature don't.
+      tx = mkSizedTx(MaxBlockSize)
+    check encodeSignedMantleTx(tx).len == MaxBlockSize
+    let b1 = childBlock(
+      genesis.header, blockId(genesis.header), SlotNumber(1), [tx])
+    check validateBlock(b1)
+
+  test "one byte past MaxBlockSize is rejected":
+    let
+      genesis = createGenesisBlock(minimalSignedTx())
+      tx = mkSizedTx(MaxBlockSize + 1)
+      b1 = childBlock(
+        genesis.header, blockId(genesis.header), SlotNumber(1), [tx])
+    check not validateBlock(b1)
+
+  test "a block with exactly MaxBlockTxs transactions is accepted":
+    let
+      genesis = createGenesisBlock(minimalSignedTx())
+      txs = newSeq[SignedMantleTx](MaxBlockTxs)
+      b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), txs)
+    check validateBlock(b1)
+
+  test "one transaction past MaxBlockTxs is rejected":
+    # `initBlock` and `createBlockRoot` refuse to build an over-long block, so
+    # this models a decoded, untrusted one. The count check runs ahead of the
+    # block-root check, which the extra transaction would also fail.
+    let
+      genesis = createGenesisBlock(minimalSignedTx())
+      txs = newSeq[SignedMantleTx](MaxBlockTxs)
+      b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), txs)
+      overLong = Block(
+        header: b1.header,
+        signature: b1.signature,
+        txs: newSeq[SignedMantleTx](MaxBlockTxs + 1),
+      )
+    check not validateBlock(overLong)
 
 {.pop.}

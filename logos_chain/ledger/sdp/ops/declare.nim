@@ -16,7 +16,7 @@ import
   libp2p/crypto/ed25519/ed25519,
   ./util,
   ../[registry, state],
-  ../../utxo_store,
+  ../../[channel_notes, utxo_store],
   ../../../core/crypto/types,
   ../../../core/mantle/[operations, proofs]
 
@@ -40,6 +40,7 @@ proc validateSdpDeclare(
     txHash: ZkHash,
     minStake: MinStake,
     utxos: UtxoStore,
+    channelNotes: ChannelNotes,
     state: SdpState,
 ): Result[void, LedgerError] =
   if declaration.locators.len == 0:
@@ -51,6 +52,11 @@ proc validateSdpDeclare(
 
   if lockedNoteHasService(state, declaration.lockedNoteId, declaration.serviceType):
     return err(LockedNoteServiceConflict)
+
+  # Channel notes back their channel's bridged funds; they may participate in
+  # PoS but never serve as service-declaration collateral.
+  if channelNotes.isChannelNote(declaration.lockedNoteId):
+    return err(ChannelNoteSpend)
 
   let utxo = utxos.get(declaration.lockedNoteId).valueOr:
     return err(LockedNoteNotFound)
@@ -105,12 +111,13 @@ proc tryApplySdpDeclare*(
     proof: ZkAndEd25519SigsProof,
     txHash: ZkHash,
     utxos: UtxoStore,
+    channelNotes: ChannelNotes,
     epoch: EpochNumber,
 ): Result[SdpRegistry, LedgerError] =
   let minStake = getMinStakeAt(registry, epoch).valueOr:
     return err(MinStakeNotFound)
   ?validateSdpDeclare(
-    declaration, proof, txHash, minStake, utxos, registry.state,
+    declaration, proof, txHash, minStake, utxos, channelNotes, registry.state,
   )
   applySdpDeclare(registry, declaration, epoch)
 

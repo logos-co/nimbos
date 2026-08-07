@@ -23,6 +23,7 @@ type
     opfChannelInscribe
     opfChannelDeposit
     opfChannelWithdraw
+    opfChannelTransfer
     opfSdpDeclare
     opfSdpWithdraw
     opfSdpActive
@@ -43,7 +44,7 @@ type
     zkSig*: ZkSignature
     ed25519Sig*: Ed25519Signature
 
-  ChannelWithdrawOpProof* = object
+  ChannelMultiSigProof* = object
     signatures*: seq[Ed25519Signature]
     indexes*: seq[ChannelKeyIndex]
 
@@ -67,9 +68,10 @@ type
     of opfSdpWithdraw: sdpWithdrawProof*: ZkSigProof
     of opfSdpActive: sdpActiveProof*: ZkSigProof
     of opfChannelInscribe: ed25519SigProof*: Ed25519SigProof
-    of opfChannelWithdraw: channelWithdrawOpProof*: ChannelWithdrawOpProof
+    of opfChannelWithdraw: channelWithdrawOpProof*: ChannelMultiSigProof
+    of opfChannelTransfer: channelTransferOpProof*: ChannelMultiSigProof
     of opfLeaderClaim: proofOfClaimProof*: ProofOfClaimProof
-    of opfChannelConfig: channelConfigOpProof*: ChannelWithdrawOpProof
+    of opfChannelConfig: channelConfigOpProof*: ChannelMultiSigProof
 
 func proofTypeForKind(kind: OpProofKind): ProofType =
   ## Canonical mapping from OpProof variant to proof family.
@@ -80,7 +82,7 @@ func proofTypeForKind(kind: OpProofKind): ProofType =
     ptZkSig
   of opfSdpDeclare:
     ptZkAndEd25519Sigs
-  of opfChannelWithdraw, opfChannelConfig:
+  of opfChannelWithdraw, opfChannelTransfer, opfChannelConfig:
     ptChannelWithdraw
   of opfLeaderClaim:
     ptProofOfClaim
@@ -97,7 +99,12 @@ func defaultOpProofForOpcode*(opcode: Opcode): OpProof =
   of OpChannelWithdraw:
     OpProof(
       kind: opfChannelWithdraw,
-      channelWithdrawOpProof: ChannelWithdrawOpProof(signatures: @[], indexes: @[]),
+      channelWithdrawOpProof: ChannelMultiSigProof(signatures: @[], indexes: @[]),
+    )
+  of OpChannelTransfer:
+    OpProof(
+      kind: opfChannelTransfer,
+      channelTransferOpProof: ChannelMultiSigProof(signatures: @[], indexes: @[]),
     )
   of OpSdpDeclare:
     OpProof(
@@ -116,7 +123,7 @@ func defaultOpProofForOpcode*(opcode: Opcode): OpProof =
   of OpChannelConfig:
     OpProof(
       kind: opfChannelConfig,
-      channelConfigOpProof: ChannelWithdrawOpProof(signatures: @[], indexes: @[]),
+      channelConfigOpProof: ChannelMultiSigProof(signatures: @[], indexes: @[]),
     )
   else:
     doAssert false, "unknown opcode for default op proof: " & $opcode
@@ -132,6 +139,7 @@ func expectedOpProofKindForOpcode*(opcode: Opcode): OpProofKind =
   of OpChannelInscribe: opfChannelInscribe
   of OpChannelDeposit: opfChannelDeposit
   of OpChannelWithdraw: opfChannelWithdraw
+  of OpChannelTransfer: opfChannelTransfer
   of OpSdpDeclare: opfSdpDeclare
   of OpSdpWithdraw: opfSdpWithdraw
   of OpSdpActive: opfSdpActive
@@ -171,17 +179,17 @@ func encodeZkAndEd25519SigsProof*(
   res[128 ..< 192] = encodeEd25519Signature(ed25519Sig)
   res
 
-func encodeChannelWithdrawOpProof*(
+func encodeChannelMultiSigProof*(
   signatures: openArray[Ed25519Signature], indexes: openArray[ChannelKeyIndex]
 ): seq[byte] =
-  ## ChannelWithdrawOpProof = SignatureCount * IndexedEd25519Signature
+  ## ChannelMultiSigProof = SignatureCount * IndexedEd25519Signature
   doAssert signatures.len == indexes.len,
-    "ChannelWithdrawOpProof: signatures and indexes length mismatch"
+    "ChannelMultiSigProof: signatures and indexes length mismatch"
   doAssert signatures.len <= int(high(uint16)),
-    "ChannelWithdrawOpProof: too many signatures for UINT16 SignatureCount"
+    "ChannelMultiSigProof: too many signatures for UINT16 SignatureCount"
   for i in 1 ..< indexes.len:
     doAssert uint16(indexes[i - 1]) < uint16(indexes[i]),
-      "ChannelWithdrawOpProof: indexes must be strictly increasing (ordered, no duplicates)"
+      "ChannelMultiSigProof: indexes must be strictly increasing (ordered, no duplicates)"
 
   var res: seq[byte]
   let countBytes = encodeSignatureCount(SignatureCount(uint16(signatures.len)))
@@ -197,12 +205,13 @@ func encodeOpProof*(proof: OpProof): seq[byte] =
   ##   Ed25519SigProof /
   ##   ZkSigProof /
   ##   ZkAndEd25519SigsProof /
-  ##   ChannelWithdrawOpProof /
+  ##   ChannelMultiSigProof /
   ##   ProofOfClaimProof
   ##
   ## Additional local variants:
   ## - opfChannelDeposit: ZkSigProof
-  ## - opfChannelConfig: encoded as SignatureCount * IndexedEd25519Signature
+  ## - opfChannelTransfer, opfChannelConfig: encoded as
+  ##   SignatureCount * IndexedEd25519Signature
   case proof.kind
   of opfChannelInscribe:
     @(encodeEd25519SigProof(proof.ed25519SigProof))
@@ -217,13 +226,17 @@ func encodeOpProof*(proof: OpProof): seq[byte] =
       proof.declarationProof.zkSig, proof.declarationProof.ed25519Sig
     ))
   of opfChannelWithdraw:
-    encodeChannelWithdrawOpProof(
+    encodeChannelMultiSigProof(
       proof.channelWithdrawOpProof.signatures, proof.channelWithdrawOpProof.indexes
+    )
+  of opfChannelTransfer:
+    encodeChannelMultiSigProof(
+      proof.channelTransferOpProof.signatures, proof.channelTransferOpProof.indexes
     )
   of opfLeaderClaim:
     @(encodeProofOfClaimProof(proof.proofOfClaimProof))
   of opfChannelConfig:
-    encodeChannelWithdrawOpProof(
+    encodeChannelMultiSigProof(
       proof.channelConfigOpProof.signatures, proof.channelConfigOpProof.indexes
     )
   of opfChannelDeposit:
@@ -257,7 +270,7 @@ func decodeZkAndEd25519SigsProof*(data: openArray[byte]): ZkAndEd25519SigsProof 
   finishDecode(data, pos)
   ZkAndEd25519SigsProof(zkSig: zkSig, ed25519Sig: ed25519Sig)
 
-func readChannelWithdrawOpProof(data: openArray[byte], pos: var int): ChannelWithdrawOpProof {.raises: [DecodingError].} =
+func readChannelMultiSigProof(data: openArray[byte], pos: var int): ChannelMultiSigProof {.raises: [DecodingError].} =
   let count = SignatureCount(readLe[uint16](data, pos))
   var signatures = newSeqOfCap[Ed25519Signature](count)
   var indexes = newSeqOfCap[ChannelKeyIndex](count)
@@ -266,16 +279,16 @@ func readChannelWithdrawOpProof(data: openArray[byte], pos: var int): ChannelWit
   for _ in 0 ..< int(count):
     let (signature, index) = readIndexedEd25519Signature(data, pos)
     if havePrev and uint16(index) <= uint16(prevIndex):
-      raise newException(DecodingError, "ChannelWithdrawOpProof indexes not strictly increasing")
+      raise newException(DecodingError, "ChannelMultiSigProof indexes not strictly increasing")
     signatures.add signature
     indexes.add index
     prevIndex = index
     havePrev = true
-  ChannelWithdrawOpProof(signatures: signatures, indexes: indexes)
+  ChannelMultiSigProof(signatures: signatures, indexes: indexes)
 
-func decodeChannelWithdrawOpProof*(data: openArray[byte]): ChannelWithdrawOpProof {.raises: [DecodingError].} =
+func decodeChannelMultiSigProof*(data: openArray[byte]): ChannelMultiSigProof {.raises: [DecodingError].} =
   var pos = 0
-  let res = readChannelWithdrawOpProof(data, pos)
+  let res = readChannelMultiSigProof(data, pos)
   finishDecode(data, pos)
   res
 
@@ -299,14 +312,19 @@ func readOpProof*(data: openArray[byte], pos: var int, kind: OpProofKind): OpPro
   of opfChannelWithdraw:
     OpProof(
       kind: opfChannelWithdraw,
-      channelWithdrawOpProof: readChannelWithdrawOpProof(data, pos),
+      channelWithdrawOpProof: readChannelMultiSigProof(data, pos),
+    )
+  of opfChannelTransfer:
+    OpProof(
+      kind: opfChannelTransfer,
+      channelTransferOpProof: readChannelMultiSigProof(data, pos),
     )
   of opfLeaderClaim:
     OpProof(kind: opfLeaderClaim, proofOfClaimProof: readFixed[128](data, pos))
   of opfChannelConfig:
     OpProof(
       kind: opfChannelConfig,
-      channelConfigOpProof: readChannelWithdrawOpProof(data, pos),
+      channelConfigOpProof: readChannelMultiSigProof(data, pos),
     )
   of opfChannelDeposit:
     OpProof(kind: opfChannelDeposit, channelDepositProof: readFixed[128](data, pos))

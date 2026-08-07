@@ -27,6 +27,7 @@ suite "core/mantle/operations":
     check OpChannelInscribe == 0x11'u8
     check OpChannelDeposit == 0x12'u8
     check OpChannelWithdraw == 0x13'u8
+    check OpChannelTransfer == 0x14'u8
     check OpSdpDeclare == 0x20'u8
     check OpSdpWithdraw == 0x21'u8
     check OpSdpActive == 0x22'u8
@@ -37,6 +38,7 @@ suite "core/mantle/operations":
     var inscribe: ChannelInscribePayload
     var deposit: ChannelDepositPayload
     var withdraw: ChannelWithdrawPayload
+    var channelTransfer: ChannelTransferPayload
     var sdpDeclare: DeclarationMessage
     var sdpWithdraw: WithdrawMessage
     var sdpActive: ActiveMessage
@@ -55,6 +57,9 @@ suite "core/mantle/operations":
     check opPayloadToOpcode(
       OpPayload(kind: ChannelWithdraw, channelWithdraw: withdraw)
     ) == OpChannelWithdraw
+    check opPayloadToOpcode(
+      OpPayload(kind: ChannelTransfer, channelTransfer: channelTransfer)
+    ) == OpChannelTransfer
     check opPayloadToOpcode(
       OpPayload(kind: SdpDeclare, sdpDeclare: sdpDeclare)
     ) == OpSdpDeclare
@@ -92,6 +97,7 @@ suite "core/mantle/operations":
     check expectedOpProofKindForOpcode(OpSdpActive) == opfSdpActive
     check expectedOpProofKindForOpcode(OpChannelDeposit) == opfChannelDeposit
     check expectedOpProofKindForOpcode(OpChannelWithdraw) == opfChannelWithdraw
+    check expectedOpProofKindForOpcode(OpChannelTransfer) == opfChannelTransfer
     check expectedOpProofKindForOpcode(OpLeaderClaim) == opfLeaderClaim
     check expectedOpProofKindForOpcode(OpChannelConfig) == opfChannelConfig
 
@@ -116,9 +122,14 @@ suite "core/mantle/operations":
 
     check createChannelWithdrawOp(ChannelWithdrawPayload(
       channel: default(ChannelId),
-      outputs: @[],
-      opIdNonce: 0'u32,
+      inputs: @[],
     )).payload.kind == ChannelWithdraw
+
+    check createChannelTransferOp(ChannelTransferPayload(
+      channel: default(ChannelId),
+      inputs: @[],
+      outputs: @[],
+    )).payload.kind == ChannelTransfer
 
     check createSdpDeclareOp(DeclarationMessage(
       serviceType: default(ServiceType),
@@ -152,7 +163,7 @@ suite "core/mantle/operations":
       postingTimeframe: default(PostingTimeframe),
       postingTimeout: default(PostingTimeout),
       configurationThreshold: default(ConfigurationThreshold),
-      withdrawThreshold: default(WithdrawThreshold),
+      transferThreshold: default(TransferThreshold),
     )).opcode == OpChannelConfig
 
   test "defaultOpForOpcode creates matching opcode and payload":
@@ -161,6 +172,7 @@ suite "core/mantle/operations":
       OpChannelInscribe,
       OpChannelDeposit,
       OpChannelWithdraw,
+      OpChannelTransfer,
       OpSdpDeclare,
       OpSdpWithdraw,
       OpSdpActive,
@@ -178,6 +190,7 @@ suite "core/mantle/operations":
       OpChannelInscribe,
       OpChannelDeposit,
       OpChannelWithdraw,
+      OpChannelTransfer,
       OpSdpDeclare,
       OpSdpWithdraw,
       OpSdpActive,
@@ -212,11 +225,21 @@ suite "core/mantle/operations":
 
     let wdr = encodeChannelWithdraw(ChannelWithdrawPayload(
       channel: default(ChannelId),
-      outputs: @[],
-      opIdNonce: 1'u32,
+      inputs: @[default(NoteId)],
     ))
-    check wdr.len == 32 + 1 + 4
-    check wdr[^4] == 1'u8 # opIdNonce LE low byte
+    check wdr.len == 32 + 1 + 32
+    check wdr[32] == 1'u8 # InputCount
+
+  test "encodeChannelTransfer lays out ChannelId, Inputs then Outputs":
+    let wire = encodeChannelTransfer(ChannelTransferPayload(
+      channel: default(ChannelId),
+      inputs: @[default(NoteId)],
+      outputs: @[Note(value: 7, zkPublicKey: default(ZkPublicKey))],
+    ))
+    check wire.len == 32 + 1 + 32 + 1 + 40
+    check wire[32] == 1'u8 # InputCount
+    check wire[65] == 1'u8 # OutputCount
+    check wire[66] == 7'u8 # Value LE low byte
 
   test "decodeOps roundtrips encodeOps":
     let
@@ -248,14 +271,30 @@ suite "core/mantle/operations":
     let
       wdrPayload = ChannelWithdrawPayload(
         channel: default(ChannelId),
-        outputs: @[],
-        opIdNonce: 1'u32,
+        inputs: @[default(NoteId)],
       )
       wdrWire = encodeChannelWithdraw(wdrPayload)
       wdrBack = decodeChannelWithdraw(wdrWire)
     check wdrBack.channel == wdrPayload.channel
-    check wdrBack.outputs == wdrPayload.outputs
-    check wdrBack.opIdNonce == wdrPayload.opIdNonce
+    check wdrBack.inputs == wdrPayload.inputs
+
+  test "decodeChannelTransfer roundtrips encodeChannelTransfer":
+    let
+      payload = ChannelTransferPayload(
+        channel: default(ChannelId),
+        inputs: @[default(NoteId)],
+        outputs: @[Note(value: 11, zkPublicKey: default(ZkPublicKey))],
+      )
+      wire = encodeChannelTransfer(payload)
+      back = decodeChannelTransfer(wire)
+    check back.channel == payload.channel
+    check back.inputs == payload.inputs
+    check back.outputs == payload.outputs
+
+    let opBack = decodeOp(encodeOp(createChannelTransferOp(payload)))
+    check opBack.opcode == OpChannelTransfer
+    check opBack.payload.kind == ChannelTransfer
+    check opBack.payload.channelTransfer.outputs == payload.outputs
 
   test "encodeChannelConfig uses UINT16 KeyCount and roundtrips":
     var keys: seq[Signer]
@@ -267,7 +306,7 @@ suite "core/mantle/operations":
       postingTimeframe: 42'u32,
       postingTimeout: 7'u32,
       configurationThreshold: 3'u16,
-      withdrawThreshold: 5'u16,
+      transferThreshold: 5'u16,
     )
     let wire = encodeChannelConfig(cfgPayload)
     check wire.len == 32 + 2 + (256 * 32) + 4 + 4 + 2 + 2
@@ -279,7 +318,7 @@ suite "core/mantle/operations":
     check cfgBack.postingTimeframe == cfgPayload.postingTimeframe
     check cfgBack.postingTimeout == cfgPayload.postingTimeout
     check cfgBack.configurationThreshold == cfgPayload.configurationThreshold
-    check cfgBack.withdrawThreshold == cfgPayload.withdrawThreshold
+    check cfgBack.transferThreshold == cfgPayload.transferThreshold
 
   test "decodeOp roundtrips ChannelConfig through encodeOp":
     let op = createChannelConfigOp(ChannelConfigPayload(
@@ -288,7 +327,7 @@ suite "core/mantle/operations":
       postingTimeframe: 1'u32,
       postingTimeout: 2'u32,
       configurationThreshold: 3'u16,
-      withdrawThreshold: 4'u16,
+      transferThreshold: 4'u16,
     ))
     let wire = encodeOp(op)
     let back = decodeOp(wire)

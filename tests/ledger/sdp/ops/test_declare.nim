@@ -98,6 +98,25 @@ suite "ledger/sdp/ops/declare":
     check declareResult.isErr
     check declareResult.error == TooManyLocators
 
+  test "tryApplySdpDeclare rejects a channel note as collateral":
+    let utxo = mkUtxo(value = 200, pkSeed = 7)
+    var store = UtxoStore.init()
+    store = store.insert(utxo.id, utxo).store
+    let
+      declaration = DeclarationMessage(
+        serviceType: ServiceType.bn,
+        locators: @[mkLocator(30303)],
+        providerId: mkProvider(1),
+        lockedNoteId: utxo.id,
+        zkId: utxo.note.zkPublicKey,
+      )
+      channelNotes = ChannelNotes.init()
+        .registerChannelNote(utxo.id, mkChannelId(1)).expect("fresh note")
+    var registry = testSdpRegistry()
+    let declareResult = execDeclare(registry, declaration, store, 1, channelNotes)
+    check declareResult.isErr
+    check declareResult.error == ChannelNoteSpend
+
   test "tryApplySdpDeclare stores declaration":
     let seeded = seedDeclaration(pkSeed = 4, declareEpoch = 10)
     let info = getDeclaration(seeded.registry.state, seeded.declId).get()
