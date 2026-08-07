@@ -15,7 +15,6 @@ import
   ../../logos_chain/core/mantle/[operations, proofs, tx_types],
   ../../logos_chain/chain/genesis
 from ../../logos_chain/core/mantle/primitives import MaxBlockTxs, SlotNumber
-from libp2p/crypto/ed25519/ed25519 import EdSignatureSize
 
 const inscribeTxFraming = 166
   ## OpCount, Opcode, ChannelId, the u32 inscription length, Parent, Signer
@@ -59,12 +58,12 @@ suite "core/block_validation":
     check not validateBlock(b1)
 
 suite "core/block_validation — inclusive size and count bounds":
-  test "a block whose payload is exactly MaxBlockSize is accepted":
+  test "a block whose tx bytes are exactly MaxBlockSize is accepted":
     let
       genesis = createGenesisBlock(minimalSignedTx())
-      # The block signature counts toward the payload alongside the txs.
-      tx = mkSizedTx(MaxBlockSize - EdSignatureSize)
-    check encodeSignedMantleTx(tx).len == MaxBlockSize - EdSignatureSize
+      # Only the serialized transactions count; header and block signature don't.
+      tx = mkSizedTx(MaxBlockSize)
+    check encodeSignedMantleTx(tx).len == MaxBlockSize
     let b1 = childBlock(
       genesis.header, blockId(genesis.header), SlotNumber(1), [tx])
     check validateBlock(b1)
@@ -72,7 +71,7 @@ suite "core/block_validation — inclusive size and count bounds":
   test "one byte past MaxBlockSize is rejected":
     let
       genesis = createGenesisBlock(minimalSignedTx())
-      tx = mkSizedTx(MaxBlockSize - EdSignatureSize + 1)
+      tx = mkSizedTx(MaxBlockSize + 1)
       b1 = childBlock(
         genesis.header, blockId(genesis.header), SlotNumber(1), [tx])
     check not validateBlock(b1)

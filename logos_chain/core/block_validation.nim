@@ -13,31 +13,25 @@
 
 {.push raises: [], gcsafe.}
 
-import
-  libp2p/crypto/ed25519/ed25519
-
 from ./types import
   Block, createBlockRoot, ExpectedBedrockVersion, MaxBlockSize, header
 from ./mantle/primitives import MaxBlockTxs
 from ./mantle/tx_types import SignedMantleTx, encodeSignedMantleTx
 
 func txBytesLen(txs: openArray[SignedMantleTx]): int =
+  ## The block body is the serialized transactions only; neither the header
+  ## nor the block signature counts toward `MaxBlockSize`.
   var total = 0
   for stx in txs:
     total += encodeSignedMantleTx(stx).len
   total
-
-func blockPayloadBytesLen(blk: Block): int =
-  ## Mantle tx bytes plus the 64-byte Ed25519 block signature.
-  ## IBD additionally caps the full bincode wire blob (header framing + signature + txs).
-  txBytesLen(blk.txs) + EdSignatureSize
 
 func validateBlockHeader(blk: Block): bool =
   if header(blk).bedrockVersion != ExpectedBedrockVersion:
     return false
 
   # Both bounds are inclusive: a block sitting exactly on the limit is valid.
-  if blockPayloadBytesLen(blk) > MaxBlockSize:
+  if txBytesLen(blk.txs) > MaxBlockSize:
     return false
 
   if blk.txs.len > MaxBlockTxs:
