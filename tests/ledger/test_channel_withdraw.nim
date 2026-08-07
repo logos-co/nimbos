@@ -79,6 +79,17 @@ suite "MantleState.tryApplyChannelWithdraw":
       cs, LockedNotes.init(), op, ChannelMultiSigProof(), mkTxHash())
     check r.error == NotAChannelNote
 
+  test "no inputs → EmptyInputs":
+    let
+      cid = mkChannelId(11)
+      note = mkUtxo(value = 10, pkSeed = 1)
+      m = seedMantle(cid, [], [note])
+      cs = CryptarchiaState.init([note])
+      op = ChannelWithdrawPayload(channel: cid, inputs: @[])
+      r = m.tryApplyChannelWithdraw(
+        cs, LockedNotes.init(), op, ChannelMultiSigProof(), mkTxHash())
+    check r.error == EmptyInputs
+
   test "duplicate input NoteId → DoubleSpend":
     let
       cid = mkChannelId(11)

@@ -139,6 +139,18 @@ suite "MantleState.tryApplyChannelTransfer":
       cs, LockedNotes.init(), op, ChannelMultiSigProof(), mkTxHash())
     check r.error == NotAChannelNote
 
+  test "no inputs → EmptyInputs":
+    # Rejected ahead of the balance check, which an all-empty op would pass.
+    let
+      cid = mkChannelId(9)
+      note = mkUtxo(value = 100, pkSeed = 1)
+      m = seedMantle(cid, [], [note])
+      cs = CryptarchiaState.init([note])
+      op = ChannelTransferPayload(channel: cid, inputs: @[], outputs: @[])
+      r = m.tryApplyChannelTransfer(
+        cs, LockedNotes.init(), op, ChannelMultiSigProof(), mkTxHash())
+    check r.error == EmptyInputs
+
   test "duplicate input NoteId → DoubleSpend":
     let
       cid = mkChannelId(9)

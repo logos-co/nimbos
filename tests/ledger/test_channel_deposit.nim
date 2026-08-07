@@ -58,6 +58,18 @@ suite "validateChannelDeposit — structural checks (no VK)":
         default(ZkSigProof), mkTxHash())
     check r.error == ChannelNotFound
 
+  test "no inputs → EmptyInputs":
+    let
+      cid = mkChannelId(2)
+      chans = mkChanStore(cid)
+      input = mkUtxo(value = 100, pkSeed = 1)
+      cs = CryptarchiaState.init([input])
+      op = ChannelDepositPayload(channel: cid, inputs: @[], metadata: @[])
+      r = validateChannelDeposit(
+        chans, ChannelNotes.init(), cs, LockedNotes.init(), op,
+        default(ZkSigProof), mkTxHash())
+    check r.error == EmptyInputs
+
   test "duplicate input NoteId → DoubleSpend":
     let
       cid = mkChannelId(2)

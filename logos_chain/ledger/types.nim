@@ -59,6 +59,7 @@ type
     InvalidChannelConfig ## ChannelConfig has zero threshold or empty keys
     ChannelNoteSpend ## channel note used where a channel-free note is required
     AlreadyChannelNote ## NoteId is already registered to a channel
+    EmptyInputs ## Deposit/Withdraw/Transfer must consume at least one note
     NotAChannelNote ## Withdraw/Transfer input isn't owned by the named channel
     UnbalancedTransfer ## ChannelTransfer input sum != output sum
     DuplicatedVoucherNullifier ## leader-claim voucher nullifier already spent

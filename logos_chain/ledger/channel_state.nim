@@ -113,8 +113,10 @@ func assert_spendable(
     inputs: openArray[NoteId],
     channel: Opt[ChannelId],
 ): Result[void, LedgerError] =
-  ## Spendability of `inputs`: unique, unlocked and unspent. With `channel`
-  ## set they must be its channel notes, otherwise no channel may own them.
+  ## Spendability of `inputs`: non-empty, unique, unlocked and unspent. With
+  ## `channel` set they must be its notes, otherwise no channel may own them.
+  if inputs.len == 0:
+    return err(EmptyInputs)
   var seen = initHashSet[NoteId](inputs.len)
   for inputId in inputs:
     if seen.containsOrIncl(inputId):
