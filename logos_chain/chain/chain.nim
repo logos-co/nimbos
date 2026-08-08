@@ -111,7 +111,7 @@ proc tryApplyBlock*(
     return err(BlockApplyError(kind: AlreadyApplied))
   if hdr.slot > chain.currentWallclockSlot():
     return err(BlockApplyError(kind: FutureSlot))
-  let prepared = validateBlockAndTransactions(blk, chain.localTree, chain.ledger).valueOr:
+  let prepared = prepareBlockUpdate(blk, chain.localTree, chain.ledger).valueOr:
     case error.kind
     of BlockValidationErrorKind.InvalidBlockStructure:
       return err(BlockApplyError(kind: InvalidStructure))

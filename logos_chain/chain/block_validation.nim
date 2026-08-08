@@ -53,10 +53,10 @@ func validateBlockHeader(blk: Block): bool =
   true
 
 func validateBlockBody(blk: Block): bool =
-  if blockPayloadBytesLen(blk) >= MaxBlockSize:
+  if blockPayloadBytesLen(blk) > MaxBlockSize:
     return false
 
-  if blk.txs.len >= MaxBlockTxs:
+  if blk.txs.len > MaxBlockTxs:
     return false
 
   for tx in blk.txs:
@@ -93,25 +93,34 @@ proc validateBlockAndTransactions*(
     blk: Block,
     localTree: LocalTree,
     ledger: Ledger[BlockId],
-): Result[tuple[id: BlockId, state: LedgerState], BlockValidationError] =
-  ## Performs stateless structural checks, localTree tip extension verification,
-  ## and stateful ledger validation (Proof of Leadership and Mantle txs).
+): Result[BlockId, BlockValidationError] =
+  ## Read-only validation: stateless structural checks, localTree extension,
+  ## and parent existence check in the ledger.
   if not validateBlock(blk):
     return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))
   if not localTree.canExtend(blk.header):
     return err(BlockValidationError(kind: BlockValidationErrorKind.TreeAdmissionRejected))
-    
-  let id = blockId(blk.header)
+  if ledger.state(blk.header.parentBlock).isNone:
+    return err(BlockValidationError(kind: BlockValidationErrorKind.TreeAdmissionRejected))
+
+  ok(blockId(blk.header))
+
+proc prepareBlockUpdate*(
+    blk: Block,
+    localTree: LocalTree,
+    ledger: Ledger[BlockId],
+): Result[tuple[id: BlockId, state: LedgerState], BlockValidationError] =
+  ## Validates block admission and executes state transitions via `ledger.prepareUpdate`.
+  let id = ?validateBlockAndTransactions(blk, localTree, ledger)
+
   let prepared = ledger.prepareUpdate(
     id, blk.header.parentBlock, blk.header.slot, blk.header.proofOfLeadership, blk.txs
   ).valueOr:
-    if error == LedgerError.ParentNotFound:
-      return err(BlockValidationError(kind: BlockValidationErrorKind.TreeAdmissionRejected))
-    elif error in {LedgerError.InvalidSlot, LedgerError.InvalidProof}:
+    if error in {LedgerError.InvalidSlot, LedgerError.InvalidProof}:
       return err(BlockValidationError(kind: BlockValidationErrorKind.HeaderRejected, ledgerError: error))
     else:
       return err(BlockValidationError(kind: BlockValidationErrorKind.TransactionsRejected, ledgerError: error))
-      
+
   ok(prepared)
 
 {.pop.}
