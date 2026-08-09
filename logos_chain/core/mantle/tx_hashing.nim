@@ -58,4 +58,11 @@ func opId*(op: ChannelDepositPayload): Hash32 =
 func opId*(op: ChannelWithdrawPayload): Hash32 =
   blake2bWithDomain(OperationIdV1DomainTag, encodeChannelWithdraw(op))
 
+func opId*(op: ChannelTransferPayload): Hash32 =
+  blake2bWithDomain(OperationIdV1DomainTag, encodeChannelTransfer(op))
+
+func opId*(op: LeaderClaimPayload): Hash32 =
+  ## op_id = Blake2b-256("OPERATION_ID_V1" || encode_op_bytes(op))
+  blake2bWithDomain(OperationIdV1DomainTag, encodeLeaderClaim(op))
+
 {.pop.}

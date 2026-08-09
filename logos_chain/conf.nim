@@ -41,7 +41,6 @@ const
   # Maybe there should be a config option for this.
   defaultAdminListenAddress* = (static parseIpAddress("127.0.0.1"))
   defaultSigningNodeRequestTimeout* = 60
-  defaultGasLimit* = 60_000_000
   defaultAdminListenAddressDesc* = $defaultAdminListenAddress
   ## Default ``--deployment-settings`` path (canonical cfgsync layout; run from repo root or override).
   defaultDeploymentSettingsPath* = "config/deployment-settings.yaml"

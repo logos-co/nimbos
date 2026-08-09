@@ -9,129 +9,137 @@
 {.used.}
 
 import
+  std/sets,
   unittest2,
   results,
   bearssl/rand,
   libp2p/crypto/ed25519/ed25519,
   ../../logos_chain/ledger/
-    [channel_state, cryptarchia_state, mantle_state, types],
+    [channel_state, cryptarchia_state, leader_state, mantle_state, types],
   ../../logos_chain/core/mantle/[primitives, operations, proofs],
   ../core/mantle/test_helpers
 
-proc seedMantle(
-    cid: ChannelId,
-    keys: openArray[Ed25519PublicKey],
-    balance = TokenValue(500),
-    withdrawalNonce = uint32(0),
-    withdrawThreshold = WithdrawThreshold(2),
-): MantleState =
-  MantleState(
-    channels: HashTrieMap[ChannelId, ChannelState].init().insert(
-      cid,
-      ChannelState(
-        accreditedKeys: @keys,
-        configurationThreshold: 2,
-        withdrawThreshold: withdrawThreshold,
-        balance: balance,
-        withdrawalNonce: withdrawalNonce,
-      ),
-    )
-  )
+from ./test_helpers import seedChannelNotes, seedMantle, twoOfTwo
 
 suite "MantleState.tryApplyChannelWithdraw":
-  test "happy path: 2-of-2 signatures, balance drains, nonce bumps":
+  test "happy path: inputs leave the channel but stay in the UTXO set":
     let
       rng = HmacDrbgContext.new()
       kp1 = mkEdKeyPair(rng)
       kp2 = mkEdKeyPair(rng)
       cid = mkChannelId(7)
-      m = seedMantle(cid, [kp1.pubkey, kp2.pubkey])
-      cs = CryptarchiaState.init()
+      note = mkUtxo(value = 200, pkSeed = 9)
+      m = seedMantle(cid, [kp1.pubkey, kp2.pubkey], [note])
+      cs = CryptarchiaState.init([note])
       txHash = mkTxHash()
-      op = ChannelWithdrawPayload(
-        channel: cid,
-        outputs: @[mkNote(200, pkSeed = 9)],
-        opIdNonce: 0,
-      )
-      proof = ChannelWithdrawOpProof(
-        signatures: @[sign(kp1.seckey, txHash), sign(kp2.seckey, txHash)],
-        indexes: @[ChannelKeyIndex(0), ChannelKeyIndex(1)],
-      )
-      r = m.tryApplyChannelWithdraw(cs, op, proof, txHash)
+      op = ChannelWithdrawPayload(channel: cid, inputs: @[note.id])
+      r = m.tryApplyChannelWithdraw(
+        cs, LockedNotes.init(), op, twoOfTwo(kp1, kp2, txHash), txHash)
     check r.isOk
-    let (newMs, newCs) = r.get
-    let chan = newMs.channels.getOrDefault(cid)
-    check chan.balance == 300
-    check chan.withdrawalNonce == 1
-    check newCs.len == 1
+    let released = r.get
+    check not released.channelNotes.isChannelNote(note.id)
+    check released.channelNotes.isEmpty
+    # The note keeps its identity: same NoteId, value and key, so its ageing
+    # never restarts.
+    check cs.utxos.len == 1
+    check cs.utxos.get(note.id) == Opt.some(note)
 
   test "channel doesn't exist → ChannelNotFound":
     let
-      rng = HmacDrbgContext.new()
-      kp1 = mkEdKeyPair(rng)
-      kp2 = mkEdKeyPair(rng)
       cid = mkChannelId(8)
-      m = seedMantle(cid, [kp1.pubkey, kp2.pubkey])
-      cs = CryptarchiaState.init()
-      op = ChannelWithdrawPayload(
-        channel: mkChannelId(0xFF),
-        outputs: @[mkNote(10, pkSeed = 1)],
-        opIdNonce: 0,
-      )
-      r = m.tryApplyChannelWithdraw(cs, op, ChannelWithdrawOpProof(), mkTxHash())
+      note = mkUtxo(value = 10, pkSeed = 1)
+      m = seedMantle(cid, [], [note])
+      cs = CryptarchiaState.init([note])
+      op = ChannelWithdrawPayload(channel: mkChannelId(0xFF), inputs: @[note.id])
+      r = m.tryApplyChannelWithdraw(
+        cs, LockedNotes.init(), op, ChannelMultiSigProof(), mkTxHash())
     check r.error == ChannelNotFound
 
-  test "wrong nonce → InvalidWithdrawNonce":
+  test "input that is not a channel note → NotAChannelNote":
     let
-      rng = HmacDrbgContext.new()
-      kp1 = mkEdKeyPair(rng)
-      kp2 = mkEdKeyPair(rng)
       cid = mkChannelId(9)
-      m = seedMantle(cid, [kp1.pubkey, kp2.pubkey])
-      cs = CryptarchiaState.init()
-      op = ChannelWithdrawPayload(
-        channel: cid,
-        outputs: @[mkNote(10, pkSeed = 1)],
-        opIdNonce: 99,
-      )
-      r = m.tryApplyChannelWithdraw(cs, op, ChannelWithdrawOpProof(), mkTxHash())
-    check r.error == InvalidWithdrawNonce
+      note = mkUtxo(value = 10, pkSeed = 1)
+      m = seedMantle(cid, [])
+      cs = CryptarchiaState.init([note])
+      op = ChannelWithdrawPayload(channel: cid, inputs: @[note.id])
+      r = m.tryApplyChannelWithdraw(
+        cs, LockedNotes.init(), op, ChannelMultiSigProof(), mkTxHash())
+    check r.error == NotAChannelNote
 
-  test "outputs > balance → InsufficientBalance":
+  test "input owned by another channel → NotAChannelNote":
     let
-      rng = HmacDrbgContext.new()
-      kp1 = mkEdKeyPair(rng)
-      kp2 = mkEdKeyPair(rng)
       cid = mkChannelId(10)
-      m = seedMantle(cid, [kp1.pubkey, kp2.pubkey])
-      cs = CryptarchiaState.init()
-      op = ChannelWithdrawPayload(
-        channel: cid,
-        outputs: @[mkNote(9999, pkSeed = 1)],
-        opIdNonce: 0,
-      )
-      r = m.tryApplyChannelWithdraw(cs, op, ChannelWithdrawOpProof(), mkTxHash())
-    check r.error == InsufficientBalance
+      other = mkChannelId(0xA0)
+      note = mkUtxo(value = 10, pkSeed = 1)
+      cs = CryptarchiaState.init([note])
+      op = ChannelWithdrawPayload(channel: cid, inputs: @[note.id])
+    var m = seedMantle(cid, [])
+    m.channelNotes = seedChannelNotes([(note: note, channel: other)])
+    let r = m.tryApplyChannelWithdraw(
+      cs, LockedNotes.init(), op, ChannelMultiSigProof(), mkTxHash())
+    check r.error == NotAChannelNote
 
-  test "signature count != withdrawThreshold → ThresholdUnmet":
+  test "no inputs → EmptyInputs":
+    let
+      cid = mkChannelId(11)
+      note = mkUtxo(value = 10, pkSeed = 1)
+      m = seedMantle(cid, [], [note])
+      cs = CryptarchiaState.init([note])
+      op = ChannelWithdrawPayload(channel: cid, inputs: @[])
+      r = m.tryApplyChannelWithdraw(
+        cs, LockedNotes.init(), op, ChannelMultiSigProof(), mkTxHash())
+    check r.error == EmptyInputs
+
+  test "duplicate input NoteId → DoubleSpend":
+    let
+      cid = mkChannelId(11)
+      note = mkUtxo(value = 10, pkSeed = 1)
+      m = seedMantle(cid, [], [note])
+      cs = CryptarchiaState.init([note])
+      op = ChannelWithdrawPayload(channel: cid, inputs: @[note.id, note.id])
+      r = m.tryApplyChannelWithdraw(
+        cs, LockedNotes.init(), op, ChannelMultiSigProof(), mkTxHash())
+    check r.error == DoubleSpend
+
+  test "input missing from the UTXO set → InvalidNote":
+    let
+      cid = mkChannelId(12)
+      note = mkUtxo(value = 10, pkSeed = 1)
+      m = seedMantle(cid, [], [note])
+      cs = CryptarchiaState.init()
+      op = ChannelWithdrawPayload(channel: cid, inputs: @[note.id])
+      r = m.tryApplyChannelWithdraw(
+        cs, LockedNotes.init(), op, ChannelMultiSigProof(), mkTxHash())
+    check r.error == InvalidNote
+
+  test "locked input → LockedNote":
+    let
+      cid = mkChannelId(13)
+      note = mkUtxo(value = 10, pkSeed = 1)
+      m = seedMantle(cid, [], [note])
+      cs = CryptarchiaState.init([note])
+      op = ChannelWithdrawPayload(channel: cid, inputs: @[note.id])
+      locked = LockedNotes.init().insert(note.id, initHashSet[DeclarationId]())
+      r = m.tryApplyChannelWithdraw(
+        cs, locked, op, ChannelMultiSigProof(), mkTxHash())
+    check r.error == LockedNote
+
+  test "signature count != transferThreshold → ThresholdUnmet":
     let
       rng = HmacDrbgContext.new()
       kp1 = mkEdKeyPair(rng)
       kp2 = mkEdKeyPair(rng)
-      cid = mkChannelId(11)
-      m = seedMantle(cid, [kp1.pubkey, kp2.pubkey])
-      cs = CryptarchiaState.init()
+      cid = mkChannelId(14)
+      note = mkUtxo(value = 10, pkSeed = 1)
+      m = seedMantle(cid, [kp1.pubkey, kp2.pubkey], [note])
+      cs = CryptarchiaState.init([note])
       txHash = mkTxHash()
-      op = ChannelWithdrawPayload(
-        channel: cid,
-        outputs: @[mkNote(10, pkSeed = 1)],
-        opIdNonce: 0,
-      )
-      proof = ChannelWithdrawOpProof(
+      op = ChannelWithdrawPayload(channel: cid, inputs: @[note.id])
+      proof = ChannelMultiSigProof(
         signatures: @[sign(kp1.seckey, txHash)],
         indexes: @[ChannelKeyIndex(0)],
       )
-      r = m.tryApplyChannelWithdraw(cs, op, proof, txHash)
+      r = m.tryApplyChannelWithdraw(cs, LockedNotes.init(), op, proof, txHash)
     check r.error == ThresholdUnmet
 
   test "OOB sig index → InvalidProof":
@@ -139,20 +147,17 @@ suite "MantleState.tryApplyChannelWithdraw":
       rng = HmacDrbgContext.new()
       kp1 = mkEdKeyPair(rng)
       kp2 = mkEdKeyPair(rng)
-      cid = mkChannelId(12)
-      m = seedMantle(cid, [kp1.pubkey, kp2.pubkey])
-      cs = CryptarchiaState.init()
+      cid = mkChannelId(15)
+      note = mkUtxo(value = 10, pkSeed = 1)
+      m = seedMantle(cid, [kp1.pubkey, kp2.pubkey], [note])
+      cs = CryptarchiaState.init([note])
       txHash = mkTxHash()
-      op = ChannelWithdrawPayload(
-        channel: cid,
-        outputs: @[mkNote(10, pkSeed = 1)],
-        opIdNonce: 0,
-      )
-      proof = ChannelWithdrawOpProof(
+      op = ChannelWithdrawPayload(channel: cid, inputs: @[note.id])
+      proof = ChannelMultiSigProof(
         signatures: @[sign(kp1.seckey, txHash), sign(kp2.seckey, txHash)],
         indexes: @[ChannelKeyIndex(0), ChannelKeyIndex(99)],
       )
-      r = m.tryApplyChannelWithdraw(cs, op, proof, txHash)
+      r = m.tryApplyChannelWithdraw(cs, LockedNotes.init(), op, proof, txHash)
     check r.error == InvalidProof
 
   test "tampered signature → InvalidProof":
@@ -160,61 +165,58 @@ suite "MantleState.tryApplyChannelWithdraw":
       rng = HmacDrbgContext.new()
       kp1 = mkEdKeyPair(rng)
       kp2 = mkEdKeyPair(rng)
-      cid = mkChannelId(13)
-      m = seedMantle(cid, [kp1.pubkey, kp2.pubkey])
-      cs = CryptarchiaState.init()
+      cid = mkChannelId(16)
+      note = mkUtxo(value = 10, pkSeed = 1)
+      m = seedMantle(cid, [kp1.pubkey, kp2.pubkey], [note])
+      cs = CryptarchiaState.init([note])
       txHash = mkTxHash()
-      op = ChannelWithdrawPayload(
-        channel: cid,
-        outputs: @[mkNote(10, pkSeed = 1)],
-        opIdNonce: 0,
-      )
-      proof = ChannelWithdrawOpProof(
+      op = ChannelWithdrawPayload(channel: cid, inputs: @[note.id])
+      proof = ChannelMultiSigProof(
         signatures: @[
           sign(kp1.seckey, mkTxHash(seed = 0xEE)),
           sign(kp2.seckey, txHash),
         ],
         indexes: @[ChannelKeyIndex(0), ChannelKeyIndex(1)],
       )
-      r = m.tryApplyChannelWithdraw(cs, op, proof, txHash)
+      r = m.tryApplyChannelWithdraw(cs, LockedNotes.init(), op, proof, txHash)
     check r.error == InvalidProof
 
-  test "zero-value output → ZeroValueNote":
+suite "applyChannelWithdraw — released notes rejoin the regular note set":
+  test "a released note is spendable by a regular Transfer":
     let
-      rng = HmacDrbgContext.new()
-      kp1 = mkEdKeyPair(rng)
-      kp2 = mkEdKeyPair(rng)
-      cid = mkChannelId(14)
-      m = seedMantle(cid, [kp1.pubkey, kp2.pubkey])
-      cs = CryptarchiaState.init()
-      op = ChannelWithdrawPayload(
-        channel: cid,
-        outputs: @[mkNote(0, pkSeed = 1)],
-        opIdNonce: 0,
+      cid = mkChannelId(20)
+      note = mkUtxo(value = 50, pkSeed = 3)
+      cs = CryptarchiaState.init([note])
+      op = ChannelWithdrawPayload(channel: cid, inputs: @[note.id])
+      transfer = TransferPayload(
+        inputs: Inputs(noteIds: @[note.id]),
+        outputs: Outputs(notes: @[mkNote(50, pkSeed = 4)]),
       )
-      r = m.tryApplyChannelWithdraw(cs, op, ChannelWithdrawOpProof(), mkTxHash())
-    check r.error == ZeroValueNote
+      owned = seedChannelNotes([(note, cid)])
+    check cs.applyTransferState(LockedNotes.init(), owned, transfer).error ==
+      ChannelNoteSpend
 
-  test "nonce at uint32.high → WithdrawNonceOverflow":
+    let released = applyChannelWithdraw(owned, op).expect("owned by cid")
+    check cs.applyTransferState(LockedNotes.init(), released, transfer).isOk
+
+  test "preserves LeaderState and the UTXO set":
     let
       rng = HmacDrbgContext.new()
-      kp1 = mkEdKeyPair(rng)
-      kp2 = mkEdKeyPair(rng)
-      cid = mkChannelId(15)
-      m = seedMantle(
-        cid, [kp1.pubkey, kp2.pubkey], withdrawalNonce = high(uint32))
-      cs = CryptarchiaState.init()
+      kp = mkEdKeyPair(rng)
+      cid = mkChannelId(21)
+      note = mkUtxo(value = 50, pkSeed = 1)
+      leader = LeaderState.init().recordBlockLeader(default(RewardVoucher), 42)
+        .addEpochVouchers().get
+      cs = CryptarchiaState(
+        utxos: UtxoStore.init().insert(note.id, note).store, leader: leader)
       txHash = mkTxHash()
-      op = ChannelWithdrawPayload(
-        channel: cid,
-        outputs: @[mkNote(10, pkSeed = 1)],
-        opIdNonce: high(uint32),
-      )
-      proof = ChannelWithdrawOpProof(
-        signatures: @[sign(kp1.seckey, txHash), sign(kp2.seckey, txHash)],
-        indexes: @[ChannelKeyIndex(0), ChannelKeyIndex(1)],
-      )
-      r = m.tryApplyChannelWithdraw(cs, op, proof, txHash)
-    check r.error == WithdrawNonceOverflow
+      m = seedMantle(
+        cid, [kp.pubkey], [note], transferThreshold = TransferThreshold(1))
+      op = ChannelWithdrawPayload(channel: cid, inputs: @[note.id])
+      proof = ChannelMultiSigProof(
+        signatures: @[sign(kp.seckey, txHash)], indexes: @[ChannelKeyIndex(0)])
+    check m.tryApplyChannelWithdraw(cs, LockedNotes.init(), op, proof, txHash).isOk
+    check cs.leader == leader
+    check cs.utxos.len == 1
 
 {.pop.}

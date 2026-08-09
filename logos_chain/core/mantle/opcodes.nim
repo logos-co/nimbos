@@ -17,6 +17,7 @@ const
   OpChannelInscribe* = 0x11'u8
   OpChannelDeposit* = 0x12'u8
   OpChannelWithdraw* = 0x13'u8
+  OpChannelTransfer* = 0x14'u8
   OpSdpDeclare* = 0x20'u8
   OpSdpWithdraw* = 0x21'u8
   OpSdpActive* = 0x22'u8

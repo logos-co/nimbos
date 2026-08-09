@@ -56,7 +56,7 @@ type
   PostingTimeout* = uint32
 
   ConfigurationThreshold* = uint16
-  WithdrawThreshold* = uint16
+  TransferThreshold* = uint16
 
   ServiceType* {.pure.} = enum
     bn = "BN"
@@ -151,10 +151,6 @@ func encodeNonce*(value: Nonce): array[8, byte] =
   ## Nonce = UINT64
   encodeLe(value)
 
-func encodeOpIdNonce*(value: uint32): array[4, byte] =
-  ## OpIdNonce = UINT32
-  encodeLe(value)
-
 func encodeMetadata*(value: Metadata): seq[byte] =
   ## Metadata = UINT32 * BYTE
   ## Service-specific node activeness metadata.
@@ -188,8 +184,8 @@ func encodeConfigurationThreshold*(value: ConfigurationThreshold): array[2, byte
   ## ConfigThreshold = UINT16
   encodeLe(value)
 
-func encodeWithdrawThreshold*(value: WithdrawThreshold): array[2, byte] =
-  ## WithdrawThreshold = UINT16
+func encodeTransferThreshold*(value: TransferThreshold): array[2, byte] =
+  ## TransferThreshold = UINT16
   encodeLe(value)
 
 
@@ -323,12 +319,6 @@ func decodeAmount*(data: openArray[byte]): Amount {.raises: [DecodingError].} =
 
 func decodeNonce*(data: openArray[byte]): Nonce {.raises: [DecodingError].} =
   decodeValue(data)
-
-func decodeOpIdNonce*(data: openArray[byte]): uint32 {.raises: [DecodingError].} =
-  var pos = 0
-  let res = readLe[uint32](data, pos)
-  finishDecode(data, pos)
-  res
 
 func decodeMetadata*(data: openArray[byte]): Metadata {.raises: [DecodingError].} =
   decodeU32LeLenPrefixed(data)

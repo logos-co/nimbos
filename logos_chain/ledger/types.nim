@@ -33,8 +33,9 @@ type
     InvalidProof ## ZK multi-sig or leader-proof verify failed
     BalanceOverflow ## add/sub overflowed during balance math
     UnsupportedOp ## Op kind not yet wired in this ledger version
-    UnbalancedTransaction ## inputs - outputs > fees
     InsufficientBalance ## not enough balance for the requested debit
+    GasOverflow ## gas or fee arithmetic exceeded uint64
+    TooMuchExecutionGas ## block's summed execution gas exceeds the per-block limit
     VerifierNotInitialised ## per-circuit VK singleton wasn't installed at
       ## node startup — wiring bug, not adversarial input
     # SDP (Service Declaration Protocol)
@@ -53,13 +54,18 @@ type
     LockedNoteIdMismatch
     DeclarationNotInLockedNote
     ActivityRejected
-    ChannelNotFound ## ChannelDeposit/Withdraw references a missing ChannelId
+    ChannelNotFound ## channel op references a missing ChannelId
     InvalidParent ## ChannelInscribe parent doesn't match the channel's tipMessage
     UnauthorizedSigner ## ChannelInscribe signer isn't the round-robin sequencer
-    InvalidWithdrawNonce ## ChannelWithdraw opIdNonce != channel's withdrawalNonce
-    ThresholdUnmet ## Config/Withdraw signature count != channel threshold
+    ThresholdUnmet ## Config/Withdraw/Transfer signature count != channel threshold
     InvalidChannelConfig ## ChannelConfig has zero threshold or empty keys
-    WithdrawNonceOverflow ## ChannelWithdraw incremented withdrawalNonce past uint32
+    ChannelNoteSpend ## channel note used where a channel-free note is required
+    AlreadyChannelNote ## NoteId is already registered to a channel
+    EmptyInputs ## Deposit/Withdraw/Transfer must consume at least one note
+    NotAChannelNote ## Withdraw/Transfer input isn't owned by the named channel
+    UnbalancedTransfer ## ChannelTransfer input sum != output sum
+    DuplicatedVoucherNullifier ## leader-claim voucher nullifier already spent
+    RewardsRootMismatch ## leader-claim rewards root ≠ ledger snapshot
     UnsupportedLotteryF ## no lottery constants registered for the configured `f`
     InvalidSlot ## header slot is not strictly greater than the parent state's
     InputInGenesis ## genesis transfer consumes inputs; genesis may only mint
@@ -69,7 +75,7 @@ type
   ): Result[bool, PolLoadError] {.gcsafe, raises: [].}
   LedgerConfig* = object
     ## Chain configuration. Remaining fields land with the modules that
-    ## need them (SDP, gas).
+    ## need them (SDP).
     epochSchedule*: EpochSchedule
     slotActivationCoeff*: NonNegativeRatio ## f — exact, keyed into the lottery table
     learningRateFixed*: uint64 ## fixedPoint(beta) — stake-inference input

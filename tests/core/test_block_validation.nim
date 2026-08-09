@@ -16,7 +16,24 @@ import
   ../../logos_chain/core/mantle/[operations, opcodes, proofs, tx_types],
   ../../logos_chain/chain/block_validation,
   ../../logos_chain/chain/genesis
-from ../../logos_chain/core/mantle/primitives import SlotNumber
+from ../../logos_chain/core/mantle/primitives import MaxBlockTxs, SlotNumber
+
+const inscribeTxFraming = 166
+  ## OpCount, Opcode, ChannelId, the u32 inscription length, Parent, Signer
+  ## and the 64-byte Ed25519 proof — everything but the inscription itself.
+
+func mkSizedTx(bytes: int): SignedMantleTx =
+  ## ChannelInscribe transaction padded to encode to exactly `bytes`.
+  doAssert bytes >= inscribeTxFraming
+  SignedMantleTx(
+    tx: MantleTx(ops: @[createChannelInscribeOp(ChannelInscribePayload(
+      channelId: default(ChannelId),
+      inscription: newSeq[byte](bytes - inscribeTxFraming),
+      parent: default(Parent),
+      signer: default(Signer),
+    ))]),
+    opProofs: @[defaultOpProofForOpcode(OpChannelInscribe)],
+  )
 
 suite "core/block_validation":
   test "accepts a structurally valid block":
@@ -42,20 +59,6 @@ suite "core/block_validation":
     b1.header.blockRoot[0] = b1.header.blockRoot[0] xor 0xff'u8
     check not validateBlock(b1)
 
-  test "rejects a block exceeding MaxBlockTxs":
-    let
-      sm = minimalSignedTx()
-      genesis = createGenesisBlock(sm)
-    var txs = newSeq[SignedMantleTx](MaxBlockTxs + 1)
-    for i in 0 ..< txs.len:
-      txs[i] = sm
-    let b1 = Block(
-      header: genesis.header,
-      signature: genesis.signature,
-      txs: txs
-    )
-    expect(AssertionDefect):
-      discard validateBlock(b1)
 
   test "rejects a transaction with mismatched ops and opProofs counts":
     let
@@ -63,7 +66,8 @@ suite "core/block_validation":
       genesis = createGenesisBlock(sm)
     var badTx = sm
     badTx.opProofs.add(badTx.opProofs[0]) # 1 op, 2 proofs
-    let b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [badTx])
+    let b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1),
+        [badTx])
     expect(AssertionDefect):
       discard validateBlock(b1)
 
@@ -98,7 +102,8 @@ suite "core/block_validation":
       sm = mkTransferTx(@[], @[])
       genesis = createGenesisBlock(sm)
     var badTx = sm
-    badTx.opProofs[0] = OpProof(kind: opfChannelInscribe, ed25519SigProof: default(Ed25519SigProof))
+    badTx.opProofs[0] = OpProof(kind: opfChannelInscribe,
+        ed25519SigProof: default(Ed25519SigProof))
     let b1 = Block(
       header: genesis.header,
       signature: genesis.signature,
@@ -106,26 +111,44 @@ suite "core/block_validation":
     )
     check not validateBlock(b1)
 
-  test "rejects a block payload exceeding MaxBlockSize":
+
+suite "core/block_validation — inclusive size and count bounds":
+  test "a block whose tx bytes are exactly MaxBlockSize is accepted":
     let
-      sm = minimalSignedTx()
-      genesis = createGenesisBlock(sm)
-      largePayload = ChannelInscribePayload(
-        channelId: default(ChannelId),
-        inscription: newSeq[byte](MaxBlockSize + 1),
-        parent: default(Parent),
-        signer: default(Signer),
-      )
-      largeOp = createChannelInscribeOp(largePayload)
-      largeTx = SignedMantleTx(
-        tx: MantleTx(ops: @[largeOp]),
-        opProofs: @[OpProof(kind: opfChannelInscribe, ed25519SigProof: default(Ed25519SigProof))],
-      )
-    let b1 = Block(
-      header: genesis.header,
-      signature: genesis.signature,
-      txs: @[largeTx]
-    )
+      genesis = createGenesisBlock(minimalSignedTx())
+      # Only the serialized transactions count; header and block signature don't.
+      tx = mkSizedTx(MaxBlockSize)
+    check encodeSignedMantleTx(tx).len == MaxBlockSize
+    let b1 = childBlock(
+      genesis.header, blockId(genesis.header), SlotNumber(1), [tx])
+    check validateBlock(b1)
+
+  test "one byte past MaxBlockSize is rejected":
+    let
+      genesis = createGenesisBlock(minimalSignedTx())
+      tx = mkSizedTx(MaxBlockSize + 1)
+      b1 = childBlock(
+        genesis.header, blockId(genesis.header), SlotNumber(1), [tx])
     check not validateBlock(b1)
+
+  test "a block with exactly MaxBlockTxs transactions is accepted":
+    let
+      genesis = createGenesisBlock(minimalSignedTx())
+      txs = newSeq[SignedMantleTx](MaxBlockTxs)
+      b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), txs)
+    check validateBlock(b1)
+
+  test "one transaction past MaxBlockTxs is rejected":
+    let
+      genesis = createGenesisBlock(minimalSignedTx())
+      txs = newSeq[SignedMantleTx](MaxBlockTxs)
+      b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), txs)
+      overLong = Block(
+        header: b1.header,
+        signature: b1.signature,
+        txs: newSeq[SignedMantleTx](MaxBlockTxs + 1),
+      )
+    expect(AssertionDefect):
+      discard validateBlock(overLong)
 
 {.pop.}

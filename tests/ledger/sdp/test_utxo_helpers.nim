@@ -14,6 +14,11 @@ import
 func mkZkPubKey*(seed: byte): ZkPublicKey =
   frFromBytesLE([seed]).get
 
+func mkChannelId*(seed: byte): ChannelId =
+  var c: ChannelId
+  c[0] = seed
+  c
+
 func mkUtxo*(
     value: Value = 100, pkSeed: byte = 1, opIdSeed: byte = 0,
     outputIndex: uint64 = 0,

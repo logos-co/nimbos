@@ -53,7 +53,7 @@ func validateBlockHeader(blk: Block): bool =
   true
 
 func validateBlockBody(blk: Block): bool =
-  if blockPayloadBytesLen(blk) > MaxBlockSize:
+  if txBytesLen(blk.txs) > MaxBlockSize:
     return false
 
   if blk.txs.len > MaxBlockTxs:
