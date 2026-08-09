@@ -5,11 +5,12 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-## Stateless structural checks of Bedrock `valid_header(B)`. The stateful
+## Stateless structural checks of Bedrock block header and body. The stateful
 ## half (parent linkage, slot ordering, wallclock bound, leader proof verification
 ## called during `tryApplyHeader` in `ledger.nim`) is owned by the `Chain.tryApplyBlock`
 ## composition: ledger `prepareUpdate` plus `LocalTree.addBlockToTree`.
-## Spec: [1.1.1 Block Construction, Validation and Execution](https://nomos-tech.notion.site/1-1-1-Block-Construction-Validation-and-Execution-269261aa09df807185a9e0764acffe22)
+## Spec: [Cryptarchia v1 — Block Header Validation](https://github.com/logos-co/logos-lips/blob/master/docs/blockchain/raw/cryptarchia-v1-protocol.md#block-header-validation)
+## Spec: [Bedrock v1.1 — Mantle Specification: Validation](https://github.com/logos-co/logos-lips/blob/master/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md#validation)
 
 {.push raises: [], gcsafe.}
 
