@@ -343,10 +343,9 @@ proc tryApplyTxns*(
       return err(InsufficientBalance)
     totalFeeBurned = totalFeeBurned.checkedAdd(totalCost).valueOr:
       return err(GasOverflow)
-    # The surplus above the mandatory fee is the tip. `covers` compares the
-    # full balance, so only a balance past the truncation width can underflow.
-    let tip = r.balance.truncateToValue().checkedSub(totalCost).valueOr:
-      return err(GasOverflow)
+    # tx_priority_tip = checked_uint64(tx_balance - tx_mandatory_fee): only
+    # the difference is narrowed — a wide balance with a small tip stays valid.
+    let tip = ?checked_uint64(?r.balance.checkedSub(totalCost.to(Balance)))
     totalFeeTip = totalFeeTip.checkedAdd(tip).valueOr:
       return err(GasOverflow)
     blockExecutionGas = blockExecutionGas.checkedAdd(r.executionGas).valueOr:

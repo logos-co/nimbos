@@ -43,13 +43,14 @@ func covers*(balance: Balance, cost: uint64): bool =
   ## True when `balance` can pay `cost`.
   balance >= cost.to(Balance)
 
-func truncateToValue*(b: Balance): Value =
-  ## Low 64 bits of a non-negative balance.
-  # Stint's signed `truncate` goes through `abs`, so the sign has to be a
-  # precondition rather than a wrap: every call site runs after `covers`,
-  # which already establishes b >= 0.
-  doAssert b >= Balance.zero, "truncateToValue on a negative balance"
-  b.truncate(uint64)
+func checked_uint64*(b: Balance): Result[Value, LedgerError] =
+  ## Checked narrowing to `Value`; `BalanceOverflow` outside `[0, uint64.high]`.
+  # An unrepresentable result invalidates the tx rather than wrapping. The
+  # lower bound also keeps stint's signed `truncate` (via `abs`) off negatives.
+  if b < Balance.zero or b > static(uint64.high.to(Balance)):
+    err(BalanceOverflow)
+  else:
+    ok(b.truncate(uint64))
 
 func checkedSub*(a, b: Balance): Result[Balance, LedgerError] =
   ## Returns `a - b`, or `BalanceOverflow` when the result falls outside

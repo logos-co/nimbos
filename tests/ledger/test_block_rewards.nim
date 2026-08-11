@@ -10,9 +10,10 @@
 
 import
   unittest2,
+  results,
   stint,
   ../../logos_chain/core/mantle/[gas, primitives],
-  ../../logos_chain/ledger/[balance, block_rewards]
+  ../../logos_chain/ledger/[balance, block_rewards, types]
 
 template checkReward(
     totalStake: uint64,
@@ -91,17 +92,18 @@ suite "block rewards: fee window":
     # 10_512 * that sum dwarfs STAKE_TARGET, so the weight pins at A_SCALE.
     checkReward(0'u64, w.summedFees, uint64.high, 38'u64, 57'u64)
 
-suite "block rewards: balance truncation":
-  test "values up to uint64.high pass through unchanged":
+suite "block rewards: balance narrowing":
+  test "values up to uint64.high narrow unchanged":
     check:
-      truncateToValue(Balance.zero) == 0'u64
-      truncateToValue(1'u64.to(Balance)) == 1'u64
-      truncateToValue(uint64.high.to(Balance)) == uint64.high
+      checked_uint64(Balance.zero).get == 0'u64
+      checked_uint64(1'u64.to(Balance)).get == 1'u64
+      checked_uint64(uint64.high.to(Balance)).get == uint64.high
 
-  test "values above uint64.high keep only the low 64 bits":
+  test "values outside the Value range are rejected, never wrapped":
     let beyond = uint64.high.to(Balance) + 1'u64.to(Balance) # 2^64
     check:
-      truncateToValue(beyond) == 0'u64
-      truncateToValue(beyond + 5'u64.to(Balance)) == 5'u64
+      checked_uint64(beyond).error == BalanceOverflow
+      checked_uint64(beyond + 5'u64.to(Balance)).error == BalanceOverflow
+      checked_uint64(Balance.zero - 1'u64.to(Balance)).error == BalanceOverflow
 
 {.pop.}
