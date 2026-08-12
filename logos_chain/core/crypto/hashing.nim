@@ -6,13 +6,13 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## Hashing and PRNG over common cryptographic types (see ``encoding``).
-## Spec: [1.0.1 Common Cryptographic Components](https://nomos-tech.notion.site/1-0-1-Common-Cryptographic-Components-1fd261aa09df81ac8ebbe0111e2c2d84)
+## Spec: [Common Cryptographic Components v1.0.2](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/common-cryptographic-components.md)
 
 {.push raises: [], gcsafe.}
 
 import
   nimcrypto/blake2,
-  poseidon2/sponge,
+  ../../zk/poseidon2/hasher,
   ./types
 export types
 
@@ -38,9 +38,14 @@ func generateZkSignature*(): ZkSignature =
 
 func poseidon2Hash*(data: openArray[byte]): ZkHash =
   ## Poseidon2 (BN254, t=3) sponge hash over input bytes.
-  ## Returns canonical 32-byte little-endian field element encoding.
-  ## TODO(zk): replace this direct sponge call with `Poseidon2Hasher` when ready.
-  Sponge.digest(data).toBytes()
+  ## Returns canonical 32-byte little-endian field element encoding via Poseidon2Hasher.
+  let fe = if data.len <= 31:
+             frFromBytesLE(data).get()
+           else:
+             var buf32: array[32, byte]
+             for i in 0 ..< min(32, data.len): buf32[i] = data[i]
+             frFromBytesLEModOrder(buf32)
+  Poseidon2Hasher.digest([fe]).toBytes()
 
 
 func prngBlock*(seed: Blake2bPrngSeed, index: uint64): Blake2bPrngBlock =

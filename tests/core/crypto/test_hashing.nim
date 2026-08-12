@@ -38,6 +38,11 @@ suite "core/crypto/hashing":
     check prngBytes(seed, 0).len == 0
 
   test "poseidon2Hash is deterministic and input-sensitive":
-    skip()
+    let
+      h1 = poseidon2Hash([1'u8, 2'u8, 3'u8])
+      h2 = poseidon2Hash([1'u8, 2'u8, 3'u8])
+      h3 = poseidon2Hash([1'u8, 2'u8, 4'u8])
+    check h1 == h2
+    check h1 != h3
 
 {.pop.}
