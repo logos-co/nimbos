@@ -85,9 +85,15 @@ func rewardShare*(s: LeaderState): Value =
 func recordBlockLeader*(
     s: sink LeaderState,
     voucher: RewardVoucher,
-    reward: Value,
 ): LeaderState =
+  ## Stages one block's voucher commitment for the next epoch roll.
   s.pending.vouchers.add(voucher)
+  s
+
+func addPendingRewards*(s: sink LeaderState, reward: Value): LeaderState =
+  ## Credits one block's leader reward to the epoch's pending pool.
+  # Voucher staging and reward crediting are separate steps: the voucher is
+  # known at header apply, the reward only after the block's txs have run.
   s.pending.reward += reward
   s
 
@@ -98,7 +104,7 @@ func addEpochVouchers*(
   s.voucherTree = s.voucherTree.insert(s.pending.vouchers)
   let (res, didOverflow) = overflowingAdd(s.leadersRewards, s.pending.reward)
   if didOverflow:
-    return err(BalanceOverflow)
+    return err(BalanceOutOfRange)
   s.leadersRewards = res
   s.pending.vouchers = @[]
   s.pending.reward = 0

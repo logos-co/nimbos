@@ -639,4 +639,59 @@ suite "tryApplyTx — SDP":
     l.commitUpdate(r.get.id, r.get.state)
     check declarationId(declaration) in l.state(mkId(0x11)).get.sdp.state.declarations
 
+const noTxs: seq[SignedMantleTx] = @[]
+  ## Empty block contents; a compile-time value stays gcsafe, a `let` would not.
+
+suite "block rewards — per-block leader crediting":
+  # At every stake these fixtures reach, the interpolation weight pins at
+  # A_SCALE, so one block emits a leader share of 38.
+  const emission = 38'u64
+
+  test "an empty block credits the pool with the block emission":
+    # `pending` is private; it surfaces in `leadersRewards` once the next
+    # epoch rotation rolls it in.
+    var s = mkState([mkUtxo()])
+    s = s.tryApplyHeader(1'u64, mkProof(), testLedgerConfig).expect("header")
+    s = s.tryApplyTxns(noTxs, slot = 1'u64).expect("txns")
+    check s.cryptarchiaLedger.leader.leadersRewards == 0
+    s = s.tryApplyHeader(100'u64, mkProof(), testLedgerConfig).expect("rotation")
+    check s.cryptarchiaLedger.leader.leadersRewards == emission
+
+  test "each applied block advances the block number":
+    var s = mkState([mkUtxo()])
+    check s.blockNumber == 0'u64
+    s = s.tryApplyTxns(noTxs, slot = 1'u64).expect("block 1")
+    s = s.tryApplyTxns(noTxs, slot = 2'u64).expect("block 2")
+    check:
+      s.blockNumber == 2'u64
+      s.feeWindow.summedFees == u128(0)
+
+  test "burned fees enter the window and tips top up the leader share":
+    # No in-tree transfer fixture carries a surplus, so the fee split is
+    # driven through the block-closing step directly.
+    let
+      s0 = mkState([mkUtxo()])
+      s1 = s0.creditBlockRewards(
+        totalFeeBurned = GasCost(700), totalFeeTip = GasCost(250)
+      ).expect("credited")
+    check:
+      s1.blockNumber == 1'u64
+      s1.feeWindow.summedFees == u128(700)
+      s1.cryptarchiaLedger.leader.leadersRewards == 0
+    let rolled = s1.tryApplyHeader(100'u64, mkProof(), testLedgerConfig)
+      .expect("rotation")
+    check rolled.cryptarchiaLedger.leader.leadersRewards == emission + 250
+
+  test "a rotating block credits the epoch it opens, not the one it closes":
+    var s = mkState([mkUtxo()])
+    s = s.tryApplyHeader(1'u64, mkProof(), testLedgerConfig).expect("header")
+    s = s.tryApplyTxns(noTxs, slot = 1'u64).expect("txns")
+    # The rotation rolls epoch 0's pending pool; the rotating block's own
+    # reward is credited afterwards, so it belongs to epoch 1.
+    s = s.tryApplyHeader(100'u64, mkProof(), testLedgerConfig).expect("rotation")
+    s = s.tryApplyTxns(noTxs, slot = 100'u64).expect("txns")
+    check s.cryptarchiaLedger.leader.leadersRewards == emission
+    s = s.tryApplyHeader(200'u64, mkProof(), testLedgerConfig).expect("rotation")
+    check s.cryptarchiaLedger.leader.leadersRewards == 2 * emission
+
 {.pop.}

@@ -29,7 +29,7 @@ type
     DoubleSpend ## same NoteId appears twice within a single op's inputs
     ZeroValueNote ## output Note has value == 0
     InvalidProof ## ZK multi-sig or leader-proof verify failed
-    BalanceOverflow ## add/sub overflowed during balance math
+    BalanceOutOfRange ## balance math left the representable range
     UnsupportedOp ## Op kind not yet wired in this ledger version
     InsufficientBalance ## not enough balance for the requested debit
     GasOverflow ## gas or fee arithmetic exceeded uint64

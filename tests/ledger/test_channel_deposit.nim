@@ -181,8 +181,8 @@ suite "applyChannelDeposit — consume and re-create (no verify)":
     let
       cid = mkChannelId(8)
       input = mkUtxo(value = 100, pkSeed = 1)
-      leader = LeaderState.init().recordBlockLeader(default(RewardVoucher), 42)
-        .addEpochVouchers().get
+      leader = LeaderState.init().recordBlockLeader(default(RewardVoucher))
+        .addPendingRewards(42).addEpochVouchers().get
       cs = CryptarchiaState(
         utxos: UtxoStore.init().insert(input.id, input).store, leader: leader,
       )

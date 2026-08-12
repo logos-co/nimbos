@@ -88,7 +88,7 @@ suite "MantleState.tryApplyChannelTransfer":
         cs, LockedNotes.init(), op, ChannelMultiSigProof(), mkTxHash())
     check r.error == ZeroValueNote
 
-  test "output sum past uint64 → BalanceOverflow":
+  test "output sum past uint64 → BalanceOutOfRange":
     let
       cid = mkChannelId(5)
       note = mkUtxo(value = 100, pkSeed = 1)
@@ -99,7 +99,7 @@ suite "MantleState.tryApplyChannelTransfer":
         outputs: @[mkNote(uint64.high, pkSeed = 5), mkNote(2, pkSeed = 6)])
       r = m.tryApplyChannelTransfer(
         cs, LockedNotes.init(), op, ChannelMultiSigProof(), mkTxHash())
-    check r.error == BalanceOverflow
+    check r.error == BalanceOutOfRange
 
   test "channel doesn't exist → ChannelNotFound":
     let
@@ -256,7 +256,7 @@ suite "MantleState.tryApplyChannelTransfer":
       kp2 = mkEdKeyPair(rng)
       cid = mkChannelId(15)
       note = mkUtxo(value = 100, pkSeed = 1)
-      leader = LeaderState.init().recordBlockLeader(default(RewardVoucher), 42)
+      leader = LeaderState.init().recordBlockLeader(default(RewardVoucher)).addPendingRewards(42)
         .addEpochVouchers().get
       cs = CryptarchiaState(
         utxos: UtxoStore.init().insert(note.id, note).store, leader: leader)
