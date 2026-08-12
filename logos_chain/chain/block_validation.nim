@@ -36,25 +36,30 @@ func txBytesLen(txs: openArray[SignedMantleTx]): int =
     total += encodeSignedMantleTx(stx).len
   total
 
-func blockPayloadBytesLen(blk: Block): int =
-  ## Mantle tx bytes plus the 64-byte Ed25519 block signature.
-  ## IBD additionally caps the full bincode wire blob (header framing + signature + txs).
-  txBytesLen(blk.txs) + EdSignatureSize
-
-func validateBlockHeader(blk: Block): bool =
-  if header(blk).bedrockVersion != ExpectedBedrockVersion:
+func validateBlockHeader*(blk: Block): bool =
+  let h = header(blk)
+  if h.bedrockVersion != ExpectedBedrockVersion:
     return false
 
-  if createBlockRoot(blk.txs) != header(blk).blockRoot:
+  if h.proofOfLeadership.leaderKey == default(Ed25519PublicKey):
     return false
 
-  if not verify(blk.signature, blockId(header(blk)), header(blk).proofOfLeadership.leaderKey):
+  if h.slot > 0 and h.parentBlock == default(BlockId):
+    return false
+
+  if blk.txs.len > 0 and h.blockRoot == default(Hash32):
+    return false
+
+  if createBlockRoot(blk.txs) != h.blockRoot:
+    return false
+
+  if not verify(blk.signature, blockId(h), h.proofOfLeadership.leaderKey):
     return false
 
   true
 
-func validateBlockBody(blk: Block): bool =
-  if txBytesLen(blk.txs) > MaxBlockSize:
+func validateBlockBody*(blk: Block): bool =
+  if blk.signature == default(Ed25519Signature):
     return false
 
   if blk.txs.len > MaxBlockTxs:
@@ -71,10 +76,18 @@ func validateBlockBody(blk: Block): bool =
         return false
       if tx.opProofs[i].kind != expectedOpProofKindForOpcode(op.opcode):
         return false
+
+  if txBytesLen(blk.txs) > MaxBlockSize:
+    return false
+
   true
 
 func validateBlock*(blk: Block): bool =
-  validateBlockHeader(blk) and validateBlockBody(blk)
+  ## Do NOT change this evaluation order: validateBlockBody MUST run before
+  ## validateBlockHeader to ensure transaction count bounds (MaxBlockTxs) and
+  ## per-transaction opcode/proof structures are verified prior to Merkle root
+  ## construction in validateBlockHeader (preventing AssertionDefect on malformed input).
+  validateBlockBody(blk) and validateBlockHeader(blk)
 
 type
   BlockValidationErrorKind* {.pure.} = enum

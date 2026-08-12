@@ -66,10 +66,8 @@ suite "core/block_validation":
       genesis = createGenesisBlock(sm)
     var badTx = sm
     badTx.opProofs.add(badTx.opProofs[0]) # 1 op, 2 proofs
-    let b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1),
-        [badTx])
-    expect(AssertionDefect):
-      discard validateBlock(b1)
+    let b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [badTx])
+    check not validateBlockBody(b1)
 
   test "rejects a transaction with unsupported opcode":
     let
@@ -77,12 +75,8 @@ suite "core/block_validation":
       genesis = createGenesisBlock(sm)
     var badTx = sm
     badTx.tx.ops[0].opcode = cast[Opcode](0xff'u8)
-    let b1 = Block(
-      header: genesis.header,
-      signature: genesis.signature,
-      txs: @[badTx]
-    )
-    check not validateBlock(b1)
+    let b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [badTx])
+    check not validateBlockBody(b1)
 
   test "rejects a transaction with opcode mismatching payload":
     let
@@ -90,12 +84,8 @@ suite "core/block_validation":
       genesis = createGenesisBlock(sm)
     var badTx = sm
     badTx.tx.ops[0].opcode = OpChannelInscribe
-    let b1 = Block(
-      header: genesis.header,
-      signature: genesis.signature,
-      txs: @[badTx]
-    )
-    check not validateBlock(b1)
+    let b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [badTx])
+    check not validateBlockBody(b1)
 
   test "rejects a transaction with proof kind mismatching opcode":
     let
@@ -104,12 +94,8 @@ suite "core/block_validation":
     var badTx = sm
     badTx.opProofs[0] = OpProof(kind: opfChannelInscribe,
         ed25519SigProof: default(Ed25519SigProof))
-    let b1 = Block(
-      header: genesis.header,
-      signature: genesis.signature,
-      txs: @[badTx]
-    )
-    check not validateBlock(b1)
+    let b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [badTx])
+    check not validateBlockBody(b1)
 
 
 suite "core/block_validation — inclusive size and count bounds":
@@ -148,7 +134,6 @@ suite "core/block_validation — inclusive size and count bounds":
         signature: b1.signature,
         txs: newSeq[SignedMantleTx](MaxBlockTxs + 1),
       )
-    expect(AssertionDefect):
-      discard validateBlock(overLong)
+    check not validateBlock(overLong)
 
 {.pop.}
