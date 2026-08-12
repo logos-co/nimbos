@@ -102,8 +102,8 @@ suite "block rewards: balance narrowing":
   test "values outside the Value range are rejected, never wrapped":
     let beyond = uint64.high.to(Balance) + 1'u64.to(Balance) # 2^64
     check:
-      checked_uint64(beyond).error == BalanceOverflow
-      checked_uint64(beyond + 5'u64.to(Balance)).error == BalanceOverflow
-      checked_uint64(Balance.zero - 1'u64.to(Balance)).error == BalanceOverflow
+      checked_uint64(beyond).error == BalanceOutOfRange
+      checked_uint64(beyond + 5'u64.to(Balance)).error == BalanceOutOfRange
+      checked_uint64(Balance.zero - 1'u64.to(Balance)).error == BalanceOutOfRange
 
 {.pop.}

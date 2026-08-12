@@ -88,7 +88,7 @@ suite "MantleState.tryApplyChannelTransfer":
         cs, LockedNotes.init(), op, ChannelMultiSigProof(), mkTxHash())
     check r.error == ZeroValueNote
 
-  test "output sum past uint64 → BalanceOverflow":
+  test "output sum past uint64 → BalanceOutOfRange":
     let
       cid = mkChannelId(5)
       note = mkUtxo(value = 100, pkSeed = 1)
@@ -99,7 +99,7 @@ suite "MantleState.tryApplyChannelTransfer":
         outputs: @[mkNote(uint64.high, pkSeed = 5), mkNote(2, pkSeed = 6)])
       r = m.tryApplyChannelTransfer(
         cs, LockedNotes.init(), op, ChannelMultiSigProof(), mkTxHash())
-    check r.error == BalanceOverflow
+    check r.error == BalanceOutOfRange
 
   test "channel doesn't exist → ChannelNotFound":
     let

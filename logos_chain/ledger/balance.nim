@@ -30,12 +30,12 @@ func zero*(_: typedesc[Balance]): Balance =
 # helpers do explicit MIN/MAX headroom checks for arbitrary signed operands.
 
 func checkedAdd*(a, b: Balance): Result[Balance, LedgerError] =
-  ## Returns `a + b`, or `BalanceOverflow` when the result falls outside
+  ## Returns `a + b`, or `BalanceOutOfRange` when the result falls outside
   ## `[Balance.low, Balance.high]`.
   if b > Balance.zero and a > (Balance.high - b):
-    err(BalanceOverflow)
+    err(BalanceOutOfRange)
   elif b < Balance.zero and a < (Balance.low - b):
-    err(BalanceOverflow)
+    err(BalanceOutOfRange)
   else:
     ok(a + b)
 
@@ -44,21 +44,21 @@ func covers*(balance: Balance, cost: uint64): bool =
   balance >= cost.to(Balance)
 
 func checked_uint64*(b: Balance): Result[Value, LedgerError] =
-  ## Checked narrowing to `Value`; `BalanceOverflow` outside `[0, uint64.high]`.
+  ## Checked narrowing to `Value`; `BalanceOutOfRange` outside `[0, uint64.high]`.
   # An unrepresentable result invalidates the tx rather than wrapping. The
   # lower bound also keeps stint's signed `truncate` (via `abs`) off negatives.
   if b < Balance.zero or b > static(uint64.high.to(Balance)):
-    err(BalanceOverflow)
+    err(BalanceOutOfRange)
   else:
     ok(b.truncate(uint64))
 
 func checkedSub*(a, b: Balance): Result[Balance, LedgerError] =
-  ## Returns `a - b`, or `BalanceOverflow` when the result falls outside
+  ## Returns `a - b`, or `BalanceOutOfRange` when the result falls outside
   ## `[Balance.low, Balance.high]`.
   if b < Balance.zero and a > (Balance.high + b):
-    err(BalanceOverflow)
+    err(BalanceOutOfRange)
   elif b > Balance.zero and a < (Balance.low + b):
-    err(BalanceOverflow)
+    err(BalanceOutOfRange)
   else:
     ok(a - b)
 

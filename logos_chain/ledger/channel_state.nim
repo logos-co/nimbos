@@ -37,9 +37,9 @@ type
   ChannelStore* = HashTrieMap[ChannelId, ChannelState]
 
 func checkedAdd(a, b: TokenValue): Result[TokenValue, LedgerError] =
-  ## Returns `a + b`, or `BalanceOverflow` on overflow.
+  ## Returns `a + b`, or `BalanceOutOfRange` on overflow.
   let (res, didOverflow) = overflowingAdd(a, b)
-  if didOverflow: err(BalanceOverflow) else: ok(res)
+  if didOverflow: err(BalanceOutOfRange) else: ok(res)
 
 func default_channel*(
     blockSlot: SlotNumber, keys: openArray[Ed25519PublicKey]

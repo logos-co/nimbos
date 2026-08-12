@@ -104,7 +104,7 @@ func addEpochVouchers*(
   s.voucherTree = s.voucherTree.insert(s.pending.vouchers)
   let (res, didOverflow) = overflowingAdd(s.leadersRewards, s.pending.reward)
   if didOverflow:
-    return err(BalanceOverflow)
+    return err(BalanceOutOfRange)
   s.leadersRewards = res
   s.pending.vouchers = @[]
   s.pending.reward = 0
