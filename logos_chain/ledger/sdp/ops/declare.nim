@@ -6,7 +6,7 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## SDP Declare validation and application.
-## Spec: [1.1.0 Service Declaration Protocol](https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/bedrock-service-declaration-protocol.md)
+## Spec: [Service Declaration Protocol v1.3.0](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/bedrock-service-declaration-protocol.md)
 
 {.push raises: [], gcsafe.}
 
@@ -22,7 +22,7 @@ import
 
 export util, registry, state
 
-proc verifySdpDeclareProofs*(
+proc verifySdpDeclareProofs(
     declaration: DeclarationMessage,
     proof: ZkAndEd25519SigsProof,
     txHash: ZkHash,
@@ -68,6 +68,9 @@ proc validateSdpDeclare(
   let declarationId = declarationId(declaration)
   if declarationId in state.declarations:
     return err(DuplicateDeclaration)
+
+  if hasProviderOrZkIdConflict(state, declaration.serviceType, declaration.providerId, declaration.zkId):
+    return err(DuplicateProviderOrZkId)
 
   ?verifySdpDeclareProofs(
     declaration, proof, txHash, note.zkPublicKey,
