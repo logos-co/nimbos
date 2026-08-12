@@ -9,7 +9,7 @@
 ## half (parent linkage, slot ordering, wallclock bound, leader proof) is
 ## owned by the `Chain.tryApplyBlock` composition: ledger `prepareUpdate`
 ## plus `LocalTree.addBlockToTree`.
-## Spec: [1.1.1 Block Construction, Validation and Execution](https://nomos-tech.notion.site/1-1-1-Block-Construction-Validation-and-Execution-269261aa09df807185a9e0764acffe22)
+## Spec: [Block Construction, Validation and Execution v1.1.2](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/bedrock-v1.1-block-construction.md)
 
 {.push raises: [], gcsafe.}
 
