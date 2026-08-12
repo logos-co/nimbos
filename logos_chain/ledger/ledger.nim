@@ -39,6 +39,7 @@ type
   Ledger*[Id] = object
     states: Table[Id, LedgerState]
     config: LedgerConfig
+    leaderProofVerifier: LeaderProofVerifier
 
 func latestUtxos*(s: LedgerState): lent UtxoStore =
   ## The live UTXO set.
@@ -127,6 +128,7 @@ proc tryApplyHeader*(
     slot: SlotNumber,
     proof: ProofOfLeadership,
     cfg: LedgerConfig,
+    verifyProof: LeaderProofVerifier = verifyLeaderProof,
 ): Result[LedgerState, LedgerError] =
   ## Epoch pipeline for `slot`, leader-proof verification against the active
   ## epoch state, then entropy/density bookkeeping.
@@ -155,7 +157,7 @@ proc tryApplyHeader*(
       lottery1: active.lottery1,
       agedRoot: active.agedUtxoRoot,
       latestRoot: s.cryptarchiaLedger.latestUtxos.root)
-    verified = verifyLeaderProof(proof, public).valueOr:
+    verified = verifyProof(proof, public).valueOr:
       return err(VerifierNotInitialised)
   if not verified:
     return err(InvalidProof)
@@ -365,11 +367,16 @@ func init*[Id](
     id: Id,
     state: LedgerState,
     config: LedgerConfig = LedgerConfig(),
+    leaderProofVerifier: LeaderProofVerifier = verifyLeaderProof,
 ): Ledger[Id] =
   ## Constructs a Ledger seeded with one `(id, state)` entry.
   var states = initTable[Id, LedgerState]()
   states[id] = state
-  Ledger[Id](states: states, config: config)
+  Ledger[Id](
+    states: states,
+    config: config,
+    leaderProofVerifier: leaderProofVerifier,
+  )
 
 func state*[Id](l: Ledger[Id], id: Id): Opt[LedgerState] =
   # `Table.[]` raises KeyError; `getOrDefault` doesn't. Two lookups, but
@@ -411,7 +418,7 @@ proc prepareUpdate*[Id](
     return err(ParentNotFound)
   let
     parent = l.states.getOrDefault(parentId)
-    afterHeader = ?parent.tryApplyHeader(slot, proof, l.config)
+    afterHeader = ?parent.tryApplyHeader(slot, proof, l.config, l.leaderProofVerifier)
     afterTxs = ?afterHeader.tryApplyTxns(txs, slot)
   ok((id: id, state: afterTxs))
 

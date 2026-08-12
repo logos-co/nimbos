@@ -12,13 +12,16 @@ import
   bearssl/rand,
   chronos,
   libp2p/[switch, peerid],
+  libp2p/crypto/rng,
+  libp2p/crypto/ed25519/ed25519,
   testutils/markdown_reports,
   unittest2,
   ../logos_chain/conf,
   ../logos_chain/networking/network,
   ../logos_chain/core/[types, local_tree],
   ../logos_chain/core/mantle/tx_types,
-  ../logos_chain/chain/genesis
+  ../logos_chain/chain/genesis,
+  ../logos_chain/ledger/[pol_verifier, types]
 
 from ../logos_chain/core/mantle/primitives import SlotNumber
 from std/algorithm import SortOrder, sort
@@ -107,20 +110,29 @@ func minimalSignedTx*(): SignedMantleTx =
     opProofs: @[],
   )
 
-func childBlock*(
+let testBlockKeyPair = block:
+  var rngRef = new(HmacDrbgContext)
+  rngRef[] = HmacDrbgContext.init([9'u8])
+  EdKeyPair.random(newBearSslRng(rngRef))
+
+proc childBlock*(
     parentHdr: Header,
     parentId: BlockId,
     slot: SlotNumber,
     txs: openArray[SignedMantleTx],
 ): Block =
+  var proofOfLeadership = parentHdr.proofOfLeadership
+  proofOfLeadership.leaderKey = testBlockKeyPair.pubkey
+
   let h = initHeader(
     bedrockVersion = parentHdr.bedrockVersion,
     parentBlock = parentId,
     slot = slot,
     txs = txs,
-    proofOfLeadership = parentHdr.proofOfLeadership,
+    proofOfLeadership = proofOfLeadership,
   )
-  initBlock(h, txs = txs)
+  let sig = testBlockKeyPair.seckey.sign(blockId(h))
+  initBlock(h, signature = sig, txs = txs)
 
 proc extendChainAfterGenesis*(
     tree: LocalTree, genesis: Block, extraBlocks: int,
@@ -198,5 +210,10 @@ proc createBootstrapPeers*(): Future[BootstrapPeers] {.async.} =
     dialer: dialer,
     listenerPeerId: listenerPeerId,
   )
+
+proc mockVerifyLeaderProof*(
+    proof: ProofOfLeadership, public: LeaderPublic
+): Result[bool, PolLoadError] =
+  ok(true)
 
 addOutputFormatter(new TimingCollector)
