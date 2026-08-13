@@ -14,10 +14,12 @@
 
 import
   results,
+  ../core/types,
   ../core/crypto/types,
-  ../consensus/clock
+  ../consensus/clock,
+  ./pol_verifier
 
-export results, clock
+export results, clock, pol_verifier
 
 type
   LedgerError* {.pure.} = enum
@@ -69,6 +71,9 @@ type
     InvalidSlot ## header slot is not strictly greater than the parent state's
     InputInGenesis ## genesis transfer consumes inputs; genesis may only mint
 
+  LeaderProofVerifier* = proc(
+    proof: ProofOfLeadership, public: LeaderPublic
+  ): Result[bool, PolLoadError] {.gcsafe, raises: [].}
   LedgerConfig* = object
     ## Chain configuration. Remaining fields land with the modules that
     ## need them (SDP).
