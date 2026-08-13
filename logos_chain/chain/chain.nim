@@ -128,7 +128,7 @@ proc removeBranchTxs(chain: var Chain, fromId, toId: BlockId) =
     let blkOpt = chain.localTree.getBlock(curr)
     if blkOpt.isSome:
       let b = blkOpt.get
-      chain.mempool.pruneFinalizedTxs(b)
+      chain.mempool.pruneBlockTxs(b)
       curr = header(b).parentBlock
     else:
       warn "Missing block during reorg transaction removal",

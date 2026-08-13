@@ -133,7 +133,7 @@ proc pruneExpiredTxs*(m: var Mempool) =
   for hash in expiredHashes:
     m.remove(hash, moveToGrace = true)
 
-proc pruneFinalizedTxs*(m: var Mempool, blk: Block) =
+proc pruneBlockTxs*(m: var Mempool, blk: Block) =
   for stx in blk.txs:
     m.remove(mantleTxHash(stx.tx), moveToGrace = false)
 
