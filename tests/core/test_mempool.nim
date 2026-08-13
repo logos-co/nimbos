@@ -9,14 +9,17 @@
 {.used.}
 
 import
+  std/times,
   unittest2,
   ../testutil,
   ../../logos_chain/core/types,
-  ../../logos_chain/mempool
+  ../../logos_chain/core/mempool,
+  ../../logos_chain/consensus/clock
 
 suite "core/mempool":
-  test "mempool lifecycle (add, contains, get, remove, len)":
-    var m = Mempool.init()
+  test "mempool lifecycle (add, contains, get, len)":
+    let now = uint64(max(getTime().toUnix(), 0'i64))
+    var m = Mempool.init(SlotConfig(genesisTime: now, slotDurationSeconds: 1'u64))
     check m.len == 0
 
     let tx1 = minimalSignedTx()
@@ -40,52 +43,38 @@ suite "core/mempool":
     check m.get(missingHash).isErr
     check m.get(missingHash).error == MempoolError.TxNotFound
 
-    # Remove transaction
-    check m.remove(hash1) == true
+  test "pruneBlockTxs removes committed block transactions":
+    let now = uint64(max(getTime().toUnix(), 0'i64))
+    var m = Mempool.init(SlotConfig(genesisTime: now, slotDurationSeconds: 1'u64))
+    let tx1 = minimalSignedTx()
+    var tx2 = minimalSignedTx()
+    tx2.tx.ops.add(createLeaderClaimOp(LeaderClaimPayload(
+      rewardsRoot: default(RewardsRoot),
+      voucherNullifier: default(VoucherNullifier),
+      publicKey: default(ZkPublicKey),
+    )))
+
+    check m.add(tx1) == true
+    check m.add(tx2) == true
+
+    var blk: Block
+    blk.txs = @[tx1]
+
+    m.pruneBlockTxs(blk)
+
+    check mantleTxHash(tx1.tx) notin m
+    check mantleTxHash(tx2.tx) in m
+    check m.len == 1
+
+  test "pruneExpiredTxs purges transactions older than MempoolMaxAgeSlots":
+    let now = uint64(max(getTime().toUnix(), 0'i64))
+    var m = Mempool.init(SlotConfig(genesisTime: now, slotDurationSeconds: 1'u64))
+    let tx1 = minimalSignedTx()
+
+    check m.add(tx1) == true
+
+    # Simulate 115 seconds passing
+    m.slotConfig.genesisTime = now - 115'u64
+
+    m.pruneExpiredTxs()
     check m.len == 0
-    check hash1 notin m
-
-    # Double remove
-    check m.remove(hash1) == false
-
-  test "selectTxsForProposal FIFO ordering":
-    var m = Mempool.init()
-    
-    let tx1 = minimalSignedTx()
-    var tx2 = minimalSignedTx()
-    tx2.tx.ops.add(createLeaderClaimOp(LeaderClaimPayload(
-      rewardsRoot: default(RewardsRoot),
-      voucherNullifier: default(VoucherNullifier),
-      publicKey: default(ZkPublicKey),
-    )))
-    
-    check m.add(tx1) == true
-    check m.add(tx2) == true
-
-    # Selection returns both in FIFO order (tx1 then tx2)
-    let selectedAll = m.selectTxsForProposal()
-    check selectedAll.len == 2
-    check mantleTxHash(selectedAll[0].tx) == mantleTxHash(tx1.tx)
-    check mantleTxHash(selectedAll[1].tx) == mantleTxHash(tx2.tx)
-
-  test "pruneQueue retains active transactions after removal":
-    var m = Mempool.init()
-    let tx1 = minimalSignedTx()
-    var tx2 = minimalSignedTx()
-    tx2.tx.ops.add(createLeaderClaimOp(LeaderClaimPayload(
-      rewardsRoot: default(RewardsRoot),
-      voucherNullifier: default(VoucherNullifier),
-      publicKey: default(ZkPublicKey),
-    )))
-
-    check m.add(tx1) == true
-    check m.add(tx2) == true
-
-    # Remove tx1 and manually trigger pruneQueue
-    check m.remove(mantleTxHash(tx1.tx)) == true
-    m.pruneQueue()
-
-    # selectTxsForProposal must still return tx2
-    let remaining = m.selectTxsForProposal()
-    check remaining.len == 1
-    check mantleTxHash(remaining[0].tx) == mantleTxHash(tx2.tx)

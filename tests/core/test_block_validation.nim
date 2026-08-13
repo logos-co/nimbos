@@ -112,21 +112,22 @@ suite "core/block_validation — inclusive size and count bounds":
       sm = minimalSignedTx()
       genesis = createGenesisBlock(sm)
       gid = blockId(genesis.header)
-      tree = newLocalTree(genesis)
+      tree = newLocalTree(genesis, 1'u64)
       blk = childBlock(genesis.header, gid, SlotNumber(1), [sm])
       
     let signature = kp.seckey.sign(blockId(blk.header))
     var proposal = new(Proposal)
     proposal[] = initProposal(blk.header, [sm], signature).get()
     
-    var mempool = Mempool.init()
+    var mempool = Mempool.init(SlotConfig(slotDurationSeconds: 1'u64))
     check mempool.add(sm)
     
-    let
-      state = LedgerState.fromGenesis(
-          genesis.txs, default(FieldElement), testSdpRegistry(),
-          testLedgerConfig).expect("genesis state")
-      ledger = Ledger[BlockId].init(gid, state, testLedgerConfig)
+    var state = LedgerState.fromGenesis(
+        genesis.txs, default(FieldElement), testSdpRegistry(),
+        testLedgerConfig).expect("genesis state")
+    state.feeMarket.executionBaseFee = 0
+    state.feeMarket.storageGasPrice = 0
+    let ledger = Ledger[BlockId].init(gid, state, testLedgerConfig)
       
     check reconstructAndValidateProposal(proposal[], tree, ledger, mempool).isOk
     
@@ -138,18 +139,20 @@ suite "core/block_validation — inclusive size and count bounds":
       sm = minimalSignedTx()
       genesis = createGenesisBlock(sm)
       gid = blockId(genesis.header)
-      tree = newLocalTree(genesis)
+      tree = newLocalTree(genesis, 1'u64)
       blk = childBlock(genesis.header, gid, SlotNumber(1), [sm])
       
     let signature = kp.seckey.sign(blockId(blk.header))
     var proposal = new(Proposal)
     proposal[] = initProposal(blk.header, [sm], signature).get()
+    var state = LedgerState.fromGenesis(
+        genesis.txs, default(FieldElement), testSdpRegistry(),
+        testLedgerConfig).expect("genesis state")
+    state.feeMarket.executionBaseFee = 0
+    state.feeMarket.storageGasPrice = 0
     let
-      state = LedgerState.fromGenesis(
-          genesis.txs, default(FieldElement), testSdpRegistry(),
-          testLedgerConfig).expect("genesis state")
       ledger = Ledger[BlockId].init(gid, state, testLedgerConfig)
-      mempool = Mempool.init()
+      mempool = Mempool.init(SlotConfig(slotDurationSeconds: 1'u64))
       
     let res = reconstructAndValidateProposal(proposal[], tree, ledger, mempool)
     check res.isErr and res.error == MissingReference

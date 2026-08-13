@@ -262,9 +262,12 @@ suite "gas: tx execution gas and block limit":
         opProofs: @[
           OpProof(kind: opfChannelInscribe, ed25519SigProof: sign(kp1.seckey, txHash)),
           OpProof(kind: opfChannelInscribe, ed25519SigProof: sign(kp2.seckey, txHash))])
-      r = mkState(@[]).tryApplyTx(tx, epoch = 0'u64, slot = 0'u64)
+      s = mkState(@[])
+      r = s.tryApplyTx(tx, epoch = 0'u64, slot = 0'u64)
     check r.isOk
-    check r.get.executionGas == Gas(112)
+    let mf = s.mandatory_fees(tx)
+    check mf.isOk
+    check mf.get.executionGas == Gas(112)
 
   test "per-block execution gas limit constant and accumulator overflow":
     # The TooMuchExecutionGas branch fires when the block's summed execution
@@ -348,5 +351,17 @@ suite "gas: storage accumulation and epoch rotation":
       s.epochs.activeEpoch.epoch == 3
       s.feeMarket.storageGasEma == Gas(100) # 800 → 400 → 200 → 100
       s.feeMarket.storageGasConsumedInEpoch == Gas(0)
+
+  test "mandatory_fees for SignedMantleTx combines execution gas and storage gas":
+    let rng = HmacDrbgContext.new()
+    let tx = mkInscribeTx(rng, mkChannelId(1))
+    var s = mkState(@[])
+    s.feeMarket.executionBaseFee = 2
+    s.feeMarket.storageGasPrice = 3
+    let mf = s.mandatory_fees(tx).expect(
+      "mandatory_fees should return fee breakdown (totalCost, executionGas, storageGas) for signed mantle tx"
+    )
+    let expectedCost = (mf.executionGas * 2) + (mf.storageGas * 3)
+    check mf.totalCost == expectedCost
 
 {.pop.}

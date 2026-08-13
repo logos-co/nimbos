@@ -216,7 +216,7 @@ suite "tryApplyTx — channel ops":
     # Bridged funds never enter or leave the UTXO set, so a channel op can
     # never fund its own fees — a Transfer op in the same tx must.
     check res.balance == Balance.zero
-    check res.executionGas == Gas(56)
+    check res.state.mandatory_fees(tx).get.executionGas == Gas(56)
     check res.state.latestUtxos.len == 1
     check res.state.latestUtxos.contains(note.id)
     check res.state.mantleLedger.channelNotes.isEmpty
@@ -247,7 +247,7 @@ suite "tryApplyTx — channel ops":
       res = r.get
       minted = Utxo(opId: opId(op), outputIndex: 0, note: reassigned)
     check res.balance == Balance.zero
-    check res.executionGas == Gas(56)
+    check s0.mandatory_fees(tx).get.executionGas == Gas(56)
     check not res.state.latestUtxos.contains(note.id)
     check res.state.latestUtxos.contains(minted.id)
     check res.state.mantleLedger.channelNotes.isChannelNoteOf(minted.id, cid)

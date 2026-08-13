@@ -83,14 +83,14 @@ suite "sync/initial_block_download (download blocks)":
       sm = minimalSignedTx()
       genesis = createGenesisBlock(sm)
       gid = blockId(genesis.header)
-      tree = newLocalTree(genesis)
+      tree = newLocalTree(genesis, 1'u64)
       b1 = childBlock(genesis.header, gid, SlotNumber(1), [sm])
     check tree.addBlockToTree(b1)
     let
       b1id = blockId(b1.header)
       req = DownloadBlocksRequest(
         targetBlock: b1id,
-        knownBlocks: buildKnownBlocks(newLocalTree(genesis)),
+        knownBlocks: buildKnownBlocks(newLocalTree(genesis, 1'u64)),
       )
     let sendIds = cappedDownloadPathBlockIds(tree, req)
     check sendIds.len == 1
@@ -100,11 +100,11 @@ suite "sync/initial_block_download (download blocks)":
     let
       sm = minimalSignedTx()
       genesis = createGenesisBlock(sm)
-      tree = newLocalTree(genesis)
+      tree = newLocalTree(genesis, 1'u64)
       tipId = extendChainAfterGenesis(tree, genesis, MaxRequestBlocks + 5)
       req = DownloadBlocksRequest(
         targetBlock: tipId,
-        knownBlocks: buildKnownBlocks(newLocalTree(genesis)),
+        knownBlocks: buildKnownBlocks(newLocalTree(genesis, 1'u64)),
       )
     let sendIds = cappedDownloadPathBlockIds(tree, req)
     check sendIds.len == MaxRequestBlocks
@@ -115,12 +115,12 @@ suite "sync/initial_block_download (download blocks)":
       sm = minimalSignedTx()
       genesis = createGenesisBlock(sm)
       gid = blockId(genesis.header)
-      tree = newLocalTree(genesis)
+      tree = newLocalTree(genesis, 1'u64)
       b1 = childBlock(genesis.header, gid, SlotNumber(1), [sm])
     check tree.addBlockToTree(b1)
     let req = DownloadBlocksRequest(
       targetBlock: blockId(b1.header),
-      knownBlocks: buildKnownBlocks(newLocalTree(genesis)),
+      knownBlocks: buildKnownBlocks(newLocalTree(genesis, 1'u64)),
     )
     let
       msgs = downloadBlocksResponsesForRequest(tree, req)
@@ -183,10 +183,11 @@ suite "sync/initial_block_download (GetTip)":
       let tipOpt = await sendGetTipRequest(clientSyncer, server.peerInfo.peerId)
       check tipOpt.isSome
 
+      let tipId = localTipId(serverChain.localTree)
       let expected = Tip(
-        tip: localTipId(serverChain.localTree),
+        tip: tipId,
         slot: SlotNumber(0),
-        height: serverChain.localTree.latestImmutableHeight,
+        height: serverChain.localTree.blockHeight(tipId).valueOr(0'u64),
       )
       check tipOpt.get.kind == gtrTip
       check tipOpt.get.tipData == expected
