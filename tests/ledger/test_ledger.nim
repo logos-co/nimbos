@@ -24,7 +24,16 @@ import
   ../../logos_chain/zk/pol,
   ../zk/[snarkjs_helpers, zksign_helpers],
   ./sdp/test_helpers,
-  ../core/mantle/test_helpers
+  ../core/mantle/test_helpers,
+  ../testutil
+
+func initLedger(
+    id: TestId,
+    state: LedgerState,
+    config: LedgerConfig = LedgerConfig(),
+    leaderProofVerifier: LeaderProofVerifier = mockVerifyLeaderProof,
+): Ledger[TestId] =
+  Ledger[TestId].init(id, state, config, leaderProofVerifier)
 
 from ./test_helpers import testLedgerConfig
 
@@ -268,12 +277,12 @@ suite "Ledger[Id] map ops":
     let
       seed = mkState(@[mkUtxo()])
       id = mkId(0x01)
-      l = Ledger[TestId].init(id, seed, testLedgerConfig)
+      l = initLedger(id, seed, testLedgerConfig)
     check l.state(id).isSome
     check l.state(mkId(0x02)).isNone
 
   test "commitUpdate overwrites":
-    var l = Ledger[TestId].init(mkId(0x01), mkState(@[]), testLedgerConfig)
+    var l = initLedger(mkId(0x01), mkState(@[]), testLedgerConfig)
     let
       id2 = mkId(0x02)
       st2 = mkState(@[mkUtxo(value = 7, pkSeed = 7)])
@@ -282,7 +291,7 @@ suite "Ledger[Id] map ops":
     check l.state(id2).get.latestUtxos.len == 1
 
   test "pruneStateAt removes existing, returns true; missing returns false":
-    var l = Ledger[TestId].init(mkId(0x01), mkState(@[]), testLedgerConfig)
+    var l = initLedger(mkId(0x01), mkState(@[]), testLedgerConfig)
     check l.pruneStateAt(mkId(0x01)) == true
     check l.state(mkId(0x01)).isNone
     check l.pruneStateAt(mkId(0x99)) == false
@@ -290,7 +299,7 @@ suite "Ledger[Id] map ops":
 suite "prepareUpdate — no-verify paths":
   test "parent missing → ParentNotFound":
     let
-      l = Ledger[TestId].init(mkId(0x01), mkState(@[]), testLedgerConfig)
+      l = initLedger(mkId(0x01), mkState(@[]), testLedgerConfig)
       r = l.prepareUpdate(
         id = mkId(0x02),
         parentId = mkId(0xff),
@@ -305,7 +314,7 @@ suite "prepareUpdate — no-verify paths":
     let
       parent = mkState(@[mkUtxo()])
       id0 = mkId(0x01)
-      l = Ledger[TestId].init(id0, parent, testLedgerConfig)
+      l = initLedger(id0, parent, testLedgerConfig)
       id1 = mkId(0x02)
       r = l.prepareUpdate(
         id = id1,
@@ -459,7 +468,7 @@ when false:
 
   suite "prepareUpdate — verify paths":
     test "happy path with one transfer + commit":
-      var l = Ledger[TestId].init(
+      var l = initLedger(
         mkId(0x01), mkState([mkUtxo(value = 100, pkSeed = 1)]), testLedgerConfig
       )
       let
@@ -482,7 +491,7 @@ when false:
     test "surplus below fee → InsufficientBalance":
       let
         input = mkUtxo(value = 100, pkSeed = 1)
-        l = Ledger[TestId].init(mkId(0x01), mkState([input]), testLedgerConfig)
+        l = initLedger(mkId(0x01), mkState([input]), testLedgerConfig)
         tx = mkTransferTx([input.id], [mkNote(50, pkSeed = 2)]) # 100 in, 50 out
         r = l.prepareUpdate(
           id = mkId(0x02),
@@ -497,10 +506,9 @@ when false:
     test "multi-block IBD: 3 prepare+commit cycles":
       # Walks the same prepare→commit sequence the chain module will eventually
       # drive. Each block consumes the prior block's output as its input.
-      var l = Ledger[TestId].init(
+      var l = initLedger(
         mkId(0x00), mkState([mkUtxo(value = 100, pkSeed = 1)]), testLedgerConfig
       )
-
       # Block 1: spend genesis utxo into a new note (pk=2)
       let
         input1 = mkUtxo(value = 100, pkSeed = 1)
@@ -627,7 +635,7 @@ suite "tryApplyTx — SDP":
     )
     discard installTestDeclaration(parent.sdp, declaration, epoch = 1)
     let id0 = mkId(0x10)
-    var l = Ledger[TestId].init(id0, parent, testLedgerConfig)
+    var l = initLedger(id0, parent, testLedgerConfig)
     let r = l.prepareUpdate(
       id = mkId(0x11),
       parentId = id0,

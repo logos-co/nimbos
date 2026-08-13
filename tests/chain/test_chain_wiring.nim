@@ -129,7 +129,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
       state.epochs.blockDensity.periodEnd == 3599
 
   test "Chain.init wires ledger, epoch state and clock from settings":
-    let chain = Chain.init(ds).valueOr:
+    let chain = Chain.init(ds, mockVerifyLeaderProof).valueOr:
       check false
       return
     let genesisState = chain.ledger.state(
@@ -145,7 +145,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
       chain.currentWallclockSlot() > 0 # devnet genesis lies in the past
 
   test "tryApplyBlock ingests a child of genesis end-to-end":
-    var chain = Chain.init(ds).valueOr:
+    var chain = Chain.init(ds, mockVerifyLeaderProof).valueOr:
       check false
       return
     let
@@ -160,7 +160,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
     check dup.isErr and dup.error.kind == BlockApplyErrorKind.AlreadyApplied
 
   test "tryApplyBlock rejects a slot beyond the wallclock":
-    var chain = Chain.init(ds).valueOr:
+    var chain = Chain.init(ds, mockVerifyLeaderProof).valueOr:
       check false
       return
     let
@@ -171,7 +171,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
     check r.isErr and r.error.kind == BlockApplyErrorKind.FutureSlot
 
   test "tryApplyBlock rejects an unknown parent at tree admission":
-    var chain = Chain.init(ds).valueOr:
+    var chain = Chain.init(ds, mockVerifyLeaderProof).valueOr:
       check false
       return
     var fakeParent: BlockId

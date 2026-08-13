@@ -15,7 +15,7 @@ import
   ./mantle/test_helpers,
   ../testutil,
   ../../logos_chain/core/[types, local_tree, mempool],
-  ../../logos_chain/core/mantle/[operations, proofs, primitives, tx_types],
+  ../../logos_chain/core/mantle/[operations, opcodes, proofs, primitives, tx_types],
   ../../logos_chain/chain/[block_validation, genesis, proposal],
   ../../logos_chain/ledger/ledger
 from ../../logos_chain/core/crypto/types import FieldElement
@@ -64,6 +64,45 @@ suite "core/block_validation":
     b1.header.blockRoot[0] = b1.header.blockRoot[0] xor 0xff'u8
     check not validateBlock(b1)
 
+
+  test "rejects a transaction with mismatched ops and opProofs counts":
+    let
+      sm = mkTransferTx(@[], @[])
+      genesis = createGenesisBlock(sm)
+    var badTx = sm
+    badTx.opProofs.add(badTx.opProofs[0]) # 1 op, 2 proofs
+    let b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [badTx])
+    check not validateBlockBody(b1)
+
+  test "rejects a transaction with unsupported opcode":
+    let
+      sm = mkTransferTx(@[], @[])
+      genesis = createGenesisBlock(sm)
+    var badTx = sm
+    badTx.tx.ops[0].opcode = cast[Opcode](0xff'u8)
+    let b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [badTx])
+    check not validateBlockBody(b1)
+
+  test "rejects a transaction with opcode mismatching payload":
+    let
+      sm = mkTransferTx(@[], @[])
+      genesis = createGenesisBlock(sm)
+    var badTx = sm
+    badTx.tx.ops[0].opcode = OpChannelInscribe
+    let b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [badTx])
+    check not validateBlockBody(b1)
+
+  test "rejects a transaction with proof kind mismatching opcode":
+    let
+      sm = mkTransferTx(@[], @[])
+      genesis = createGenesisBlock(sm)
+    var badTx = sm
+    badTx.opProofs[0] = OpProof(kind: opfChannelInscribe,
+        ed25519SigProof: default(Ed25519SigProof))
+    let b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [badTx])
+    check not validateBlockBody(b1)
+
+
 suite "core/block_validation — inclusive size and count bounds":
   test "a block whose tx bytes are exactly MaxBlockSize is accepted":
     let
@@ -91,9 +130,6 @@ suite "core/block_validation — inclusive size and count bounds":
     check validateBlock(b1)
 
   test "one transaction past MaxBlockTxs is rejected":
-    # `initBlock` and `createBlockRoot` refuse to build an over-long block, so
-    # this models a decoded, untrusted one. The count check runs ahead of the
-    # block-root check, which the extra transaction would also fail.
     let
       genesis = createGenesisBlock(minimalSignedTx())
       txs = newSeq[SignedMantleTx](MaxBlockTxs)

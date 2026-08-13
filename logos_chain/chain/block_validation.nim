@@ -6,8 +6,9 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## Stateless structural checks of Bedrock block header and body. The stateful
-## half is checked via `tryApplyHeader` and `tryApplyTxns` in `ledger.nim`,
-## and orchestrated via `validateBlockAndTransactions` in this file.
+## half (parent linkage, slot ordering, wallclock bound, leader proof verification
+## called during `tryApplyHeader` in `ledger.nim`) is owned by the `Chain.tryApplyBlock`
+## composition: ledger `prepareUpdate` plus `LocalTree.addBlockToTree`.
 ## Spec: [Cryptarchia v1 — Block Header Validation](https://github.com/logos-co/logos-lips/blob/master/docs/blockchain/raw/cryptarchia-v1-protocol.md#block-header-validation)
 ## Spec: [Bedrock v1.1 — Block Proposal Validation](https://github.com/logos-co/logos-lips/blob/master/docs/blockchain/raw/bedrock-v1.1-block-construction.md#block-proposal-validation)
 ## Spec: [Bedrock v1.1 — Mantle Specification: Validation](https://github.com/logos-co/logos-lips/blob/master/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md#validation)
@@ -24,7 +25,12 @@ from ../core/types import
   Block, Header, Proposal, References, createBlockRoot, ExpectedBedrockVersion,
   MaxBlockSize, header, blockId, Hash32
 from ../core/mantle/primitives import MaxBlockTxs, SlotNumber
-from ../core/mantle/tx_types import SignedMantleTx, encodeSignedMantleTx
+from ../core/mantle/tx_types import
+  SignedMantleTx,
+  encodeSignedMantleTx,
+  isSupportedOpcode,
+  opPayloadToOpcode,
+  expectedOpProofKindForOpcode
 
 func txBytesLen(txs: openArray[SignedMantleTx]): int =
   ## The block body is the serialized transactions only; neither the header
@@ -34,28 +40,58 @@ func txBytesLen(txs: openArray[SignedMantleTx]): int =
     total += encodeSignedMantleTx(stx).len
   total
 
-func validateBlockHeader(blk: Block): bool =
-  if header(blk).bedrockVersion != ExpectedBedrockVersion:
+func validateBlockHeader*(blk: Block): bool =
+  let h = header(blk)
+  if h.bedrockVersion != ExpectedBedrockVersion:
     return false
 
-  # Both bounds are inclusive: a block sitting exactly on the limit is valid.
-  if txBytesLen(blk.txs) > MaxBlockSize:
+  if h.proofOfLeadership.leaderKey == default(Ed25519PublicKey):
+    return false
+
+  if h.slot > 0 and h.parentBlock == default(BlockId):
+    return false
+
+  if blk.txs.len > 0 and h.blockRoot == default(Hash32):
+    return false
+
+  if createBlockRoot(blk.txs) != h.blockRoot:
+    return false
+
+  if not verify(blk.signature, blockId(h), h.proofOfLeadership.leaderKey):
+    return false
+
+  true
+
+func validateBlockBody*(blk: Block): bool =
+  if blk.signature == default(Ed25519Signature):
     return false
 
   if blk.txs.len > MaxBlockTxs:
     return false
 
-  if createBlockRoot(blk.txs) != header(blk).blockRoot:
+  for tx in blk.txs:
+    if tx.tx.ops.len != tx.opProofs.len:
+      return false
+    for i in 0 ..< tx.tx.ops.len:
+      let op = tx.tx.ops[i]
+      if not isSupportedOpcode(op.opcode):
+        return false
+      if op.opcode != opPayloadToOpcode(op.payload):
+        return false
+      if tx.opProofs[i].kind != expectedOpProofKindForOpcode(op.opcode):
+        return false
+
+  if txBytesLen(blk.txs) > MaxBlockSize:
     return false
 
   true
 
-func validateBlockBody(blk: Block): bool =
-  discard blk # TODO: body checks (header signature)
-  true
-
 func validateBlock*(blk: Block): bool =
-  validateBlockHeader(blk) and validateBlockBody(blk)
+  ## Do NOT change this evaluation order: validateBlockBody MUST run before
+  ## validateBlockHeader to ensure transaction count bounds (MaxBlockTxs) and
+  ## per-transaction opcode/proof structures are verified prior to Merkle root
+  ## construction in validateBlockHeader (preventing AssertionDefect on malformed input).
+  validateBlockBody(blk) and validateBlockHeader(blk)
 
 type
   BlockValidationErrorKind* {.pure.} = enum
@@ -75,21 +111,30 @@ proc validateBlockAndTransactions*(
     blk: Block,
     localTree: LocalTree,
     ledger: Ledger[BlockId],
-): Result[tuple[id: BlockId, state: LedgerState], BlockValidationError] =
-  ## Performs stateless structural checks, localTree tip extension verification,
-  ## and stateful ledger validation (Proof of Leadership and Mantle txs).
+): Result[BlockId, BlockValidationError] =
+  ## Read-only validation: stateless structural checks, localTree extension,
+  ## and parent existence check in the ledger.
   if not validateBlock(blk):
     return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))
   if not localTree.canExtend(blk.header):
     return err(BlockValidationError(kind: BlockValidationErrorKind.TreeAdmissionRejected))
-    
-  let id = blockId(blk.header)
+  if ledger.state(blk.header.parentBlock).isNone:
+    return err(BlockValidationError(kind: BlockValidationErrorKind.TreeAdmissionRejected))
+
+  ok(blockId(blk.header))
+
+proc prepareBlockUpdate*(
+    blk: Block,
+    localTree: LocalTree,
+    ledger: Ledger[BlockId],
+): Result[tuple[id: BlockId, state: LedgerState], BlockValidationError] =
+  ## Validates block admission and executes state transitions via `ledger.prepareUpdate`.
+  let id = ?validateBlockAndTransactions(blk, localTree, ledger)
+
   let prepared = ledger.prepareUpdate(
     id, blk.header.parentBlock, blk.header.slot, blk.header.proofOfLeadership, blk.txs
   ).valueOr:
-    if error == LedgerError.ParentNotFound:
-      return err(BlockValidationError(kind: BlockValidationErrorKind.TreeAdmissionRejected))
-    elif error in {LedgerError.InvalidSlot, LedgerError.InvalidProof}:
+    if error in {LedgerError.InvalidSlot, LedgerError.InvalidProof}:
       return err(BlockValidationError(kind: BlockValidationErrorKind.HeaderRejected, ledgerError: error))
     else:
       return err(BlockValidationError(kind: BlockValidationErrorKind.TransactionsRejected, ledgerError: error))

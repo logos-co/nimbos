@@ -86,7 +86,11 @@ func init*(
     securityParam: max(securityParam, DefaultSecurityParam),
   )
 
-proc init*(T: type Chain, settings: DeploymentSettings): Result[T, string] =
+proc init*(
+    T: type Chain,
+    settings: DeploymentSettings,
+    leaderProofVerifier: LeaderProofVerifier = verifyLeaderProof,
+): Result[T, string] =
   let
     genesisBlock = createGenesisBlock(settings.cryptarchia.genesisState.signedMantleTx)
     cfg = ledgerConfig(settings)
@@ -98,7 +102,7 @@ proc init*(T: type Chain, settings: DeploymentSettings): Result[T, string] =
       return err("chain: failed to build the genesis state: " & $error)
   ok(T.init(
     genesisBlock,
-    Ledger[BlockId].init(blockId(genesisBlock.header), genesisState, cfg),
+    Ledger[BlockId].init(blockId(genesisBlock.header), genesisState, cfg, leaderProofVerifier),
     SlotConfig(
       genesisTime: param.genesisTime,
       slotDurationSeconds: uint64(settings.time.slotDuration.seconds)),
@@ -144,8 +148,7 @@ proc tryApplyBlock*(
     return err(BlockApplyError(kind: AlreadyApplied))
   if hdr.slot > chain.currentWallclockSlot():
     return err(BlockApplyError(kind: FutureSlot))
-  let prepared = validateBlockAndTransactions(blk, chain.localTree,
-      chain.ledger).valueOr:
+  let prepared = prepareBlockUpdate(blk, chain.localTree, chain.ledger).valueOr:
     case error.kind
     of BlockValidationErrorKind.InvalidBlockStructure:
       return err(BlockApplyError(kind: InvalidStructure))
@@ -153,8 +156,7 @@ proc tryApplyBlock*(
       return err(BlockApplyError(kind: TreeRejected))
     of BlockValidationErrorKind.HeaderRejected,
         BlockValidationErrorKind.TransactionsRejected:
-      return err(BlockApplyError(kind: LedgerRejected,
-          ledgerError: error.ledgerError))
+      return err(BlockApplyError(kind: LedgerRejected, ledgerError: error.ledgerError))
 
   let oldTip = chain.localTree.localTipId()
   if not chain.localTree.addBlockToTree(blk):

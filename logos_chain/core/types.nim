@@ -6,7 +6,7 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## Bedrock block types aligned with Nomos block construction / validation / execution.
-## Spec: [1.1.1 Block Construction, Validation and Execution](https://nomos-tech.notion.site/1-1-1-Block-Construction-Validation-and-Execution-269261aa09df807185a9e0764acffe22)
+## Spec: [Cryptarchia v1 — Block & Chain](https://github.com/logos-co/logos-lips/blob/master/docs/blockchain/raw/cryptarchia-v1-protocol.md#block-chain)
 
 {.push raises: [], gcsafe.}
 
