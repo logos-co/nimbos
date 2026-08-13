@@ -76,10 +76,9 @@ func init*(
     latestImmutableHeight: uint64 = 0,
     securityParam: uint64 = DefaultSecurityParam,
 ): T =
-  let tree = newLocalTree(genesisBlock, securityParam)
   T(
     genesisBlock: genesisBlock,
-    localTree: tree,
+    localTree: newLocalTree(genesisBlock, securityParam),
     ledger: ledger,
     mempool: Mempool.init(slotConfig, maxMempoolCapacity(securityParam)),
     slotConfig: slotConfig,

@@ -262,10 +262,9 @@ suite "gas: tx execution gas and block limit":
         opProofs: @[
           OpProof(kind: opfChannelInscribe, ed25519SigProof: sign(kp1.seckey, txHash)),
           OpProof(kind: opfChannelInscribe, ed25519SigProof: sign(kp2.seckey, txHash))])
-      s = mkState(@[])
-      r = s.tryApplyTx(tx, epoch = 0'u64, slot = 0'u64)
+      r = mkState(@[]).tryApplyTx(tx, epoch = 0'u64, slot = 0'u64)
     check r.isOk
-    let mf = s.mandatory_fees(tx)
+    let mf = r.get.state.mandatory_fees(tx)
     check mf.isOk
     check mf.get.executionGas == Gas(112)
 

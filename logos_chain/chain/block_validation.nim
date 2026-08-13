@@ -138,7 +138,7 @@ proc prepareBlockUpdate*(
       return err(BlockValidationError(kind: BlockValidationErrorKind.HeaderRejected, ledgerError: error))
     else:
       return err(BlockValidationError(kind: BlockValidationErrorKind.TransactionsRejected, ledgerError: error))
-      
+
   ok(prepared)
 
 {.pop.}
