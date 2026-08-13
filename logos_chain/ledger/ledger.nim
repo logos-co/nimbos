@@ -23,7 +23,7 @@ import
 
 from ../core/crypto/types import ZkPublicKey
 export
-  types, cryptarchia_state, channel_state, mantle_state, epoch_state, registry,
+  types, balance, cryptarchia_state, channel_state, mantle_state, epoch_state, registry,
   fee_market, block_rewards, gas
 
 type
@@ -170,29 +170,29 @@ proc tryApplyHeader*(
 
 func multisigThreshold(s: LedgerState, op: Op): uint16 =
   ## Signature count the ledger will verify for a channel multisig op —
-  ## the channel's threshold as of the pre-op state, 0 when absent.
+  ## the channel's threshold as of the pre-op state, 1'u16 minimum fallback when absent.
   case op.payload.kind
   of ChannelConfig:
     let ch = s.mantleLedger.channels.get(op.payload.channelConfig.channel).valueOr:
-      return 0'u16
+      return op.payload.channelConfig.configurationThreshold
     ch.configurationThreshold
   of ChannelWithdraw:
     let ch = s.mantleLedger.channels.get(op.payload.channelWithdraw.channel).valueOr:
-      return 0'u16
+      return 1'u16
     ch.transferThreshold
   of ChannelTransfer:
     let ch = s.mantleLedger.channels.get(op.payload.channelTransfer.channel).valueOr:
-      return 0'u16
+      return 1'u16
     ch.transferThreshold
   else:
-    0'u16
+    1'u16
 
 proc tryApplyTx*(
     state: sink LedgerState,
     tx: SignedMantleTx,
     epoch: EpochNumber,
     slot: SlotNumber,
-): Result[tuple[state: LedgerState, balance: Balance, executionGas: Gas], LedgerError] =
+): Result[tuple[state: LedgerState, balance: Balance], LedgerError] =
   ## Applies one transaction; the returned balance is the Transfer-only
   ## delta. `slot` is used by channel ops for sequencer rotation.
   if tx.tx.ops.len != tx.opProofs.len:
@@ -201,15 +201,11 @@ proc tryApplyTx*(
   var
     s = state
     balance = Balance.zero
-    txExecutionGas = Gas(0)
   let txHash = mantleTxHash(tx.tx)
   for i in 0 ..< tx.tx.ops.len:
     let
       op = tx.tx.ops[i]
       proof = tx.opProofs[i]
-      opGas = execution_gas(op, s.multisigThreshold(op))
-    txExecutionGas = txExecutionGas.checkedAdd(opGas).valueOr:
-      return err(GasOverflow)
     if proof.kind != expectedOpProofKindForOpcode(op.opcode):
       return err(InvalidProof)
     case op.payload.kind
@@ -282,19 +278,34 @@ proc tryApplyTx*(
       )
     else:
       return err(UnsupportedOp)
-  ok((state: s, balance: balance, executionGas: txExecutionGas))
+  ok((state: s, balance: balance))
 
-func mandatory_fees(
-    executionGas, storageGas: Gas, prices: GasPrices
-): Result[GasCost, LedgerError] =
-  let
-    executionCost = executionGas.checkedMul(prices.executionBaseFee).valueOr:
+proc txExecutionGas(
+    s: LedgerState,
+    tx: SignedMantleTx,
+): Result[Gas, LedgerError] =
+  var total = Gas(0)
+  for op in tx.tx.ops:
+    let thresh = s.multisigThreshold(op)
+    let added = checkedAdd(total, execution_gas(op, thresh)).valueOr:
       return err(GasOverflow)
-    storageCost = storageGas.checkedMul(prices.storageGasPrice).valueOr:
-      return err(GasOverflow)
-    total = executionCost.checkedAdd(storageCost).valueOr:
-      return err(GasOverflow)
+    total = added
   ok(total)
+
+proc mandatory_fees*(
+    s: LedgerState,
+    tx: SignedMantleTx,
+): Result[tuple[totalCost: GasCost, executionGas, storageGas: Gas], LedgerError] =
+  let execGas = ? s.txExecutionGas(tx)
+  let storageGas = Gas(encodeSignedMantleTx(tx).len)
+  let prices = s.feeMarket.gasPrices
+  let executionCost = execGas.checkedMul(prices.executionBaseFee).valueOr:
+    return err(GasOverflow)
+  let storageCost = storageGas.checkedMul(prices.storageGasPrice).valueOr:
+    return err(GasOverflow)
+  let totalCost = executionCost.checkedAdd(storageCost).valueOr:
+    return err(GasOverflow)
+  ok((totalCost: totalCost, executionGas: execGas, storageGas: storageGas))
 
 func creditBlockRewards*(
     state: sink LedgerState, totalFeeBurned, totalFeeTip: GasCost
@@ -330,14 +341,11 @@ proc tryApplyTxns*(
     totalFeeBurned = GasCost(0)
     totalFeeTip = GasCost(0)
   # The state, not the caller, is the source of truth for the epoch.
-  let
-    epoch = s.epochs.activeEpoch.epoch
-    prices = s.feeMarket.gasPrices
+  let epoch = s.epochs.activeEpoch.epoch
   for tx in txs:
     let
+      (totalCost, execGas, storageGas) = ?s.mandatory_fees(tx)
       r = ?s.tryApplyTx(tx, epoch, slot)
-      storageGas = Gas(encodeSignedMantleTx(tx).len)
-      totalCost = ?mandatory_fees(r.executionGas, storageGas, prices)
     s = r.state
     if not r.balance.covers(totalCost):
       return err(InsufficientBalance)
@@ -348,7 +356,7 @@ proc tryApplyTxns*(
     let tip = ?checked_uint64(?r.balance.checkedSub(totalCost.to(Balance)))
     totalFeeTip = totalFeeTip.checkedAdd(tip).valueOr:
       return err(GasOverflow)
-    blockExecutionGas = blockExecutionGas.checkedAdd(r.executionGas).valueOr:
+    blockExecutionGas = blockExecutionGas.checkedAdd(execGas).valueOr:
       return err(GasOverflow)
     if blockExecutionGas > MAX_EXECUTION_GAS_PER_BLOCK:
       return err(TooMuchExecutionGas)

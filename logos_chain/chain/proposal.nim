@@ -10,8 +10,8 @@
 import
   results,
   ../core/local_tree,
+  ../core/mempool,
   ../ledger/ledger,
-  ../mempool,
   ./block_validation
 
 from ../core/types import Block, Proposal, Hash32, header, blockId
@@ -30,7 +30,7 @@ func reconstructBlock*(
     proposal: Proposal,
     mempool: Mempool
 ): Result[Block, ProposalValidationError] =
-  ## Reconstructs the block from proposal references using the mempool.
+  ## Reconstructs the block from proposal references using the mempool (and internal grace cache).
   ## Returns error if any reference is missing or if we cannot retrieve it.
   var txs: seq[SignedMantleTx]
   for r in proposal.references:

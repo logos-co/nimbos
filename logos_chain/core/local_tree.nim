@@ -33,12 +33,11 @@ type
     height: uint64
 
   LocalTree* = ref object
-    blocks: Table[BlockId, BlockNode]
+    blocksById: Table[BlockId, BlockNode]
+    idsByHeight: Table[uint64, seq[BlockId]]
     tipId: BlockId
-    latestImmutableHeight*: uint64
-
-func isStrictlyHigherTip(currentTip, candidate: BlockNode): bool =
-  candidate.height > currentTip.height
+    latestImmutableId: BlockId
+    securityParam: uint64
 
 func ancestorAtHeight(node: BlockNode, targetHeight: uint64): BlockNode =
   var n = node
@@ -50,79 +49,111 @@ func ancestorAtHeight(node: BlockNode, targetHeight: uint64): BlockNode =
     n = n.parent
   nil
 
-func newLocalTree*(genesisBlock: Block, latestImmutableHeight: uint64 = 0): LocalTree =
+func newLocalTree*(genesisBlock: Block, securityParam: uint64): LocalTree =
   let gid = blockId(genesisBlock.header)
   let gn = BlockNode(id: gid, blk: genesisBlock, parent: nil, height: 0'u64)
   LocalTree(
-    blocks: [(gid, gn)].toTable,
+    blocksById: [(gid, gn)].toTable,
+    idsByHeight: [(0'u64, @[gid])].toTable,
     tipId: gid,
-    latestImmutableHeight: latestImmutableHeight,
+    latestImmutableId: gid,
+    securityParam: securityParam,
   )
 
 func blockHeight*(localTree: LocalTree, blockId: BlockId): Opt[uint64] =
-  let n = localTree.blocks.getOrDefault(blockId, nil)
-  if n == nil:
-    Opt.none(uint64)
-  else:
-    Opt.some(n.height)
+  localTree.blocksById.withValue(blockId, node):
+    return Opt.some(node[].height)
+  Opt.none(uint64)
+
+func latestImmutableHeight*(localTree: LocalTree): uint64 =
+  localTree.blocksById.withValue(localTree.latestImmutableId, node):
+    return node[].height
+  0'u64
+
+proc pruneForks(localTree: LocalTree, fromNode: BlockNode,
+    untilHeight: uint64) =
+  if fromNode == nil:
+    return
+
+  var curr = fromNode
+  while curr != nil:
+    let h = curr.height
+    localTree.idsByHeight.withValue(h, ids):
+      for id in ids[]:
+        if id != curr.id:
+          localTree.blocksById.del(id)
+    localTree.idsByHeight[h] = @[curr.id]
+
+    if h == untilHeight:
+      break
+    curr = curr.parent
+
+# https://github.com/logos-co/logos-lips/blob/0ba596cfbd65ea4e9fd16ae572a848fcb43a45d5/docs/blockchain/raw/cryptarchia-v1-protocol.md#L338-L382
+proc tryUpdateLib*(localTree: LocalTree) =
+  localTree.blocksById.withValue(localTree.tipId, tip):
+    if tip[].height >= localTree.securityParam:
+      let immHeight = tip[].height - localTree.securityParam
+      if immHeight > localTree.latestImmutableHeight():
+        let newImmNode = ancestorAtHeight(tip[], immHeight)
+        if newImmNode != nil:
+          let oldImmHeight = localTree.latestImmutableHeight()
+          localTree.latestImmutableId = newImmNode.id
+          localTree.pruneForks(newImmNode, oldImmHeight)
 
 func fetchParentHeader*(localTree: LocalTree, parentBlock: BlockId): Opt[Header] =
-  let n = localTree.blocks.getOrDefault(parentBlock, nil)
-  if n == nil:
-    Opt.none(Header)
-  else:
-    Opt.some(n.blk.header)
+  localTree.blocksById.withValue(parentBlock, node):
+    return Opt.some(node[].blk.header)
+  Opt.none(Header)
 
 func hasBlock*(localTree: LocalTree, blockId: BlockId): bool =
-  localTree.blocks.hasKey(blockId)
+  localTree.blocksById.hasKey(blockId)
 
 func getBlock*(localTree: LocalTree, id: BlockId): Opt[Block] =
-  let n = localTree.blocks.getOrDefault(id, nil)
-  if n == nil:
-    Opt.none(Block)
-  else:
-    Opt.some(n.blk)
+  localTree.blocksById.withValue(id, node):
+    return Opt.some(node[].blk)
+  Opt.none(Block)
+
+func blocksIdsAtHeight*(localTree: LocalTree, height: uint64): seq[BlockId] =
+  ## Returns a sequence of block IDs admitted at the specified height.
+  localTree.idsByHeight.getOrDefault(height, @[])
+
+func blocksAtHeight*(localTree: LocalTree, height: uint64): seq[Block] =
+  ## Returns a sequence of all full blocks admitted at the specified height.
+  var res: seq[Block]
+  for id in localTree.blocksIdsAtHeight(height):
+    localTree.blocksById.withValue(id, node):
+      res.add(node[].blk)
+  res
 
 func localTipId*(localTree: LocalTree): BlockId =
+  ## Returns the BlockId of the current active tip.
   localTree.tipId
 
 func latestImmutableBlockId*(localTree: LocalTree): BlockId =
-  let tip = localTree.blocks.getOrDefault(localTree.tipId, nil)
-  if tip == nil:
-    return static(default(BlockId))
-  let h = localTree.latestImmutableHeight
-  if tip.height < h:
-    return tip.id
-  let a = ancestorAtHeight(tip, h)
-  if a == nil:
-    static(default(BlockId))
-  else:
-    a.id
+  ## Returns the BlockId of the current Latest Immutable Block.
+  localTree.latestImmutableId
 
 func isAncestor*(localTree: LocalTree, ancestor: BlockId,
     descendant: BlockId): bool =
   if ancestor == descendant:
     return localTree.hasBlock(ancestor)
-  let start = localTree.blocks.getOrDefault(descendant, nil)
-  if start == nil:
-    return false
-  var n = start.parent
-  while n != nil:
-    if n.id == ancestor:
-      return true
-    n = n.parent
+  localTree.blocksById.withValue(descendant, start):
+    var n = start[].parent
+    while n != nil:
+      if n.id == ancestor:
+        return true
+      n = n.parent
   false
 
-func isFutureDescendantOfImmutable*(localTree: LocalTree,
+func isFutureDescendantOfImmutable(localTree: LocalTree,
     header: Header): bool =
-  ## `height(B) > height(B_imm)` and `is_ancestor(B_imm, B)` over the parent
-  ## chain (B is not yet in the tree).
+  ## Validates that an incoming block header descends from `latestImmutableId` and has candidate height > immutableHeight.
   let parentHeight = blockHeight(localTree, header.parentBlock).valueOr:
     return false
   let candidateHeight = parentHeight + 1'u64
-  if candidateHeight <= localTree.latestImmutableHeight:
+  if candidateHeight <= localTree.latestImmutableHeight():
     return false
-  let immId = latestImmutableBlockId(localTree)
+  let immId = localTree.latestImmutableId
   if immId.isZero:
     return true
   var cur = header.parentBlock
@@ -137,8 +168,8 @@ func isFutureDescendantOfImmutable*(localTree: LocalTree,
 func lcaBlockIdAndHeight*(
     localTree: LocalTree, idA, idB: BlockId,
 ): Opt[(BlockId, uint64)] =
-  var na = localTree.blocks.getOrDefault(idA, nil)
-  var nb = localTree.blocks.getOrDefault(idB, nil)
+  var na = localTree.blocksById.getOrDefault(idA, nil)
+  var nb = localTree.blocksById.getOrDefault(idB, nil)
   if na == nil or nb == nil:
     return Opt.none((BlockId, uint64))
   while na.height > nb.height:
@@ -160,7 +191,7 @@ func lcaBlockIdAndHeight*(
 func canExtend*(localTree: LocalTree, header: Header): bool =
   if header.parentBlock.isZero:
     return false
-  localTree.blocks.withValue(header.parentBlock, parent):
+  localTree.blocksById.withValue(header.parentBlock, parent):
     return header.slot > parent.blk.header.slot and
       isFutureDescendantOfImmutable(localTree, header)
   false
@@ -169,17 +200,16 @@ proc addBlockToTree*(localTree: LocalTree, blk: Block): bool =
   ## Inserts a block the caller already passed through `canExtend`; only
   ## duplicate ids and unknown parents are guarded here.
   let id = blockId(blk.header)
-  if localTree.blocks.hasKey(id):
+  if localTree.blocksById.hasKey(id):
     return false
-  let parent = localTree.blocks.getOrDefault(blk.header.parentBlock, nil)
-  if parent == nil:
-    return false
-  let node = BlockNode(id: id, blk: blk, parent: parent, height: parent.height + 1'u64)
-  localTree.blocks[id] = node
-  let curTip = localTree.blocks.getOrDefault(localTree.tipId, nil)
-  if curTip != nil and isStrictlyHigherTip(curTip, node):
-    localTree.tipId = id
-    # TODO: Evict transactions in newly adopted canonical block from node.mempool
-  true
+  localTree.blocksById.withValue(blk.header.parentBlock, parent):
+    let node = BlockNode(id: id, blk: blk, parent: parent[], height: parent[].height + 1'u64)
+    localTree.blocksById[id] = node
+    localTree.idsByHeight.mgetOrPut(node.height, @[]).add(id)
+    localTree.blocksById.withValue(localTree.tipId, curTip):
+      if node.height > curTip[].height:
+        localTree.tipId = id
+    return true
+  false
 
 {.pop.}

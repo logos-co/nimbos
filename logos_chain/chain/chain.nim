@@ -11,22 +11,27 @@
 
 import
   std/times,
+  chronicles,
   results,
-  ../core/[types, local_tree],
+  ../core/[types, local_tree, mempool],
   ../deployment/deployment_settings,
   ../ledger/[ledger, stake_inference],
   ./block_validation,
   ./genesis
 
-export genesis, local_tree
+export genesis, local_tree, mempool
 export ledger except config
+
+const DefaultSecurityParam*: uint64 = 1'u64
 
 type
   Chain* = object
     genesisBlock*: Block
     localTree*: LocalTree
     ledger*: Ledger[BlockId]
+    mempool*: Mempool
     slotConfig*: SlotConfig
+    securityParam*: uint64
 
   BlockApplyErrorKind* {.pure.} = enum
     AlreadyApplied
@@ -69,12 +74,16 @@ func init*(
     ledger: Ledger[BlockId],
     slotConfig: SlotConfig,
     latestImmutableHeight: uint64 = 0,
+    securityParam: uint64 = DefaultSecurityParam,
 ): T =
+  let tree = newLocalTree(genesisBlock, securityParam)
   T(
     genesisBlock: genesisBlock,
-    localTree: newLocalTree(genesisBlock, latestImmutableHeight),
+    localTree: tree,
     ledger: ledger,
+    mempool: Mempool.init(slotConfig, maxMempoolCapacity(securityParam)),
     slotConfig: slotConfig,
+    securityParam: max(securityParam, DefaultSecurityParam),
   )
 
 proc init*(T: type Chain, settings: DeploymentSettings): Result[T, string] =
@@ -92,11 +101,39 @@ proc init*(T: type Chain, settings: DeploymentSettings): Result[T, string] =
     Ledger[BlockId].init(blockId(genesisBlock.header), genesisState, cfg),
     SlotConfig(
       genesisTime: param.genesisTime,
-      slotDurationSeconds: uint64(settings.time.slotDuration.seconds))))
+      slotDurationSeconds: uint64(settings.time.slotDuration.seconds)),
+    securityParam = uint64(settings.cryptarchia.securityParam)))
 
 proc currentWallclockSlot*(chain: Chain): SlotNumber =
   ## Slot containing the current system time.
   wallclockSlot(uint64(max(getTime().toUnix(), 0'i64)), chain.slotConfig)
+
+proc readdBranchTxs(chain: var Chain, fromId, toId: BlockId) =
+  var curr = fromId
+  while not curr.isZero and curr != toId:
+    let blkOpt = chain.localTree.getBlock(curr)
+    if blkOpt.isSome:
+      let b = blkOpt.get
+      for stx in b.txs:
+        discard chain.mempool.add(stx)
+      curr = header(b).parentBlock
+    else:
+      warn "Missing block during reorg transaction re-addition",
+          missingBlockId = curr, toId = toId
+      break
+
+proc removeBranchTxs(chain: var Chain, fromId, toId: BlockId) =
+  var curr = fromId
+  while not curr.isZero and curr != toId:
+    let blkOpt = chain.localTree.getBlock(curr)
+    if blkOpt.isSome:
+      let b = blkOpt.get
+      chain.mempool.pruneFinalizedTxs(b)
+      curr = header(b).parentBlock
+    else:
+      warn "Missing block during reorg transaction removal",
+          missingBlockId = curr, toId = toId
+      break
 
 proc tryApplyBlock*(
     chain: var Chain, blk: Block): Result[void, BlockApplyError] =
@@ -119,9 +156,23 @@ proc tryApplyBlock*(
       return err(BlockApplyError(kind: LedgerRejected,
           ledgerError: error.ledgerError))
 
+  let oldTip = chain.localTree.localTipId()
   if not chain.localTree.addBlockToTree(blk):
     return err(BlockApplyError(kind: TreeRejected))
   chain.ledger.commitUpdate(prepared.id, prepared.state)
-  ok()
+  let newTip = chain.localTree.localTipId()
 
-{.pop.}
+  if newTip != oldTip:
+    # Active tip advanced: handles both normal block extensions (lcaId == oldTip)
+    # and multi-block fork reorganizations (lcaId == common ancestor).
+    let (lcaId, _) = chain.localTree.lcaBlockIdAndHeight(
+      oldTip, newTip
+    ).expect("LCA must exist between active tree tips")
+    # 1. readd before remove: if a transaction exists in both branches, readding first allows removing it next.
+    # 2. tryUpdateLib after mempool reorg: ensures fork pruning does not delete orphaned blocks before transactions are restored.
+    chain.readdBranchTxs(oldTip, lcaId)
+    chain.removeBranchTxs(newTip, lcaId)
+    chain.localTree.tryUpdateLib()
+
+  chain.mempool.pruneExpiredTxs()
+  ok()
