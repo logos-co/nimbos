@@ -151,7 +151,7 @@ suite "core/block_validation — inclusive size and count bounds":
     var proposal = new(Proposal)
     proposal[] = initProposal(blk.header, [sm], blk.signature).get()
     
-    var mempool = Mempool.init(SlotConfig(slotDurationSeconds: 1'u64))
+    var mempool = Mempool.init()
     check mempool.add(sm)
     
     var state = LedgerState.fromGenesis(
@@ -181,7 +181,7 @@ suite "core/block_validation — inclusive size and count bounds":
     state.feeMarket.storageGasPrice = 0
     let
       ledger = Ledger[BlockId].init(gid, state, testLedgerConfig)
-      mempool = Mempool.init(SlotConfig(slotDurationSeconds: 1'u64))
+      mempool = Mempool.init()
       
     let res = reconstructAndValidateProposal(proposal[], tree, ledger, mempool)
     check res.isErr and res.error == MissingReference

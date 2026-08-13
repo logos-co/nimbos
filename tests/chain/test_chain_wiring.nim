@@ -67,7 +67,6 @@ proc signedTxWithOps(opsCount: int = 1, txIndex: int = 1): SignedMantleTx =
 proc initZeroFeeChain(ds: DeploymentSettings): Chain =
   var chain = Chain.init(ds, mockVerifyLeaderProof).expect("chain init")
   chain.slotConfig.genesisTime = uint64(getTime().toUnix() - 100)
-  chain.mempool.slotConfig.genesisTime = chain.slotConfig.genesisTime
   let gid = blockId(chain.genesisBlock.header)
   var s = chain.ledger.state(gid).get()
   s.feeMarket.executionBaseFee = 0
@@ -223,8 +222,9 @@ suite "chain/epoch wiring (devnet deployment settings)":
     check txHash in chain.mempool
 
     # Proposal selection on the new tip picks up the restored dummyTx
-    chain.mempool.slotConfig.genesisTime -= 3'u64
-    let selected = chain.mempool.selectTxsForProposal(chain.ledger.state(id3_fork).get)
+    let selected = chain.mempool.selectTxsForProposal(
+      chain.ledger.state(id3_fork).get, chain.currentWallclockSlot() + MempoolMinAgeSlots
+    )
     check selected.len == 1
     check mantleTxHash(selected[0].tx) == txHash
 

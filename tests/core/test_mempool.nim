@@ -9,17 +9,16 @@
 {.used.}
 
 import
-  std/times,
   unittest2,
   ../testutil,
   ../../logos_chain/core/types,
   ../../logos_chain/core/mempool,
-  ../../logos_chain/consensus/clock
+  ../../logos_chain/consensus/clock,
+  ../../logos_chain/core/mantle/primitives
 
 suite "core/mempool":
   test "mempool lifecycle (add, contains, get, len)":
-    let now = uint64(max(getTime().toUnix(), 0'i64))
-    var m = Mempool.init(SlotConfig(genesisTime: now, slotDurationSeconds: 1'u64))
+    var m = Mempool.init()
     check m.len == 0
 
     let tx1 = minimalSignedTx()
@@ -44,8 +43,7 @@ suite "core/mempool":
     check m.get(missingHash).error == MempoolError.TxNotFound
 
   test "pruneBlockTxs removes committed block transactions":
-    let now = uint64(max(getTime().toUnix(), 0'i64))
-    var m = Mempool.init(SlotConfig(genesisTime: now, slotDurationSeconds: 1'u64))
+    var m = Mempool.init()
     let tx1 = minimalSignedTx()
     var tx2 = minimalSignedTx()
     tx2.tx.ops.add(createLeaderClaimOp(LeaderClaimPayload(
@@ -67,14 +65,11 @@ suite "core/mempool":
     check m.len == 1
 
   test "pruneExpiredTxs purges transactions older than MempoolMaxAgeSlots":
-    let now = uint64(max(getTime().toUnix(), 0'i64))
-    var m = Mempool.init(SlotConfig(genesisTime: now, slotDurationSeconds: 1'u64))
+    var m = Mempool.init()
     let tx1 = minimalSignedTx()
 
-    check m.add(tx1) == true
+    check m.add(tx1, SlotNumber(1)) == true
 
-    # Simulate 115 seconds passing
-    m.slotConfig.genesisTime = now - 115'u64
-
-    m.pruneExpiredTxs()
+    # Simulate MempoolMaxAgeSlots + 1 slots passing
+    m.pruneExpiredTxs(SlotNumber(1 + MempoolMaxAgeSlots + 1))
     check m.len == 0

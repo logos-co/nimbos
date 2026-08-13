@@ -80,7 +80,7 @@ func init*(
     genesisBlock: genesisBlock,
     localTree: newLocalTree(genesisBlock, securityParam),
     ledger: ledger,
-    mempool: Mempool.init(slotConfig, maxMempoolCapacity(securityParam)),
+    mempool: Mempool.init(maxMempoolCapacity(securityParam)),
     slotConfig: slotConfig,
     securityParam: max(securityParam, DefaultSecurityParam),
   )
@@ -118,7 +118,7 @@ proc readdBranchTxs(chain: var Chain, fromId, toId: BlockId) =
     if blkOpt.isSome:
       let b = blkOpt.get
       for stx in b.txs:
-        discard chain.mempool.add(stx)
+        discard chain.mempool.add(stx, chain.currentWallclockSlot())
       curr = header(b).parentBlock
     else:
       warn "Missing block during reorg transaction re-addition",
@@ -175,5 +175,5 @@ proc tryApplyBlock*(
     chain.removeBranchTxs(newTip, lcaId)
     chain.localTree.tryUpdateLib()
 
-  chain.mempool.pruneExpiredTxs()
+  chain.mempool.pruneExpiredTxs(chain.currentWallclockSlot())
   ok()

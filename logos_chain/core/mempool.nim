@@ -13,12 +13,11 @@
 {.push raises: [], gcsafe.}
 
 import
-  std/[deques, tables, times],
+  std/[deques, tables],
   results,
   ../ledger/[balance, types, fee_market, ledger],
   ./crypto/types,
-  ./mantle/[operations, primitives, tx_hashing, tx_types, gas],
-  ../consensus/clock
+  ./mantle/[operations, primitives, tx_hashing, tx_types, gas]
 
 from ./types import Block
 from ./mantle/primitives import MaxBlockTxs, SlotNumber
@@ -49,7 +48,6 @@ type
     txs*: OrderedTable[Hash32, MempoolItem]
     graceCache*: GraceCache
     capacity*: uint64
-    slotConfig*: SlotConfig
 
 func init(_: typedesc[GraceCache], capacity: uint64 = uint64(
     DefaultMempoolCapacity)): GraceCache =
@@ -71,13 +69,12 @@ func retrieve(c: GraceCache, hash: Hash32): Result[SignedMantleTx, MempoolError]
 func len*(m: Mempool): int =
   m.txs.len
 
-func init*(_: typedesc[Mempool], slotConfig: SlotConfig,
+func init*(_: typedesc[Mempool],
     capacity: uint64 = uint64(DefaultMempoolCapacity)): Mempool =
   let cap = max(capacity, 1'u64)
   Mempool(
     graceCache: GraceCache.init(capacity = cap),
-    capacity: cap,
-    slotConfig: slotConfig
+    capacity: cap
   )
 
 proc remove(m: var Mempool, hash: Hash32, moveToGrace: bool = true) =
@@ -93,8 +90,8 @@ proc remove(m: var Mempool, hash: Hash32, moveToGrace: bool = true) =
 proc add*(
     m: var Mempool,
     tx: SignedMantleTx,
+    currentSlot: SlotNumber = SlotNumber(0),
 ): bool =
-  let slotNumber = wallclockSlot(uint64(max(getTime().toUnix(), 0'i64)), m.slotConfig)
   let hash = mantleTxHash(tx.tx)
   if hash in m.txs:
     return false
@@ -107,7 +104,7 @@ proc add*(
       break
     m.remove(oldestHash, moveToGrace = true)
 
-  m.txs[hash] = MempoolItem(tx: tx, addedAtSlot: slotNumber)
+  m.txs[hash] = MempoolItem(tx: tx, addedAtSlot: currentSlot)
   true
 
 func contains*(m: Mempool, hash: Hash32): bool =
@@ -121,8 +118,7 @@ proc get*(m: Mempool, hash: Hash32): Result[SignedMantleTx, MempoolError] =
       discard
   m.graceCache.retrieve(hash)
 
-proc pruneExpiredTxs*(m: var Mempool) =
-  let currentSlot = wallclockSlot(uint64(max(getTime().toUnix(), 0'i64)), m.slotConfig)
+proc pruneExpiredTxs*(m: var Mempool, currentSlot: SlotNumber) =
   var expiredHashes: seq[Hash32]
   for hash, item in m.txs:
     if currentSlot > item.addedAtSlot + MempoolMaxAgeSlots:
@@ -140,11 +136,11 @@ proc pruneBlockTxs*(m: var Mempool, blk: Block) =
 proc selectTxsForProposal*(
     m: Mempool,
     tipLedgerState: LedgerState,
+    currentSlot: SlotNumber,
     maxTxs: int = MaxBlockTxs
 ): seq[SignedMantleTx] =
   ## Selects transactions for block proposal according to the Execution Market spec:
   ## https://github.com/logos-co/logos-lips/blob/38916aa474164ac4acd81e62d19715e17626be17/docs/blockchain/raw/execution-market.md
-  let currentSlot = wallclockSlot(uint64(max(getTime().toUnix(), 0'i64)), m.slotConfig)
   var selected: seq[SignedMantleTx]
   var workingLedger = tipLedgerState
   var cumulativeExecutionGas = Gas(0)
