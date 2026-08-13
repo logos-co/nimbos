@@ -17,7 +17,7 @@ import
   results,
   ../ledger/[balance, types, fee_market, ledger],
   ./crypto/types,
-  ./mantle/[operations, primitives, tx_hashing, tx_types, gas]
+  ./mantle/[operations, tx_hashing, tx_types, gas]
 
 from ./types import Block
 from ./mantle/primitives import MaxBlockTxs, SlotNumber

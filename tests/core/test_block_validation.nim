@@ -14,7 +14,7 @@ import
   ./mantle/test_helpers,
   ../testutil,
   ../../logos_chain/core/[types, local_tree, mempool],
-  ../../logos_chain/core/mantle/[operations, opcodes, proofs, primitives, tx_types],
+  ../../logos_chain/core/mantle/[operations, opcodes, proofs, tx_types],
   ../../logos_chain/chain/[block_validation, genesis, proposal],
   ../../logos_chain/ledger/ledger
 from ../../logos_chain/core/crypto/types import FieldElement
