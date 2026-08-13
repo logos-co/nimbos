@@ -16,7 +16,7 @@
 {.used.}
 
 import
-  std/[os, strutils],
+  std/[os, strutils, times],
   bearssl/rand,
   unittest2,
   stew/[byteutils, io2],
@@ -65,7 +65,9 @@ proc signedTxWithOps(opsCount: int = 1, txIndex: int = 1): SignedMantleTx =
   SignedMantleTx(tx: mtx, opProofs: proofs)
 
 proc initZeroFeeChain(ds: DeploymentSettings): Chain =
-  var chain = Chain.init(ds).expect("chain init")
+  var chain = Chain.init(ds, mockVerifyLeaderProof).expect("chain init")
+  chain.slotConfig.genesisTime = uint64(getTime().toUnix() - 100)
+  chain.mempool.slotConfig.genesisTime = chain.slotConfig.genesisTime
   let gid = blockId(chain.genesisBlock.header)
   var s = chain.ledger.state(gid).get()
   s.feeMarket.executionBaseFee = 0
@@ -188,7 +190,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
     var chain = initZeroFeeChain(ds)
 
     # 1. Add tx to mempool
-    let dummyTx = minimalSignedTx()
+    let dummyTx = signedTxWithOps(1, 1)
     let txHash = mantleTxHash(dummyTx.tx)
     check chain.mempool.add(dummyTx) == true
     check txHash in chain.mempool

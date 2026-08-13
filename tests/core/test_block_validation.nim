@@ -9,7 +9,6 @@
 {.used.}
 
 import
-  bearssl/rand,
   unittest2,
   libp2p/crypto/ed25519/ed25519,
   ./mantle/test_helpers,
@@ -143,17 +142,14 @@ suite "core/block_validation — inclusive size and count bounds":
 
   test "validateProposal reconstructs block and validates it":
     let
-      rng = HmacDrbgContext.new()
-      kp = mkEdKeyPair(rng)
       sm = minimalSignedTx()
       genesis = createGenesisBlock(sm)
       gid = blockId(genesis.header)
       tree = newLocalTree(genesis, 1'u64)
       blk = childBlock(genesis.header, gid, SlotNumber(1), [sm])
       
-    let signature = kp.seckey.sign(blockId(blk.header))
     var proposal = new(Proposal)
-    proposal[] = initProposal(blk.header, [sm], signature).get()
+    proposal[] = initProposal(blk.header, [sm], blk.signature).get()
     
     var mempool = Mempool.init(SlotConfig(slotDurationSeconds: 1'u64))
     check mempool.add(sm)
@@ -170,17 +166,14 @@ suite "core/block_validation — inclusive size and count bounds":
 
   test "validateProposal rejects if referenced transaction is missing from mempool":
     let
-      rng = HmacDrbgContext.new()
-      kp = mkEdKeyPair(rng)
       sm = minimalSignedTx()
       genesis = createGenesisBlock(sm)
       gid = blockId(genesis.header)
       tree = newLocalTree(genesis, 1'u64)
       blk = childBlock(genesis.header, gid, SlotNumber(1), [sm])
       
-    let signature = kp.seckey.sign(blockId(blk.header))
     var proposal = new(Proposal)
-    proposal[] = initProposal(blk.header, [sm], signature).get()
+    proposal[] = initProposal(blk.header, [sm], blk.signature).get()
     var state = LedgerState.fromGenesis(
         genesis.txs, default(FieldElement), testSdpRegistry(),
         testLedgerConfig).expect("genesis state")
