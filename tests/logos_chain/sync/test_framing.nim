@@ -18,8 +18,8 @@ import
 suite "sync/framing (u32 inner length prefix)":
   test "GetTip request wire frame is u32 inner length then bincode":
     let inner = try:
-      serializeRequestMessageToSeq(RequestMessage(kind: rmGetTip), cryptarchiaSyncBincodeConfig)
-    except BincodeError, IOError:
+      encode(RequestMessage(kind: rmGetTip), cryptarchiaSyncBincodeConfig)
+    except BincodeError:
       fail getCurrentExceptionMsg()
     check inner == @[1'u8, 0'u8, 0'u8, 0'u8]
     let lpBody = try:
@@ -29,8 +29,8 @@ suite "sync/framing (u32 inner length prefix)":
     check byteutils.toHex(lpBody) == "0400000001000000"
     check lpBody.len == 4 + inner.len
     let m = try:
-      Opt.some(deserializeRequestMessage(
-        lpBody.toOpenArray(4, lpBody.high), cryptarchiaSyncBincodeConfig))
+      Opt.some(decode(
+        lpBody.toOpenArray(4, lpBody.high), RequestMessage, cryptarchiaSyncBincodeConfig))
     except BincodeError as exc:
       fail exc.msg
     check m.isSome and m.get.kind == rmGetTip

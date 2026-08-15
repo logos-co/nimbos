@@ -13,6 +13,7 @@ import
 
   # Vendor / external libs
   bearssl/rand,
+  bincode,
   chronos, chronicles, chronicles/chronos_tools, metrics, results,
   stew/byteutils,
   libp2p/[switch, peerinfo, multiaddress, crypto/crypto, builders],
@@ -21,7 +22,7 @@ import
   libp2p/stream/connection,
 
   # Local networking modules
-  ./[bincode, discovery, protocols, peer_pool, peer_scores],
+  ./[discovery, protocols, peer_pool, peer_scores],
 
   # Logos chain core modules
   ../[version, conf]

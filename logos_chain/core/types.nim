@@ -17,9 +17,9 @@ import
   bincode,
   libp2p/crypto/ed25519/ed25519,
   ./crypto/hashing,
-  ./mantle/[tx_types, tx_hashing, tx_bincode]
+  ./mantle/[tx_types, tx_hashing]
 
-export hashing, tx_types, tx_bincode, tx_hashing, results
+export hashing, tx_types, tx_hashing, results
 
 const
   ExpectedBedrockVersion* = 1'u8
