@@ -26,7 +26,7 @@ import
   bearssl/rand,
   eth/async_utils,
   eth/net/nat,
-  ./bincode,
+  bincode,
   ../[version, conf],
   ../core/utils,
   ./[discovery, protocol_dsl,
@@ -45,6 +45,15 @@ type
   PublicKey = crypto.PublicKey
   PrivateKey = crypto.PrivateKey
 
+  Limit* = int64
+  List*[T; maxLen: static Limit] = distinct seq[T]
+
+func asSeq*[T; N: static int](x: List[T, N]): seq[T] = distinctBase(x)
+
+iterator items*[T; N: static int](x: List[T, N]): T =
+  for item in distinctBase(x): yield item
+
+type
   ErrorMsg = List[byte, 256]
   SendResult = Result[void, cstring]
 

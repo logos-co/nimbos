@@ -27,22 +27,22 @@ const deploymentSettingsPath = testsDir / "../../../config/deployment-settings.y
 suite "sync/types (GetTip RequestMessage / response wire)":
   test "GetTip request body is RequestMessage GetTip bincode discriminant (u32 LE = 1)":
     let body = try:
-      serializeRequestMessageToSeq(RequestMessage(kind: rmGetTip), cryptarchiaSyncBincodeConfig)
-    except BincodeError, IOError:
+      encode(RequestMessage(kind: rmGetTip), cryptarchiaSyncBincodeConfig)
+    except BincodeError:
       fail getCurrentExceptionMsg()
     check body.len == 4
     check body == @[1'u8, 0'u8, 0'u8, 0'u8]
     let m = try:
-      Opt.some(deserializeRequestMessage(body, cryptarchiaSyncBincodeConfig))
+      Opt.some(decode(body, RequestMessage, cryptarchiaSyncBincodeConfig))
     except BincodeError as exc:
       fail exc.msg
     check m.isSome and m.get.kind == rmGetTip
 
-  test "serializeRequestMessageToSeq(GetTip RequestMessage) inner bincode hex":
+  test "encode(GetTip RequestMessage) inner bincode hex":
     let body =
       try:
-        serializeRequestMessageToSeq(RequestMessage(kind: rmGetTip), cryptarchiaSyncBincodeConfig)
-      except BincodeError, IOError:
+        encode(RequestMessage(kind: rmGetTip), cryptarchiaSyncBincodeConfig)
+      except BincodeError:
         fail getCurrentExceptionMsg()
     check byteutils.toHex(body) == "01000000"
 
@@ -66,11 +66,11 @@ suite "sync/types (GetTip RequestMessage / response wire)":
       tip = Tip(tip: bid, slot: SlotNumber(9), height: 123'u64)
       resp = GetTipResponse(kind: gtrTip, tipData: tip)
     let wire = try:
-      serializeGetTipResponseToSeq(resp, cryptarchiaSyncBincodeConfig)
-    except BincodeError, IOError:
+      encode(resp, cryptarchiaSyncBincodeConfig)
+    except BincodeError:
       fail getCurrentExceptionMsg()
     let d = try:
-      Opt.some(deserializeGetTipResponse(wire, cryptarchiaSyncBincodeConfig))
+      Opt.some(decode(wire, GetTipResponse, cryptarchiaSyncBincodeConfig))
     except BincodeError as exc:
       fail exc.msg
     check d.isSome and d.get.kind == gtrTip and d.get.tipData == tip
@@ -78,11 +78,11 @@ suite "sync/types (GetTip RequestMessage / response wire)":
   test "GetTip failure response roundtrips":
     let resp = GetTipResponse(kind: gtrFailure, failureMessage: "no tip for you")
     let wire = try:
-      serializeGetTipResponseToSeq(resp, cryptarchiaSyncBincodeConfig)
-    except BincodeError, IOError:
+      encode(resp, cryptarchiaSyncBincodeConfig)
+    except BincodeError:
       fail getCurrentExceptionMsg()
     let d = try:
-      Opt.some(deserializeGetTipResponse(wire, cryptarchiaSyncBincodeConfig))
+      Opt.some(decode(wire, GetTipResponse, cryptarchiaSyncBincodeConfig))
     except BincodeError as exc:
       fail exc.msg
     check d.isSome and d.get.kind == gtrFailure and d.get.failureMessage == "no tip for you"
@@ -95,7 +95,7 @@ suite "sync/types (GetTip RequestMessage / response wire)":
     check wOpt.isSome
     let wire = wOpt.get
     let d = try:
-      Opt.some(deserializeGetTipResponse(wire, cryptarchiaSyncBincodeConfig))
+      Opt.some(decode(wire, GetTipResponse, cryptarchiaSyncBincodeConfig))
     except BincodeError as exc:
       fail exc.msg
     check d.isSome and d.get.kind == gtrTip and d.get.tipData == tip
@@ -105,13 +105,13 @@ suite "sync/types (GetTip RequestMessage / response wire)":
     check wOpt.isSome
     let wire = wOpt.get
     let d = try:
-      Opt.some(deserializeGetTipResponse(wire, cryptarchiaSyncBincodeConfig))
+      Opt.some(decode(wire, GetTipResponse, cryptarchiaSyncBincodeConfig))
     except BincodeError as exc:
       fail exc.msg
     check d.isSome and d.get.kind == gtrFailure and d.get.failureMessage == "example: tip unavailable"
 
 suite "sync/types (download RequestMessage / request & response payloads)":
-  test "serializeDownloadBlocksRequestToSeq / deserializeDownloadBlocksRequest roundtrip":
+  test "encode / decode DownloadBlocksRequest roundtrip":
     let
       sm = minimalSignedTx()
       genesis = createGenesisBlock(sm)
@@ -119,12 +119,12 @@ suite "sync/types (download RequestMessage / request & response payloads)":
       tree = newLocalTree(genesis)
       req = DownloadBlocksRequest(targetBlock: gid, knownBlocks: buildKnownBlocks(tree))
     let inner = try:
-      serializeDownloadBlocksRequestToSeq(req, cryptarchiaSyncBincodeConfig)
-    except BincodeError, IOError:
+      encode(req, cryptarchiaSyncBincodeConfig)
+    except BincodeError:
       fail getCurrentExceptionMsg()
     let dec =
       try:
-        Opt.some(deserializeDownloadBlocksRequest(inner, cryptarchiaSyncBincodeConfig))
+        Opt.some(decode(inner, DownloadBlocksRequest, cryptarchiaSyncBincodeConfig))
       except BincodeError as exc:
         fail exc.msg
     check dec.isSome and downloadBlocksRequestEqual(dec.get, req)
@@ -137,50 +137,50 @@ suite "sync/types (download RequestMessage / request & response payloads)":
       tree = newLocalTree(genesis)
       req = DownloadBlocksRequest(targetBlock: gid, knownBlocks: buildKnownBlocks(tree))
     let wire = try:
-      serializeRequestMessageToSeq(
+      encode(
         RequestMessage(kind: rmDownloadBlocksRequest, downloadBlocksRequest: req),
         cryptarchiaSyncBincodeConfig,
       )
-    except BincodeError, IOError:
+    except BincodeError:
       fail getCurrentExceptionMsg()
     check wire.len >= 4
     let m =
       try:
-        Opt.some(deserializeRequestMessage(wire, cryptarchiaSyncBincodeConfig))
+        Opt.some(decode(wire, RequestMessage, cryptarchiaSyncBincodeConfig))
       except BincodeError as exc:
         fail exc.msg
     check m.isSome and m.get.kind == rmDownloadBlocksRequest
     check downloadBlocksRequestEqual(m.get.downloadBlocksRequest, req)
 
-  test "serializeDownloadBlocksResponseToSeq / deserializeDownloadBlocksResponse roundtrip (NoMore)":
+  test "encode / decode DownloadBlocksResponse roundtrip (NoMore)":
     let msg = DownloadBlocksResponse(kind: dbrNoMoreBlocks)
     let inner = try:
-      serializeDownloadBlocksResponseToSeq(msg, cryptarchiaSyncBincodeConfig)
-    except BincodeError, IOError:
+      encode(msg, cryptarchiaSyncBincodeConfig)
+    except BincodeError:
       fail getCurrentExceptionMsg()
     let dec =
       try:
-        Opt.some(deserializeDownloadBlocksResponse(inner, cryptarchiaSyncBincodeConfig))
+        Opt.some(decode(inner, DownloadBlocksResponse, cryptarchiaSyncBincodeConfig))
       except BincodeError as exc:
         fail exc.msg
     check dec.isSome and downloadBlocksResponseEqual(dec.get, msg)
 
-  test "serializeDownloadBlocksResponseToSeq / deserializeDownloadBlocksResponse roundtrip (one block)":
+  test "encode / decode DownloadBlocksResponse roundtrip (one block)":
     let
       sm = minimalSignedTx()
       genesis = createGenesisBlock(sm)
     let blockWire = try:
-      serializeBlockToSeq(genesis, cryptarchiaSyncBincodeConfig)
-    except BincodeError, IOError:
+      encode(genesis, cryptarchiaSyncBincodeConfig)
+    except BincodeError:
       fail getCurrentExceptionMsg()
     let msg = DownloadBlocksResponse(kind: dbrBlock, downloadedBlock: blockWire)
     let inner = try:
-      serializeDownloadBlocksResponseToSeq(msg, cryptarchiaSyncBincodeConfig)
-    except BincodeError, IOError:
+      encode(msg, cryptarchiaSyncBincodeConfig)
+    except BincodeError:
       fail getCurrentExceptionMsg()
     let backOpt =
       try:
-        Opt.some(deserializeDownloadBlocksResponse(inner, cryptarchiaSyncBincodeConfig))
+        Opt.some(decode(inner, DownloadBlocksResponse, cryptarchiaSyncBincodeConfig))
       except BincodeError as exc:
         fail exc.msg
     check backOpt.isSome
@@ -190,7 +190,7 @@ suite "sync/types (download RequestMessage / request & response payloads)":
     check blksOpt.isSome and blksOpt.unsafeGet.len == 1
     check blockId(blksOpt.unsafeGet[0].header) == blockId(genesis.header)
 
-  test "serializeDownloadBlocksResponseToSeq / deserialize (Failure reasons)":
+  test "encode / decode DownloadBlocksResponse (Failure reasons)":
     let cases = @[
       DownloadBlocksResponse(
         kind: dbrFailure,
@@ -206,12 +206,12 @@ suite "sync/types (download RequestMessage / request & response payloads)":
     ]
     for msg in cases:
       let inner = try:
-        serializeDownloadBlocksResponseToSeq(msg, cryptarchiaSyncBincodeConfig)
-      except BincodeError, IOError:
+        encode(msg, cryptarchiaSyncBincodeConfig)
+      except BincodeError:
         fail getCurrentExceptionMsg()
       let dec =
         try:
-          Opt.some(deserializeDownloadBlocksResponse(inner, cryptarchiaSyncBincodeConfig))
+          Opt.some(decode(inner, DownloadBlocksResponse, cryptarchiaSyncBincodeConfig))
         except BincodeError as exc:
           fail exc.msg
       check dec.isSome and downloadBlocksResponseEqual(dec.get, msg)
@@ -223,7 +223,7 @@ suite "sync/types (download RequestMessage / request & response payloads)":
       inner = byteutils.hexToSeqByte(rustInnerHex)
       dec =
         try:
-          Opt.some(deserializeDownloadBlocksResponse(inner, cryptarchiaSyncBincodeConfig))
+          Opt.some(decode(inner, DownloadBlocksResponse, cryptarchiaSyncBincodeConfig))
         except BincodeError as exc:
           fail exc.msg
     check dec.isSome
@@ -245,24 +245,24 @@ suite "sync/types (cryptarchia u32 length-prefixed wire fixtures 1-9)":
     const exp9 = "28000000020000000200000018000000000000006578616d706c653a20646f776e6c6f6164206661696c6564"
 
     let inner1 = try:
-      serializeRequestMessageToSeq(RequestMessage(kind: rmGetTip), cryptarchiaSyncBincodeConfig)
-    except BincodeError, IOError:
+      encode(RequestMessage(kind: rmGetTip), cryptarchiaSyncBincodeConfig)
+    except BincodeError:
       fail getCurrentExceptionMsg()
     check u32LengthPrefixedHex(inner1) == exp1
 
     let inner2 = try:
-      serializeGetTipResponseToSeq(
+      encode(
         GetTipResponse(kind: gtrTip, tipData: exampleGetTipTipFixture()),
         cryptarchiaSyncBincodeConfig)
-    except BincodeError, IOError:
+    except BincodeError:
       fail getCurrentExceptionMsg()
     check u32LengthPrefixedHex(inner2) == exp2
 
     let inner3 = try:
-      serializeGetTipResponseToSeq(GetTipResponse(
+      encode(GetTipResponse(
           kind: gtrFailure, failureMessage: "example: tip unavailable"),
         cryptarchiaSyncBincodeConfig)
-    except BincodeError, IOError:
+    except BincodeError:
       fail getCurrentExceptionMsg()
     check u32LengthPrefixedHex(inner3) == exp3
 
@@ -277,8 +277,8 @@ suite "sync/types (cryptarchia u32 length-prefixed wire fixtures 1-9)":
         ),
       ))
     let inner4 = try:
-      serializeRequestMessageToSeq(dlReqMsg, cryptarchiaSyncBincodeConfig)
-    except BincodeError, IOError:
+      encode(dlReqMsg, cryptarchiaSyncBincodeConfig)
+    except BincodeError:
       fail getCurrentExceptionMsg()
     check u32LengthPrefixedHex(inner4) == exp4
 
@@ -287,50 +287,50 @@ suite "sync/types (cryptarchia u32 length-prefixed wire fixtures 1-9)":
     let genesisFromDeployment =
       createGenesisBlock(pr.get.cryptarchia.genesisState.signedMantleTx)
     let genesisWire = try:
-      serializeBlockToSeq(genesisFromDeployment, cryptarchiaSyncBincodeConfig)
-    except BincodeError, IOError:
+      encode(genesisFromDeployment, cryptarchiaSyncBincodeConfig)
+    except BincodeError:
       fail getCurrentExceptionMsg()
     let inner5 = try:
-      serializeDownloadBlocksResponseToSeq(DownloadBlocksResponse(
+      encode(DownloadBlocksResponse(
           kind: dbrBlock, downloadedBlock: genesisWire),
         cryptarchiaSyncBincodeConfig)
-    except BincodeError, IOError:
+    except BincodeError:
       fail getCurrentExceptionMsg()
     check u32LengthPrefixedHex(inner5) == exp5
 
     let inner6 = try:
-      serializeDownloadBlocksResponseToSeq(DownloadBlocksResponse(kind: dbrNoMoreBlocks),
+      encode(DownloadBlocksResponse(kind: dbrNoMoreBlocks),
         cryptarchiaSyncBincodeConfig)
-    except BincodeError, IOError:
+    except BincodeError:
       fail getCurrentExceptionMsg()
     check u32LengthPrefixedHex(inner6) == exp6
 
     let inner7 = try:
-      serializeDownloadBlocksResponseToSeq(DownloadBlocksResponse(
+      encode(DownloadBlocksResponse(
           kind: dbrFailure,
           blocksUnavailableReason: BlocksUnavailableReason(
             kind: burBlockNotFound, headerId: exampleBlockId(0x04'u8))),
         cryptarchiaSyncBincodeConfig)
-    except BincodeError, IOError:
+    except BincodeError:
       fail getCurrentExceptionMsg()
     check u32LengthPrefixedHex(inner7) == exp7
 
     let inner8 = try:
-      serializeDownloadBlocksResponseToSeq(DownloadBlocksResponse(
+      encode(DownloadBlocksResponse(
           kind: dbrFailure,
           blocksUnavailableReason: BlocksUnavailableReason(kind: burStartBlockNotFound)),
         cryptarchiaSyncBincodeConfig)
-    except BincodeError, IOError:
+    except BincodeError:
       fail getCurrentExceptionMsg()
     check u32LengthPrefixedHex(inner8) == exp8
 
     let inner9 = try:
-      serializeDownloadBlocksResponseToSeq(DownloadBlocksResponse(
+      encode(DownloadBlocksResponse(
           kind: dbrFailure,
           blocksUnavailableReason: BlocksUnavailableReason(
             kind: burUnknown, message: "example: download failed")),
         cryptarchiaSyncBincodeConfig)
-    except BincodeError, IOError:
+    except BincodeError:
       fail getCurrentExceptionMsg()
     check u32LengthPrefixedHex(inner9) == exp9
 

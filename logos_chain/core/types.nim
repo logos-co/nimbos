@@ -14,10 +14,10 @@ import
   stew/[assign2, bitops2],
   bincode,
   ./crypto/hashing,
-  ./mantle/[tx_types, tx_hashing, tx_bincode],
+  ./mantle/[tx_types, tx_hashing],
   libp2p/crypto/ed25519/ed25519
 
-export hashing, tx_types, tx_bincode
+export hashing, tx_types
 
 const
   ExpectedBedrockVersion* = 1'u8

@@ -106,8 +106,8 @@ proc serveGetTipRequest(
   debug "IBD handler: GetTip request"
   let tipResp = getTipResponseFromLocalTree(localTree)
   let respInner = try:
-    serializeGetTipResponseToSeq(tipResp, cryptarchiaSyncBincodeConfig)
-  except BincodeError, IOError:
+    encode(tipResp, cryptarchiaSyncBincodeConfig)
+  except BincodeError:
     debug "IBD handler: GetTip serialize failed", exc = getCurrentExceptionMsg()
     return
   if respInner.len > 0:
@@ -121,8 +121,8 @@ proc serveDownloadBlocksRequest(
 ) {.async: (raises: [BincodeError, LPStreamError, CancelledError]).} =
   proc writeResp(msg: DownloadBlocksResponse) {.async: (raises: [BincodeError, LPStreamError, CancelledError]).} =
     let innerBytes = try:
-      serializeDownloadBlocksResponseToSeq(msg, cryptarchiaSyncBincodeConfig)
-    except BincodeError, IOError:
+      encode(msg, cryptarchiaSyncBincodeConfig)
+    except BincodeError:
       @[]
     if innerBytes.len > 0:
       await writeCryptarchiaPrefixedInner(conn, innerBytes)
@@ -161,8 +161,8 @@ proc serveDownloadBlocksRequest(
         targetBlock = sbyteutils.toHex(req.targetBlock)
       return
     let innerWire = try:
-      serializeBlockToSeq(blk, cryptarchiaSyncBincodeConfig)
-    except BincodeError, IOError:
+      encode(blk, cryptarchiaSyncBincodeConfig)
+    except BincodeError:
       @[]
     if innerWire.len == 0:
       debug "IBD handler: block encode failed", blockId = sbyteutils.toHex(sendIds[i])
@@ -183,7 +183,7 @@ proc dispatchCryptarchiaSyncRequest(
     syncer: Syncer, conn: Connection, inner: seq[byte],
 ) {.async: (raises: [BincodeError, LPStreamError, CancelledError]).} =
   let reqMsg = try:
-    deserializeRequestMessage(inner, cryptarchiaSyncBincodeConfig)
+    decode(inner, RequestMessage, cryptarchiaSyncBincodeConfig)
   except BincodeError:
     debug "IBD handler: request decode failed"
     return

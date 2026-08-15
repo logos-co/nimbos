@@ -15,10 +15,11 @@
 {.push raises: [], gcsafe.}
 
 import
+  bincode,
   ./[primitives, operations, proofs],
   ../crypto/types
 
-export primitives, operations, proofs
+export primitives, operations, proofs, bincode
 
 
 type
@@ -63,4 +64,9 @@ func decodeSignedMantleTx*(data: openArray[byte]): SignedMantleTx {.raises: [Dec
     else:
       raise newException(DecodingError, "SignedMantleTx: missing OpsProofs")
   SignedMantleTx(tx: tx, opProofs: opProofs)
+ 
+deriveBincodeCustom(
+  SignedMantleTx, encodeSignedMantleTx, decodeSignedMantleTx, DecodingError
+)
+
 {.pop.}

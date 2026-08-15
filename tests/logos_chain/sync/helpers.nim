@@ -50,12 +50,12 @@ func exampleGetTipTipFixture*(): Tip =
 proc exampleSerializedGetTipResponseTipWire*(): Opt[seq[byte]] =
   let resp = GetTipResponse(kind: gtrTip, tipData: exampleGetTipTipFixture())
   try:
-    let wire = serializeGetTipResponseToSeq(resp, cryptarchiaSyncBincodeConfig)
+    let wire = encode(resp, cryptarchiaSyncBincodeConfig)
     if wire.len == 0:
       Opt.none(seq[byte])
     else:
       Opt.some(wire)
-  except BincodeError, IOError:
+  except BincodeError:
     fail getCurrentExceptionMsg()
 
 proc exampleSerializedGetTipResponseFailureWire*(
@@ -63,12 +63,12 @@ proc exampleSerializedGetTipResponseFailureWire*(
 ): Opt[seq[byte]] =
   let resp = GetTipResponse(kind: gtrFailure, failureMessage: failureUtf8)
   try:
-    let wire = serializeGetTipResponseToSeq(resp, cryptarchiaSyncBincodeConfig)
+    let wire = encode(resp, cryptarchiaSyncBincodeConfig)
     if wire.len == 0:
       Opt.none(seq[byte])
     else:
       Opt.some(wire)
-  except BincodeError, IOError:
+  except BincodeError:
     fail getCurrentExceptionMsg()
 
 func downloadBlocksRequestEqual*(a, b: DownloadBlocksRequest): bool =
@@ -120,8 +120,8 @@ proc downloadBlocksResponsesForRequest*(
     let blk = tree.getBlock(sendIds[i]).valueOr:
       fail "block not in tree"
     let innerWire = try:
-      serializeBlockToSeq(blk, cryptarchiaSyncBincodeConfig)
-    except BincodeError, IOError:
+      encode(blk, cryptarchiaSyncBincodeConfig)
+    except BincodeError:
       fail getCurrentExceptionMsg()
     check innerWire.len > 0 and innerWire.len <= MaxBlockSize
     responses.add DownloadBlocksResponse(kind: dbrBlock,
