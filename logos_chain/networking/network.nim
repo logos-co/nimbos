@@ -40,6 +40,8 @@ type
   PublicKey = crypto.PublicKey
   PrivateKey = crypto.PrivateKey
 
+  SendResult* = Result[void, cstring]
+
   # TODO: This is here only to eradicate a compiler
   # warning about unused import (rpc/messages).
   GossipMsg = messages.Message
@@ -139,6 +141,9 @@ const
 # Metrics for tracking network activity
 declareCounter logos_p2p_gossip_messages_received,
   "Number of gossip messages received by this peer"
+
+declareCounter logos_p2p_gossip_messages_sent,
+  "Number of gossip messages sent by this peer"
 
 declareCounter logos_p2p_successful_dials,
   "Number of successfully dialed peers"
@@ -1153,6 +1158,28 @@ proc addAsyncValidator*[MsgType](
   node.validTopics.incl topic # Only allow subscription to validated topics
 
   node.pubsub.addValidator(topic, execValidator)
+
+proc gossipEncode(msg: auto): seq[byte] =
+  let uncompressed = Bincode.encode(msg)
+  # This function only for messages we create. A message this large amounts to
+  # an internal logic error.
+  doAssert uncompressed.lenu64 <= MAX_PAYLOAD_SIZE
+  uncompressed
+
+proc broadcast*(node: LBP2PNode, topic: string, msg: seq[byte]):
+    Future[SendResult] {.async: (raises: [CancelledError]).} =
+  let peers = await node.pubsub.publish(topic, msg)
+
+  if peers > 0:
+    inc logos_p2p_gossip_messages_sent
+    ok()
+  else:
+    err("No peers on libp2p topic")
+
+proc broadcast*(node: LBP2PNode, topic: string, msg: auto):
+    Future[SendResult] {.async: (raises: [CancelledError], raw: true).} =
+  # Avoid {.async.} copies of message while broadcasting
+  broadcast(node, topic, gossipEncode(msg))
 
 when defined(unittest) or defined(test):
   func outboundConnQueueLen*(node: LBP2PNode): int {.inline.} =

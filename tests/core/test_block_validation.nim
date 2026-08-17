@@ -9,6 +9,7 @@
 {.used.}
 
 import
+  std/sequtils,
   bearssl/rand,
   libp2p/crypto/ed25519/ed25519,
   unittest2,
@@ -148,6 +149,21 @@ suite "core/block_validation":
         ed25519SigProof: default(Ed25519SigProof))
     let b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [badTx])
     check validate(genesis, b1).isErr
+
+  test "validateMantleTx: accepts valid transaction structure and rejects malformed":
+    let validTx = SignedMantleTx(
+      tx: MantleTx(ops: @[createTransferOp(TransferPayload(inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @[])))]),
+      opProofs: @[OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))]
+    )
+    check validateMantleTx(validTx)
+
+    var mismatchProofTx = validTx
+    mismatchProofTx.opProofs = @[]
+    check not validateMantleTx(mismatchProofTx)
+
+    var badOpcodeTx = validTx
+    badOpcodeTx.tx.ops[0].opcode = OpChannelInscribe
+    check not validateMantleTx(badOpcodeTx)
 
 suite "core/block_validation — inclusive size and count bounds":
   test "a block whose tx bytes are exactly MaxBlockSize is accepted":
@@ -397,5 +413,25 @@ suite "core/block_validation — multi-tier evaluation order":
       
     let res = prepareBlockUpdate(blk, tree, ledger, [])
     check res.isErr and res.error.kind == BlockValidationErrorKind.TransactionsRejected
+
+  test "a transaction with exactly MantleMaxOps operations is accepted":
+    let
+      op = createTransferOp(TransferPayload(inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @[])))
+      proof = OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))
+      tx = SignedMantleTx(
+        tx: MantleTx(ops: newSeqWith(MantleMaxOps, op)),
+        opProofs: newSeqWith(MantleMaxOps, proof),
+      )
+    check validateMantleTx(tx)
+
+  test "one operation past MantleMaxOps is rejected":
+    let
+      op = createTransferOp(TransferPayload(inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @[])))
+      proof = OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))
+      tx = SignedMantleTx(
+        tx: MantleTx(ops: newSeqWith(MantleMaxOps + 1, op)),
+        opProofs: newSeqWith(MantleMaxOps + 1, proof),
+      )
+    check not validateMantleTx(tx)
 
 {.pop.}
