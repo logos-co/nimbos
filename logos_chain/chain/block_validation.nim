@@ -25,8 +25,14 @@ export tx_validation.StatelessLedgerError
 from ../core/types import
   Block, Header, Proposal, References, createBlockRoot, ExpectedBedrockVersion,
   MaxBlockSize, header, blockId, Hash32
-from ../core/mantle/primitives import MaxBlockTxs, SlotNumber
-from ../core/mantle/tx_types import SignedMantleTx, ValidSignedMantleTx, byteLen
+from ../core/mantle/primitives import MaxBlockTxs, SlotNumber, MantleMaxOps
+from ../core/mantle/tx_types import
+  SignedMantleTx,
+  ValidSignedMantleTx,
+  byteLen,
+  isSupportedOpcode,
+  opPayloadToOpcode,
+  expectedOpProofKindForOpcode
 
 type
   BlockValidationErrorKind* {.pure.} = enum
@@ -73,6 +79,21 @@ func validateBlockHeader(blk: Block): bool =
 
   true
 
+func validateMantleTx*(tx: SignedMantleTx): bool =
+  if tx.tx.ops.len > MantleMaxOps:
+    return false
+  if tx.tx.ops.len != tx.opProofs.len:
+    return false
+  for i in 0 ..< tx.tx.ops.len:
+    let op = tx.tx.ops[i]
+    if not isSupportedOpcode(op.opcode):
+      return false
+    if op.opcode != opPayloadToOpcode(op.payload):
+      return false
+    if tx.opProofs[i].kind != expectedOpProofKindForOpcode(op.opcode):
+      return false
+  true
+
 func validateBlockStructure(blk: Block): bool =
   if blk.txs.len > MaxBlockTxs:
     return false
@@ -84,6 +105,9 @@ func validateBlockStructure(blk: Block): bool =
     return false
 
   true
+
+func validateBlock*(blk: Block): bool =
+  validateBlockStructure(blk) and validateBlockHeader(blk)
 
 proc validateStatelessTransactions(
     txs: openArray[SignedMantleTx],
