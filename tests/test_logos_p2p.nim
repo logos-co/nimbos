@@ -11,13 +11,19 @@
 import
   std/[net, sequtils, strutils],
   bearssl/rand,
-  chronos,
+  chronos, chronicles,
   chronos/unittest2/asynctests,
   libp2p/[switch, builders, multiaddress, peerid],
   libp2p/protocols/connectivity/autonatv2/[types, client],
   ./testutil,
+  ./logos_chain/sync/helpers,
   ../logos_chain/conf,
-  ../logos_chain/networking/[network, discovery]
+  ../logos_chain/core/types,
+  ../logos_chain/core/mantle/[operations, proofs, tx_types],
+  ../logos_chain/networking/[network, discovery],
+  ../logos_chain/chain/genesis,
+  ../logos_chain/node,
+  ../logos_chain/deployment/deployment_settings
 
 from libp2p/protocols/connectivity/autonat/types import NetworkReachability
 
@@ -184,26 +190,33 @@ suite "P2P stack — bootstrap and discovery":
     discard parseBootstrapAddress(dnsBootstrap).valueOr:
       fail("parseBootstrapAddress failed: " & $error)
 
-  asyncTest "After bootstrap: libp2p QUIC session stays up (decentralized DHT deferred)":
-    ## Peer pool admission still depends on Eth2-style protocol handshakes; we
-    ## assert libp2p-level connectivity from the bootstrap multiaddr path.
+  asyncTest "Bootstrap via trusted peer node":
     let peers = await createBootstrapPeers()
     try:
       await peers.dialer.start()
-
       check await waitLibp2pConnected(peers.dialer.switch, peers.listenerPeerId)
-      await sleepAsync(1.seconds)
       check peers.dialer.switch.isConnected(peers.listenerPeerId)
     finally:
       await peers.dialer.stop()
       await peers.listener.stop()
 
-  test "Kademlia: DHT protocol registered as /logos-blockchain/kad/1.0.0 (mainnet)":
-    # TODO(logos-chain-networking): implement Logos Kademlia wiring and assertions
+  asyncTest "After bootstrap: libp2p QUIC session stays up (decentralized DHT deferred)":
+    let peers = await createBootstrapPeers()
+    try:
+      await peers.dialer.start()
+      check await waitLibp2pConnected(peers.dialer.switch, peers.listenerPeerId)
+      await sleepAsync(chronos.seconds(1))
+      check peers.dialer.switch.isConnected(peers.listenerPeerId)
+    finally:
+      await peers.dialer.stop()
+      await peers.listener.stop()
+
+  test "Bootstrap peer unreachable: node logs warning and proceeds standalone":
+    # TODO(logos-chain-networking): implement unreachable bootstrap scenario
     skip()
 
-  test "Kademlia: DHT protocol registered as /logos-blockchain-testnet/kad/1.0.0 (testnet)":
-    # TODO(logos-chain-networking): implement Logos Kademlia wiring and assertions
+  test "Discovery finds new peers through mesh":
+    # TODO(logos-chain-networking): implement discovery mesh verification
     skip()
 
 suite "P2P stack — protocol negotiation and Identify":
@@ -250,21 +263,90 @@ suite "P2P stack — NAT and AutoNAT v2":
       await peers.listener.stop()
 
 suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
-  test "GossipSub: subscribes and publishes /logos-blockchain/mempool/1.0.0 (mainnet)":
-    # TODO(logos-chain-networking): wire mainnet mempool topic and assert behavior
-    skip()
+  asyncTest "GossipSub: subscribes, broadcasts, and ingests transactions":
+    const topic = "/logos-blockchain/mempool/1.0.0"
+    let peers = await createBootstrapPeers()
+    let
+      listenerNode = LBNode(
+        network: peers.listener,
+        deploymentSettings: DeploymentSettings(
+          mempool: MempoolDeploymentSettings(pubsubTopic: topic)
+        )
+      )
+      dialerNode = LBNode(
+        network: peers.dialer,
+        deploymentSettings: DeploymentSettings(
+          mempool: MempoolDeploymentSettings(pubsubTopic: topic)
+        )
+      )
+    try:
+      await listenerNode.initializeNetworking()
+      await dialerNode.initializeNetworking()
 
-  test "GossipSub: subscribes and publishes /logos-blockchain/cryptarchia/1.0.0 (mainnet)":
-    # TODO(logos-chain-networking): wire mainnet cryptarchia topic and assert behavior
-    skip()
+      check await waitLibp2pConnected(peers.dialer.switch, peers.listenerPeerId)
+      await sleepAsync(chronos.milliseconds(300))
 
-  test "GossipSub: subscribes and publishes /logos-blockchain-testnet/mempool/1.0.0 (testnet)":
-    # TODO(logos-chain-networking): wire testnet mempool topic and assert behavior
-    skip()
+      let sampleTx = SignedMantleTx(
+        tx: MantleTx(ops: @[createTransferOp(TransferPayload(inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @[])))]),
+        opProofs: @[OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))]
+      )
 
-  test "GossipSub: subscribes and publishes /logos-blockchain-testnet/cryptarchia/1.0.0 (testnet)":
-    # TODO(logos-chain-networking): wire testnet cryptarchia topic and assert behavior
-    skip()
+      let sendRes = await peers.dialer.broadcast(topic, sampleTx)
+      check sendRes.isOk
+
+      var received = false
+      for _ in 0 ..< 100:
+        if listenerNode.chain.mempool.len > 0:
+          received = true
+          break
+        await sleepAsync(chronos.milliseconds(25))
+      check received
+      check listenerNode.chain.mempool[0].tx.ops.len == 1
+    finally:
+      await peers.dialer.stop()
+      await peers.listener.stop()
+
+  asyncTest "GossipSub: subscribes, broadcasts, and applies blocks":
+    const topic = "/logos-blockchain/cryptarchia/1.0.0"
+    let peers = await createBootstrapPeers()
+    let
+      genesis = createGenesisBlock(minimalSignedTx())
+      listenerNode = LBNode(
+        network: peers.listener,
+        chain: initTestChain(genesis),
+        deploymentSettings: DeploymentSettings(
+          cryptarchia: CryptarchiaDeploymentSettings(gossipsubProtocol: topic)
+        )
+      )
+      dialerNode = LBNode(
+        network: peers.dialer,
+        deploymentSettings: DeploymentSettings(
+          cryptarchia: CryptarchiaDeploymentSettings(gossipsubProtocol: topic)
+        )
+      )
+    try:
+      await listenerNode.initializeNetworking()
+      await dialerNode.initializeNetworking()
+
+      check await waitLibp2pConnected(peers.dialer.switch, peers.listenerPeerId)
+      await sleepAsync(chronos.milliseconds(300))
+
+      let sampleBlock = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [])
+
+      let sendRes = await peers.dialer.broadcast(topic, sampleBlock)
+      check sendRes.isOk
+
+      var received = false
+      for _ in 0 ..< 100:
+        if listenerNode.chain.localTree.hasBlock(blockId(sampleBlock.header)):
+          received = true
+          break
+        await sleepAsync(chronos.milliseconds(25))
+      check received
+      check listenerNode.chain.localTree.localTipId == blockId(sampleBlock.header)
+    finally:
+      await peers.dialer.stop()
+      await peers.listener.stop()
 
 suite "P2P stack — on-the-wire encoding":
   test "Network Wire Format: payloads on negotiated streams follow Logos Chain wire format spec":
