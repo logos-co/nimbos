@@ -44,7 +44,7 @@ type
     queue: Deque[Hash32]
     capacity: uint64
 
-  Mempool* = object
+  Mempool* = ref object
     txs*: OrderedTable[Hash32, MempoolItem]
     graceCache*: GraceCache
     capacity*: uint64
@@ -53,7 +53,7 @@ func init(_: typedesc[GraceCache], capacity: uint64 = uint64(
     DefaultMempoolCapacity)): GraceCache =
   GraceCache(capacity: max(capacity, 1'u64))
 
-proc cache(c: var GraceCache, hash: Hash32, tx: SignedMantleTx) =
+proc cache(c: var GraceCache, hash: Hash32, tx: sink SignedMantleTx) =
   if hash in c.cache:
     return
   while uint64(c.queue.len) >= c.capacity:
@@ -77,19 +77,18 @@ func init*(_: typedesc[Mempool],
     capacity: cap
   )
 
-proc remove(m: var Mempool, hash: Hash32, moveToGrace: bool = true) =
+proc remove(m: Mempool, hash: Hash32, moveToGrace: bool = true) =
   if hash in m.txs:
     try:
-      let item = m.txs[hash]
-      m.txs.del(hash)
       if moveToGrace:
-        m.graceCache.cache(hash, item.tx)
+        m.graceCache.cache(hash, move(m.txs[hash].tx))
+      m.txs.del(hash)
     except KeyError:
       discard
 
 proc add*(
-    m: var Mempool,
-    tx: SignedMantleTx,
+    m: Mempool,
+    tx: sink SignedMantleTx,
     currentSlot: SlotNumber = SlotNumber(0),
 ): bool =
   let hash = mantleTxHash(tx.tx)
@@ -110,7 +109,7 @@ proc add*(
 func contains*(m: Mempool, hash: Hash32): bool =
   hash in m.txs
 
-proc get*(m: Mempool, hash: Hash32): Result[SignedMantleTx, MempoolError] =
+func get*(m: Mempool, hash: Hash32): Result[SignedMantleTx, MempoolError] =
   if hash in m.txs:
     try:
       return ok(m.txs[hash].tx)
@@ -118,7 +117,7 @@ proc get*(m: Mempool, hash: Hash32): Result[SignedMantleTx, MempoolError] =
       discard
   m.graceCache.retrieve(hash)
 
-proc pruneExpiredTxs*(m: var Mempool, currentSlot: SlotNumber) =
+proc pruneExpiredTxs*(m: Mempool, currentSlot: SlotNumber) =
   var expiredHashes: seq[Hash32]
   for hash, item in m.txs:
     if currentSlot > item.addedAtSlot + MempoolMaxAgeSlots:
@@ -129,7 +128,7 @@ proc pruneExpiredTxs*(m: var Mempool, currentSlot: SlotNumber) =
   for hash in expiredHashes:
     m.remove(hash, moveToGrace = true)
 
-proc pruneBlockTxs*(m: var Mempool, blk: Block) =
+proc pruneBlockTxs*(m: Mempool, blk: Block) =
   for stx in blk.txs:
     m.remove(mantleTxHash(stx.tx), moveToGrace = false)
 
