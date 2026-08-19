@@ -1,0 +1,58 @@
+# nimbos
+# Copyright (c) 2026 Status Research & Development GmbH
+# Licensed and distributed under either of
+#   * MIT license (license terms in the root directory or at https://opensource.org/licenses/MIT).
+#   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
+# at your option. This file may not be copied, modified, or distributed except according to those terms.
+
+## Logos Chain libp2p application protocol IDs.
+## Spec: https://github.com/logos-co/logos-lips/blob/master/docs/blockchain/draft/p2p-network.md#peer-discovery
+
+{.push raises: [], gcsafe.}
+
+import
+  libp2p/[switch, peerinfo, errors, crypto/crypto],
+  libp2p/protocols/identify,
+  libp2p/protocols/kademlia,
+  ../conf
+
+type
+  MountedLogosProtocols* = object
+    kad*: KadDHT
+    identify*: Identify
+      ## Autonomous protocol managed internally by the switch after mounting.
+
+const
+  LogosIdentifyMainnet* = "/logos-blockchain/identify/1.0.0"
+  LogosIdentifyTestnet* = "/logos-blockchain-testnet/identify/1.0.0"
+  LogosKadMainnet* = "/logos-blockchain/kad/1.0.0"
+  LogosKadTestnet* = "/logos-blockchain-testnet/kad/1.0.0"
+
+func logosIdentifyCodec(network: LogosNetworkKind): string =
+  case network
+  of Mainnet: LogosIdentifyMainnet
+  of Testnet: LogosIdentifyTestnet
+
+func logosKadCodec*(network: LogosNetworkKind): string =
+  case network
+  of Mainnet: LogosKadMainnet
+  of Testnet: LogosKadTestnet
+
+proc mountLogosIdentifyProtocols*(
+    sw: Switch, peerInfo: PeerInfo, network: LogosNetworkKind
+): Identify {.raises: [LPError].} =
+  let ident = Identify.new(peerInfo)
+  ident.codecs = @[logosIdentifyCodec(network)]
+  sw.mount(ident)
+  ident
+
+proc mountLogosKadProtocols*(
+    sw: Switch, network: LogosNetworkKind, rng: Rng = newRng()
+): KadDHT {.raises: [LPError].} =
+  let codec = logosKadCodec(network)
+  let kad = KadDHT.new(sw, rng = rng, codec = codec)
+  kad.codecs = @[codec]
+  sw.mount(kad)
+  kad
+
+{.pop.}

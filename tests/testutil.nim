@@ -81,7 +81,7 @@ proc summarizeLongTests*(name: string) =
   except IOError, OSError, ValueError:
     raiseAssert getCurrentExceptionMsg()
 
-const TestLoopbackIp = parseIpAddress("127.0.0.1")
+const TestLoopbackIp* = parseIpAddress("127.0.0.1")
 const TestQuicAnyPort* = Port(0)
 
 template loopbackQuicMultiAddr*(port: Port): string =

@@ -15,9 +15,9 @@ import
   chronos/unittest2/asynctests,
   libp2p/[switch, builders, multiaddress, peerid],
   libp2p/protocols/connectivity/autonatv2/[types, client],
-  ./testutil,
-  ../logos_chain/conf,
-  ../logos_chain/networking/[network, discovery]
+  ../testutil,
+  ../../logos_chain/conf,
+  ../../logos_chain/networking/[network, discovery]
 
 from libp2p/protocols/connectivity/autonat/types import NetworkReachability
 
@@ -170,7 +170,7 @@ suite "P2P stack — bootstrap and discovery":
       await peers.dialer.stop()
       await peers.listener.stop()
 
-  test "Bootstrap multiaddr: parseBootstrapAddress accepts /dns4/.../udp/.../quic-v1/p2p/...":
+  test "Bootstrap multiaddr: loadBootstrapNodes accepts /dns4/.../udp/.../quic-v1/p2p/...":
     ## Full DNS dial integration depends on the resolver; ip4 bootstrap covers
     ## the dial path. This validates Logos Chain bootstrap string parsing for DNS.
     var rng = HmacDrbgContext.new()
@@ -181,8 +181,10 @@ suite "P2P stack — bootstrap and discovery":
       dnsPort = Port(5011)
       dnsBootstrap =
         "/dns4/localhost/udp/" & $dnsPort & "/quic-v1/p2p/" & $peerId
-    discard parseBootstrapAddress(dnsBootstrap).valueOr:
-      fail("parseBootstrapAddress failed: " & $error)
+      netCfg = NetworkConfig(bootstrapNodes: @[dnsBootstrap])
+      nodes = loadBootstrapNodes(netCfg)
+    check nodes.len == 1
+    check nodes[0][0] == peerId
 
   asyncTest "After bootstrap: libp2p QUIC session stays up (decentralized DHT deferred)":
     ## Peer pool admission still depends on Eth2-style protocol handshakes; we

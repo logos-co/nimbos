@@ -291,6 +291,7 @@ type
     listenAddress*: Option[IpAddress]
     quicPort*: Port
     nat*: NatConfig
+    logosNetwork*: LogosNetworkKind
     maxPeers*: int
     hardMaxPeers*: Option[int]
     agentString*: string
@@ -324,6 +325,7 @@ proc networkConfig*(config: LBNodeConf): NetworkConfig =
     listenAddress: config.listenAddress,
     quicPort: config.quicPort,
     nat: config.nat,
+    logosNetwork: config.logosNetwork,
     maxPeers: config.maxPeers,
     hardMaxPeers: config.hardMaxPeers,
     agentString: config.agentString,

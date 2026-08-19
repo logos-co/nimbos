@@ -11,31 +11,31 @@ import
   # Std lib
   std/[typetraits, os, sequtils, strutils, algorithm, math, tables, macrocache],
 
-  # Status libs
-  results,
+  # Vendor / external libs
+  bearssl/rand,
+  chronos, chronos/ratelimit, chronicles, metrics, results,
   stew/[leb128, endians2, byteutils, io2],
   stew/shims/macros,
   json_serialization, json_serialization/std/[net, sets, options],
-  chronos, chronos/ratelimit, chronicles, metrics,
-  libp2p/[
-    switch, peerinfo, multiaddress, multicodec, crypto/crypto, builders],
+  eth/[async_utils, net/nat],
+  libp2p/[switch, peerinfo, multiaddress, multicodec, crypto/crypto, builders],
   libp2p/protocols/connectivity/autonatv2/[server, service],
   libp2p/protocols/pubsub/[
     pubsub, gossipsub, rpc/message, rpc/messages, peertable, pubsubpeer],
   libp2p/stream/connection,
-  bearssl/rand,
-  eth/async_utils,
-  eth/net/nat,
-  ./bincode,
+
+  # Local networking modules
+  ./[bincode, discovery, protocols, protocol_dsl,
+     libp2p_json_serialization, peer_pool, peer_scores],
+
+  # Logos chain core modules
   ../[version, conf],
-  ../core/utils,
-  ./[discovery, protocol_dsl,
-       libp2p_json_serialization, peer_pool, peer_scores]
+  ../core/utils
 
 export
   tables, chronos, ratelimit, version, multiaddress, peerinfo, p2pProtocol,
   connection, libp2p_json_serialization, bincode, results,
-  discovery, peer_pool, peer_scores
+  discovery, protocols, peer_pool, peer_scores
 
 logScope:
   topics = "networking"
@@ -72,20 +72,19 @@ type
     protocols: seq[ProtocolInfo]
       ## Protocols managed by the DSL and mounted on the switch
     protocolStates: seq[RootRef]
-    connectTimeout: chronos.Duration
+    connectTimeout*: chronos.Duration
     seenThreshold: chronos.Duration
     connQueue: AsyncQueue[PeerAddr]
     seenTable: Table[PeerId, SeenItem]
-    connWorkers: seq[Future[void].Raising([CancelledError])]
+    dialTable: HashSet[PeerId]
     connTable: HashSet[PeerId]
+    mountedProtocols*: MountedLogosProtocols
     rng*: ref HmacDrbgContext
     peers: Table[PeerId, Peer]
     announcedAddresses*: seq[MultiAddress]
     bootstrapPeers: seq[PeerAddr]
     validTopics: HashSet[string]
-    peerPingerHeartbeatFut: Future[void].Raising([CancelledError])
-    peerTrimmerHeartbeatFut: Future[void].Raising([CancelledError])
-    bootstrapHeartbeatFut: Future[void].Raising([CancelledError])
+    backgroundTasks: seq[Future[void].Raising([CancelledError])]
     quota: TokenBucket ## Global quota mainly for high-bandwidth stuff
 
   AverageThroughput = object
@@ -98,13 +97,11 @@ type
     connectionState*: ConnectionState
     protocolStates: seq[RootRef]
     netThroughput: AverageThroughput
-    score: int
+    score*: int
     quota: TokenBucket
     lastReqTime: Moment
     connections: int
-    failedMetadataRequests: int
-    lastMetadataTime: Moment
-    direction: PeerType
+    direction*: PeerType
     disconnectedFut: Future[void]
     statistics: SyncResponseStats
 
@@ -177,7 +174,7 @@ type
     # erroneous request-specific responses.
     PeerScoreLow = 237 # 79 * 3
 
-  Eth2NetworkingErrorKind* {.pure.} = enum
+  NetErrorKind* {.pure.} = enum
     # Potentially benign errors (network conditions)
     BrokenConnection
     ReceivedErrorResponse
@@ -193,31 +190,31 @@ type
     InvalidSizePrefix
     ZeroSizePrefix
     SizePrefixOverflow
-    InvalidContextBytes
     ResponseChunkOverflow
 
     UnknownError
 
-  Eth2NetworkingError = object
-    case kind*: Eth2NetworkingErrorKind
+  NetworkingErrorKind* = NetErrorKind
+
+  NetError* = object
+    case kind*: NetErrorKind
     of ReceivedErrorResponse:
       responseCode*: ResponseCode
       errorMsg*: string
     else:
       discard
 
+  NetworkingError* = NetError
+
   InvalidInputsError = object of CatchableError
 
   ResourceUnavailableError = object of CatchableError
 
-  NetRes*[T] = Result[T, Eth2NetworkingError]
+  NetRes*[T] = Result[T, NetError]
     ## This is type returned from all network requests
 
 const
-  clientId* = "Nimbus beacon node " & fullVersionStr
-
-  requestPrefix = "/eth2/beacon_chain/req/"
-  requestSuffix = "/ssz_snappy"
+  clientId* = "Nimbos node " & fullVersionStr
 
   ConcurrentConnections = 20
     ## Maximum number of active concurrent connection requests.
@@ -244,10 +241,10 @@ const
   SeenTableTimeReconnect = 1.minutes
     ## Minimal time between disconnection and reconnection attempt
 
-  ProtocolViolations = {InvalidResponseCode..Eth2NetworkingErrorKind.high()}
+  ProtocolViolations = {InvalidResponseCode..NetErrorKind.high()}
 
-template neterr*(kindParam: Eth2NetworkingErrorKind): auto =
-  err(type(result), Eth2NetworkingError(kind: kindParam))
+template neterr*(kindParam: NetErrorKind): auto =
+  err(type(result), NetError(kind: kindParam))
 
 # Metrics for tracking attestation and beacon block loss
 declareCounter nbc_gossip_messages_sent,
@@ -295,15 +292,6 @@ template libp2pProtocol*(name: string, version: int) {.pragma.}
 func shortLog*(peer: Peer): string = shortLog(peer.peerId)
 chronicles.formatIt(Peer): shortLog(it)
 chronicles.formatIt(PublicKey): byteutils.toHex(it.getBytes().tryGet())
-
-func shortProtocolId(protocolId: string): string =
-  let
-    start = if protocolId.startsWith(requestPrefix): requestPrefix.len else: 0
-    ends = if protocolId.endsWith(requestSuffix):
-      protocolId.high - requestSuffix.len
-    else:
-      protocolId.high
-  protocolId[start..ends]
 
 proc openStream(node: LBP2PNode,
                 peer: Peer,
@@ -353,7 +341,7 @@ template networkState*(connection: Peer, Protocol: type): untyped =
 func peerId*(node: LBP2PNode): PeerId =
   node.switch.peerInfo.peerId
 
-proc getPeer(node: LBP2PNode, peerId: PeerId): Peer =
+proc getPeer*(node: LBP2PNode, peerId: PeerId): Peer =
   node.peers.withValue(peerId, peer) do:
     return peer[]
   do:
@@ -526,7 +514,8 @@ proc getRequestProtoName(fn: NimNode): NimNode =
         if pragma.len > 0 and $pragma[0] == "libp2pProtocol":
           let protoName = $(pragma[1])
           let protoVer = $(pragma[2].intVal)
-          return newLit(requestPrefix & protoName & "/" & protoVer & requestSuffix)
+          let baseName = if protoName.startsWith("/"): protoName else: "/" & protoName
+          return newLit(baseName & "/" & protoVer)
       except Exception as exc: raiseAssert exc.msg # TODO https://github.com/nim-lang/Nim/issues/17454
 
   return newLit("")
@@ -534,29 +523,6 @@ proc getRequestProtoName(fn: NimNode): NimNode =
 func add(s: var seq[byte], pos: var int, bytes: openArray[byte]) =
   s[pos..<pos+bytes.len] = bytes
   pos += bytes.len
-
-proc writeChunkSZ(
-    conn: Connection,
-    responseCode: Opt[ResponseCode],
-    uncompressedLen: uint64,
-    payloadSZ: openArray[byte],
-    contextBytes: openArray[byte] = [],
-): Future[void] {.async: (raises: [CancelledError, LPStreamError], raw: true).} =
-  let
-    uncompressedLenBytes = toBytes(uncompressedLen, Leb128)
-
-  var
-    data = newSeqUninit[byte](
-      ord(responseCode.isSome) + contextBytes.len + uncompressedLenBytes.len +
-      payloadSZ.len)
-    pos = 0
-
-  if responseCode.isSome:
-    data.add(pos, [byte responseCode.get])
-  data.add(pos, contextBytes)
-  data.add(pos, uncompressedLenBytes.toOpenArray())
-  data.add(pos, payloadSZ)
-  conn.write(data)
 
 proc writeChunk(
     conn: Connection,
@@ -622,17 +588,6 @@ proc sendNotificationMsg(
     debug "Error while writing notification", peer, protocolId, exc = exc.msg
   finally:
     await noCancel stream.close()
-
-proc sendResponseChunkBytesSZ(
-    response: UntypedResponse,
-    uncompressedLen: uint64,
-    payloadSZ: openArray[byte],
-    contextBytes: openArray[byte] = [],
-): Future[void] {.async: (raises: [CancelledError, LPStreamError], raw: true).} =
-  inc response.writtenChunks
-  response.stream.writeChunkSZ(
-    Opt.some ResponseCode.Success, uncompressedLen, payloadSZ, contextBytes
-  )
 
 proc sendResponseChunkBytes(
     response: UntypedResponse,
@@ -748,9 +703,9 @@ proc readResponseChunk(
       errorMsg = ? await readChunkPayload(conn, peer, ErrorMsg)
       errorMsgStr = toPrettyString(errorMsg.asSeq)
     debug "Error response from peer", responseCode, errMsg = errorMsgStr
-    return err Eth2NetworkingError(kind: ReceivedErrorResponse,
-                                    responseCode: responseCode,
-                                    errorMsg: errorMsgStr)
+    return err NetError(kind: ReceivedErrorResponse,
+                        responseCode: responseCode,
+                        errorMsg: errorMsgStr)
   of ResponseCode.Success:
     discard
 
@@ -794,7 +749,7 @@ proc readResponse(
       return neterr(ReadResponseTimeout)
     return await nextFut # Guaranteed to complete without waiting
 
-proc doMakeEth2Request(
+proc doMakeRequest(
     peer: Peer, protocolId: string, requestBytes: seq[byte],
     ResponseMsg: type, maxResponseItems: Limit,
     timeout: Duration
@@ -822,7 +777,7 @@ proc doMakeEth2Request(
     # done, the other peer might never send us the response.
     await stream.close()
 
-    nbc_reqresp_messages_sent.inc(1, [shortProtocolId(protocolId)])
+    nbc_reqresp_messages_sent.inc(1, [protocolId])
 
     # Read the response
     let res = await readResponse(
@@ -841,27 +796,27 @@ proc doMakeEth2Request(
   finally:
     await stream.closeWithEOF()
 
-proc makeEth2Request(
+proc makeRequest(
     peer: Peer, protocolId: string, requestBytes: seq[byte],
     ResponseMsg: type,
     timeout: Duration
 ): Future[NetRes[ResponseMsg]] {.
     async: (raises: [CancelledError], raw: true).} =
   when ResponseMsg is List:
-    doMakeEth2Request(
+    doMakeRequest(
       peer, protocolId, requestBytes, ResponseMsg, ResponseMsg.maxLen, timeout)
   else:
-    doMakeEth2Request(
+    doMakeRequest(
       peer, protocolId, requestBytes, ResponseMsg, 1.Limit, timeout)
 
-proc makeEth2Request(
+proc makeRequest(
     peer: Peer, protocolId: string, requestBytes: seq[byte],
     ResponseMsg: type, maxResponseItems: Limit,
     timeout: Duration
 ): Future[NetRes[ResponseMsg]] {.
     async: (raises: [CancelledError], raw: true).} =
   when ResponseMsg is List:
-    doMakeEth2Request(
+    doMakeRequest(
       peer, protocolId, requestBytes, ResponseMsg, maxResponseItems, timeout)
   else:
     static: raiseAssert $ResponseMsg & " does not support `maxResponseItems`"
@@ -884,11 +839,6 @@ template writeBincode[M; maxLen: static Limit](
     contextBytes: openArray[byte] = []): untyped =
   mixin sendResponseChunk
   sendResponseChunk(UntypedResponse(r), val, contextBytes)
-
-template writeBytesSZ(
-    r: MultipleChunksResponse, uncompressedLen: uint64,
-    bytes: openArray[byte], contextBytes: openArray[byte]): untyped =
-  sendResponseChunkBytesSZ(UntypedResponse(r), uncompressedLen, bytes, contextBytes)
 
 template send*[M](
     r: SingleChunkResponse[M], val: M,
@@ -941,12 +891,12 @@ proc implementSendProcBody(sendProc: SendProc, isChunkStream: bool) =
         let ResponseRecord = msg.response.recName
         if isChunkStream:
           quote:
-            makeEth2Request(
+            makeRequest(
               `peer`, `msgProto`, `bytes`,
               `ResponseRecord`, maxResponseItems, `timeoutVar`)
         else:
           quote:
-            makeEth2Request(
+            makeRequest(
               `peer`, `msgProto`, `bytes`,
               `ResponseRecord`, `timeoutVar`)
       else:
@@ -1005,7 +955,7 @@ proc handleIncomingStream(network: LBP2PNode,
     template returnResourceUnavailable(msg: string) =
       returnResourceUnavailable(ErrorMsg msg.toBytes)
 
-    nbc_reqresp_messages_received.inc(1, [shortProtocolId(protocolId)])
+    nbc_reqresp_messages_received.inc(1, [protocolId])
 
     const isEmptyMsg = when MsgRec is object:
       # We need nested `when` statements here, because Nim doesn't properly
@@ -1028,7 +978,7 @@ proc handleIncomingStream(network: LBP2PNode,
             readChunkPayload(conn, peer, MsgRec), deadline):
               # Timeout, e.g., cancellation due to fulfillment by different peer.
               # Treat this similarly to `UnexpectedEOF`, `PotentiallyExpectedEOF`.
-              nbc_reqresp_messages_failed.inc(1, [shortProtocolId(protocolId)])
+              nbc_reqresp_messages_failed.inc(1, [protocolId])
               await sendErrorResponse(
                 peer, conn, ResponseCode.InvalidRequest,
                 errorMsgLit "Request full data not sent in time")
@@ -1053,7 +1003,7 @@ proc handleIncomingStream(network: LBP2PNode,
         # This quota also applies to invalid requests thanks to the use of
         # `finally`.
 
-        awaitQuota(peer, libp2pRequestCost, shortProtocolId(protocolId))
+        awaitQuota(peer, libp2pRequestCost, protocolId)
 
     if msg.isErr:
       if msg.error.kind in ProtocolViolations:
@@ -1061,14 +1011,11 @@ proc handleIncomingStream(network: LBP2PNode,
       else:
         peer.updateScore(PeerScorePoorRequest)
 
-      nbc_reqresp_messages_failed.inc(1, [shortProtocolId(protocolId)])
+      nbc_reqresp_messages_failed.inc(1, [protocolId])
       let (responseCode, errMsg) = case msg.error.kind
         of UnexpectedEOF, PotentiallyExpectedEOF:
-          nbc_reqresp_messages_failed.inc(1, [shortProtocolId(protocolId)])
+          nbc_reqresp_messages_failed.inc(1, [protocolId])
           (ResponseCode.InvalidRequest, errorMsgLit "Incomplete request")
-
-        of InvalidContextBytes:
-          (ResponseCode.ServerError, errorMsgLit "Unrecognized context bytes")
 
         of InvalidSnappyBytes:
           (ResponseCode.InvalidRequest, errorMsgLit "Failed to decompress snappy payload")
@@ -1108,16 +1055,16 @@ proc handleIncomingStream(network: LBP2PNode,
       # logReceivedMsg(peer, MsgType(msg.get))
       await callUserHandler(MsgType, peer, conn, msg.get)
     except InvalidInputsError as exc:
-      nbc_reqresp_messages_failed.inc(1, [shortProtocolId(protocolId)])
+      nbc_reqresp_messages_failed.inc(1, [protocolId])
       returnInvalidRequest exc.msg
     except ResourceUnavailableError as exc:
       returnResourceUnavailable exc.msg
     except CatchableError as exc:
-      nbc_reqresp_messages_failed.inc(1, [shortProtocolId(protocolId)])
+      nbc_reqresp_messages_failed.inc(1, [protocolId])
       await sendErrorResponse(peer, conn, ResponseCode.ServerError, ErrorMsg exc.msg.toBytes)
 
   except CatchableError as exc:
-    nbc_reqresp_messages_failed.inc(1, [shortProtocolId(protocolId)])
+    nbc_reqresp_messages_failed.inc(1, [protocolId])
     debug "Error processing an incoming request", exc = exc.msg, msgName
 
   finally:
@@ -1130,12 +1077,69 @@ proc checkPeer(node: LBP2PNode, peerAddr: PeerAddr): bool =
   if node.peerPool.hasPeer(peerId):
     trace "Already connected"
     false
+  elif peerId in node.dialTable:
+    trace "Dial already in progress"
+    false
   else:
     if node.isSeen(peerId):
       trace "Recently connected"
       false
     else:
       true
+
+proc tryEnqueueOutboundConn*(
+    node: LBP2PNode,
+    peerAddr: PeerAddr,
+    isEligible: proc(peerAddr: PeerAddr): bool {.gcsafe, raises: [].},
+): Future[bool] {.async: (raises: [CancelledError]).} =
+  ## Reserve ``peerAddr.peerId`` in ``connTable`` and enqueue a dial. On
+  ## ``CancelledError`` from ``addLast``, roll back the reservation (same as the
+  ## Kad discovery enqueue callback). Takes ``LBP2PNode`` (a ref) so the async
+  ## closure can safely reach ``connTable`` / ``connQueue``.
+  if not isEligible(peerAddr):
+    return false
+  let peerId = peerAddr.peerId
+  if peerId in node.connTable:
+    return false
+  node.connTable.incl(peerId)
+  try:
+    await node.connQueue.addLast(peerAddr)
+  except CancelledError as exc:
+    node.connTable.excl(peerId)
+    raise exc
+  return true
+
+proc waitUntilSwitchConnected(
+    sw: Switch, pid: PeerId, timeout: Duration
+): Future[bool] {.async: (raises: [CancelledError]).} =
+  let deadline = sleepAsync(timeout)
+  while not sw.isConnected(pid):
+    if deadline.finished():
+      return false
+    await sleepAsync(50.milliseconds)
+  if not deadline.finished():
+    deadline.cancelSoon()
+  return true
+
+proc connectViaConnQueue*(
+    node: LBP2PNode,
+    peerAddr: PeerAddr,
+    isEligible: proc(peerAddr: PeerAddr): bool {.gcsafe, raises: [].},
+    waitTimeout: Duration,
+): Future[bool] {.async: (raises: [CancelledError]).} =
+  if node.switch.isConnected(peerAddr.peerId):
+    return true
+
+  let enqueued = await tryEnqueueOutboundConn(node, peerAddr, isEligible)
+  if not enqueued and not node.switch.isConnected(peerAddr.peerId):
+    # This call did not enqueue a dial, and we are still disconnected.
+    # If ``connTable`` also has no reservation for this peer id, no other
+    # caller/worker has an in-flight dial either, so waiting cannot succeed.
+    if peerAddr.peerId notin node.connTable:
+      return false
+
+  return await waitUntilSwitchConnected(
+    node.switch, peerAddr.peerId, waitTimeout)
 
 proc dialPeer(node: LBP2PNode, peerAddr: PeerAddr, index = 0) {.async: (raises: [CancelledError]).} =
   ## Establish connection with remote peer identified by address ``peerAddr``.
@@ -1146,6 +1150,7 @@ proc dialPeer(node: LBP2PNode, peerAddr: PeerAddr, index = 0) {.async: (raises: 
   if not(node.checkPeer(peerAddr)):
     return
 
+  node.dialTable.incl(peerAddr.peerId)
   debug "Connecting to discovered peer", addrs = peerAddr.addrs
   var deadline = sleepAsync(node.connectTimeout)
   var workfut = node.switch.connect(
@@ -1168,10 +1173,17 @@ proc dialPeer(node: LBP2PNode, peerAddr: PeerAddr, index = 0) {.async: (raises: 
       inc nbc_timeout_dials
       node.addSeen(peerAddr.peerId, SeenTableTimeTimeout)
       await cancelAndWait(workfut)
-  except DialFailedError as exc:
+  except CancelledError as exc:
+    if not deadline.finished():
+      deadline.cancelSoon()
+    await cancelAndWait(workfut)
+    raise exc
+  except LPError as exc:
     debug "Connection to remote peer failed", msg = exc.msg, addrs = peerAddr.addrs
     inc nbc_failed_dials
     node.addSeen(peerAddr.peerId, SeenTableTimeDeadPeer)
+  finally:
+    node.dialTable.excl(peerAddr.peerId)
 
 proc connectWorker(node: LBP2PNode, index: int) {.async: (raises: [CancelledError]).} =
   debug "Connection worker started", index = index
@@ -1179,48 +1191,16 @@ proc connectWorker(node: LBP2PNode, index: int) {.async: (raises: [CancelledErro
     # This loop will never produce HIGH CPU usage because it will wait
     # and block until it not obtains new peer from the queue ``connQueue``.
     let remotePeerAddr = await node.connQueue.popFirst()
-    # Previous worker dial might have hit the maximum peers.
-    # TODO: could clear the whole connTable and connQueue here also, best
-    # would be to have this event based coming from peer pool or libp2p.
-
-    if node.peerPool.len < node.hardMaxPeers:
-      await node.dialPeer(remotePeerAddr, index)
-    # Peer was added to `connTable` before adding it to `connQueue`, so we
-    # excluding peer here after processing.
-    node.connTable.excl(remotePeerAddr.peerId)
-
-# The spec motivates having bootstrap dialing and avoiding connection spam.
-# This queue/dedupe/backoff strategy is our implementation choice for that goal,
-# even though the spec does not dictate this exact mechanism per se.
-proc enqueueBootstrapPeers(
-    node: LBP2PNode, source: string) {.async: (raises: [CancelledError]).} =
-  var queued = 0
-  var skippedConnected = 0
-  var skippedPending = 0
-  var skippedSeen = 0
-
-  for peerAddr in node.bootstrapPeers:
-    let peerId = peerAddr.peerId
-    if node.peerPool.hasPeer(peerId):
-      inc skippedConnected
-      debug "Skipping bootstrap peer: already connected", source, peer = peerId
-      continue
-    if peerId in node.connTable:
-      inc skippedPending
-      debug "Skipping bootstrap peer: already pending", source, peer = peerId
-      continue
-    if node.isSeen(peerId):
-      inc skippedSeen
-      debug "Skipping bootstrap peer: in reconnect backoff", source, peer = peerId
-      continue
-
-    node.connTable.incl(peerId)
-    await node.connQueue.addLast(peerAddr)
-    inc queued
-    debug "Queued bootstrap peer", source, peer = peerId, addrs = peerAddr.addrs
-
-  notice "Bootstrap enqueue pass complete",
-    source, queued, skippedConnected, skippedPending, skippedSeen
+    # Release connTable reservation for this id after we finish handling the
+    # queue item (dial or skip), including on CancelledError from dialPeer.
+    try:
+      # Previous worker dial might have hit the maximum peers.
+      # TODO: could clear the whole connTable and connQueue here also, best
+      # would be to have this event based coming from peer pool or libp2p.
+      if node.peerPool.len < node.hardMaxPeers:
+        await node.dialPeer(remotePeerAddr, index)
+    finally:
+      node.connTable.excl(remotePeerAddr.peerId)
 
 proc handlePeer*(peer: Peer) {.async: (raises: [CancelledError]).} =
   let res = peer.network.peerPool.addPeerNoWait(peer, peer.direction)
@@ -1255,6 +1235,7 @@ proc handlePeer*(peer: Peer) {.async: (raises: [CancelledError]).} =
 proc onConnEvent(
     node: LBP2PNode, peerId: PeerId, event: ConnEvent) {.
     async: (raises: [CancelledError]).} =
+  node.dialTable.excl(peerId)
   let peer = node.getPeer(peerId)
   case event.kind
   of ConnEventKind.Connected:
@@ -1334,6 +1315,7 @@ proc new(T: type LBP2PNode,
          switch: Switch, pubsub: GossipSub,
          announcedAddresses: openArray[MultiAddress],
          bootstrapPeers: openArray[PeerAddr],
+         mountedProtocols: MountedLogosProtocols = MountedLogosProtocols(),
          rng: ref HmacDrbgContext): T =
   when not defined(local_testnet):
     let
@@ -1353,6 +1335,7 @@ proc new(T: type LBP2PNode,
     # Its important here to create AsyncQueue with limited size, otherwise
     # it could produce HIGH cpu usage.
     connQueue: newAsyncQueue[PeerAddr](ConcurrentConnections),
+    mountedProtocols: mountedProtocols,
     rng: rng,
     connectTimeout: connectTimeout,
     seenThreshold: seenThreshold,
@@ -1414,9 +1397,110 @@ proc startListening*(node: LBP2PNode) {.async.} =
   else:
     debug "No advertised addresses configured"
 
-proc peerPingerHeartbeat(node: LBP2PNode): Future[void] {.async: (raises: [CancelledError]).}
-proc peerTrimmerHeartbeat(node: LBP2PNode): Future[void] {.async: (raises: [CancelledError]).}
-proc bootstrapHeartbeat(node: LBP2PNode): Future[void] {.async: (raises: [CancelledError]).}
+proc peerTrimmerHeartbeat(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
+  # Disconnect peers in excess of the (soft) max peer count
+  while true:
+    # Only count Connected peers (to avoid counting Disconnecting ones)
+    let
+      connectedPeers = node.peers.values.countIt(
+        it.connectionState == ConnectionState.Connected)
+      excessPeers = connectedPeers - node.wantedPeers
+
+    if excessPeers > 0:
+      # trim connections
+      discard
+
+    await sleepAsync(1.seconds div max(1, excessPeers))
+
+func bootstrapLinkMaintenanceShouldDisconnect*(
+    peerPoolLen, wantedPeers, bootstrapPeersInPool: int
+): bool {.inline.} =
+  ## True when the node is at/above its peer target and at least one admitted
+  ## peer is not a configured bootstrap peer (so bootstrap links may be released).
+  ##
+  ## Matches bootstrap link maintenance in the P2P Network Specification:
+  ## https://github.com/logos-co/logos-lips/blob/master/docs/blockchain/draft/p2p-network.md
+  ## https://github.com/logos-co/logos-lips/blob/master/docs/blockchain/raw/p2p-network-bootstrapping.md
+  peerPoolLen >= wantedPeers and (peerPoolLen - bootstrapPeersInPool) > 0
+
+proc runBootstrapLinkMaintenanceTick*(
+    node: LBP2PNode
+) {.async: (raises: [CancelledError]).} =
+  ## One evaluation of bootstrap link maintenance: disconnect configured bootstrap
+  ## peers when ``bootstrapLinkMaintenanceShouldDisconnect`` holds. Used by
+  ## ``bootstrapHeartbeat`` and tests (no fixed sleep). Policy matches the P2P Network
+  ## Specification (see doc comment on ``bootstrapLinkMaintenanceShouldDisconnect``):
+  ## https://github.com/logos-co/logos-lips/blob/master/docs/blockchain/draft/p2p-network.md
+  ## https://github.com/logos-co/logos-lips/blob/master/docs/blockchain/raw/p2p-network-bootstrapping.md
+  if node.bootstrapPeers.len == 0:
+    return
+
+  let connectedBootstrapPeers =
+    node.bootstrapPeers.filterIt(
+      node.peerPool.hasPeer(it.peerId) and node.switch.isConnected(it.peerId)
+    ).mapIt(it.peerId)
+  let bootstrapPeersInPool =
+    node.bootstrapPeers.countIt(node.peerPool.hasPeer(it.peerId))
+  if not bootstrapLinkMaintenanceShouldDisconnect(
+      node.peerPool.len, node.wantedPeers, bootstrapPeersInPool):
+    return
+
+  # Disconnect one bootstrap peer at a time for gradual release
+  if connectedBootstrapPeers.len > 0:
+    let peer = node.getPeer(connectedBootstrapPeers[0])
+    await peer.disconnect(ClientShutDown)
+
+proc bootstrapHeartbeat(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
+  if node.bootstrapPeers.len == 0:
+    return
+
+  while true:
+    # Sleep first so onboarding and discovery can settle before evaluating release.
+    await sleepAsync(KadBootstrapHeartbeatPeriod)
+    await runBootstrapLinkMaintenanceTick(node)
+
+proc runKadDiscoveryLookupLoop(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
+  debug "Starting Kad discovery lookup loop"
+  while true:
+    if node.peerPool.len < node.wantedPeers:
+      await node.mountedProtocols.kad.kadDiscoveryLookupWalk(node.switch.rng)
+
+    await sleepAsync(KadDiscoveryLookupPeriod)
+
+proc runKadDiscoveryEnqueueLoop(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
+  debug "Starting Kad discovery enqueue loop"
+  while true:
+    if node.peerPool.len < node.wantedPeers:
+      let kad = node.mountedProtocols.kad
+      let (discoveredCount, queuedCount) =
+        await enqueueKadDiscoveredPeers(
+          kad,
+          node.switch,
+          node.peerPool,
+          proc(discovered: DiscoveredPeerAddr): Future[bool]
+              {.async: (raises: [CancelledError]), gcsafe.} =
+            let peerAddr = PeerAddr(
+              peerId: discovered.peerId,
+              addrs: discovered.addrs
+            )
+            return await tryEnqueueOutboundConn(
+              node, peerAddr,
+              proc(p: PeerAddr): bool {.gcsafe, raises: [].} =
+                node.checkPeer(p))
+        )
+      debug "Kad discovery enqueue tick",
+        wanted_peers = node.wantedPeers,
+        current_peers = len(node.peerPool),
+        discovered_nodes = discoveredCount,
+        new_peers = queuedCount
+      if queuedCount == 0:
+        let currentPeers = len(node.peerPool)
+        if currentPeers <= node.wantedPeers shr 2: # 25%
+          warn "Peer count low, no new Kad peers discovered",
+            discovered_nodes = discoveredCount, new_peers = queuedCount,
+            current_peers = currentPeers, wanted_peers = node.wantedPeers
+
+    await sleepAsync(KadDiscoveryLoopPeriod)
 
 func bootstrapPeerIds*(node: LBP2PNode): seq[PeerId] =
   node.bootstrapPeers.mapIt(it.peerId)
@@ -1440,35 +1524,55 @@ proc start*(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
   node.peerPool.setPeerCounter(onPeerCountChanged)
 
   for i in 0 ..< ConcurrentConnections:
-    node.connWorkers.add connectWorker(node, i)
+    node.backgroundTasks.add connectWorker(node, i)
 
-  if node.bootstrapPeers.len > 0:
-    await node.enqueueBootstrapPeers("startup")
-  else:
+  let kadBootstrapInfos = node.bootstrapPeers.mapIt(
+    PeerInfo(peerId: it.peerId, addrs: it.addrs)
+  )
+  if not isNil(node.mountedProtocols.kad):
+    if kadBootstrapInfos.len > 0:
+      notice "Starting Kad DHT with bootstrap peers",
+        bootstrapPeers = kadBootstrapInfos.len
+      debug "Bootstrapping Kad DHT instance"
+      await logosKadBootstrap(
+        node.mountedProtocols.kad, kadBootstrapInfos,
+        proc(b: PeerInfo): Future[bool].Raising([CancelledError]) =
+          connectViaConnQueue(
+            node,
+            PeerAddr(peerId: b.peerId, addrs: b.addrs),
+            proc(p: PeerAddr): bool {.gcsafe, raises: [].} =
+              node.checkPeer(p),
+            node.connectTimeout + (node.connectTimeout div 2)))
+    else:
+      notice "Starting Kad DHT without bootstrap peers " &
+        "(routing table may fill from inbound traffic only)"
+
+  if node.bootstrapPeers.len == 0:
     notice "No libp2p bootstrap multiaddrs configured"
 
-  node.peerPingerHeartbeatFut = node.peerPingerHeartbeat()
-  node.peerTrimmerHeartbeatFut = node.peerTrimmerHeartbeat()
-  node.bootstrapHeartbeatFut = node.bootstrapHeartbeat()
+  if not isNil(node.mountedProtocols.kad):
+    debug "Starting Kad discovery loops (lookup + enqueue)"
+    let lookupFut = node.runKadDiscoveryLookupLoop()
+    let enqueueFut = node.runKadDiscoveryEnqueueLoop()
+    traceAsyncErrors lookupFut
+    traceAsyncErrors enqueueFut
+    node.backgroundTasks.add lookupFut
+    node.backgroundTasks.add enqueueFut
+
+  node.backgroundTasks.add node.peerTrimmerHeartbeat()
+  node.backgroundTasks.add node.bootstrapHeartbeat()
 
 proc stop*(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
-  # Ignore errors in futures, since we're shutting down (but log them on the
-  # TRACE level, if a timeout is reached).
-  #
-  # Heartbeats run only after start(), not after startListening(); we only
-  # append their cancelAndWait futures to this seq when non-nil, so paths like
-  # startListening()+stop never enqueue heartbeat shutdown (would crash on nil).
-  # seq[FutureBase] from the start plus FutureBase(...) on each add unifies
-  # switch / cancelAndWait types (inferring from switch.stop alone
-  # would fix a narrower element type and break add).
-
-  var waitedFutures: seq[FutureBase] = @[FutureBase(node.switch.stop())]
-  if not isNil(node.peerPingerHeartbeatFut):
-    waitedFutures.add FutureBase(node.peerPingerHeartbeatFut.cancelAndWait())
-  if not isNil(node.peerTrimmerHeartbeatFut):
-    waitedFutures.add FutureBase(node.peerTrimmerHeartbeatFut.cancelAndWait())
-  if not isNil(node.bootstrapHeartbeatFut):
-    waitedFutures.add FutureBase(node.bootstrapHeartbeatFut.cancelAndWait())
+  var waitedFutures: seq[FutureBase] = @[]
+  if not isNil(node.mountedProtocols.kad):
+    waitedFutures.add FutureBase(node.mountedProtocols.kad.stop())
+  if not isNil(node.pubsub):
+    waitedFutures.add FutureBase(node.pubsub.stop())
+  waitedFutures.add FutureBase(node.switch.stop())
+  for fut in node.backgroundTasks:
+    if not isNil(fut) and not fut.finished():
+      waitedFutures.add FutureBase(fut.cancelAndWait())
+  node.backgroundTasks.setLen(0)
 
   let
     timeout = 5.seconds
@@ -1484,7 +1588,6 @@ proc init(T: type Peer, network: LBP2PNode, peerId: PeerId): Peer =
     network: network,
     connectionState: ConnectionState.None,
     lastReqTime: now(chronos.Moment),
-    lastMetadataTime: now(chronos.Moment),
     quota: TokenBucket.new(maxRequestQuota.int, fullReplenishTime)
   )
   res.protocolStates.setLen(network.protocolStates.len())
@@ -1643,64 +1746,11 @@ proc p2pProtocolBackendImpl*(p: P2PProtocol): Backend =
 import ./peer_protocol
 export peer_protocol
 
-const
-  MetadataRequestMaxFailures = 3
-
-proc peerPingerHeartbeat(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
-  while true:
-    let heartbeatStart_m = Moment.now()
-    var updateFutures: seq[Future[void]]
-
-    for peer in node.peers.values:
-      if peer.connectionState != ConnectionState.Connected: continue
-
-    await allFutures(updateFutures)
-
-    reset(updateFutures)
-
-    for peer in node.peers.values:
-      if peer.connectionState != ConnectionState.Connected: continue
-
-      if peer.failedMetadataRequests > MetadataRequestMaxFailures:
-        debug "no metadata from peer, kicking it", peer
-        updateFutures.add(peer.disconnect(PeerScoreLow))
-
-    await allFutures(updateFutures)
-
-    await sleepAsync(5.seconds)
-
-proc peerTrimmerHeartbeat(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
-  # Disconnect peers in excess of the (soft) max peer count
-  while true:
-    # Only count Connected peers (to avoid counting Disconnecting ones)
-    let
-      connectedPeers = node.peers.values.countIt(
-        it.connectionState == ConnectionState.Connected)
-      excessPeers = connectedPeers - node.wantedPeers
-
-    if excessPeers > 0:
-      # trim connections
-      discard
-
-    await sleepAsync(1.seconds div max(1, excessPeers))
-
-proc bootstrapHeartbeat(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
-  if node.bootstrapPeers.len == 0:
-    return
-
-  while true:
-    if node.peerPool.len < node.wantedPeers:
-      await node.enqueueBootstrapPeers("heartbeat")
-    # This retry cadence is not specified in the Logos Chain P2P specs.
-    # We use 30s as a pragmatic default: fast enough for recovery, slow enough
-    # to avoid dial/log spam while existing attempts are still in progress/backoff.
-    await sleepAsync(30.seconds)
-
 template udpEndpoint(address, port): auto =
   MultiAddress.init(address, udpProtocol, port)
 
 ## Specs mandate QUIC (`quic-v1`) as the Logos Chain libp2p transport baseline:
-## https://nomos-tech.notion.site/P2P-Network-Specification-206261aa09df81db8100d5f410e39d75?pvs=25
+## https://github.com/logos-co/logos-lips/blob/master/docs/blockchain/draft/p2p-network.md#transport
 ##
 ## Build a QUIC listener/dialable multiaddr endpoint:
 ## ``/ip4|ip6/<addr>/udp/<port>/quic-v1``
@@ -1740,7 +1790,7 @@ func gossipId(data: openArray[byte], topic: string): seq[byte] =
   ctx.update(data)
   ctx.finish().data[0..19]
 
-proc newBeaconSwitch(
+proc newSwitch(
     config: NetworkConfig,
     seckey: PrivateKey,
     address: MultiAddress,
@@ -1814,7 +1864,18 @@ proc createLBP2PNode*(
   # TODO nim-libp2p still doesn't have support for announcing addresses
   # that are different from the host address (this is relevant when we
   # are running behind a NAT).
-  let switch = ?newBeaconSwitch(config, netKeys.seckey, hostAddress, rng)
+  let switch = ?newSwitch(config, netKeys.seckey, hostAddress, rng)
+  let ident =
+    try:
+      mountLogosIdentifyProtocols(switch, switch.peerInfo, config.logosNetwork)
+    except LPError as exc:
+      return err("Cannot mount Logos Identify protocols: " & exc.msg)
+  let kad =
+    try:
+      mountLogosKadProtocols(switch, config.logosNetwork, switch.rng)
+    except LPError as exc:
+      return err("Cannot mount Logos Kad protocols: " & exc.msg)
+  let mounted = MountedLogosProtocols(kad: kad, identify: ident)
 
   func msgIdProvider(m: messages.Message): Result[seq[byte], ValidationResult] =
     ok(gossipId(m.data, m.topic))
@@ -1874,6 +1935,7 @@ proc createLBP2PNode*(
 
   let node = LBP2PNode.new(
     config, switch, pubsub, announcedAddresses, bootstrapPeers,
+    mountedProtocols = mounted,
     rng = rng,
   )
 
@@ -1992,5 +2054,18 @@ proc broadcast(node: LBP2PNode, topic: string, msg: auto):
     Future[SendResult] {.async: (raises: [CancelledError], raw: true).} =
   # Avoid {.async.} copies of message while broadcasting
   broadcast(node, topic, gossipEncode(msg))
+
+when defined(unittest) or defined(test):
+  func dialTableContains*(node: LBP2PNode, pid: PeerId): bool {.inline.} =
+    pid in node.dialTable
+
+  func connTableContains*(node: LBP2PNode, pid: PeerId): bool {.inline.} =
+    pid in node.connTable
+
+  func outboundConnQueueLen*(node: LBP2PNode): int {.inline.} =
+    node.connQueue.len
+
+  proc seenTableContains*(node: LBP2PNode, pid: PeerId): bool {.inline.} =
+    node.isSeen(pid)
 
 {.pop.}
