@@ -87,8 +87,9 @@ func insertDeclaration*(
     id: DeclarationId,
     info: sink DeclarationInfo,
 ): SdpState =
-  state.activeProviders = state.activeProviders.insert((info.service, info.providerId), ())
-  state.activeZkIds = state.activeZkIds.insert((info.service, info.zkId), ())
+  if id notin state.declarations:
+    state.activeProviders = state.activeProviders.insert((info.service, info.providerId), ())
+    state.activeZkIds = state.activeZkIds.insert((info.service, info.zkId), ())
   state.declarations = state.declarations.insert(id, info)
   state
 

@@ -70,7 +70,8 @@ func createBlockRoot*(txs: openArray[SignedMantleTx]): Hash32 =
   ## Computes Merkle root over tx hashes (in block order).
   ## Pads the leaf layer to the next power of two with zero ``Hash32`` leaves,
   ## then pairs ``left || right`` with BLAKE2b-256.
-  ## Empty-root returns default(Hash32) zero hash per Bedrock Block Construction v1.1.2.
+  ## Empty-root returns default(Hash32) zero hash per Cryptarchia Protocol v1.0.2:
+  ## https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/cryptarchia-v1-protocol.md#block-header-validation
   doAssert txs.len <= MaxBlockTxs,
     "tx set exceeds MaxBlockTxs (" & $MaxBlockTxs & "): " & $txs.len
 
