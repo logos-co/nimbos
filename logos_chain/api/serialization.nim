@@ -28,8 +28,6 @@ const
   TextPlainMediaType* = MediaType.init("text/plain")
   OctetStreamMediaType* = MediaType.init("application/octet-stream")
   UrlEncodedMediaType* = MediaType.init("application/x-www-form-urlencoded")
-  UnableDecodeVersionError = "Unable to decode version"
-  UnableDecodeError = "Unable to decode data"
   InvalidContentTypeError* = "Invalid content type"
   UnexpectedForkVersionError* = "Unexpected fork version received"
 

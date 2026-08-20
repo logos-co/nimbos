@@ -318,12 +318,10 @@ proc augmentUserHandler(p: P2PProtocol, userHandlerProc: NimNode) =
   userHandlerProc.addPragma ident"gcsafe"
 
   var
-    getState = ident"getState"
     getNetworkState = ident"getNetworkState"
     protocolInfoVar = p.protocolInfoVar
     protocolNameIdent = p.nameIdent
     PeerType = p.backend.PeerType
-    PeerStateType = p.PeerStateType
     NetworkStateType = p.NetworkStateType
     prelude = newStmtList()
 
@@ -338,12 +336,6 @@ proc augmentUserHandler(p: P2PProtocol, userHandlerProc: NimNode) =
   prelude.add quote do:
     type `currentProtocolSym` {.used.} = `protocolNameIdent`
 
-  # Define local accessors for the peer and the network protocol states
-  # inside each user message handler proc (e.g. peer.state.foo = bar)
-  if PeerStateType != nil:
-    prelude.add quote do:
-      template state(`peerVar`: `PeerType`): `PeerStateType` =
-        `PeerStateType`(`getState`(`peerVar`, `protocolInfoVar`))
 
   if NetworkStateType != nil:
     prelude.add quote do:
