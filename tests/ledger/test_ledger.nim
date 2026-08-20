@@ -704,7 +704,7 @@ suite "block rewards — per-block leader crediting":
 
 suite "fromGenesis — declaration uniqueness":
   # Genesis skips op validation. A ceremony input with a repeated identifier
-  # must fail at load, not halt the chain later.
+  # must fail at load, not corrupt the provider snapshot later.
   test "duplicate zk_id across genesis declarations is rejected":
     let
       zkId = mkUtxo(value = 100, pkSeed = 7).note.zkPublicKey

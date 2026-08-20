@@ -6,7 +6,7 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## SDP Declare validation and application.
-## Spec: [1.1.0 Service Declaration Protocol](https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/bedrock-service-declaration-protocol.md)
+## Spec: [1.3.0 Service Declaration Protocol](https://github.com/logos-co/logos-lips/blob/87d9ae5c65f304bc4f87ae06a8000a91b070734b/docs/blockchain/raw/bedrock-service-declaration-protocol.md)
 
 {.push raises: [], gcsafe.}
 

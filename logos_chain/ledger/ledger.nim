@@ -113,9 +113,9 @@ proc fromGenesis*(
         s.mantleLedger.channels = applyChannelInscribe(
           s.mantleLedger.channels, op.payload.channelInscribe, 0)
       of SdpDeclare:
-        # Genesis skips op validation. The reward snapshot still requires
-        # unique provider_id and zk_id values per service. A duplicate would
-        # halt the chain at the first epoch rotation. Reject it at load.
+        # Genesis skips op validation. The rewards provider snapshot will
+        # key providers by provider_id and hash zk_id leaves. A duplicate
+        # of either corrupts it. Reject the ceremony input at load.
         ?validateServiceScopedUniqueness(op.payload.sdpDeclare, s.sdp.state)
         s.sdp = ?applySdpDeclare(s.sdp, op.payload.sdpDeclare, genesisEpoch)
       else:
