@@ -113,7 +113,7 @@ suite "Kad discovery — peerstore, rtable, peer pool":
       check enqueueCalls == 1
 
       var remotePeer = node.getPeer(remotePeerId)
-      remotePeer.direction = PeerType.Outgoing
+      remotePeer.setDirection(PeerType.Outgoing)
       check node.peerPool.addPeerNoWait(remotePeer, PeerType.Outgoing) ==
         PeerStatus.Success
 
@@ -153,8 +153,96 @@ suite "Kad discovery — peerstore, rtable, peer pool":
     check kad.rtable.insert(remotePeerId)
 
     try:
-      # Should sample 32 random bytes and query findNode without error
-      await kadDiscoveryLookupWalk(kad, newBearSslRng(rng))
+      # Should sample 32 random bytes and query findNode without error using switch RNG
+      await kadDiscoveryLookupWalk(kad, node.switch.rng)
+    finally:
+      await node.stop()
+
+  asyncTest "logosKadBootstrap: nil or empty bootstrap nodes is safe no-op":
+    await logosKadBootstrap(nil, @[], nil)
+
+  asyncTest "logosKadBootstrap: dials bootstrap nodes and runs lookup on success":
+    let rngL = HmacDrbgContext.new()
+    let rngD = HmacDrbgContext.new()
+    let natCfg = nat.NatConfig(hasExtIp: true, extIp: TestLoopbackIp)
+
+    let confL = NetworkConfig(
+      listenAddress: some(TestLoopbackIp),
+      nat: natCfg,
+      quicPort: TestQuicAnyPort,
+      maxPeers: 8,
+      hardMaxPeers: some(8),
+      agentString: "kad-boot-listener",
+    )
+    let confD = NetworkConfig(
+      listenAddress: some(TestLoopbackIp),
+      nat: natCfg,
+      quicPort: TestQuicAnyPort,
+      maxPeers: 8,
+      hardMaxPeers: some(8),
+      agentString: "kad-boot-dialer",
+    )
+    let listener = createLBP2PNode(
+      rngL, confL, rngL.getRandomNetKeys()
+    ).expect("createLBP2PNode failed for listener")
+    let dialer = createLBP2PNode(
+      rngD, confD, rngD.getRandomNetKeys()
+    ).expect("createLBP2PNode failed for dialer")
+
+    await listener.startListening()
+    await dialer.startListening()
+
+    let kad = dialer.mountedProtocols.kad
+    let bInfo = PeerInfo(
+      peerId: listener.switch.peerInfo.peerId,
+      addrs: listener.switch.peerInfo.addrs
+    )
+
+    var dialed = false
+    proc dialPeer(b: PeerInfo): Future[bool] {.async: (raises: [CancelledError]).} =
+      dialed = true
+      try:
+        let conn = await dialer.switch.dial(b.peerId, b.addrs, logosKadCodec(confD.logosNetwork))
+        if not isNil(conn):
+          return true
+      except CancelledError as exc:
+        raise exc
+      except CatchableError:
+        return false
+      return false
+
+    try:
+      await logosKadBootstrap(kad, @[bInfo], dialPeer)
+      check dialed
+    finally:
+      await dialer.stop()
+      await listener.stop()
+
+  asyncTest "logosKadBootstrap: handles failed bootstrap dial without error":
+    let rng = HmacDrbgContext.new()
+    let netCfg = NetworkConfig(
+      listenAddress: some(TestLoopbackIp),
+      nat: nat.NatConfig(hasExtIp: true, extIp: TestLoopbackIp),
+      quicPort: TestQuicAnyPort,
+      maxPeers: 8,
+      hardMaxPeers: some(8),
+      agentString: "kad-bootstrap-fail-test",
+    )
+    let node = createLBP2PNode(
+      rng, netCfg, rng.getRandomNetKeys()
+    ).expect("createLBP2PNode failed for kad-bootstrap-fail-test")
+    await node.startListening()
+    let kad = node.mountedProtocols.kad
+    let bKeys = node.rng.getRandomNetKeys()
+    let bPid = PeerId.init(bKeys.seckey).tryGet()
+    let bAddr = MultiAddress.init("/ip4/127.0.0.1/udp/4333/quic-v1").tryGet()
+    let bInfo = PeerInfo(peerId: bPid, addrs: @[bAddr])
+
+    proc mockDialFail(b: PeerInfo): Future[bool] {.async: (raises: [CancelledError]).} =
+      return false
+
+    try:
+      await logosKadBootstrap(kad, @[bInfo], mockDialFail)
     finally:
       await node.stop()
 
@@ -219,6 +307,19 @@ suite "Bootstrap multiaddress parsing":
     check parsedNodes.len == 2
     check parsedNodes[0][0] == pid1
     check parsedNodes[1][0] == pid2
+
+  test "loadBootstrapNodes: handles missing file and unsupported extension gracefully":
+    let confMissing = NetworkConfig(
+      bootstrapNodesFile: InputFile("non_existent_bootstrap_file_12345.txt")
+    )
+    let nodesMissing = loadBootstrapNodes(confMissing)
+    check nodesMissing.len == 0
+
+    let confBadExt = NetworkConfig(
+      bootstrapNodesFile: InputFile("invalid_format.json")
+    )
+    let nodesBadExt = loadBootstrapNodes(confBadExt)
+    check nodesBadExt.len == 0
 
 suite "Bootstrap link maintenance and disconnection":
   test "bootstrapLinkMaintenanceShouldDisconnect: predicate boundaries":

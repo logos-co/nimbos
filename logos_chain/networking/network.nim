@@ -72,7 +72,7 @@ type
     protocols: seq[ProtocolInfo]
       ## Protocols managed by the DSL and mounted on the switch
     protocolStates: seq[RootRef]
-    connectTimeout*: chronos.Duration
+    connectTimeout: chronos.Duration
     seenThreshold: chronos.Duration
     connQueue: AsyncQueue[PeerAddr]
     seenTable: Table[PeerId, SeenItem]
@@ -97,11 +97,11 @@ type
     connectionState*: ConnectionState
     protocolStates: seq[RootRef]
     netThroughput: AverageThroughput
-    score*: int
+    score: int
     quota: TokenBucket
     lastReqTime: Moment
     connections: int
-    direction*: PeerType
+    direction: PeerType
     disconnectedFut: Future[void]
     statistics: SyncResponseStats
 
@@ -194,8 +194,6 @@ type
 
     UnknownError
 
-  NetworkingErrorKind* = NetErrorKind
-
   NetError* = object
     case kind*: NetErrorKind
     of ReceivedErrorResponse:
@@ -203,8 +201,6 @@ type
       errorMsg*: string
     else:
       discard
-
-  NetworkingError* = NetError
 
   InvalidInputsError = object of CatchableError
 
@@ -1400,15 +1396,16 @@ proc startListening*(node: LBP2PNode) {.async.} =
 proc peerTrimmerHeartbeat(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
   # Disconnect peers in excess of the (soft) max peer count
   while true:
-    # Only count Connected peers (to avoid counting Disconnecting ones)
-    let
-      connectedPeers = node.peers.values.countIt(
-        it.connectionState == ConnectionState.Connected)
-      excessPeers = connectedPeers - node.wantedPeers
+    let excessPeers = node.peerPool.len - node.wantedPeers
 
     if excessPeers > 0:
-      # trim connections
-      discard
+      var dropped = 0
+      for peer in node.peerPool.peers:
+        debug "Trimming excess peer", peer = peer.peerId
+        await peer.disconnect(ClientShutDown)
+        inc dropped
+        if dropped == excessPeers:
+          break
 
     await sleepAsync(1.seconds div max(1, excessPeers))
 
@@ -1447,7 +1444,12 @@ proc runBootstrapLinkMaintenanceTick*(
 
   # Disconnect one bootstrap peer at a time for gradual release
   if connectedBootstrapPeers.len > 0:
-    let peer = node.getPeer(connectedBootstrapPeers[0])
+    let peerIdToDrop =
+      if not isNil(node.switch.rng):
+        node.switch.rng.pickOne(connectedBootstrapPeers).get(connectedBootstrapPeers[0])
+      else:
+        connectedBootstrapPeers[0]
+    let peer = node.getPeer(peerIdToDrop)
     await peer.disconnect(ClientShutDown)
 
 proc bootstrapHeartbeat(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
@@ -2067,5 +2069,11 @@ when defined(unittest) or defined(test):
 
   proc seenTableContains*(node: LBP2PNode, pid: PeerId): bool {.inline.} =
     node.isSeen(pid)
+
+  proc setConnectTimeout*(node: LBP2PNode, timeout: chronos.Duration) {.inline.} =
+    node.connectTimeout = timeout
+
+  proc setDirection*(peer: Peer, direction: PeerType) {.inline.} =
+    peer.direction = direction
 
 {.pop.}

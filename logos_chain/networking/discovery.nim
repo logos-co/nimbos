@@ -58,7 +58,7 @@ proc collectKadDiscoveredPeers[T](
     sw: Switch,
     peerPool: PeerPool[T, PeerId],
 ): seq[DiscoveredPeerAddr] =
-  if isNil(kad):
+  if isNil(kad) or isNil(sw):
     return @[]
   var seen = initHashSet[PeerId]()
   for bucket in kad.rtable.buckets:
@@ -101,6 +101,9 @@ proc logosKadBootstrap*(
     bootstrapNodes: seq[PeerInfo],
     dialBootstrapPeer: BootstrapDial,
 ) {.async: (raises: [CancelledError]).} =
+  if isNil(kad) or bootstrapNodes.len == 0:
+    return
+
   debug "Starting Logos Kad bootstrap", peers = bootstrapNodes.len
 
   kad.updatePeers(bootstrapNodes)

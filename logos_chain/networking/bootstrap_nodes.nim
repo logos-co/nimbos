@@ -74,10 +74,8 @@ proc loadBootstrapFile(
         addBootstrapNode(ln, bootstrapPeers)
     except IOError as e:
       error "Could not read bootstrap file", msg = e.msg
-      quit 1
   else:
     error "Unknown bootstrap file format", ext
-    quit 1
 
 proc loadBootstrapNodes*(config: NetworkConfig): seq[(PeerId, MultiAddress)] =
   var bootstrapPeers: seq[(PeerId, MultiAddress)]

@@ -189,7 +189,7 @@ suite "Network connection state — connTable, connQueue, dialTable, seenTable":
     let node = createLBP2PNode(
       rng, conf, rng.getRandomNetKeys()
     ).expect("createLBP2PNode failed for connect-via-queue-timeout")
-    node.connectTimeout = 150.milliseconds
+    node.setConnectTimeout(150.milliseconds)
     await node.startListening()
     await node.start()
 
@@ -223,7 +223,7 @@ suite "Network connection state — connTable, connQueue, dialTable, seenTable":
     let node = createLBP2PNode(
       rng, conf, rng.getRandomNetKeys()
     ).expect("createLBP2PNode failed for connecting-peers-state")
-    node.connectTimeout = 250.milliseconds
+    node.setConnectTimeout(250.milliseconds)
     await node.startListening()
     await node.start()
 

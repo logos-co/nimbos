@@ -47,7 +47,7 @@ proc mountLogosIdentifyProtocols*(
   ident
 
 proc mountLogosKadProtocols*(
-    sw: Switch, network: LogosNetworkKind, rng: Rng = newRng()
+    sw: Switch, network: LogosNetworkKind, rng: Rng
 ): KadDHT {.raises: [LPError].} =
   let codec = logosKadCodec(network)
   let kad = KadDHT.new(sw, rng = rng, codec = codec)
