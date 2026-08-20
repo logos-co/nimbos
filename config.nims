@@ -134,7 +134,6 @@ switch("passL", "-fno-omit-frame-pointer")
 --define:chronosStrictReentrancy
 
 switch("define", "nim_compiler_path=" & currentDir & "env.sh nim")
-switch("define", "withoutPCRE")
 
 when not defined(disable_libbacktrace):
   --define:nimStackTraceOverride
@@ -176,6 +175,7 @@ switch("warningAsError", "LongLiterals:on")
 switch("warningAsError", "ProveField:on")
 switch("warningAsError", "StmtListLambda:on")
 switch("warningAsError", "UnreachableCode:on")
+switch("warningAsError", "UnreachableElse:on")
 switch("warningAsError", "UnusedImport:on")
 switch("hintAsError", "ConvFromXtoItselfNotNeeded:on")
 switch("hintAsError", "DuplicateModuleImport:on")
