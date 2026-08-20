@@ -21,8 +21,8 @@ import
   eth/net/nat,
   libp2p/[switch, peerid, multiaddress]
 
-suite "Network connection state — connTable, connQueue, dialTable, seenTable":
-  asyncTest "tryEnqueueOutboundConn: eligible peer is reserved and queued once":
+suite "Network connection state — outboundTable, connQueue, seenTable":
+  asyncTest "tryEnqueueOutboundConn: eligible peer is reserved in outboundTable (Queued) and queued once":
     let rng = HmacDrbgContext.new()
     let conf = NetworkConfig(
       listenAddress: some(TestLoopbackIp),
@@ -43,12 +43,12 @@ suite "Network connection state — connTable, connQueue, dialTable, seenTable":
 
     check await tryEnqueueOutboundConn(
       node, pa, proc(p: PeerAddr): bool = true)
-    check node.connTableContains(pid)
+    check node.outboundStage(pid) == Opt.some(OutboundConnStage.Queued)
     check node.outboundConnQueueLen == 1
     check not await tryEnqueueOutboundConn(
       node, pa, proc(p: PeerAddr): bool = true)
 
-  asyncTest "tryEnqueueOutboundConn: ineligible peer does not touch connTable":
+  asyncTest "tryEnqueueOutboundConn: ineligible peer does not touch outboundTable":
     let rng = HmacDrbgContext.new()
     let conf = NetworkConfig(
       listenAddress: some(TestLoopbackIp),
@@ -69,12 +69,12 @@ suite "Network connection state — connTable, connQueue, dialTable, seenTable":
 
     check not await tryEnqueueOutboundConn(
       node, pa, proc(p: PeerAddr): bool = false)
-    check not node.connTableContains(pid)
+    check node.outboundStage(pid).isNone
     check node.outboundConnQueueLen == 0
 
-  asyncTest "tryEnqueueOutboundConn: CancelledError rolls back connTable":
+  asyncTest "tryEnqueueOutboundConn: CancelledError rolls back outboundTable":
     ## ``connQueue`` is bounded (``ConcurrentConnections`` in network). Fill it so the
-    ## next ``addLast`` blocks; cancelling that future must unwind and ``excl`` the id.
+    ## next ``addLast`` blocks; cancelling that future must unwind and delete from ``outboundTable``.
     const queueCap = 20
     let rng = HmacDrbgContext.new()
     let conf = NetworkConfig(
@@ -121,7 +121,7 @@ suite "Network connection state — connTable, connQueue, dialTable, seenTable":
     except CancelledError:
       gotCancelled = true
     check gotCancelled
-    check not node.connTableContains(pidBlocked)
+    check node.outboundStage(pidBlocked).isNone
 
   asyncTest "connectViaConnQueue: bootstrap-style integration connects a live peer":
     let rngL = HmacDrbgContext.new()
@@ -210,7 +210,7 @@ suite "Network connection state — connTable, connQueue, dialTable, seenTable":
     finally:
       await node.stop()
 
-  asyncTest "connectWorker: in-flight dial appears in dialTable and clears after failure":
+  asyncTest "connectWorker: in-flight dial transitions to Dialing stage and clears after failure":
     let rng = HmacDrbgContext.new()
     let conf = NetworkConfig(
       listenAddress: some(TestLoopbackIp),
@@ -242,7 +242,7 @@ suite "Network connection state — connTable, connQueue, dialTable, seenTable":
 
       var sawConnecting = false
       for _ in 0 ..< 50:
-        if node.dialTableContains(deadPid) or node.seenTableContains(deadPid):
+        if node.outboundStage(deadPid) == Opt.some(OutboundConnStage.Dialing) or node.seenTableContains(deadPid):
           sawConnecting = true
           break
         await sleepAsync(chronos.milliseconds(5))
@@ -260,7 +260,7 @@ suite "Network connection state — connTable, connQueue, dialTable, seenTable":
 
       var cleared = false
       for _ in 0 ..< 300:
-        if not node.dialTableContains(deadPid):
+        if node.outboundStage(deadPid).isNone:
           cleared = true
           break
         await sleepAsync(chronos.milliseconds(10))

@@ -63,6 +63,10 @@ type
     peerId: PeerId
     stamp: chronos.Moment
 
+  OutboundConnStage* {.pure.} = enum
+    Queued   ## Reserved in connQueue waiting for a worker
+    Dialing  ## Popped from connQueue and actively executing switch.connect
+
   LBP2PNode* = ref object of RootObj
     switch*: Switch
     pubsub: GossipSub
@@ -76,8 +80,7 @@ type
     seenThreshold: chronos.Duration
     connQueue: AsyncQueue[PeerAddr]
     seenTable: Table[PeerId, SeenItem]
-    dialTable: HashSet[PeerId]
-    connTable: HashSet[PeerId]
+    outboundTable: Table[PeerId, OutboundConnStage]
     mountedProtocols*: MountedLogosProtocols
     rng*: ref HmacDrbgContext
     peers: Table[PeerId, Peer]
@@ -1067,13 +1070,19 @@ proc handleIncomingStream(network: LBP2PNode,
     await noCancel conn.closeWithEOF()
     releasePeer(peer)
 
+func outboundStage*(node: LBP2PNode, pid: PeerId): Opt[OutboundConnStage] {.inline.} =
+  node.outboundTable.withValue(pid, stage) do:
+    return Opt.some(stage[])
+  do:
+    return Opt.none(OutboundConnStage)
+
 proc checkPeer(node: LBP2PNode, peerAddr: PeerAddr): bool =
   logScope: peer = peerAddr.peerId
   let peerId = peerAddr.peerId
   if node.peerPool.hasPeer(peerId):
     trace "Already connected"
     false
-  elif peerId in node.dialTable:
+  elif node.outboundStage(peerId) == Opt.some(OutboundConnStage.Dialing):
     trace "Dial already in progress"
     false
   else:
@@ -1088,20 +1097,19 @@ proc tryEnqueueOutboundConn*(
     peerAddr: PeerAddr,
     isEligible: proc(peerAddr: PeerAddr): bool {.gcsafe, raises: [].},
 ): Future[bool] {.async: (raises: [CancelledError]).} =
-  ## Reserve ``peerAddr.peerId`` in ``connTable`` and enqueue a dial. On
-  ## ``CancelledError`` from ``addLast``, roll back the reservation (same as the
-  ## Kad discovery enqueue callback). Takes ``LBP2PNode`` (a ref) so the async
-  ## closure can safely reach ``connTable`` / ``connQueue``.
+  ## Reserve ``peerAddr.peerId`` in ``outboundTable`` (stage ``Queued``) and enqueue a dial.
+  ## On ``CancelledError`` from ``addLast``, roll back the reservation. Takes ``LBP2PNode``
+  ## (a ref) so the async closure can safely reach ``outboundTable`` / ``connQueue``.
   if not isEligible(peerAddr):
     return false
   let peerId = peerAddr.peerId
-  if peerId in node.connTable:
+  if peerId in node.outboundTable:
     return false
-  node.connTable.incl(peerId)
+  node.outboundTable[peerId] = OutboundConnStage.Queued
   try:
     await node.connQueue.addLast(peerAddr)
   except CancelledError as exc:
-    node.connTable.excl(peerId)
+    node.outboundTable.del(peerId)
     raise exc
   return true
 
@@ -1129,9 +1137,9 @@ proc connectViaConnQueue*(
   let enqueued = await tryEnqueueOutboundConn(node, peerAddr, isEligible)
   if not enqueued and not node.switch.isConnected(peerAddr.peerId):
     # This call did not enqueue a dial, and we are still disconnected.
-    # If ``connTable`` also has no reservation for this peer id, no other
+    # If ``outboundTable`` also has no reservation for this peer id, no other
     # caller/worker has an in-flight dial either, so waiting cannot succeed.
-    if peerAddr.peerId notin node.connTable:
+    if peerAddr.peerId notin node.outboundTable:
       return false
 
   return await waitUntilSwitchConnected(
@@ -1143,10 +1151,6 @@ proc dialPeer(node: LBP2PNode, peerAddr: PeerAddr, index = 0) {.async: (raises: 
     peer = peerAddr.peerId
     index = index
 
-  if not(node.checkPeer(peerAddr)):
-    return
-
-  node.dialTable.incl(peerAddr.peerId)
   debug "Connecting to discovered peer", addrs = peerAddr.addrs
   var deadline = sleepAsync(node.connectTimeout)
   var workfut = node.switch.connect(
@@ -1178,8 +1182,6 @@ proc dialPeer(node: LBP2PNode, peerAddr: PeerAddr, index = 0) {.async: (raises: 
     debug "Connection to remote peer failed", msg = exc.msg, addrs = peerAddr.addrs
     inc nbc_failed_dials
     node.addSeen(peerAddr.peerId, SeenTableTimeDeadPeer)
-  finally:
-    node.dialTable.excl(peerAddr.peerId)
 
 proc connectWorker(node: LBP2PNode, index: int) {.async: (raises: [CancelledError]).} =
   debug "Connection worker started", index = index
@@ -1187,16 +1189,15 @@ proc connectWorker(node: LBP2PNode, index: int) {.async: (raises: [CancelledErro
     # This loop will never produce HIGH CPU usage because it will wait
     # and block until it not obtains new peer from the queue ``connQueue``.
     let remotePeerAddr = await node.connQueue.popFirst()
-    # Release connTable reservation for this id after we finish handling the
+    # Release outboundTable reservation for this id after we finish handling the
     # queue item (dial or skip), including on CancelledError from dialPeer.
     try:
-      # Previous worker dial might have hit the maximum peers.
-      # TODO: could clear the whole connTable and connQueue here also, best
-      # would be to have this event based coming from peer pool or libp2p.
-      if node.peerPool.len < node.hardMaxPeers:
+      # Previous worker dial might have hit the maximum peers or peer became ineligible.
+      if node.peerPool.len < node.hardMaxPeers and node.checkPeer(remotePeerAddr):
+        node.outboundTable[remotePeerAddr.peerId] = OutboundConnStage.Dialing
         await node.dialPeer(remotePeerAddr, index)
     finally:
-      node.connTable.excl(remotePeerAddr.peerId)
+      node.outboundTable.del(remotePeerAddr.peerId)
 
 proc handlePeer*(peer: Peer) {.async: (raises: [CancelledError]).} =
   let res = peer.network.peerPool.addPeerNoWait(peer, peer.direction)
@@ -1231,7 +1232,6 @@ proc handlePeer*(peer: Peer) {.async: (raises: [CancelledError]).} =
 proc onConnEvent(
     node: LBP2PNode, peerId: PeerId, event: ConnEvent) {.
     async: (raises: [CancelledError]).} =
-  node.dialTable.excl(peerId)
   let peer = node.getPeer(peerId)
   case event.kind
   of ConnEventKind.Connected:
@@ -2058,11 +2058,8 @@ proc broadcast(node: LBP2PNode, topic: string, msg: auto):
   broadcast(node, topic, gossipEncode(msg))
 
 when defined(unittest) or defined(test):
-  func dialTableContains*(node: LBP2PNode, pid: PeerId): bool {.inline.} =
-    pid in node.dialTable
-
-  func connTableContains*(node: LBP2PNode, pid: PeerId): bool {.inline.} =
-    pid in node.connTable
+  func outboundTableContains*(node: LBP2PNode, pid: PeerId): bool {.inline.} =
+    pid in node.outboundTable
 
   func outboundConnQueueLen*(node: LBP2PNode): int {.inline.} =
     node.connQueue.len
