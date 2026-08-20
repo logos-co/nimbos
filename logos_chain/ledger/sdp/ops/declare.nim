@@ -34,6 +34,20 @@ proc verifySdpDeclareProofs*(
     return err(InvalidProof)
   ?verifyZkSig(proof.zkSig, txHash, @[noteZkPublicKey, declaration.zkId])
 
+func validateServiceScopedUniqueness*(
+    declaration: DeclarationMessage, state: SdpState,
+): Result[void, LedgerError] =
+  ## Rejects a declaration whose provider_id or zk_id is already declared in
+  ## the same service.
+  for info in state.declarations.values:
+    if info.service != declaration.serviceType:
+      continue
+    if info.providerId == declaration.providerId:
+      return err(DuplicateProviderId)
+    if info.zkId == declaration.zkId:
+      return err(DuplicateZkId)
+  ok()
+
 proc validateSdpDeclare(
     declaration: DeclarationMessage,
     proof: ZkAndEd25519SigsProof,
@@ -68,6 +82,7 @@ proc validateSdpDeclare(
   let declarationId = declarationId(declaration)
   if declarationId in state.declarations:
     return err(DuplicateDeclaration)
+  ?validateServiceScopedUniqueness(declaration, state)
 
   ?verifySdpDeclareProofs(
     declaration, proof, txHash, note.zkPublicKey,

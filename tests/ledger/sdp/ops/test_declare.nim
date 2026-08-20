@@ -44,6 +44,90 @@ suite "ledger/sdp/ops/declare":
     discard installTestDeclaration(registry, declaration, 1)
     check execDeclare(registry, declaration, store, 2).isErr
 
+  test "tryApplySdpDeclare rejects a provider_id already declared in the service":
+    let
+      utxoA = mkUtxo(value = 200, pkSeed = 20)
+      utxoB = mkUtxo(value = 200, pkSeed = 21)
+    var store = UtxoStore.init()
+    store = store.insert(utxoA.id, utxoA).store
+    store = store.insert(utxoB.id, utxoB).store
+    let
+      declarationA = DeclarationMessage(
+        serviceType: ServiceType.bn,
+        locators: @[mkLocator(30401)],
+        providerId: mkProvider(10),
+        lockedNoteId: utxoA.id,
+        zkId: utxoA.note.zkPublicKey,
+      )
+      declarationB = DeclarationMessage(
+        serviceType: ServiceType.bn,
+        locators: @[mkLocator(30402)],
+        providerId: mkProvider(10),
+        lockedNoteId: utxoB.id,
+        zkId: utxoB.note.zkPublicKey,
+      )
+    var registry = testSdpRegistry()
+    discard installTestDeclaration(registry, declarationA, 1)
+    let declareResult = execDeclare(registry, declarationB, store, 2)
+    check declareResult.isErr
+    check declareResult.error == DuplicateProviderId
+
+  test "tryApplySdpDeclare rejects a zk_id already declared in the service":
+    let
+      utxoA = mkUtxo(value = 200, pkSeed = 22)
+      utxoB = mkUtxo(value = 200, pkSeed = 23)
+    var store = UtxoStore.init()
+    store = store.insert(utxoA.id, utxoA).store
+    store = store.insert(utxoB.id, utxoB).store
+    let
+      declarationA = DeclarationMessage(
+        serviceType: ServiceType.bn,
+        locators: @[mkLocator(30403)],
+        providerId: mkProvider(11),
+        lockedNoteId: utxoA.id,
+        zkId: mkZkPubKey(30),
+      )
+      declarationB = DeclarationMessage(
+        serviceType: ServiceType.bn,
+        locators: @[mkLocator(30404)],
+        providerId: mkProvider(12),
+        lockedNoteId: utxoB.id,
+        zkId: mkZkPubKey(30),
+      )
+    var registry = testSdpRegistry()
+    discard installTestDeclaration(registry, declarationA, 1)
+    let declareResult = execDeclare(registry, declarationB, store, 2)
+    check declareResult.isErr
+    check declareResult.error == DuplicateZkId
+
+  test "tryApplySdpDeclare reports provider_id when both identifiers repeat":
+    let
+      utxoA = mkUtxo(value = 200, pkSeed = 24)
+      utxoB = mkUtxo(value = 200, pkSeed = 25)
+    var store = UtxoStore.init()
+    store = store.insert(utxoA.id, utxoA).store
+    store = store.insert(utxoB.id, utxoB).store
+    let
+      declarationA = DeclarationMessage(
+        serviceType: ServiceType.bn,
+        locators: @[mkLocator(30405)],
+        providerId: mkProvider(13),
+        lockedNoteId: utxoA.id,
+        zkId: mkZkPubKey(31),
+      )
+      declarationB = DeclarationMessage(
+        serviceType: ServiceType.bn,
+        locators: @[mkLocator(30406)],
+        providerId: mkProvider(13),
+        lockedNoteId: utxoB.id,
+        zkId: mkZkPubKey(31),
+      )
+    var registry = testSdpRegistry()
+    discard installTestDeclaration(registry, declarationA, 1)
+    let declareResult = execDeclare(registry, declarationB, store, 2)
+    check declareResult.isErr
+    check declareResult.error == DuplicateProviderId
+
   test "tryApplySdpDeclare rejects missing locked note and insufficient stake":
     let utxo = mkUtxo(value = 50, pkSeed = 3)
     var store = UtxoStore.init()

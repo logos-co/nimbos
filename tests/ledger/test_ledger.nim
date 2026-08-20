@@ -702,4 +702,53 @@ suite "block rewards — per-block leader crediting":
     s = s.tryApplyHeader(200'u64, mkProof(), testLedgerConfig).expect("rotation")
     check s.cryptarchiaLedger.leader.leadersRewards == 2 * emission
 
+suite "fromGenesis — declaration uniqueness":
+  # Genesis skips op validation. A ceremony input with a repeated identifier
+  # must fail at load, not halt the chain later.
+  test "duplicate zk_id across genesis declarations is rejected":
+    let
+      zkId = mkUtxo(value = 100, pkSeed = 7).note.zkPublicKey
+      declA = DeclarationMessage(
+        serviceType: ServiceType.bn,
+        locators: @[mkLocator(30301)],
+        providerId: mkProvider(1),
+        zkId: zkId,
+        lockedNoteId: mkUtxo(value = 100, pkSeed = 1).id)
+      declB = DeclarationMessage(
+        serviceType: ServiceType.bn,
+        locators: @[mkLocator(30302)],
+        providerId: mkProvider(2),
+        zkId: zkId,
+        lockedNoteId: mkUtxo(value = 100, pkSeed = 2).id)
+      tx = SignedMantleTx(tx: MantleTx(
+        ops: @[createSdpDeclareOp(declA), createSdpDeclareOp(declB)]))
+      r = LedgerState.fromGenesis(
+        [tx], default(FieldElement), testSdpRegistry(), testLedgerConfig)
+    check:
+      r.isErr
+      r.error == DuplicateZkId
+
+  test "duplicate provider_id across genesis declarations is rejected":
+    let
+      providerId = mkProvider(1)
+      declA = DeclarationMessage(
+        serviceType: ServiceType.bn,
+        locators: @[mkLocator(30301)],
+        providerId: providerId,
+        zkId: mkUtxo(value = 100, pkSeed = 7).note.zkPublicKey,
+        lockedNoteId: mkUtxo(value = 100, pkSeed = 1).id)
+      declB = DeclarationMessage(
+        serviceType: ServiceType.bn,
+        locators: @[mkLocator(30302)],
+        providerId: providerId,
+        zkId: mkUtxo(value = 100, pkSeed = 8).note.zkPublicKey,
+        lockedNoteId: mkUtxo(value = 100, pkSeed = 2).id)
+      tx = SignedMantleTx(tx: MantleTx(
+        ops: @[createSdpDeclareOp(declA), createSdpDeclareOp(declB)]))
+      r = LedgerState.fromGenesis(
+        [tx], default(FieldElement), testSdpRegistry(), testLedgerConfig)
+    check:
+      r.isErr
+      r.error == DuplicateProviderId
+
 {.pop.}

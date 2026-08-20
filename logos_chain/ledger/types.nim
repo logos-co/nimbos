@@ -43,6 +43,8 @@ type
     TooManyLocators
     InvalidLocator
     DuplicateDeclaration
+    DuplicateProviderId ## provider_id already declared in the same service
+    DuplicateZkId ## zk_id already declared in the same service
     LockedNoteNotFound
     InsufficientStake
     LockedNoteServiceConflict
