@@ -66,9 +66,12 @@ suite "chain/epoch wiring (devnet deployment settings)":
       param = ds.cryptarchia.genesisState.cryptarchiaParameter().valueOr:
         check false
         return
+      cfg = ledgerConfig(ds)
       state = LedgerState.fromGenesis(
         [ds.cryptarchia.genesisState.signedMantleTx], param.epochNonce,
-        SdpRegistry.init(ds.cryptarchia.sdpConfig), ledgerConfig(ds)).valueOr:
+        SdpRegistry.init(
+          ds.cryptarchia.sdpConfig,
+          blendRewardsParams(ds, cfg.epochSchedule.epochLength)), cfg).valueOr:
         check false
         return
     check:

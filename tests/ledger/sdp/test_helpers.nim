@@ -12,7 +12,7 @@ import
   libp2p/[crypto/ed25519/ed25519, multiaddress],
   ../../../logos_chain/ledger/sdp/ops/util,
   ../../../logos_chain/ledger/sdp/[registry, ops, state],
-  ../../../logos_chain/core/crypto/types,
+  ../../../logos_chain/core/crypto/[hashing, types],
   ../../../logos_chain/core/mantle/[operations, proofs, utxo],
   ../../../logos_chain/ledger/[channel_notes, utxo_store],
   ../../../logos_chain/zk/poseidon2/hasher,
@@ -21,6 +21,29 @@ import
 
 export ops, utxo, utxo_store, operations, channel_notes
 
+# Devnet-shaped reward parameters; two providers is the smallest network
+# that can freeze a target epoch.
+const testBlendRewardsParams* = BlendRewardsParams(
+  roundsPerEpoch: 6000,
+  messageFrequencyPerRound: 1.0,
+  numBlendLayers: 4,
+  dataReplicationFactor: 0,
+  minimumNetworkSize: 2,
+  activityThresholdSensitivity: 1)
+
+# With 2-3 providers chi lands at 59 (8 digest bytes) and the threshold at
+# 57 of 64 bits, so an honestly-built token fails the lottery with
+# probability ~4.5e-12 (~1.4e-11 across three) — and the inputs are fixed.
+# At 2^56 rounds the quota product runs past 2^53, where the float carries a
+# few ulp of slack; the IEEE result is still the same on every platform.
+const testBlendLotteryParams* = BlendRewardsParams(
+  roundsPerEpoch: 1'u64 shl 56,
+  messageFrequencyPerRound: 1.0,
+  numBlendLayers: 4,
+  dataReplicationFactor: 0,
+  minimumNetworkSize: 2,
+  activityThresholdSensitivity: 0)
+
 func testSdpConfig*(): deploy.SdpConfig =
   deploy.SdpConfig(
     bn: deploy.BnServiceParams(inactivityPeriod: 2, epoch: 0),
@@ -28,7 +51,46 @@ func testSdpConfig*(): deploy.SdpConfig =
   )
 
 func testSdpRegistry*(): SdpRegistry =
-  SdpRegistry.init(testSdpConfig())
+  SdpRegistry.init(testSdpConfig(), testBlendRewardsParams)
+
+let nullifierDomain: FieldElement =
+  frFromBytesLE("KEY_NULLIFIER_V1".toOpenArrayByte(0, 15)).get
+
+proc selectionIndex*(rho: FieldElement, membership: uint64): uint64 =
+  ## Test-side restatement of spec §Proof of Selection condition 1.
+  var seedInput = @("BlendNode".toOpenArrayByte(0, 8))
+  seedInput.add encodeFieldElement(rho)
+  var seed: Blake2bPrngSeed
+  seed[0 ..< 64] = blake2bVar(seedInput, 64)
+  let stream = prngBlock(seed, 0)
+  var value = 0'u64
+  for i in countdown(7, 0):
+    value = value shl 8 or uint64(stream[i])
+  value mod membership
+
+proc findRho*(index, membership: uint64): FieldElement =
+  ## Smallest fe(k) whose selection index is `index`. One in `membership`
+  ## candidates matches, so the bound is never reached in practice.
+  for k in 1'u64 .. 10_000'u64:
+    let rho = frFromBytesLE(encodeLe(k)).get
+    if selectionIndex(rho, membership) == index:
+      return rho
+  doAssert false, "no selection randomness found for the requested index"
+
+proc mkActivity*(
+    rho: FieldElement, epoch: uint32, keySeed: byte
+): ActivityProof =
+  ## Activity proof whose nullifier binds to `rho`, as the circuit requires.
+  var
+    proof = ActivityProof(
+      epoch: epoch,
+      proofOfQuota: ProofOfQuota(
+        keyNullifier: Poseidon2Hasher.compress(nullifierDomain, rho)),
+      proofOfSelection: rho)
+    keyBytes: array[32, byte]
+  keyBytes[0] = keySeed
+  doAssert proof.signingKey.init(keyBytes)
+  proof
 
 proc mkProvider*(seed: byte): ProviderId =
   var bytes: array[EdPublicKeySize, byte]

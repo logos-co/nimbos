@@ -702,4 +702,21 @@ suite "block rewards — per-block leader crediting":
     s = s.tryApplyHeader(200'u64, mkProof(), testLedgerConfig).expect("rotation")
     check s.cryptarchiaLedger.leader.leadersRewards == 2 * emission
 
+  test "each block accrues the blend share as epoch income":
+    # The same fixtures emit a blend share of 57 (60% against leader's 38).
+    var s = mkState([mkUtxo()])
+    s = s.creditBlockRewards(GasCost(0), GasCost(0)).expect("credited")
+    check s.sdp.blendRewards.epochIncome == 57
+    s = s.creditBlockRewards(GasCost(0), GasCost(0)).expect("credited")
+    check s.sdp.blendRewards.epochIncome == 114
+
+  test "a rotation without blend providers mints nothing, resets income":
+    var s = mkState([mkUtxo()])
+    s = s.creditBlockRewards(GasCost(0), GasCost(0)).expect("credited")
+    let utxosBefore = s.latestUtxos.len
+    s = s.tryApplyHeader(100'u64, mkProof(), testLedgerConfig).expect("rotation")
+    check s.latestUtxos.len == utxosBefore
+    check s.sdp.blendRewards.target.isNone
+    check s.sdp.blendRewards.epochIncome == 0
+
 {.pop.}
