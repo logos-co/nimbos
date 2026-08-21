@@ -393,8 +393,8 @@ suite "Bootstrap link maintenance and disconnection":
       check clientNode.switch.isConnected(bootPid)
 
       var bootPeer = clientNode.getPeer(bootPid)
-      bootPeer.connectionState = ConnectionState.Connected
-      check clientNode.peerPool.addPeerNoWait(bootPeer, PeerType.Outgoing) == PeerStatus.Success
+      check clientNode.peerPool.hasPeer(bootPid)
+      check bootPeer.connectionState == ConnectionState.Connected
 
       # With only 1 peer in pool (which is bootstrap) and wantedPeers=2 -> tick does not disconnect
       await runBootstrapLinkMaintenanceTick(clientNode)

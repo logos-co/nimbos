@@ -223,8 +223,15 @@ proc initializeNetworking(node: LBNode) {.async.} =
 
   await node.network.start()
   if node.syncer != nil:
-    debug "Scheduling syncer startup after network bootstrap"
-    node.syncer.start(node.network.bootstrapPeerIds)
+    if node.network.bootstrapPeerIds.len > 0:
+      debug "Waiting for network peer readiness before starting syncer"
+      let syncPeers = await node.network.waitForPeers(minPeers = 1, timeout = 10.seconds)
+      if syncPeers.len == 0:
+        warn "Syncer start skipped: no bootstrap peer reached PeerPool within timeout"
+        return
+      node.syncer.start(syncPeers)
+    else:
+      node.syncer.start(@[])
 
 type StopFuture = Future[void].Raising([CancelledError])
 

@@ -189,7 +189,7 @@ suite "Network connection state — outboundTable, connQueue, seenTable":
     let node = createLBP2PNode(
       rng, conf, rng.getRandomNetKeys()
     ).expect("createLBP2PNode failed for connect-via-queue-timeout")
-    node.setConnectTimeout(150.milliseconds)
+    node.setConnectTimeout(50.milliseconds)
     await node.startListening()
     await node.start()
 
@@ -202,7 +202,7 @@ suite "Network connection state — outboundTable, connQueue, seenTable":
           node,
           PeerAddr(peerId: deadPid, addrs: @[deadAddr]),
           proc(_: PeerAddr): bool {.gcsafe, raises: [].} = true,
-          150.milliseconds
+          1.seconds
         )
       check await withTimeout(fut, 2.seconds)
       check not await fut
@@ -267,5 +267,131 @@ suite "Network connection state — outboundTable, connQueue, seenTable":
       check cleared
     finally:
       await node.stop()
+
+  asyncTest "connectViaConnQueue: multiple concurrent callers coalesce and all resolve true":
+    let rngL = HmacDrbgContext.new()
+    let rngD = HmacDrbgContext.new()
+    let natCfg = nat.NatConfig(hasExtIp: true, extIp: TestLoopbackIp)
+
+    let confL = NetworkConfig(
+      listenAddress: some(TestLoopbackIp),
+      nat: natCfg,
+      quicPort: TestQuicAnyPort,
+      maxPeers: 8,
+      hardMaxPeers: some(8),
+      agentString: "p2p-coalesce-listener",
+    )
+    let confD = NetworkConfig(
+      listenAddress: some(TestLoopbackIp),
+      nat: natCfg,
+      quicPort: TestQuicAnyPort,
+      maxPeers: 8,
+      hardMaxPeers: some(8),
+      agentString: "p2p-coalesce-dialer",
+      bootstrapNodes: @[],
+    )
+
+    let listener = createLBP2PNode(
+      rngL, confL, rngL.getRandomNetKeys()
+    ).expect("createLBP2PNode failed for p2p-coalesce-listener")
+    let dialer = createLBP2PNode(
+      rngD, confD, rngD.getRandomNetKeys()
+    ).expect("createLBP2PNode failed for p2p-coalesce-dialer")
+
+    await listener.startListening()
+    await dialer.startListening()
+    await dialer.start()
+
+    try:
+      let listenerPeerAddr =
+        PeerAddr(
+          peerId: listener.switch.peerInfo.peerId,
+          addrs: listener.switch.peerInfo.addrs
+        )
+      let fut1 = connectViaConnQueue(
+        dialer,
+        listenerPeerAddr,
+        proc(_: PeerAddr): bool {.gcsafe, raises: [].} = true,
+        3.seconds
+      )
+      let fut2 = connectViaConnQueue(
+        dialer,
+        listenerPeerAddr,
+        proc(_: PeerAddr): bool {.gcsafe, raises: [].} = true,
+        3.seconds
+      )
+      let res1 = await fut1
+      let res2 = await fut2
+      check res1
+      check res2
+      check dialer.switch.isConnected(listenerPeerAddr.peerId)
+    finally:
+      await dialer.stop()
+      await listener.stop()
+
+  asyncTest "connected peers complete protocol handshake and are admitted to peerPool with Connected state":
+    let rngL = HmacDrbgContext.new()
+    let rngD = HmacDrbgContext.new()
+    let natCfg = nat.NatConfig(hasExtIp: true, extIp: TestLoopbackIp)
+
+    let confL = NetworkConfig(
+      listenAddress: some(TestLoopbackIp),
+      nat: natCfg,
+      quicPort: TestQuicAnyPort,
+      maxPeers: 8,
+      hardMaxPeers: some(8),
+      agentString: "p2p-pool-admission-listener",
+    )
+    let confD = NetworkConfig(
+      listenAddress: some(TestLoopbackIp),
+      nat: natCfg,
+      quicPort: TestQuicAnyPort,
+      maxPeers: 8,
+      hardMaxPeers: some(8),
+      agentString: "p2p-pool-admission-dialer",
+      bootstrapNodes: @[],
+    )
+
+    let listener = createLBP2PNode(
+      rngL, confL, rngL.getRandomNetKeys()
+    ).expect("createLBP2PNode failed for p2p-pool-admission-listener")
+    let dialer = createLBP2PNode(
+      rngD, confD, rngD.getRandomNetKeys()
+    ).expect("createLBP2PNode failed for p2p-pool-admission-dialer")
+
+    await listener.startListening()
+    await dialer.startListening()
+    await listener.start()
+    await dialer.start()
+
+    try:
+      let listenerPeerAddr =
+        PeerAddr(
+          peerId: listener.switch.peerInfo.peerId,
+          addrs: listener.switch.peerInfo.addrs
+        )
+      check await connectViaConnQueue(
+        dialer,
+        listenerPeerAddr,
+        proc(_: PeerAddr): bool {.gcsafe, raises: [].} = true,
+        3.seconds
+      )
+
+      # 1. Verify Switch raw transport connection
+      check dialer.switch.isConnected(listenerPeerAddr.peerId)
+
+      # 2. Verify PeerPool admission via waitForPeers
+      let readyPeers = await dialer.waitForPeers(minPeers = 1, timeout = 3.seconds)
+      check readyPeers.len >= 1
+      check listenerPeerAddr.peerId in readyPeers
+      check dialer.peerPool.hasPeer(listenerPeerAddr.peerId)
+
+      # 3. Verify Peer readiness state and score
+      let peerInDialer = dialer.getPeer(listenerPeerAddr.peerId)
+      check peerInDialer.connectionState == ConnectionState.Connected
+      check peerInDialer.getScore == NewPeerScore
+    finally:
+      await dialer.stop()
+      await listener.stop()
 
 {.pop.}

@@ -21,13 +21,8 @@ func init*(T: type Syncer, sw: Switch, chain: Chain, protocol: string): T =
   T(sw: sw, chain: chain, chainSyncProtocol: protocol)
 
 proc runAtStartup(
-    syncer: Syncer, bootstrapPeerIds: seq[PeerId],
+    syncer: Syncer, syncPeers: seq[PeerId],
 ) {.async: (raises: [CancelledError]).} =
-  if bootstrapPeerIds.len > 0:
-    if not await waitForBootstrapConnectivity(syncer.sw, bootstrapPeerIds):
-      warn "Syncer start skipped: bootstrap peer not connected",
-        protocol = syncer.chainSyncProtocol
-      return
   try:
     mountCryptarchiaSyncHandler(syncer)
   except LPError as exc:
@@ -36,17 +31,17 @@ proc runAtStartup(
     return
   debug "Syncer started chain-sync handler",
     protocol = syncer.chainSyncProtocol,
-    bootstrapPeerCount = bootstrapPeerIds.len
+    syncPeerCount = syncPeers.len
   try:
-    await initialBlockDownload(syncer, bootstrapPeerIds)
+    await initialBlockDownload(syncer, syncPeers)
     notice "Syncer completed initial block download",
-      peerCount = bootstrapPeerIds.len,
+      peerCount = syncPeers.len,
       protocol = syncer.chainSyncProtocol
   except IBDFailure as exc:
     warn "Syncer initial block download failed",
       msg = exc.msg, protocol = syncer.chainSyncProtocol
 
-proc start*(syncer: Syncer, bootstrapPeerIds: seq[PeerId]) =
-  asyncSpawn syncer.runAtStartup(bootstrapPeerIds)
+proc start*(syncer: Syncer, syncPeers: seq[PeerId] = @[]) =
+  asyncSpawn syncer.runAtStartup(syncPeers)
 
 {.pop.}

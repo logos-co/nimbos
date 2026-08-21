@@ -81,6 +81,7 @@ type
     connQueue: AsyncQueue[PeerAddr]
     seenTable: Table[PeerId, SeenItem]
     outboundTable: Table[PeerId, OutboundConnStage]
+    connEvents: Table[PeerId, AsyncEvent]
     mountedProtocols*: MountedLogosProtocols
     rng*: ref HmacDrbgContext
     peers: Table[PeerId, Peer]
@@ -853,13 +854,6 @@ template sendBincode*[M](
   doAssert UntypedResponse(r).writtenChunks == 0
   sendResponseChunk(UntypedResponse(r), val, contextBytes)
 
-proc performProtocolHandshakes(peer: Peer, incoming: bool) {.async: (raises: [CancelledError]).} =
-  # Loop down serially because it's easier to reason about the connection state
-  # when there are fewer async races, specially during setup
-  for protocol in peer.network.protocols:
-    if protocol.onPeerConnected != nil:
-      await protocol.onPeerConnected(peer, incoming)
-
 func initProtocol(name: string,
                   peerInit: PeerStateInitializer,
                   networkInit: NetworkStateInitializer,
@@ -1071,7 +1065,7 @@ proc handleIncomingStream(network: LBP2PNode,
     releasePeer(peer)
 
 func outboundStage*(node: LBP2PNode, pid: PeerId): Opt[OutboundConnStage] {.inline.} =
-  node.outboundTable.withValue(pid, stage) do:
+  node.outboundTable.withValue(pid, stage):
     return Opt.some(stage[])
   do:
     return Opt.none(OutboundConnStage)
@@ -1103,9 +1097,8 @@ proc tryEnqueueOutboundConn*(
   if not isEligible(peerAddr):
     return false
   let peerId = peerAddr.peerId
-  if peerId in node.outboundTable:
+  if node.outboundTable.hasKeyOrPut(peerId, OutboundConnStage.Queued):
     return false
-  node.outboundTable[peerId] = OutboundConnStage.Queued
   try:
     await node.connQueue.addLast(peerAddr)
   except CancelledError as exc:
@@ -1113,17 +1106,34 @@ proc tryEnqueueOutboundConn*(
     raise exc
   return true
 
-proc waitUntilSwitchConnected(
-    sw: Switch, pid: PeerId, timeout: Duration
+proc signalConnEvent(node: LBP2PNode, pid: PeerId) =
+  node.connEvents.withValue(pid, event):
+    event[].fire()
+    node.connEvents.del(pid)
+
+proc waitForOutboundDial(
+    node: LBP2PNode, pid: PeerId, timeout: Duration
 ): Future[bool] {.async: (raises: [CancelledError]).} =
-  let deadline = sleepAsync(timeout)
-  while not sw.isConnected(pid):
-    if deadline.finished():
-      return false
-    await sleepAsync(50.milliseconds)
-  if not deadline.finished():
-    deadline.cancelSoon()
-  return true
+  if node.switch.isConnected(pid):
+    return true
+  if pid notin node.outboundTable:
+    return false
+
+  var event: AsyncEvent
+  node.connEvents.withValue(pid, ev):
+    event = ev[]
+  do:
+    event = newAsyncEvent()
+    node.connEvents[pid] = event
+
+  try:
+    discard await withTimeout(event.wait(), timeout)
+    return node.switch.isConnected(pid)
+  finally:
+    node.connEvents.withValue(pid, curEvent):
+      if curEvent[] == event:
+        if event.isSet() or (pid notin node.outboundTable):
+          node.connEvents.del(pid)
 
 proc connectViaConnQueue*(
     node: LBP2PNode,
@@ -1142,8 +1152,8 @@ proc connectViaConnQueue*(
     if peerAddr.peerId notin node.outboundTable:
       return false
 
-  return await waitUntilSwitchConnected(
-    node.switch, peerAddr.peerId, waitTimeout)
+  return await waitForOutboundDial(
+    node, peerAddr.peerId, waitTimeout)
 
 proc dialPeer(node: LBP2PNode, peerAddr: PeerAddr, index = 0) {.async: (raises: [CancelledError]).} =
   ## Establish connection with remote peer identified by address ``peerAddr``.
@@ -1198,6 +1208,7 @@ proc connectWorker(node: LBP2PNode, index: int) {.async: (raises: [CancelledErro
         await node.dialPeer(remotePeerAddr, index)
     finally:
       node.outboundTable.del(remotePeerAddr.peerId)
+      node.signalConnEvent(remotePeerAddr.peerId)
 
 proc handlePeer*(peer: Peer) {.async: (raises: [CancelledError]).} =
   let res = peer.network.peerPool.addPeerNoWait(peer, peer.direction)
@@ -1229,12 +1240,23 @@ proc handlePeer*(peer: Peer) {.async: (raises: [CancelledError]).} =
     debug "Peer successfully connected", peer = peer,
                                          connections = peer.connections
 
+proc performProtocolHandshakes(peer: Peer, incoming: bool) {.async: (raises: [CancelledError]).} =
+  # Loop down serially because it's easier to reason about the connection state
+  # when there are fewer async races, specially during setup
+  if peer.network.protocols.len == 0:
+    await peer.handlePeer()
+  else:
+    for protocol in peer.network.protocols:
+      if protocol.onPeerConnected != nil:
+        await protocol.onPeerConnected(peer, incoming)
+
 proc onConnEvent(
     node: LBP2PNode, peerId: PeerId, event: ConnEvent) {.
     async: (raises: [CancelledError]).} =
   let peer = node.getPeer(peerId)
   case event.kind
   of ConnEventKind.Connected:
+    node.signalConnEvent(peerId)
     inc peer.connections
     debug "Peer connection upgraded", peer = $peerId,
                                       connections = peer.connections
@@ -1507,16 +1529,20 @@ proc runKadDiscoveryEnqueueLoop(node: LBP2PNode) {.async: (raises: [CancelledErr
 func bootstrapPeerIds*(node: LBP2PNode): seq[PeerId] =
   node.bootstrapPeers.mapIt(it.peerId)
 
-proc waitForBootstrapConnectivity*(
-    sw: Switch, bootstrapPeerIds: seq[PeerId], attempts: int = 100,
-): Future[bool] {.async: (raises: [CancelledError]).} =
-  if bootstrapPeerIds.len == 0:
-    return true
-  for _ in 0 ..< attempts:
-    if bootstrapPeerIds.anyIt(sw.isConnected(it)):
-      return true
-    await sleepAsync(100.milliseconds)
-  false
+proc waitForPeers*(
+    node: LBP2PNode,
+    minPeers: int = 1,
+    timeout: Duration = 10.seconds,
+): Future[seq[PeerId]] {.async: (raises: [CancelledError]).} =
+  ## Wait until at least ``minPeers`` handshaked peers are admitted to the peer pool,
+  ## and return the list of ready PeerIds.
+  let ok = await node.peerPool.waitForPeers(minPeers, timeout)
+  if not ok:
+    return @[]
+  var readyPeers: seq[PeerId] = @[]
+  for pid, _ in node.peerPool:
+    readyPeers.add(pid)
+  return readyPeers
 
 proc start*(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
   proc onPeerCountChanged() =
@@ -1575,6 +1601,10 @@ proc stop*(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
     if not isNil(fut) and not fut.finished():
       waitedFutures.add FutureBase(fut.cancelAndWait())
   node.backgroundTasks.setLen(0)
+
+  for pid, event in node.connEvents:
+    event.fire()
+  node.connEvents.clear()
 
   let
     timeout = 5.seconds
