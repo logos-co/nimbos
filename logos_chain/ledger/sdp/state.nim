@@ -18,6 +18,10 @@ import
 
 export primitives, results, hash_trie_map
 
+const SnapshotFinalizationDelay* = 2'u64
+  ## Epochs a registry change waits before the snapshot that carries it is
+  ## the one in force.
+
 type
   MinStake* = object
     stakeThreshold*: uint64
@@ -135,9 +139,9 @@ func finalizeWithdrawals*(
 ): SdpState =
   ## Removes declarations whose ``withdraw_at <= current_epoch - 2`` and
   ## unlocks notes no longer bound to any declaration.
-  if currentEpoch < 2:
+  if currentEpoch < SnapshotFinalizationDelay:
     return state
-  let threshold = currentEpoch - 2
+  let threshold = currentEpoch - SnapshotFinalizationDelay
   for declId, info in state.declarations.pairs:
     if info.withdrawAt.valueOr(high(EpochNumber)) <= threshold:
       state = removeDeclarationFromLockedNote(state, info.lockedNoteId, declId)

@@ -10,12 +10,13 @@
 {.push raises: [], gcsafe.}
 
 import
-  results,
   std/tables,
+  results,
+  ./blend_rewards,
   ./state as sdpState,
   ../../deployment/deployment_settings as deploy
 
-export sdpState
+export blend_rewards, sdpState
 
 type
   SdpSnapshots* = Table[ServiceType, Table[EpochNumber, SdpState]]
@@ -27,28 +28,47 @@ type
   SdpParams* = object
     parameters*: Table[ServiceType, ServiceParameters]
     stakeThresholds*: seq[sdpState.MinStake]
+    rewardsParams*: BlendRewardsParams
 
   SdpRegistry* = object
     state*: SdpState
     snapshots*: SdpSnapshots
     params*: SdpParams
+    blendRewards*: BlendRewards
     lastEpochStarted*: Opt[EpochNumber]
       ## Highest epoch for which epoch-boundary processing has run.
       ## ``none`` until the first boundary.
 
 func validateInactivityPeriod*(params: ServiceParameters) =
-  doAssert params.inactivityPeriod >= 2,
+  doAssert params.inactivityPeriod >= SnapshotFinalizationDelay,
     "inactivity_period must be >= 2 epochs"
+
+func blendRewardsParams*(
+    settings: deploy.DeploymentSettings, slotsPerEpoch: uint64
+): BlendRewardsParams =
+  ## Reward parameters from the deployment settings; rounds per epoch equals
+  ## slots per epoch since the round duration is the slot duration.
+  BlendRewardsParams(
+    roundsPerEpoch: slotsPerEpoch,
+    messageFrequencyPerRound:
+      settings.blend.core.scheduler.cover.messageFrequencyPerRound,
+    numBlendLayers: uint64(settings.blend.common.numBlendLayers),
+    dataReplicationFactor: uint64(settings.blend.common.dataReplicationFactor),
+    minimumNetworkSize: uint64(settings.blend.common.minimumNetworkSize),
+    activityThresholdSensitivity:
+      uint64(settings.blend.core.activityThresholdSensitivity))
 
 func init*(
     T: type SdpRegistry,
     sdpConfig: deploy.SdpConfig,
+    rewardsParams: BlendRewardsParams,
 ): T =
   let bnParams = ServiceParameters(
     inactivityPeriod: sdpConfig.bn.inactivityPeriod.uint64,
     epoch: sdpConfig.bn.epoch.uint64,
   )
   validateInactivityPeriod(bnParams)
+  validateBlendRewardsParams(rewardsParams)
   T(
     state: SdpState.init(),
     snapshots: SdpSnapshots(),
@@ -58,6 +78,7 @@ func init*(
         stakeThreshold: sdpConfig.minStake.threshold.uint64,
         epoch: sdpConfig.minStake.epoch.uint64,
       )],
+      rewardsParams: rewardsParams,
     ),
     lastEpochStarted: Opt.none(EpochNumber),
   )
@@ -98,10 +119,16 @@ func onEpochStarted*(
     # Since onEpochStarted is called at the start of epoch `epoch`, registry.state represents
     # the finalized state of the end of `epoch - 1`. We map this to target epoch `epoch + 1`
     # so that target epoch `T` reads the state finalized at the end of `T - 2`.
-    byEpoch[epoch + 1] = registry.state
-    # Drop S_n for target epochs lastEpochStarted .. epoch - 1.
-    for target in last.get(0'u64) .. epoch - 1:
-      if target in byEpoch:
+    # A blockless span ran no boundaries; backfill its snapshot keys.
+    # Nothing changed in between, so each one is the boundary state.
+    for target in
+        max(last.get(0'u64) + SnapshotFinalizationDelay, epoch) .. epoch + 1:
+      byEpoch[target] = registry.state
+    # A boundary at epoch E leaves keys {E, E+1}, so only the previous
+    # pair can have ended; del ignores absent keys.
+    let prev = last.get(0'u64)
+    for target in [prev, prev + 1]:
+      if target < epoch:
         byEpoch.del(target)
     registry.snapshots[service] = byEpoch
   registry.state = finalizeWithdrawals(registry.state, epoch)
@@ -114,21 +141,12 @@ func getEpochSnapshot*(
     service: ServiceType,
     epochNumber: EpochNumber,
 ): Opt[SdpState] =
-  if service notin snapshots:
-    return Opt.none(SdpState)
-  let byEpoch = snapshots.getOrDefault(service)
-  if epochNumber in byEpoch:
-    Opt.some(byEpoch.getOrDefault(epochNumber))
-  else:
-    Opt.none(SdpState)
-
-func appendParameters*(
-    registry: var SdpRegistry,
-    service: ServiceType,
-    params: ServiceParameters,
-) =
-  validateInactivityPeriod(params)
-  registry.params.parameters[service] = params
+  # One lookup per level; the outer copy is shallow, the states inside are
+  # persistent structures.
+  var byEpoch = snapshots.getOrDefault(service)
+  byEpoch.withValue(epochNumber, state):
+    return Opt.some(state[])
+  Opt.none(SdpState)
 
 func getParametersAt*(
     registry: SdpRegistry,
@@ -142,6 +160,43 @@ func getParametersAt*(
     Opt.some(params)
   else:
     Opt.none(ServiceParameters)
+
+func isActiveAt(
+    info: DeclarationInfo, epoch: EpochNumber, params: ServiceParameters
+): bool =
+  ## Active at ``epoch``: activity seen within the inactivity period, and no
+  ## withdrawal in effect. A fresh declaration counts from its first snapshot.
+  # Both operands are epoch counts bounded by the wallclock, so neither
+  # addition can reach the uint64 wrap.
+  info.active.valueOr(info.created + SnapshotFinalizationDelay) +
+    params.inactivityPeriod >= epoch and
+    info.withdrawAt.valueOr(high(EpochNumber)) > epoch
+
+func activeBlendProviders*(
+    registry: SdpRegistry, targetEpoch: EpochNumber
+): seq[tuple[providerId: ProviderId, zkId: ZkPublicKey]] =
+  ## Blend provider set for ``targetEpoch``: the epoch snapshot's
+  ## declarations, filtered to the ones active at that epoch.
+  # Service parameters that are absent or not yet in force leave no way to
+  # judge activity, so the set is empty rather than filtered with defaults.
+  let
+    snapshot = getEpochSnapshot(
+      registry.snapshots, ServiceType.bn, targetEpoch).valueOr:
+      return @[]
+    params = getParametersAt(registry, ServiceType.bn, targetEpoch).valueOr:
+      return @[]
+  for _, info in snapshot.declarations.pairs:
+    if info.service == ServiceType.bn and
+        isActiveAt(info, targetEpoch, params):
+      result.add (providerId: info.providerId, zkId: info.zkId)
+
+func appendParameters*(
+    registry: var SdpRegistry,
+    service: ServiceType,
+    params: ServiceParameters,
+) =
+  validateInactivityPeriod(params)
+  registry.params.parameters[service] = params
 
 func appendMinStake*(
     registry: var SdpRegistry,

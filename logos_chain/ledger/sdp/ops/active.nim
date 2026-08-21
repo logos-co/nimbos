@@ -14,26 +14,9 @@ import
   results,
   ./util,
   ../[registry, state],
-  ../../../core/mantle/[operations, proofs]
+  ../../../core/mantle/[blend_activity, operations, proofs]
 
 export util, registry, state
-
-func evaluateSdpActivity(
-    service: ServiceType,
-    declaration: DeclarationInfo,
-    metadata: Metadata,
-    epoch: EpochNumber,
-    params: ServiceParameters,
-): bool =
-  ## Service-specific activity check. Blend Network proof validation is not
-  ## implemented yet; BN currently accepts any metadata.
-  discard declaration
-  discard metadata
-  discard epoch
-  discard params
-  case service
-  of ServiceType.bn:
-    true
 
 proc validateSdpActive(
     active: ActiveMessage,
@@ -65,16 +48,23 @@ proc tryApplySdpActive*(
     proof: ZkSigProof,
     txHash: Hash32,
     epoch: EpochNumber,
+    verifyPoq: PoqVerifier = acceptAllPoq,
 ): Result[SdpRegistry, LedgerError] =
-  let declaration = ?validateSdpActive(active, proof, txHash, registry.state)
-  let params = getParametersAt(
-    registry, declaration.service, epoch,
-  ).valueOr:
+  ?validateSdpActive(active, proof, txHash, registry.state)
+  let declaration = registry.state.declarations.getOrDefault(active.declarationId)
+  if getParametersAt(registry, declaration.service, epoch).isNone:
     return err(MissingServiceParameters)
-  if not evaluateSdpActivity(
-    declaration.service, declaration, active.metadata, epoch, params,
-  ):
-    return err(ActivityRejected)
-  ok(applySdpActive(registry, active, declaration, epoch))
+  case declaration.service
+  of ServiceType.bn:
+    let activityProof = decodeActivityMetadata(active.metadata).valueOr:
+      return err(ActivityRejected)
+    registry.blendRewards = ?recordActivity(
+      registry.blendRewards, activityProof, declaration.providerId, verifyPoq)
+
+  var updated = declaration
+  updated.nonce = active.nonce
+  updated.active = Opt.some(epoch)
+  registry.state = insertDeclaration(registry.state, active.declarationId, updated)
+  ok(registry)
 
 {.pop.}

@@ -12,6 +12,8 @@
 
 import
   nimcrypto/blake2,
+  poseidon2/sponge,
+  stew/staticfor,
   ./types
 export types
 
@@ -25,6 +27,44 @@ func blake2b256Hash*(data: openArray[byte]): Hash32 =
   ctx.update(data)
   let digest = ctx.finish()
   digest.data
+
+func blake2b512Hash*(data: openArray[byte]): array[64, byte] =
+  ## Returns BLAKE2b-512(data) as a 64-byte digest.
+  var ctx {.noinit.}: Blake2bContext[512]
+  ctx.init()
+  ctx.update(data)
+  ctx.finish().data
+
+func blake2bShort*(data: openArray[byte], outLen: uint64): array[8, byte] =
+  ## BLAKE2b digest of ``outLen`` bytes (1..8) in a fixed buffer; bytes
+  ## past ``outLen`` stay zero.
+  # A fixed buffer keeps consensus state allocation-free.
+  doAssert outLen >= 1 and outLen <= 8,
+    "blake2bShort: digest width must be 1..8"
+  staticFor i, 1 .. 8:
+    if i == int(outLen):
+      var ctx {.noinit.}: Blake2bContext[i * 8]
+      ctx.init()
+      ctx.update(data)
+      result[0 ..< i] = ctx.finish().data
+
+func blake2bVar*(data: openArray[byte], outLen: uint64): seq[byte] =
+  ## BLAKE2b with an ``outLen``-byte digest (clamped to 64). The digest
+  ## length is a hash parameter, so a truncated wider digest differs.
+  # BLAKE2b defines digest lengths 1..64 (RFC 7693); zero has no digest.
+  # Only the reachable widths are instantiated: the lottery needs at most
+  # 8 bytes, PRNG seeding needs 64.
+  doAssert outLen >= 1, "blake2bVar: BLAKE2b defines no zero-length digest"
+  let outLen = int(min(outLen, 64'u64))
+  if outLen == 64:
+    return @(blake2b512Hash(data))
+  doAssert outLen <= 8, "blake2bVar: digest widths 9..63 are not instantiated"
+  staticFor i, 1 .. 8:
+    if i == outLen:
+      var ctx {.noinit.}: Blake2bContext[i * 8]
+      ctx.init()
+      ctx.update(data)
+      result = @(ctx.finish().data)
 
 func generateGroth16Proof*(): CompressedGroth16Proof =
   ## Placeholder: return zeroed compressed Groth16 bytes.
