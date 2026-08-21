@@ -9,13 +9,12 @@
 
 import
   # Std lib
-  std/[typetraits, os, sequtils, strutils, algorithm, math, tables, macrocache],
+  std/[sequtils, strutils, algorithm, math, tables],
 
   # Vendor / external libs
   bearssl/rand,
   chronos, chronos/ratelimit, chronicles, metrics, results,
-  stew/[leb128, endians2, byteutils, io2],
-  stew/shims/macros,
+  stew/byteutils,
   json_serialization, json_serialization/std/[net, sets, options],
   eth/[async_utils, net/nat],
   libp2p/[switch, peerinfo, multiaddress, multicodec, crypto/crypto, builders],
@@ -25,7 +24,7 @@ import
   libp2p/stream/connection,
 
   # Local networking modules
-  ./[bincode, discovery, protocols, protocol_dsl,
+  ./[bincode, discovery, protocols,
      libp2p_json_serialization, peer_pool, peer_scores],
 
   # Logos chain core modules
@@ -33,7 +32,7 @@ import
   ../core/utils
 
 export
-  tables, chronos, ratelimit, version, multiaddress, peerinfo, p2pProtocol,
+  tables, chronos, ratelimit, version, multiaddress, peerinfo,
   connection, libp2p_json_serialization, bincode, results,
   discovery, protocols, peer_pool, peer_scores
 
@@ -73,9 +72,6 @@ type
     wantedPeers: int
     hardMaxPeers: int
     peerPool*: PeerPool[Peer, PeerId]
-    protocols: seq[ProtocolInfo]
-      ## Protocols managed by the DSL and mounted on the switch
-    protocolStates: seq[RootRef]
     connectTimeout: chronos.Duration
     seenThreshold: chronos.Duration
     connQueue: AsyncQueue[PeerAddr]
@@ -99,7 +95,6 @@ type
     network*: LBP2PNode
     peerId*: PeerId
     connectionState*: ConnectionState
-    protocolStates: seq[RootRef]
     netThroughput: AverageThroughput
     score: int
     quota: TokenBucket
@@ -120,55 +115,6 @@ type
     Disconnecting,
     Disconnected
 
-  UntypedResponse = ref object
-    peer: Peer
-    stream: Connection
-    writtenChunks: int
-
-  SingleChunkResponse*[MsgType] = distinct UntypedResponse
-    ## Protocol requests using this type will produce request-making
-    ## client-side procs that return `NetRes[MsgType]`
-
-  MultipleChunksResponse[
-      MsgType; maxLen: static Limit] = distinct UntypedResponse
-    ## Protocol requests using this type will produce request-making
-    ## client-side procs that return `NetRes[List[MsgType, maxLen]]`.
-    ## In the future, such procs will return an `InputStream[NetRes[MsgType]]`.
-
-  MessageInfo = object
-    name: string
-
-    # Private fields:
-    libp2pCodecName: string
-    protocolMounter: MounterProc
-
-  ProtocolInfoObj = object
-    name: string
-    messages: seq[MessageInfo]
-    index: int # the position of the protocol in the
-               # ordered list of supported protocols
-
-    # Private fields:
-    peerStateInitializer: PeerStateInitializer
-    networkStateInitializer: NetworkStateInitializer
-    onPeerConnected: OnPeerConnectedHandler
-    onPeerDisconnected: OnPeerDisconnectedHandler
-
-  ProtocolInfo = ptr ProtocolInfoObj
-
-  ResponseCode {.pure.} = enum
-    Success
-    InvalidRequest
-    ServerError
-    ResourceUnavailable
-
-  PeerStateInitializer = proc(peer: Peer): RootRef {.gcsafe, raises: [].}
-  NetworkStateInitializer = proc(network: LBP2PNode): RootRef {.gcsafe, raises: [].}
-  OnPeerConnectedHandler = proc(peer: Peer, incoming: bool): Future[void] {.async: (raises: [CancelledError]).}
-  OnPeerDisconnectedHandler = proc(peer: Peer): Future[void] {.async: (raises: [CancelledError]).}
-  MounterProc = proc(network: LBP2PNode) {.gcsafe, raises: [].}
-  MessageContentPrinter = proc(msg: pointer): string {.gcsafe, raises: [].}
-
   DisconnectionReason* {.pure.} = enum
     # might see other values on the wire!
     ClientShutDown = 1
@@ -177,41 +123,6 @@ type
     # Clients MAY use reason codes above 128 to indicate alternative,
     # erroneous request-specific responses.
     PeerScoreLow = 237 # 79 * 3
-
-  NetErrorKind* {.pure.} = enum
-    # Potentially benign errors (network conditions)
-    BrokenConnection
-    ReceivedErrorResponse
-    UnexpectedEOF
-    PotentiallyExpectedEOF
-    StreamOpenTimeout
-    ReadResponseTimeout
-
-    # Errors for which we descore heavily (protocol violations)
-    InvalidResponseCode
-    InvalidSnappyBytes
-    InvalidBincodeBytes
-    InvalidSizePrefix
-    ZeroSizePrefix
-    SizePrefixOverflow
-    ResponseChunkOverflow
-
-    UnknownError
-
-  NetError* = object
-    case kind*: NetErrorKind
-    of ReceivedErrorResponse:
-      responseCode*: ResponseCode
-      errorMsg*: string
-    else:
-      discard
-
-  InvalidInputsError = object of CatchableError
-
-  ResourceUnavailableError = object of CatchableError
-
-  NetRes*[T] = Result[T, NetError]
-    ## This is type returned from all network requests
 
 const
   clientId* = "Nimbos node " & fullVersionStr
@@ -240,11 +151,6 @@ const
     ## Period of time for peers which score below or equal to zero.
   SeenTableTimeReconnect = 1.minutes
     ## Minimal time between disconnection and reconnection attempt
-
-  ProtocolViolations = {InvalidResponseCode..NetErrorKind.high()}
-
-template neterr*(kindParam: NetErrorKind): auto =
-  err(type(result), NetError(kind: kindParam))
 
 # Metrics for tracking attestation and beacon block loss
 declareCounter nbc_gossip_messages_sent,
@@ -287,56 +193,11 @@ when not (crypto.PKScheme.Ed25519 in crypto.SupportedSchemes):
 const
   NetworkInsecureKeyPassword = "INSECUREPASSWORD"
 
-template libp2pProtocol*(name: string, version: int) {.pragma.}
-
 func shortLog*(peer: Peer): string = shortLog(peer.peerId)
 chronicles.formatIt(Peer): shortLog(it)
 chronicles.formatIt(PublicKey): byteutils.toHex(it.getBytes().tryGet())
 
-proc openStream(node: LBP2PNode,
-                peer: Peer,
-                protocolId: string): Future[NetRes[Connection]]
-                {.async: (raises: [CancelledError]).} =
-  # When dialing here, we do not provide addresses - all new connection
-  # attempts are handled via `connect` which also takes into account
-  # reconnection timeouts
-  try:
-    ok await dial(node.switch, peer.peerId, protocolId)
-  except LPError as exc:
-    debug "Dialing failed", exc = exc.msg
-    neterr BrokenConnection
-
 proc init(T: type Peer, network: LBP2PNode, peerId: PeerId): Peer {.gcsafe.}
-
-func getState*(peer: Peer, proto: ProtocolInfo): RootRef =
-  doAssert peer.protocolStates[proto.index] != nil, $proto.index
-  peer.protocolStates[proto.index]
-
-template state*(peer: Peer, Protocol: type): untyped =
-  ## Returns the state object of a particular protocol for a
-  ## particular connection.
-  mixin State
-  bind getState
-  type S = Protocol.State
-  S(getState(peer, Protocol.protocolInfo))
-
-func getNetworkState*(node: LBP2PNode, proto: ProtocolInfo): RootRef =
-  doAssert node.protocolStates[proto.index] != nil, $proto.index
-  node.protocolStates[proto.index]
-
-template protocolState*(node: LBP2PNode, Protocol: type): untyped =
-  mixin NetworkState
-  bind getNetworkState
-  type S = Protocol.NetworkState
-  S(getNetworkState(node, Protocol.protocolInfo))
-
-func initProtocolState*[T](state: T, x: Peer|LBP2PNode) =
-  discard
-
-template networkState*(connection: Peer, Protocol: type): untyped =
-  ## Returns the network state object of a particular protocol for a
-  ## particular connection.
-  protocolState(connection.network, Protocol)
 
 func peerId*(node: LBP2PNode): PeerId =
   node.switch.peerInfo.peerId
@@ -361,7 +222,7 @@ proc getFuture*(peer: Peer): Future[void] {.inline.} =
     peer.disconnectedFut = newFuture[void]("Peer.disconnectedFut")
   peer.disconnectedFut
 
-func getScore*(a: Peer): int =
+func getScore*(a: Peer): int {.inline.} =
   ## Returns current score value for peer ``peer``.
   a.score
 
@@ -502,567 +363,6 @@ proc releasePeer(peer: Peer) =
             peer_score = peer.score, score_low_limit = PeerScoreLowLimit,
             score_high_limit = PeerScoreHighLimit
       asyncSpawn(peer.disconnect(PeerScoreLow))
-
-proc getRequestProtoName(fn: NimNode): NimNode =
-  # `getCustomPragmaVal` doesn't work yet on regular nnkProcDef nodes
-  # (TODO: file as an issue)
-
-  let pragmas = fn.pragma
-  if pragmas.kind == nnkPragma and pragmas.len > 0:
-    for pragma in pragmas:
-      try:
-        if pragma.len > 0 and $pragma[0] == "libp2pProtocol":
-          let protoName = $(pragma[1])
-          let protoVer = $(pragma[2].intVal)
-          let baseName = if protoName.startsWith("/"): protoName else: "/" & protoName
-          return newLit(baseName & "/" & protoVer)
-      except Exception as exc: raiseAssert exc.msg # TODO https://github.com/nim-lang/Nim/issues/17454
-
-  return newLit("")
-
-func add(s: var seq[byte], pos: var int, bytes: openArray[byte]) =
-  s[pos..<pos+bytes.len] = bytes
-  pos += bytes.len
-
-proc writeChunk(
-    conn: Connection,
-    responseCode: Opt[ResponseCode],
-    payload: openArray[byte],
-    contextBytes: openArray[byte] = [],
-): Future[void] {.async: (raises: [CancelledError, LPStreamError], raw: true).} =
-  let
-    uncompressedLenBytes = toBytes(payload.lenu64, Leb128)
-  var
-    data = newSeqUninit[byte](
-      ord(responseCode.isSome) + contextBytes.len + uncompressedLenBytes.len +
-      payload.len)
-    pos = 0
-
-  if responseCode.isSome:
-    data.add(pos, [byte responseCode.get])
-  data.add(pos, contextBytes)
-  data.add(pos, uncompressedLenBytes.toOpenArray())
-  data.add(pos, payload)
-
-  conn.write(data)
-
-template errorMsgLit(x: static string): ErrorMsg =
-  const val = ErrorMsg toBytes(x)
-  val
-
-func formatErrorMsg(msg: ErrorMsg): string =
-  # ErrorMsg "usually" contains a human-readable string - we'll try to parse it
-  # as ASCII and return hex if that fails
-  for c in msg:
-    if c < 32 or c > 127:
-      return byteutils.toHex(asSeq(msg))
-
-  string.fromBytes(asSeq(msg))
-
-proc sendErrorResponse(
-    peer: Peer, conn: Connection, responseCode: ResponseCode, errMsg: ErrorMsg
-): Future[void] {.async: (raises: [CancelledError, LPStreamError], raw: true).} =
-  debug "Error processing request",
-    peer, responseCode, errMsg = formatErrorMsg(errMsg)
-  conn.writeChunk(Opt.some responseCode, Bincode.encode(errMsg))
-
-proc sendNotificationMsg(
-    peer: Peer, protocolId: string, requestBytes: seq[byte]
-) {.async: (raises: [CancelledError]).} =
-  # Notifications are sent as a best effort, ie errors are not reported back
-  # to the caller
-  let
-    deadline = sleepAsync RESP_TIMEOUT_DUR
-    streamRes = awaitWithTimeout(peer.network.openStream(peer, protocolId), deadline):
-      debug "Timeout while opening stream for notification", peer, protocolId
-      return
-
-  let stream = streamRes.valueOr:
-    debug "Could not open stream for notification",
-      peer, protocolId, error = streamRes.error
-    return
-
-  try:
-    await stream.writeChunk(Opt.none ResponseCode, requestBytes)
-  except LPError as exc:
-    debug "Error while writing notification", peer, protocolId, exc = exc.msg
-  finally:
-    await noCancel stream.close()
-
-proc sendResponseChunkBytes(
-    response: UntypedResponse,
-    payload: openArray[byte],
-    contextBytes: openArray[byte] = [],
-): Future[void] {.async: (raises: [CancelledError, LPStreamError], raw: true).} =
-  inc response.writtenChunks
-  response.stream.writeChunk(Opt.some ResponseCode.Success, payload, contextBytes)
-
-proc sendResponseChunk(
-    response: UntypedResponse, val: auto, contextBytes: openArray[byte] = []
-): Future[void] {.async: (raises: [CancelledError, LPStreamError], raw: true).} =
-  sendResponseChunkBytes(response, Bincode.encode(val), contextBytes)
-
-template sendUserHandlerResultAsChunkImpl*(stream: Connection,
-                                           handlerResultFut: Future): untyped =
-  let handlerRes = await handlerResultFut
-  writeChunk(stream, Opt.some ResponseCode.Success, Bincode.encode(handlerRes))
-
-template sendUserHandlerResultAsChunkImpl*(stream: Connection,
-                                           handlerResult: auto): untyped =
-  writeChunk(stream, Opt.some ResponseCode.Success, Bincode.encode(handlerResult))
-
-proc uncompressFramedStream(conn: Connection,
-                            expectedSize: int): Future[Result[seq[byte], string]]
-                            {.async: (raises: [CancelledError]).} =
-  var output = newSeqUninit[byte](expectedSize)
-  try:
-    await conn.readExactly(addr output[0], expectedSize)
-  except LPStreamEOFError, LPStreamIncompleteError:
-    return err "Unexpected EOF reading payload"
-  except LPStreamError as exc:
-    return err "Unexpected error reading payload: " & exc.msg
-  ok output
-
-func chunkMaxSize[T](): uint32 = MAX_PAYLOAD_SIZE
-
-proc readVarint2(conn: Connection): Future[NetRes[uint64]] {.
-    async: (raises: [CancelledError]).} =
-  try:
-    ok await conn.readVarint()
-  except LPStreamEOFError: #, LPStreamIncompleteError, InvalidVarintError
-    # TODO compiler error - haha, uncaught exception
-    # Error: unhandled exception: closureiters.nim(322, 17) `c[i].kind == nkType`  [AssertionError]
-    neterr UnexpectedEOF
-  except LPStreamIncompleteError:
-    neterr UnexpectedEOF
-  except InvalidVarintError:
-    neterr InvalidSizePrefix
-  except LPStreamError as exc:
-    debug "Unexpected error", exc = exc.msg
-    neterr UnknownError
-
-proc readChunkPayload*(conn: Connection, peer: Peer,
-                       MsgType: type): Future[NetRes[MsgType]]
-                       {.async: (raises: [CancelledError]).} =
-  let
-    sm = now(chronos.Moment)
-    size = ? await readVarint2(conn)
-
-  const maxSize = chunkMaxSize[MsgType]()
-  if size > maxSize:
-    return neterr SizePrefixOverflow
-  if size == 0:
-    return neterr ZeroSizePrefix
-
-  # The `size.int` conversion is safe because `size` is bounded to `MAX_PAYLOAD_SIZE`
-  let
-    dataRes = await conn.uncompressFramedStream(size.int)
-    data = dataRes.valueOr:
-      debug "Snappy decompression/read failed", msg = $dataRes.error, conn
-      return neterr InvalidSnappyBytes
-
-  # `10` is the maximum size of variable integer on wire, so error could
-  # not be significant.
-  peer.updateNetThroughput(now(chronos.Moment) - sm,
-                            uint64(10 + size))
-  try:
-    ok Bincode.decode(data, MsgType)
-  except SerializationError:
-    neterr InvalidBincodeBytes
-
-proc readResponseChunk(
-    conn: Connection, peer: Peer, MsgType: typedesc):
-    Future[NetRes[MsgType]] {.async: (raises: [CancelledError]).} =
-  mixin readChunkPayload
-
-  var responseCodeByte: byte
-  try:
-    await conn.readExactly(addr responseCodeByte, 1)
-  except LPStreamIncompleteError:
-    # `LPStreamIncompleteError` is raised by `nim-libp2p` when remote peer
-    # dropped connection and stream, so it can't be used anymore.
-    return neterr UnexpectedEOF
-  except LPStreamEOFError:
-    # `LPStreamEOFError` is raised by `nim-libp2p` when remote peer sent
-    # EOF frame, which indicates that remote peer wants to gracefully finish
-    # the stream. It also means that our connection with remote peer is not
-    # broken and new streams could be initiated.
-    return neterr PotentiallyExpectedEOF
-  except LPStreamError as exc:
-    warn "Unexpected error", exc = exc.msg
-    return neterr UnknownError
-
-  static: assert ResponseCode.low.ord == 0
-  if responseCodeByte > ResponseCode.high.byte:
-    return neterr InvalidResponseCode
-
-  let responseCode = ResponseCode responseCodeByte
-  case responseCode:
-  of ResponseCode.InvalidRequest, ResponseCode.ServerError, ResponseCode.ResourceUnavailable:
-    let
-      errorMsg = ? await readChunkPayload(conn, peer, ErrorMsg)
-      errorMsgStr = toPrettyString(errorMsg.asSeq)
-    debug "Error response from peer", responseCode, errMsg = errorMsgStr
-    return err NetError(kind: ReceivedErrorResponse,
-                        responseCode: responseCode,
-                        errorMsg: errorMsgStr)
-  of ResponseCode.Success:
-    discard
-
-  return await readChunkPayload(conn, peer, MsgType)
-
-proc readResponse(
-    conn: Connection, peer: Peer,
-    MsgType: type, maxResponseItems: Limit,
-    timeout: Duration
-): Future[NetRes[MsgType]] {.async: (raises: [CancelledError]).} =
-  when MsgType is List:
-    type E = MsgType.T
-    var results: MsgType
-    while true:
-      # Because we interleave networking with response processing, it may
-      # happen that reading all chunks takes longer than a strict deadline
-      # timeout would allow, so we allow each chunk a new timeout instead.
-      # The problem is exacerbated by the large number of round-trips to the
-      # poll loop that each future along the way causes.
-      trace "reading chunk", conn
-      let nextFut = conn.readResponseChunk(peer, E)
-      if not await nextFut.withTimeout(timeout):
-        return neterr(ReadResponseTimeout)
-      let nextRes = await nextFut
-      if nextRes.isErr:
-        if nextRes.error.kind == PotentiallyExpectedEOF:
-          trace "EOF chunk", conn, err = nextRes.error
-
-          return ok results
-        trace "Error chunk", conn, err = nextRes.error
-
-        return err nextRes.error
-      else:
-        trace "Got chunk", conn
-        if results.len >= maxResponseItems or not results.add nextRes.value:
-          return neterr(ResponseChunkOverflow)
-  else:
-    discard maxResponseItems  # Always set to 1 for non-`List` responses
-    let nextFut = conn.readResponseChunk(peer, MsgType)
-    if not await nextFut.withTimeout(timeout):
-      return neterr(ReadResponseTimeout)
-    return await nextFut # Guaranteed to complete without waiting
-
-proc doMakeRequest(
-    peer: Peer, protocolId: string, requestBytes: seq[byte],
-    ResponseMsg: type, maxResponseItems: Limit,
-    timeout: Duration
-): Future[NetRes[ResponseMsg]] {.async: (raises: [CancelledError]).} =
-  let
-    deadline = sleepAsync timeout
-    streamRes =
-      awaitWithTimeout(peer.network.openStream(peer, protocolId), deadline):
-        peer.updateScore(PeerScorePoorRequest)
-        return neterr StreamOpenTimeout
-    stream = streamRes.valueOr:
-      if streamRes.error().kind in ProtocolViolations:
-        peer.updateScore(PeerScoreInvalidRequest)
-      else:
-        peer.updateScore(PeerScorePoorRequest)
-      return err streamRes.error()
-
-  try:
-    # Send the request
-    # Some clients don't want a length sent for empty requests
-    # So don't send anything on empty requests
-    if requestBytes.len > 0:
-      await stream.writeChunk(Opt.none ResponseCode, requestBytes)
-    # Half-close the stream to mark the end of the request - if this is not
-    # done, the other peer might never send us the response.
-    await stream.close()
-
-    nbc_reqresp_messages_sent.inc(1, [protocolId])
-
-    # Read the response
-    let res = await readResponse(
-      stream, peer, ResponseMsg, maxResponseItems, timeout)
-    if res.isErr():
-      if res.error().kind in ProtocolViolations:
-        peer.updateScore(PeerScoreInvalidRequest)
-      else:
-        peer.updateScore(PeerScorePoorRequest)
-    res
-  except CancelledError as exc:
-    raise exc
-  except LPStreamError:
-    peer.updateScore(PeerScorePoorRequest)
-    neterr BrokenConnection
-  finally:
-    await stream.closeWithEOF()
-
-proc makeRequest(
-    peer: Peer, protocolId: string, requestBytes: seq[byte],
-    ResponseMsg: type,
-    timeout: Duration
-): Future[NetRes[ResponseMsg]] {.
-    async: (raises: [CancelledError], raw: true).} =
-  when ResponseMsg is List:
-    doMakeRequest(
-      peer, protocolId, requestBytes, ResponseMsg, ResponseMsg.maxLen, timeout)
-  else:
-    doMakeRequest(
-      peer, protocolId, requestBytes, ResponseMsg, 1.Limit, timeout)
-
-proc makeRequest(
-    peer: Peer, protocolId: string, requestBytes: seq[byte],
-    ResponseMsg: type, maxResponseItems: Limit,
-    timeout: Duration
-): Future[NetRes[ResponseMsg]] {.
-    async: (raises: [CancelledError], raw: true).} =
-  when ResponseMsg is List:
-    doMakeRequest(
-      peer, protocolId, requestBytes, ResponseMsg, maxResponseItems, timeout)
-  else:
-    static: raiseAssert $ResponseMsg & " does not support `maxResponseItems`"
-
-func init(T: type MultipleChunksResponse, peer: Peer, conn: Connection): T =
-  T(UntypedResponse(peer: peer, stream: conn))
-
-func init*[MsgType](T: type SingleChunkResponse[MsgType],
-                    peer: Peer, conn: Connection): T =
-  T(UntypedResponse(peer: peer, stream: conn))
-
-template write[M; maxLen: static Limit](
-    r: MultipleChunksResponse[M, maxLen], val: M,
-    contextBytes: openArray[byte] = []): untyped =
-  mixin sendResponseChunk
-  sendResponseChunk(UntypedResponse(r), val, contextBytes)
-
-template writeBincode[M; maxLen: static Limit](
-    r: MultipleChunksResponse[M, maxLen], val: auto,
-    contextBytes: openArray[byte] = []): untyped =
-  mixin sendResponseChunk
-  sendResponseChunk(UntypedResponse(r), val, contextBytes)
-
-template send*[M](
-    r: SingleChunkResponse[M], val: M,
-    contextBytes: openArray[byte] = []): untyped =
-  mixin sendResponseChunk
-  doAssert UntypedResponse(r).writtenChunks == 0
-  sendResponseChunk(UntypedResponse(r), val, contextBytes)
-
-template sendBincode*[M](
-    r: SingleChunkResponse[M], val: auto,
-    contextBytes: openArray[byte] = []): untyped =
-  mixin sendResponseChunk
-  doAssert UntypedResponse(r).writtenChunks == 0
-  sendResponseChunk(UntypedResponse(r), val, contextBytes)
-
-func initProtocol(name: string,
-                  peerInit: PeerStateInitializer,
-                  networkInit: NetworkStateInitializer,
-                  index: int): ProtocolInfoObj =
-  ProtocolInfoObj(
-    name: name,
-    messages: @[],
-    index: index,
-    peerStateInitializer: peerInit,
-    networkStateInitializer: networkInit)
-
-func setEventHandlers(p: ProtocolInfo,
-                      onPeerConnected: OnPeerConnectedHandler,
-                      onPeerDisconnected: OnPeerDisconnectedHandler) =
-  p.onPeerConnected = onPeerConnected
-  p.onPeerDisconnected = onPeerDisconnected
-
-proc implementSendProcBody(sendProc: SendProc, isChunkStream: bool) =
-  let
-    msg = sendProc.msg
-    UntypedResponse = bindSym "UntypedResponse"
-
-  proc sendCallGenerator(peer, bytes: NimNode): NimNode =
-    if msg.kind != msgResponse:
-      let msgProto = getRequestProtoName(msg.procDef)
-      case msg.kind
-      of msgRequest:
-        let ResponseRecord = msg.response.recName
-        if isChunkStream:
-          quote:
-            makeRequest(
-              `peer`, `msgProto`, `bytes`,
-              `ResponseRecord`, maxResponseItems, `timeoutVar`)
-        else:
-          quote:
-            makeRequest(
-              `peer`, `msgProto`, `bytes`,
-              `ResponseRecord`, `timeoutVar`)
-      else:
-        quote: sendNotificationMsg(`peer`, `msgProto`, `bytes`)
-    else:
-      quote: sendResponseChunkBytes(`UntypedResponse`(`peer`), `bytes`)
-
-  sendProc.useStandardBody(nil, nil, sendCallGenerator)
-
-proc handleIncomingStream(network: LBP2PNode,
-                          conn: Connection,
-                          protocolId: string,
-                          MsgType: type) {.async: (raises: [CancelledError]).} =
-  mixin callUserHandler, RecType
-
-  type MsgRec = RecType(MsgType)
-  const msgName {.used.} = typetraits.name(MsgType)
-
-  ## Uncomment this to enable tracing on all incoming requests
-  ## You can include `msgNameLit` in the condition to select
-  ## more specific requests:
-  # when chronicles.runtimeFilteringEnabled:
-  #   setLogLevel(LogLevel.TRACE)
-  #   defer: setLogLevel(LogLevel.DEBUG)
-  #   trace "incoming " & `msgNameLit` & " conn"
-
-  let peer = peerFromStream(network, conn)
-  try:
-    case peer.connectionState
-    of ConnectionState.Disconnecting, ConnectionState.Disconnected, ConnectionState.None:
-      # We got incoming stream request while disconnected or disconnecting.
-      debug "Got incoming request from disconnected peer", peer = peer,
-           message = msgName
-      return
-    of ConnectionState.Connecting:
-      # We got incoming stream request while handshake is not yet finished,
-      # TODO: We could check it here.
-      debug "Got incoming request from peer while in handshake", peer = peer,
-            msgName
-    of ConnectionState.Connected:
-      # We got incoming stream from peer with proper connection state.
-      debug "Got incoming request from peer", peer = peer, msgName
-
-    template returnInvalidRequest(msg: ErrorMsg) =
-      peer.updateScore(PeerScoreInvalidRequest)
-      await sendErrorResponse(peer, conn, ResponseCode.InvalidRequest, msg)
-      return
-
-    template returnInvalidRequest(msg: string) =
-      returnInvalidRequest(ErrorMsg msg.toBytes)
-
-    template returnResourceUnavailable(msg: ErrorMsg) =
-      await sendErrorResponse(peer, conn, ResponseCode.ResourceUnavailable, msg)
-      return
-
-    template returnResourceUnavailable(msg: string) =
-      returnResourceUnavailable(ErrorMsg msg.toBytes)
-
-    nbc_reqresp_messages_received.inc(1, [protocolId])
-
-    const isEmptyMsg = when MsgRec is object:
-      # We need nested `when` statements here, because Nim doesn't properly
-      # apply boolean short-circuit logic at compile time and this causes
-      # `totalSerializedFields` to be applied to non-object types that it
-      # doesn't know how to support.
-      when totalSerializedFields(MsgRec) == 0: true
-      else: false
-    else:
-      false
-
-    let msg =
-      try:
-        when isEmptyMsg:
-          NetRes[MsgRec].ok default(MsgRec)
-        else:
-          let deadline = sleepAsync RESP_TIMEOUT_DUR
-
-          awaitWithTimeout(
-            readChunkPayload(conn, peer, MsgRec), deadline):
-              # Timeout, e.g., cancellation due to fulfillment by different peer.
-              # Treat this similarly to `UnexpectedEOF`, `PotentiallyExpectedEOF`.
-              nbc_reqresp_messages_failed.inc(1, [protocolId])
-              await sendErrorResponse(
-                peer, conn, ResponseCode.InvalidRequest,
-                errorMsgLit "Request full data not sent in time")
-              return
-
-      finally:
-        # The request quota is shared between all requests - it represents the
-        # cost to perform a service on behalf of a client and is incurred
-        # regardless if the request succeeds or fails - we don't count waiting
-        # for this quota against timeouts so as not to prematurely disconnect
-        # clients that are on the edge - nonetheless, the client will count it.
-
-        # When a client exceeds their quota, they will be slowed down without
-        # notification - as long as they don't make parallel requests (which is
-        # limited by libp2p), this will naturally adapt them to the available
-        # quota.
-
-        # Note that the `msg` will be stored in memory while we wait for the
-        # quota to be available. The amount of such messages in memory is
-        # bounded by the libp2p limit of parallel streams
-
-        # This quota also applies to invalid requests thanks to the use of
-        # `finally`.
-
-        awaitQuota(peer, libp2pRequestCost, protocolId)
-
-    if msg.isErr:
-      if msg.error.kind in ProtocolViolations:
-        peer.updateScore(PeerScoreInvalidRequest)
-      else:
-        peer.updateScore(PeerScorePoorRequest)
-
-      nbc_reqresp_messages_failed.inc(1, [protocolId])
-      let (responseCode, errMsg) = case msg.error.kind
-        of UnexpectedEOF, PotentiallyExpectedEOF:
-          nbc_reqresp_messages_failed.inc(1, [protocolId])
-          (ResponseCode.InvalidRequest, errorMsgLit "Incomplete request")
-
-        of InvalidSnappyBytes:
-          (ResponseCode.InvalidRequest, errorMsgLit "Failed to decompress snappy payload")
-
-        of InvalidBincodeBytes:
-          (ResponseCode.InvalidRequest, errorMsgLit "Failed to decode bincode payload")
-
-        of InvalidSizePrefix:
-          (ResponseCode.InvalidRequest, errorMsgLit "Invalid chunk size prefix")
-
-        of ZeroSizePrefix:
-          (ResponseCode.InvalidRequest, errorMsgLit "The request chunk cannot have a size of zero")
-
-        of SizePrefixOverflow:
-          (ResponseCode.InvalidRequest, errorMsgLit "The chunk size exceed the maximum allowed")
-
-        of InvalidResponseCode, ReceivedErrorResponse,
-           StreamOpenTimeout, ReadResponseTimeout:
-          # These shouldn't be possible in a request, because
-          # there are no response codes being read, no stream
-          # openings and no reading of responses:
-          (ResponseCode.ServerError, errorMsgLit "Internal server error")
-
-        of BrokenConnection:
-          return
-
-        of ResponseChunkOverflow:
-          (ResponseCode.InvalidRequest, errorMsgLit "Too many chunks in response")
-
-        of UnknownError:
-          (ResponseCode.InvalidRequest, errorMsgLit "Unknown error while processing request")
-
-      await sendErrorResponse(peer, conn, responseCode, errMsg)
-      return
-
-    try:
-      # logReceivedMsg(peer, MsgType(msg.get))
-      await callUserHandler(MsgType, peer, conn, msg.get)
-    except InvalidInputsError as exc:
-      nbc_reqresp_messages_failed.inc(1, [protocolId])
-      returnInvalidRequest exc.msg
-    except ResourceUnavailableError as exc:
-      returnResourceUnavailable exc.msg
-    except CatchableError as exc:
-      nbc_reqresp_messages_failed.inc(1, [protocolId])
-      await sendErrorResponse(peer, conn, ResponseCode.ServerError, ErrorMsg exc.msg.toBytes)
-
-  except CatchableError as exc:
-    nbc_reqresp_messages_failed.inc(1, [protocolId])
-    debug "Error processing an incoming request", exc = exc.msg, msgName
-
-  finally:
-    await noCancel conn.closeWithEOF()
-    releasePeer(peer)
 
 func outboundStage*(node: LBP2PNode, pid: PeerId): Opt[OutboundConnStage] {.inline.} =
   node.outboundTable.withValue(pid, stage):
@@ -1240,16 +540,6 @@ proc handlePeer*(peer: Peer) {.async: (raises: [CancelledError]).} =
     debug "Peer successfully connected", peer = peer,
                                          connections = peer.connections
 
-proc performProtocolHandshakes(peer: Peer, incoming: bool) {.async: (raises: [CancelledError]).} =
-  # Loop down serially because it's easier to reason about the connection state
-  # when there are fewer async races, specially during setup
-  if peer.network.protocols.len == 0:
-    await peer.handlePeer()
-  else:
-    for protocol in peer.network.protocols:
-      if protocol.onPeerConnected != nil:
-        await protocol.onPeerConnected(peer, incoming)
-
 proc onConnEvent(
     node: LBP2PNode, peerId: PeerId, event: ConnEvent) {.
     async: (raises: [CancelledError]).} =
@@ -1304,7 +594,7 @@ proc onConnEvent(
       else:
         peer.direction = PeerType.Outgoing
 
-      await performProtocolHandshakes(peer, event.incoming)
+      await peer.handlePeer()
 
   of ConnEventKind.Disconnected:
     dec peer.connections
@@ -1381,18 +671,6 @@ proc new(T: type LBP2PNode,
   node.peerPool.setOnDeletePeer(onDeletePeer)
 
   node
-
-proc registerProtocol*(node: LBP2PNode, Proto: type, state: Proto.NetworkState) =
-  # This convoluted registration process is a leftover from the shared p2p macro
-  # and should be refactored
-  let proto = Proto.protocolInfo()
-  node.protocols.add(proto)
-  node.protocolStates.setLen(max(proto.index + 1, node.protocolStates.len))
-  node.protocolStates[proto.index] = state
-
-  for msg in proto.messages:
-    if msg.protocolMounter != nil:
-      msg.protocolMounter node
 
 proc startListening*(node: LBP2PNode) {.async.} =
   try:
@@ -1615,168 +893,13 @@ proc stop*(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
         it.error.msg)
 
 proc init(T: type Peer, network: LBP2PNode, peerId: PeerId): Peer =
-  let res = Peer(
+  Peer(
     peerId: peerId,
     network: network,
     connectionState: ConnectionState.None,
     lastReqTime: now(chronos.Moment),
     quota: TokenBucket.new(maxRequestQuota.int, fullReplenishTime)
   )
-  res.protocolStates.setLen(network.protocolStates.len())
-  for proto in network.protocols:
-    if not(isNil(proto.peerStateInitializer)):
-      res.protocolStates[proto.index] = proto.peerStateInitializer(res)
-  res
-
-func registerMsg(protocol: ProtocolInfo,
-                 name: string,
-                 mounter: MounterProc,
-                 libp2pCodecName: string) =
-  protocol.messages.add MessageInfo(name: name,
-                                    protocolMounter: mounter,
-                                    libp2pCodecName: libp2pCodecName)
-
-proc p2pProtocolBackendImpl*(p: P2PProtocol): Backend =
-  var
-    Format = ident "Bincode"
-    Connection = bindSym "Connection"
-    Peer = bindSym "Peer"
-    LBP2PNode = bindSym "LBP2PNode"
-    registerMsg = bindSym "registerMsg"
-    initProtocol = bindSym "initProtocol"
-    msgVar = ident "msg"
-    networkVar = ident "network"
-    callUserHandler = ident "callUserHandler"
-    MSG = ident "MSG"
-
-  new result
-
-  result.PeerType = Peer
-  result.NetworkType = LBP2PNode
-  result.setEventHandlers = bindSym "setEventHandlers"
-  result.SerializationFormat = Format
-  result.RequestResultsWrapper = ident "NetRes"
-
-  result.implementMsg = proc (msg: protocol_dsl.Message) =
-    if msg.kind == msgResponse:
-      return
-
-    let
-      protocol = msg.protocol
-      msgName = $msg.ident
-      msgNameLit = newLit msgName
-      MsgRecName = msg.recName
-      MsgStrongRecName = msg.strongRecName
-      codecNameLit = getRequestProtoName(msg.procDef)
-      protocolMounterName = ident(msgName & "Mounter")
-
-    ##
-    ## Implement the Thunk:
-    ##
-    ## The protocol handlers in nim-libp2p receive only a `Connection`
-    ## parameter and there is no way to access the wider context (such
-    ## as the current `Switch`). In our handlers, we may need to list all
-    ## peers in the current network, so we must keep a reference to the
-    ## network object in the closure environment of the installed handlers.
-    ##
-    ## For this reason, we define a `protocol mounter` proc that will
-    ## initialize the network object by creating handlers bound to the
-    ## specific network.
-    ##
-    var
-      userHandlerCall = newTree(nnkDiscardStmt)
-      maxResponseItems: Opt[NimNode]
-
-    if msg.userHandler != nil:
-      var OutputParamType = if msg.kind == msgRequest: msg.outputParamType
-                            else: nil
-
-      if OutputParamType == nil:
-        userHandlerCall = msg.genUserHandlerCall(msgVar, [peerVar])
-        if msg.kind == msgRequest:
-          userHandlerCall = newCall(ident"sendUserHandlerResultAsChunkImpl",
-                                    streamVar,
-                                    userHandlerCall)
-      else:
-        if OutputParamType.kind == nnkVarTy:
-          OutputParamType = OutputParamType[0]
-
-        let isChunkStream = eqIdent(OutputParamType[0], "MultipleChunksResponse")
-        msg.response.recName = if isChunkStream:
-          maxResponseItems.ok OutputParamType[2]
-          newTree(nnkBracketExpr, ident"List", OutputParamType[1], OutputParamType[2])
-        else:
-          OutputParamType[1]
-
-        let responseVar = ident("response")
-        userHandlerCall = newStmtList(
-          newVarStmt(responseVar,
-                     newCall(ident"init", OutputParamType,
-                                          peerVar, streamVar)),
-          msg.genUserHandlerCall(msgVar, [peerVar], outputParam = responseVar))
-
-    protocol.outRecvProcs.add quote do:
-      template `callUserHandler`(`MSG`: type `MsgStrongRecName`,
-                                 `peerVar`: `Peer`,
-                                 `streamVar`: `Connection`,
-                                 `msgVar`: `MsgRecName`): untyped =
-        `userHandlerCall`
-
-      proc `protocolMounterName`(`networkVar`: `LBP2PNode`) =
-        proc snappyThunk(
-            `streamVar`: `Connection`,
-            `protocolVar`: string
-        ): Future[void] {.
-            async: (raises: [CancelledError], raw: true), gcsafe.} =
-          handleIncomingStream(
-            `networkVar`, `streamVar`, `protocolVar`, `MsgStrongRecName`)
-
-        try:
-          mount `networkVar`.switch,
-                LPProtocol.new(
-                  codecs = @[`codecNameLit`], handler = snappyThunk)
-        except LPError as exc:
-          # Failure here indicates that the mounting was done incorrectly which
-          # would be a programming error
-          raiseAssert exc.msg
-    ##
-    ## Implement Senders and Handshake
-    ##
-
-    var sendProc = msg.createSendProc()
-    if maxResponseItems.isSome:
-      sendProc.def.params.insert(
-        sendProc.def.params.len - 1, # Insert before implicit `timeout` param
-        newTree(
-          nnkIdentDefs,
-          ident"maxResponseItems",
-          bindSym"Limit",
-          maxResponseItems.get))
-
-    implementSendProcBody(sendProc, maxResponseItems.isSome)
-
-    protocol.outProcRegistrations.add(
-      newCall(registerMsg,
-              protocol.protocolInfoVar,
-              msgNameLit,
-              protocolMounterName,
-              codecNameLit))
-
-  result.implementProtocolInit = proc (p: P2PProtocol): NimNode =
-    # This `macrocache` counter gives each protocol its own integer index which
-    # is later used to index per-protocol, per-instace data kept in the peer and
-    # network - the counter is global across all modules / protocols of the
-    # application
-    let
-      id = CacheCounter"network_protocol_id"
-      tmp = id.value
-    id.inc(1)
-
-    newCall(initProtocol, newLit(p.name), p.peerInit, p.netInit, newLit(tmp))
-
-#Must import here because of cyclicity
-import ./peer_protocol
-export peer_protocol
 
 template udpEndpoint(address, port): auto =
   MultiAddress.init(address, udpProtocol, port)

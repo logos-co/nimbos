@@ -59,8 +59,6 @@ proc initFullNode(
 
   asyncSpawn eventWaiter()
 
-  node.network.registerProtocol(PeerSync, PeerSync.NetworkState.init())
-
 proc init*(
     T: type LBNode,
     rng: ref HmacDrbgContext,

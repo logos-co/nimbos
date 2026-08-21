@@ -329,7 +329,7 @@ suite "Network connection state — outboundTable, connQueue, seenTable":
       await dialer.stop()
       await listener.stop()
 
-  asyncTest "connected peers complete protocol handshake and are admitted to peerPool with Connected state":
+  asyncTest "connected peers are admitted to peerPool with Connected state upon libp2p connection":
     let rngL = HmacDrbgContext.new()
     let rngD = HmacDrbgContext.new()
     let natCfg = nat.NatConfig(hasExtIp: true, extIp: TestLoopbackIp)
