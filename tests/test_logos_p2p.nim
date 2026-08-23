@@ -30,9 +30,7 @@ proc autonatV2ClientOf(node: LBP2PNode): AutonatV2Client =
 
 suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
   asyncTest "QUIC quic-v1 listen: switch binds and accepts on configured listen multiaddr":
-    let
-      listenIp = parseIpAddress("127.0.0.1")
-      natCfg = nat.NatConfig(hasExtIp: true, extIp: listenIp)
+    let listenIp = parseIpAddress("127.0.0.1")
 
     var
       rng1 = HmacDrbgContext.new()
@@ -40,7 +38,6 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
 
     let net1 = NetworkConfig(
       listenAddress: some(listenIp),
-      nat: natCfg,
       quicPort: TestQuicAnyPort,
       maxPeers: 4,
       hardMaxPeers: some(4),
@@ -49,7 +46,6 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
 
     let net2 = NetworkConfig(
       listenAddress: some(listenIp),
-      nat: natCfg,
       quicPort: TestQuicAnyPort,
       maxPeers: 4,
       hardMaxPeers: some(4),
@@ -99,15 +95,11 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
       await node1.stop()
 
   asyncTest "Public advertisement: reachable multiaddr matches /{ip}/udp/{port}/quic-v1/p2p/{peer_id}":
-    let
-      listenIp = parseIpAddress("127.0.0.1")
-      natCfg = nat.NatConfig(hasExtIp: true, extIp: listenIp)
-
+    let listenIp = parseIpAddress("127.0.0.1")
     var rng = HmacDrbgContext.new()
 
     let net = NetworkConfig(
       listenAddress: some(listenIp),
-      nat: natCfg,
       quicPort: TestQuicAnyPort,
       maxPeers: 4,
       hardMaxPeers: some(4),
@@ -136,16 +128,37 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
     finally:
       await node.stop()
 
-  asyncTest "Lifecycle: network start and stop release listeners and pending dials cleanly":
-    let
-      listenIp = parseIpAddress("127.0.0.1")
-      natCfg = nat.NatConfig(hasExtIp: true, extIp: listenIp)
+  asyncTest "Explicit advertisement: configured --advertised-address appears in node announcedAddresses":
+    let rng = HmacDrbgContext.new()
+    let net = NetworkConfig(
+      listenAddress: some(parseIpAddress("127.0.0.1")),
+      quicPort: Port(9000),
+      announcedAddresses: announcedAddresses(@[
+        parseUri("quic://198.51.100.1:4433"),
+        parseUri("quic://203.0.113.5"),
+        parseUri("quic://[2001:db8::1]:5001"),
+      ], Port(9000)),
+      maxPeers: 4,
+      hardMaxPeers: some(4),
+      agentString: "p2p-test-advertised",
+    )
+    check net.announcedAddresses.len == 3
 
+    let node = createLBP2PNode(rng, net, rng.getRandomNetKeys()).valueOr:
+      fail("createLBP2PNode failed: " & $error)
+
+    check node.announcedAddresses.len == 3
+    check $node.announcedAddresses[0] == "/ip4/198.51.100.1/udp/4433/quic-v1"
+    check $node.announcedAddresses[1] == "/ip4/203.0.113.5/udp/9000/quic-v1"
+    check $node.announcedAddresses[2] == "/ip6/2001:db8::1/udp/5001/quic-v1"
+    check node.switch.peerInfo.announcedAddrs.len == 3
+
+  asyncTest "Lifecycle: network start and stop release listeners and pending dials cleanly":
+    let listenIp = parseIpAddress("127.0.0.1")
     var rng = HmacDrbgContext.new()
 
     let net = NetworkConfig(
       listenAddress: some(listenIp),
-      nat: natCfg,
       quicPort: TestQuicAnyPort,
       maxPeers: 4,
       hardMaxPeers: some(4),

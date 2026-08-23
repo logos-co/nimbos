@@ -24,8 +24,6 @@ import
     pubsub, gossipsub, rpc/message, rpc/messages, peertable, pubsubpeer],
   libp2p/stream/connection,
   bearssl/rand,
-  eth/async_utils,
-  eth/net/nat,
   ./bincode,
   ../[version, conf],
   ../core/utils,
@@ -602,12 +600,13 @@ proc sendNotificationMsg(
 ) {.async: (raises: [CancelledError]).} =
   # Notifications are sent as a best effort, ie errors are not reported back
   # to the caller
-  let
-    deadline = sleepAsync RESP_TIMEOUT_DUR
-    streamRes = awaitWithTimeout(peer.network.openStream(peer, protocolId), deadline):
-      debug "Timeout while opening stream for notification", peer, protocolId
-      return
+  let streamFut = peer.network.openStream(peer, protocolId)
+  if not await streamFut.withTimeout(RESP_TIMEOUT_DUR):
+    await cancelAndWait(streamFut)
+    debug "Timeout while opening stream for notification", peer, protocolId
+    return
 
+  let streamRes = await streamFut
   let stream = streamRes.valueOr:
     debug "Could not open stream for notification",
       peer, protocolId, error = streamRes.error
@@ -796,18 +795,19 @@ proc doMakeEth2Request(
     ResponseMsg: type, maxResponseItems: Limit,
     timeout: Duration
 ): Future[NetRes[ResponseMsg]] {.async: (raises: [CancelledError]).} =
-  let
-    deadline = sleepAsync timeout
-    streamRes =
-      awaitWithTimeout(peer.network.openStream(peer, protocolId), deadline):
-        peer.updateScore(PeerScorePoorRequest)
-        return neterr StreamOpenTimeout
-    stream = streamRes.valueOr:
-      if streamRes.error().kind in ProtocolViolations:
-        peer.updateScore(PeerScoreInvalidRequest)
-      else:
-        peer.updateScore(PeerScorePoorRequest)
-      return err streamRes.error()
+  let streamFut = peer.network.openStream(peer, protocolId)
+  if not await streamFut.withTimeout(timeout):
+    await cancelAndWait(streamFut)
+    peer.updateScore(PeerScorePoorRequest)
+    return neterr StreamOpenTimeout
+
+  let streamRes = await streamFut
+  let stream = streamRes.valueOr:
+    if streamRes.error().kind in ProtocolViolations:
+      peer.updateScore(PeerScoreInvalidRequest)
+    else:
+      peer.updateScore(PeerScorePoorRequest)
+    return err streamRes.error()
 
   try:
     # Send the request
@@ -1014,17 +1014,17 @@ proc handleIncomingStream(network: LBP2PNode,
         when isEmptyMsg:
           NetRes[MsgRec].ok default(MsgRec)
         else:
-          let deadline = sleepAsync RESP_TIMEOUT_DUR
-
-          awaitWithTimeout(
-            readChunkPayload(conn, peer, MsgRec), deadline):
-              # Timeout, e.g., cancellation due to fulfillment by different peer.
-              # Treat this similarly to `UnexpectedEOF`, `PotentiallyExpectedEOF`.
-              nbc_reqresp_messages_failed.inc(1, [shortProtocolId(protocolId)])
-              await sendErrorResponse(
-                peer, conn, ResponseCode.InvalidRequest,
-                errorMsgLit "Request full data not sent in time")
-              return
+          let payloadFut = readChunkPayload(conn, peer, MsgRec)
+          if not await payloadFut.withTimeout(RESP_TIMEOUT_DUR):
+            await cancelAndWait(payloadFut)
+            # Timeout, e.g., cancellation due to fulfillment by different peer.
+            # Treat this similarly to `UnexpectedEOF`, `PotentiallyExpectedEOF`.
+            nbc_reqresp_messages_failed.inc(1, [shortProtocolId(protocolId)])
+            await sendErrorResponse(
+              peer, conn, ResponseCode.InvalidRequest,
+              errorMsgLit "Request full data not sent in time")
+            return
+          await payloadFut
 
       finally:
         # The request quota is shared between all requests - it represents the
@@ -1737,9 +1737,12 @@ proc newBeaconSwitch(
     seckey: PrivateKey,
     address: MultiAddress,
     rng: ref HmacDrbgContext,
+    announcedAddresses: seq[MultiAddress] = @[],
 ): Result[Switch, string] =
   var sb = SwitchBuilder.new()
   try:
+    if announcedAddresses.len > 0:
+      sb = sb.withAnnouncedAddresses(announcedAddresses)
     ok sb
     .withPrivateKey(seckey)
     .withAddress(address)
@@ -1780,33 +1783,16 @@ proc createLBP2PNode*(
       else:
         getAutoAddress(Port(0)).toIpAddress()
 
-    quicPorts = @[(port: quicPort, protocol: PortProtocol.UDP)]
-    (extIp, extPorts) =
-      setupAddress(config.nat, listenAddress, quicPorts, clientId)
-    extQuicPort =
-      if extPorts.len > 0 and extPorts[0].isSome:
-        Opt.some(extPorts[0].get().port)
-      else:
-        Opt.none(Port)
-
     hostAddress =
       ?quicEndPoint(listenAddress, quicPort)
-    announcedAddresses =
-      if extIp.isNone() or extQuicPort.isNone():
-        @[]
-      else:
-        @[
-          ?quicEndPoint(extIp.get(), extQuicPort.get())
-        ]
+
+    announcedAddresses = config.announcedAddresses
 
   debug "Initializing networking", hostAddress,
                                    network_public_key = netKeys.pubkey,
                                    announcedAddresses
 
-  # TODO nim-libp2p still doesn't have support for announcing addresses
-  # that are different from the host address (this is relevant when we
-  # are running behind a NAT).
-  let switch = ?newBeaconSwitch(config, netKeys.seckey, hostAddress, rng)
+  let switch = ?newBeaconSwitch(config, netKeys.seckey, hostAddress, rng, announcedAddresses)
 
   func msgIdProvider(m: messages.Message): Result[seq[byte], ValidationResult] =
     ok(gossipId(m.data, m.topic))

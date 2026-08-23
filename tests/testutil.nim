@@ -170,12 +170,10 @@ type BootstrapPeers* = object
   listenerPeerId*: PeerId
 
 proc createBootstrapPeers*(): Future[BootstrapPeers] {.async.} =
-  let natCfg = NatConfig(hasExtIp: true, extIp: TestLoopbackIp)
   let rngL = HmacDrbgContext.new()
   let rngD = HmacDrbgContext.new()
   let listenerConf = NetworkConfig(
     listenAddress: some(TestLoopbackIp),
-    nat: natCfg,
     quicPort: TestQuicAnyPort,
     maxPeers: 8,
     hardMaxPeers: some(8),
@@ -193,7 +191,6 @@ proc createBootstrapPeers*(): Future[BootstrapPeers] {.async.} =
     fail("listener has no full addrs")
   let dialerConf = NetworkConfig(
     listenAddress: some(TestLoopbackIp),
-    nat: natCfg,
     quicPort: TestQuicAnyPort,
     maxPeers: 8,
     hardMaxPeers: some(8),
