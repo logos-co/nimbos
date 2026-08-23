@@ -55,11 +55,11 @@ proc runLbp2pIbdSyncTest(extraBlocks: int) {.async.} =
   try:
     await peers.listener.start()
     await peers.dialer.start()
-    let syncPeers = await peers.dialer.waitForPeers(minPeers = 1, timeout = 10.seconds)
+    let syncPeers = await peers.dialer.waitForBootstrapPeers()
     clientSyncer.start(syncPeers)
 
-    check await waitLibp2pConnected(peers.dialer.switch, peers.listenerPeerId)
-    check await waitLocalTreeBlock(chainClient.localTree, tipId, waitAttempts)
+    check waitUntil(peers.dialer.switch.isConnected(peers.listenerPeerId))
+    check waitUntil(chainClient.localTree.hasBlock(tipId), chronos.milliseconds(waitAttempts * 100))
     check chainClient.localTree.localTipId == tipId
   finally:
     await peers.dialer.stop()

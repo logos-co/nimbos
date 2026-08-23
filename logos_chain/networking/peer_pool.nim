@@ -916,24 +916,3 @@ proc setPeerCounter*[A, B](pool: PeerPool[A, B],
                            peerCounterCb: PeerCounterCallback) =
   ## Sets PeerCounter callback.
   pool.peerCounter = peerCounterCb
-
-proc waitForPeers*[A, B](
-    pool: PeerPool[A, B],
-    minPeers: int = 1,
-    timeout: Duration = 10.seconds,
-): Future[bool] {.async: (raises: [CancelledError]).} =
-  ## Asynchronously wait until the pool contains at least ``minPeers`` handshaked peers.
-  if pool.len >= minPeers:
-    return true
-
-  let event = newAsyncEvent()
-  let prevCounter = pool.peerCounter
-  pool.setPeerCounter proc() =
-    if not isNil(prevCounter): prevCounter()
-    if pool.len >= minPeers and not event.isSet():
-      event.fire()
-
-  try:
-    return await withTimeout(event.wait(), timeout)
-  finally:
-    pool.setPeerCounter(prevCounter)

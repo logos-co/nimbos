@@ -61,13 +61,14 @@ proc collectKadDiscoveredPeers[T](
   if isNil(kad) or isNil(sw):
     return @[]
   var seen = initHashSet[PeerId]()
+  let selfId = sw.peerInfo.peerId
   for bucket in kad.rtable.buckets:
     for entry in bucket.peers:
       let pidRes = entry.nodeId.toPeerId()
       if pidRes.isErr():
         continue
       let peerId = pidRes.get()
-      if peerPool.hasPeer(peerId):
+      if peerId == selfId or peerPool.hasPeer(peerId):
         continue
       let addrs = sw.peerStore[AddressBook][peerId]
       if addrs.len == 0 or peerId in seen:

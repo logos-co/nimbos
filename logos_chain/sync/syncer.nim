@@ -26,20 +26,22 @@ proc runAtStartup(
   try:
     mountCryptarchiaSyncHandler(syncer)
   except LPError as exc:
-    warn "Syncer start skipped: failed to mount chain-sync handler",
+    fatal "Syncer start failed: failed to mount chain-sync handler",
       msg = exc.msg, protocol = syncer.chainSyncProtocol
-    return
+    quit(QuitFailure)
   debug "Syncer started chain-sync handler",
     protocol = syncer.chainSyncProtocol,
     syncPeerCount = syncPeers.len
-  try:
-    await initialBlockDownload(syncer, syncPeers)
-    notice "Syncer completed initial block download",
-      peerCount = syncPeers.len,
-      protocol = syncer.chainSyncProtocol
-  except IBDFailure as exc:
-    warn "Syncer initial block download failed",
-      msg = exc.msg, protocol = syncer.chainSyncProtocol
+  if syncPeers.len > 0:
+    try:
+      await initialBlockDownload(syncer, syncPeers)
+      notice "Syncer completed initial block download",
+        peerCount = syncPeers.len,
+        protocol = syncer.chainSyncProtocol
+    except IBDFailure as exc:
+      fatal "Syncer initial block download failed: unable to catch up with any IBD peer",
+        msg = exc.msg, protocol = syncer.chainSyncProtocol
+      quit(QuitFailure)
 
 proc start*(syncer: Syncer, syncPeers: seq[PeerId] = @[]) =
   asyncSpawn syncer.runAtStartup(syncPeers)

@@ -222,11 +222,13 @@ proc initializeNetworking(node: LBNode) {.async.} =
   await node.network.start()
   if node.syncer != nil:
     if node.network.bootstrapPeerIds.len > 0:
-      debug "Waiting for network peer readiness before starting syncer"
-      let syncPeers = await node.network.waitForPeers(minPeers = 1, timeout = 10.seconds)
+      debug "Waiting for bootstrap peer readiness before starting syncer",
+        timeout = node.network.bootstrapTimeout
+      let syncPeers = await node.network.waitForBootstrapPeers()
       if syncPeers.len == 0:
-        warn "Syncer start skipped: no bootstrap peer reached PeerPool within timeout"
-        return
+        fatal "Initial block download failed: no configured bootstrap peer reached within timeout",
+          timeout = node.network.bootstrapTimeout
+        quit(QuitFailure)
       node.syncer.start(syncPeers)
     else:
       node.syncer.start(@[])

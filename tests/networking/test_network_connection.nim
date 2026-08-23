@@ -10,7 +10,6 @@
 
 import
   std/[net, sets],
-  bearssl/rand,
   chronos,
   chronos/unittest2/asynctests,
   ../testutil
@@ -18,24 +17,11 @@ import
 import
   ../../logos_chain/conf,
   ../../logos_chain/networking/network,
-  eth/net/nat,
   libp2p/[switch, peerid, multiaddress]
 
 suite "Network connection state — outboundTable, connQueue, seenTable":
   asyncTest "tryEnqueueOutboundConn: eligible peer is reserved in outboundTable (Queued) and queued once":
-    let rng = HmacDrbgContext.new()
-    let conf = NetworkConfig(
-      listenAddress: some(TestLoopbackIp),
-      nat: nat.NatConfig(hasExtIp: true, extIp: TestLoopbackIp),
-      quicPort: TestQuicAnyPort,
-      maxPeers: 16,
-      hardMaxPeers: some(16),
-      agentString: "try-enqueue-unit",
-    )
-    let node = createLBP2PNode(
-      rng, conf, rng.getRandomNetKeys()
-    ).expect("createLBP2PNode failed for try-enqueue-unit")
-
+    let node = createTestNode("try-enqueue-unit")
     let keys = node.rng.getRandomNetKeys()
     let pid = PeerId.init(keys.seckey).tryGet()
     let ma = MultiAddress.init("/ip4/127.0.0.1/udp/4333/quic-v1").tryGet()
@@ -49,19 +35,7 @@ suite "Network connection state — outboundTable, connQueue, seenTable":
       node, pa, proc(p: PeerAddr): bool = true)
 
   asyncTest "tryEnqueueOutboundConn: ineligible peer does not touch outboundTable":
-    let rng = HmacDrbgContext.new()
-    let conf = NetworkConfig(
-      listenAddress: some(TestLoopbackIp),
-      nat: nat.NatConfig(hasExtIp: true, extIp: TestLoopbackIp),
-      quicPort: TestQuicAnyPort,
-      maxPeers: 16,
-      hardMaxPeers: some(16),
-      agentString: "try-enqueue-ineligible",
-    )
-    let node = createLBP2PNode(
-      rng, conf, rng.getRandomNetKeys()
-    ).expect("createLBP2PNode failed for try-enqueue-ineligible")
-
+    let node = createTestNode("try-enqueue-ineligible")
     let keys = node.rng.getRandomNetKeys()
     let pid = PeerId.init(keys.seckey).tryGet()
     let ma = MultiAddress.init("/ip4/127.0.0.1/udp/4334/quic-v1").tryGet()
@@ -76,18 +50,7 @@ suite "Network connection state — outboundTable, connQueue, seenTable":
     ## ``connQueue`` is bounded (``ConcurrentConnections`` in network). Fill it so the
     ## next ``addLast`` blocks; cancelling that future must unwind and delete from ``outboundTable``.
     const queueCap = 20
-    let rng = HmacDrbgContext.new()
-    let conf = NetworkConfig(
-      listenAddress: some(TestLoopbackIp),
-      nat: nat.NatConfig(hasExtIp: true, extIp: TestLoopbackIp),
-      quicPort: TestQuicAnyPort,
-      maxPeers: 16,
-      hardMaxPeers: some(16),
-      agentString: "try-enqueue-cancel",
-    )
-    let node = createLBP2PNode(
-      rng, conf, rng.getRandomNetKeys()
-    ).expect("createLBP2PNode failed for try-enqueue-cancel")
+    let node = createTestNode("try-enqueue-cancel")
 
     let ma = MultiAddress.init("/ip4/127.0.0.1/udp/4335/quic-v1").tryGet()
     var seenIds: HashSet[PeerId]
@@ -124,37 +87,9 @@ suite "Network connection state — outboundTable, connQueue, seenTable":
     check node.outboundStage(pidBlocked).isNone
 
   asyncTest "connectViaConnQueue: bootstrap-style integration connects a live peer":
-    let rngL = HmacDrbgContext.new()
-    let rngD = HmacDrbgContext.new()
-    let natCfg = nat.NatConfig(hasExtIp: true, extIp: TestLoopbackIp)
+    let listener = await startTestNode("p2p-bootstrap-listener")
+    let dialer = await startTestNode("p2p-bootstrap-dialer")
 
-    let confL = NetworkConfig(
-      listenAddress: some(TestLoopbackIp),
-      nat: natCfg,
-      quicPort: TestQuicAnyPort,
-      maxPeers: 8,
-      hardMaxPeers: some(8),
-      agentString: "p2p-bootstrap-listener",
-    )
-    let confD = NetworkConfig(
-      listenAddress: some(TestLoopbackIp),
-      nat: natCfg,
-      quicPort: TestQuicAnyPort,
-      maxPeers: 8,
-      hardMaxPeers: some(8),
-      agentString: "p2p-bootstrap-dialer",
-      bootstrapNodes: @[],
-    )
-
-    let listener = createLBP2PNode(
-      rngL, confL, rngL.getRandomNetKeys()
-    ).expect("createLBP2PNode failed for p2p-bootstrap-listener")
-    let dialer = createLBP2PNode(
-      rngD, confD, rngD.getRandomNetKeys()
-    ).expect("createLBP2PNode failed for p2p-bootstrap-dialer")
-
-    await listener.startListening()
-    await dialer.startListening()
     await dialer.start()
 
     try:
@@ -177,20 +112,8 @@ suite "Network connection state — outboundTable, connQueue, seenTable":
       await listener.stop()
 
   asyncTest "connectViaConnQueue: timeout marks peer seen and does not hang":
-    let rng = HmacDrbgContext.new()
-    let conf = NetworkConfig(
-      listenAddress: some(TestLoopbackIp),
-      nat: nat.NatConfig(hasExtIp: true, extIp: TestLoopbackIp),
-      quicPort: TestQuicAnyPort,
-      maxPeers: 8,
-      hardMaxPeers: some(8),
-      agentString: "connect-via-queue-timeout",
-    )
-    let node = createLBP2PNode(
-      rng, conf, rng.getRandomNetKeys()
-    ).expect("createLBP2PNode failed for connect-via-queue-timeout")
+    let node = await startTestNode("connect-via-queue-timeout")
     node.setConnectTimeout(50.milliseconds)
-    await node.startListening()
     await node.start()
 
     try:
@@ -211,20 +134,8 @@ suite "Network connection state — outboundTable, connQueue, seenTable":
       await node.stop()
 
   asyncTest "connectWorker: in-flight dial transitions to Dialing stage and clears after failure":
-    let rng = HmacDrbgContext.new()
-    let conf = NetworkConfig(
-      listenAddress: some(TestLoopbackIp),
-      nat: nat.NatConfig(hasExtIp: true, extIp: TestLoopbackIp),
-      quicPort: TestQuicAnyPort,
-      maxPeers: 8,
-      hardMaxPeers: some(8),
-      agentString: "connecting-peers-state",
-    )
-    let node = createLBP2PNode(
-      rng, conf, rng.getRandomNetKeys()
-    ).expect("createLBP2PNode failed for connecting-peers-state")
-    node.setConnectTimeout(250.milliseconds)
-    await node.startListening()
+    let node = await startTestNode("connecting-peers-state")
+    node.setConnectTimeout(50.milliseconds)
     await node.start()
 
     let deadKeys = node.rng.getRandomNetKeys()
@@ -237,69 +148,24 @@ suite "Network connection state — outboundTable, connQueue, seenTable":
           node,
           PeerAddr(peerId: deadPid, addrs: @[deadAddr]),
           proc(_: PeerAddr): bool {.gcsafe, raises: [].} = true,
-          500.milliseconds
+          200.milliseconds
         )
 
-      var sawConnecting = false
-      for _ in 0 ..< 50:
-        if node.outboundStage(deadPid) == Opt.some(OutboundConnStage.Dialing) or node.seenTableContains(deadPid):
-          sawConnecting = true
-          break
-        await sleepAsync(chronos.milliseconds(5))
-      check sawConnecting
+      check waitUntil(
+        node.outboundStage(deadPid) == Opt.some(OutboundConnStage.Dialing) or node.seenTableContains(deadPid)
+      )
 
       check not await fut
 
-      var sawFailure = false
-      for _ in 0 ..< 300:
-        if node.seenTableContains(deadPid):
-          sawFailure = true
-          break
-        await sleepAsync(chronos.milliseconds(10))
-      check sawFailure
-
-      var cleared = false
-      for _ in 0 ..< 300:
-        if node.outboundStage(deadPid).isNone:
-          cleared = true
-          break
-        await sleepAsync(chronos.milliseconds(10))
-      check cleared
+      check waitUntil(node.seenTableContains(deadPid))
+      check waitUntil(node.outboundStage(deadPid).isNone)
     finally:
       await node.stop()
 
   asyncTest "connectViaConnQueue: multiple concurrent callers coalesce and all resolve true":
-    let rngL = HmacDrbgContext.new()
-    let rngD = HmacDrbgContext.new()
-    let natCfg = nat.NatConfig(hasExtIp: true, extIp: TestLoopbackIp)
+    let listener = await startTestNode("p2p-coalesce-listener")
+    let dialer = await startTestNode("p2p-coalesce-dialer")
 
-    let confL = NetworkConfig(
-      listenAddress: some(TestLoopbackIp),
-      nat: natCfg,
-      quicPort: TestQuicAnyPort,
-      maxPeers: 8,
-      hardMaxPeers: some(8),
-      agentString: "p2p-coalesce-listener",
-    )
-    let confD = NetworkConfig(
-      listenAddress: some(TestLoopbackIp),
-      nat: natCfg,
-      quicPort: TestQuicAnyPort,
-      maxPeers: 8,
-      hardMaxPeers: some(8),
-      agentString: "p2p-coalesce-dialer",
-      bootstrapNodes: @[],
-    )
-
-    let listener = createLBP2PNode(
-      rngL, confL, rngL.getRandomNetKeys()
-    ).expect("createLBP2PNode failed for p2p-coalesce-listener")
-    let dialer = createLBP2PNode(
-      rngD, confD, rngD.getRandomNetKeys()
-    ).expect("createLBP2PNode failed for p2p-coalesce-dialer")
-
-    await listener.startListening()
-    await dialer.startListening()
     await dialer.start()
 
     try:
@@ -330,37 +196,9 @@ suite "Network connection state — outboundTable, connQueue, seenTable":
       await listener.stop()
 
   asyncTest "connected peers are admitted to peerPool with Connected state upon libp2p connection":
-    let rngL = HmacDrbgContext.new()
-    let rngD = HmacDrbgContext.new()
-    let natCfg = nat.NatConfig(hasExtIp: true, extIp: TestLoopbackIp)
+    let listener = await startTestNode("p2p-pool-admission-listener")
+    let dialer = await startTestNode("p2p-pool-admission-dialer")
 
-    let confL = NetworkConfig(
-      listenAddress: some(TestLoopbackIp),
-      nat: natCfg,
-      quicPort: TestQuicAnyPort,
-      maxPeers: 8,
-      hardMaxPeers: some(8),
-      agentString: "p2p-pool-admission-listener",
-    )
-    let confD = NetworkConfig(
-      listenAddress: some(TestLoopbackIp),
-      nat: natCfg,
-      quicPort: TestQuicAnyPort,
-      maxPeers: 8,
-      hardMaxPeers: some(8),
-      agentString: "p2p-pool-admission-dialer",
-      bootstrapNodes: @[],
-    )
-
-    let listener = createLBP2PNode(
-      rngL, confL, rngL.getRandomNetKeys()
-    ).expect("createLBP2PNode failed for p2p-pool-admission-listener")
-    let dialer = createLBP2PNode(
-      rngD, confD, rngD.getRandomNetKeys()
-    ).expect("createLBP2PNode failed for p2p-pool-admission-dialer")
-
-    await listener.startListening()
-    await dialer.startListening()
     await listener.start()
     await dialer.start()
 
@@ -380,10 +218,8 @@ suite "Network connection state — outboundTable, connQueue, seenTable":
       # 1. Verify Switch raw transport connection
       check dialer.switch.isConnected(listenerPeerAddr.peerId)
 
-      # 2. Verify PeerPool admission via waitForPeers
-      let readyPeers = await dialer.waitForPeers(minPeers = 1, timeout = 3.seconds)
-      check readyPeers.len >= 1
-      check listenerPeerAddr.peerId in readyPeers
+      # 2. Verify PeerPool admission
+      check waitUntil(dialer.peerPool.hasPeer(listenerPeerAddr.peerId))
       check dialer.peerPool.hasPeer(listenerPeerAddr.peerId)
 
       # 3. Verify Peer readiness state and score
@@ -393,5 +229,79 @@ suite "Network connection state — outboundTable, connQueue, seenTable":
     finally:
       await dialer.stop()
       await listener.stop()
+
+  asyncTest "waitForBootstrapPeers: fast path returns immediately when all configured bootstrap peers connect":
+    let listener1 = await startTestNode("p2p-fast-listener-1")
+    let listener2 = await startTestNode("p2p-fast-listener-2")
+    let dialer = await startTestNode(
+      "p2p-fast-dialer",
+      @[listener1.fullAddress(), listener2.fullAddress()],
+    )
+
+    try:
+      await listener1.start()
+      await listener2.start()
+      await dialer.start()
+
+      let startTime = Moment.now()
+      let readyPeers = await dialer.waitForBootstrapPeers()
+      let elapsed = Moment.now() - startTime
+
+      # Fast path returns immediately as soon as all connect (< 5 seconds)
+      check readyPeers.len == 2
+      check listener1.switch.peerInfo.peerId in readyPeers
+      check listener2.switch.peerInfo.peerId in readyPeers
+      check elapsed < 5.seconds
+    finally:
+      await dialer.stop()
+      await listener1.stop()
+      await listener2.stop()
+
+  asyncTest "waitForBootstrapPeers: grace period allows in-flight peers to settle without waiting full bootstrapTimeout":
+    let listener = await startTestNode("p2p-grace-listener")
+    let dialer = await startTestNode(
+      "p2p-grace-dialer",
+      @[listener.fullAddress(), DeadBootstrapAddress],
+    )
+
+    try:
+      await listener.start()
+      let waitFut = dialer.waitForBootstrapPeers()
+      asyncSpawn dialer.start()
+
+      let startTime = Moment.now()
+      let readyPeers = await waitFut
+      let elapsed = Moment.now() - startTime
+
+      # 1. Verify that the live bootstrap peer connected and was returned
+      check readyPeers == @[listener.switch.peerInfo.peerId]
+
+      # 2. Verify grace period bounded elapsed time to ~300ms, well under 30s bootstrapTimeout
+      check elapsed >= BootstrapDialGrace
+      check elapsed < 5.seconds
+    finally:
+      await dialer.stop()
+      await listener.stop()
+
+  asyncTest "waitForBootstrapPeers: returns empty seq when no bootstrap peers connect within timeout":
+    let dialer = await startTestNode(
+      "p2p-timeout-dialer",
+      @[DeadBootstrapAddress],
+    )
+    dialer.setConnectTimeout(10.milliseconds)
+    dialer.bootstrapTimeout = 10.milliseconds
+
+    try:
+      let waitFut = dialer.waitForBootstrapPeers()
+      asyncSpawn dialer.start()
+      let startTime = Moment.now()
+      let readyPeers = await waitFut
+      let elapsed = Moment.now() - startTime
+
+      check readyPeers.len == 0
+      check elapsed >= 10.milliseconds
+      check elapsed < 2.seconds
+    finally:
+      await dialer.stop()
 
 {.pop.}

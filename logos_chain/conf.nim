@@ -59,6 +59,13 @@ proc defaultCircuitsDir*(): InputDir =
   ## the bundle is essential for the prover; losing it breaks the node.
   InputDir(getDataDir() / "logos-blockchain-circuits" / ExpectedCircuitsVersion)
 
+const
+  DefaultBootstrapTimeout* =
+    when defined(local_testnet) or defined(unittest) or defined(test):
+      1
+    else:
+      30
+
 type
   LogosNetworkKind* {.pure.} = enum
     Mainnet = "mainnet"
@@ -215,6 +222,11 @@ type
         defaultValue: ""
         name: "bootstrap-file" .}: InputFile
 
+      bootstrapTimeout* {.
+        desc: "Timeout in seconds to wait for bootstrap peers before aborting IBD"
+        defaultValue: DefaultBootstrapTimeout
+        name: "bootstrap-timeout" .}: int
+
       listenAddress* {.
         desc: "Listening address for Logos Chain libp2p traffic"
         defaultValueDesc: "*"
@@ -298,6 +310,7 @@ type
     autonatAllowPrivateAddresses*: bool
     bootstrapNodes*: seq[string]
     bootstrapNodesFile*: InputFile
+    bootstrapTimeout*: int
 
   AnyConf* = LBNodeConf
 
@@ -334,6 +347,7 @@ proc networkConfig*(config: LBNodeConf): NetworkConfig =
     autonatAllowPrivateAddresses: config.logosNetwork == Testnet,
     bootstrapNodes: config.bootstrapNodes,
     bootstrapNodesFile: config.bootstrapNodesFile,
+    bootstrapTimeout: config.bootstrapTimeout,
   )
 
 template writeValue*(writer: var JsonWriter,

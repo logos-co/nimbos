@@ -88,7 +88,7 @@ suite "PeerPool testing suite":
       doAssert(fut1.finished == false)
       doAssert(fut2.finished == false)
       peer0.close()
-      await sleepAsync(100.milliseconds)
+      await sleepAsync(1.milliseconds)
       doAssert(fut1.finished == false)
       doAssert(fut2.finished == true and fut2.failed == false)
       result = true
@@ -110,11 +110,11 @@ suite "PeerPool testing suite":
       doAssert(fut2.finished == false)
       doAssert(fut3.finished == false)
       peer0.close()
-      await sleepAsync(100.milliseconds)
+      await sleepAsync(1.milliseconds)
       doAssert(fut2.finished == true and fut2.failed == false)
       doAssert(fut3.finished == false)
       peer1.close()
-      await sleepAsync(100.milliseconds)
+      await sleepAsync(1.milliseconds)
       doAssert(fut3.finished == true and fut3.failed == false)
       result = true
 
@@ -136,11 +136,11 @@ suite "PeerPool testing suite":
       doAssert(fut2.finished == true and fut2.failed == false)
       doAssert(fut3.finished == false)
       peer0.close()
-      await sleepAsync(100.milliseconds)
+      await sleepAsync(1.milliseconds)
       doAssert(fut1.finished == true and fut1.failed == false)
       doAssert(fut3.finished == false)
       peer2.close()
-      await sleepAsync(100.milliseconds)
+      await sleepAsync(1.milliseconds)
       doAssert(fut3.finished == true and fut3.failed == false)
       result = true
 
@@ -168,21 +168,21 @@ suite "PeerPool testing suite":
       doAssert(fut4.finished == false)
       doAssert(fut5.finished == false)
 
-      await sleepAsync(100.milliseconds)
+      await sleepAsync(1.milliseconds)
       doAssert(fut3.finished == false)
       doAssert(fut4.finished == false)
       doAssert(fut5.finished == false)
       peer0.close()
-      await sleepAsync(100.milliseconds)
+      await sleepAsync(1.milliseconds)
       doAssert(fut3.finished == true and fut3.failed == false)
       doAssert(fut4.finished == false)
       doAssert(fut5.finished == false)
       peer1.close()
-      await sleepAsync(100.milliseconds)
+      await sleepAsync(1.milliseconds)
       doAssert(fut4.finished == true and fut4.failed == false)
       doAssert(fut5.finished == false)
       peer2.close()
-      await sleepAsync(100.milliseconds)
+      await sleepAsync(1.milliseconds)
       doAssert(fut5.finished == true and fut5.failed == false)
       result = true
 
@@ -532,7 +532,7 @@ suite "PeerPool testing suite":
 
     proc testConsumer() {.async.} =
       var p = await pool.acquire()
-      await sleepAsync(100.milliseconds)
+      await sleepAsync(1.milliseconds)
       pool.release(p)
 
     proc testClose(): Future[bool] {.async.} =
@@ -867,7 +867,7 @@ suite "PeerPool testing suite":
       fut4.finished == false
 
     pool.release(tpeer1)
-    await sleepAsync(100.milliseconds)
+    await sleepAsync(1.milliseconds)
     check:
       fut1.finished == false
       fut2.finished == false
@@ -875,7 +875,7 @@ suite "PeerPool testing suite":
       fut4.finished == false
 
     pool.release(tpeer2)
-    await sleepAsync(100.milliseconds)
+    await sleepAsync(1.milliseconds)
     check:
       fut1.finished == true
       fut1.value.getKey() == "peer4"
@@ -884,7 +884,7 @@ suite "PeerPool testing suite":
       fut4.finished == false
 
     pool.release(tpeer3)
-    await sleepAsync(100.milliseconds)
+    await sleepAsync(1.milliseconds)
     check:
       fut2.finished == false
       fut3.finished == true
@@ -892,7 +892,7 @@ suite "PeerPool testing suite":
       fut4.finished == false
 
     pool.release(tpeer5)
-    await sleepAsync(100.milliseconds)
+    await sleepAsync(1.milliseconds)
     check:
       fut2.finished == false
       fut4.finished == true
@@ -902,12 +902,12 @@ suite "PeerPool testing suite":
     pool.release(tpeer6)
     pool.release(tpeer8)
     pool.release(tpeer10)
-    await sleepAsync(100.milliseconds)
+    await sleepAsync(1.milliseconds)
     check:
       fut2.finished == false
 
     pool.release(tpeer7)
-    await sleepAsync(100.milliseconds)
+    await sleepAsync(1.milliseconds)
     check:
       fut2.finished == true
       fut2.value.getKey() == "peer5"
@@ -998,7 +998,7 @@ suite "PeerPool testing suite":
       doAssert(p.id == "idInc0")
       p.weight = -200
       pool.release(p)
-      await sleepAsync(100.milliseconds)
+      await sleepAsync(1.milliseconds)
       doAssert(fut1.finished == false)
       doAssert(fut2.finished == true and fut2.failed == false)
       doAssert(len(pool) == 1)

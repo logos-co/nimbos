@@ -30,35 +30,9 @@ proc autonatV2ClientOf(node: LBP2PNode): AutonatV2Client =
 
 suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
   asyncTest "QUIC quic-v1 listen: switch binds and accepts on configured listen multiaddr":
-    let
-      listenIp = parseIpAddress("127.0.0.1")
-      natCfg = nat.NatConfig(hasExtIp: true, extIp: listenIp)
+    var rng2 = HmacDrbgContext.new()
+    let node1 = await startTestNode("p2p-test-node1", maxPeers = 4)
 
-    var
-      rng1 = HmacDrbgContext.new()
-      rng2 = HmacDrbgContext.new()
-
-    let net1 = NetworkConfig(
-      listenAddress: some(listenIp),
-      nat: natCfg,
-      quicPort: TestQuicAnyPort,
-      maxPeers: 4,
-      hardMaxPeers: some(4),
-      agentString: "p2p-test-node1",
-    )
-
-    let net2 = NetworkConfig(
-      listenAddress: some(listenIp),
-      nat: natCfg,
-      quicPort: TestQuicAnyPort,
-      maxPeers: 4,
-      hardMaxPeers: some(4),
-      agentString: "p2p-test-node2",
-    )
-
-    let node1 = await startLBP2PNodeListening(
-      rng1, net1, rng1.getRandomNetKeys(),
-    )
     # Keep startup/stop scoped so sockets are released promptly.
     let listenMa = $node1.switch.peerInfo.listenAddrs[0]
     let fullAddrs = node1.switch.peerInfo.fullAddrs().valueOr:
@@ -82,8 +56,8 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
       sb = sb.withRng(newBearSslRng(rng2))
       sb = sb.withNoise()
       sb = sb.withQuicTransport()
-      sb = sb.withMaxConnections(net2.maxPeers)
-      sb = sb.withAgentVersion(net2.agentString)
+      sb = sb.withMaxConnections(4)
+      sb = sb.withAgentVersion("p2p-test-node2")
       sw2 = sb.build()
       await sw2.start()
 
@@ -99,24 +73,7 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
       await node1.stop()
 
   asyncTest "Public advertisement: reachable multiaddr matches /{ip}/udp/{port}/quic-v1/p2p/{peer_id}":
-    let
-      listenIp = parseIpAddress("127.0.0.1")
-      natCfg = nat.NatConfig(hasExtIp: true, extIp: listenIp)
-
-    var rng = HmacDrbgContext.new()
-
-    let net = NetworkConfig(
-      listenAddress: some(listenIp),
-      nat: natCfg,
-      quicPort: TestQuicAnyPort,
-      maxPeers: 4,
-      hardMaxPeers: some(4),
-      agentString: "p2p-test-node1",
-    )
-
-    let node = await startLBP2PNodeListening(
-      rng, net, rng.getRandomNetKeys(),
-    )
+    let node = await startTestNode("p2p-test-node1", maxPeers = 4)
     # Ensure clean shutdown even if assertions fail.
     try:
       let
@@ -137,24 +94,7 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
       await node.stop()
 
   asyncTest "Lifecycle: network start and stop release listeners and pending dials cleanly":
-    let
-      listenIp = parseIpAddress("127.0.0.1")
-      natCfg = nat.NatConfig(hasExtIp: true, extIp: listenIp)
-
-    var rng = HmacDrbgContext.new()
-
-    let net = NetworkConfig(
-      listenAddress: some(listenIp),
-      nat: natCfg,
-      quicPort: TestQuicAnyPort,
-      maxPeers: 4,
-      hardMaxPeers: some(4),
-      agentString: "p2p-test-node1",
-    )
-
-    let node = await startLBP2PNodeListening(
-      rng, net, rng.getRandomNetKeys(),
-    )
+    let node = await startTestNode("p2p-test-node1", maxPeers = 4)
     await node.stop()
 
 suite "P2P stack — bootstrap and discovery":
@@ -163,9 +103,7 @@ suite "P2P stack — bootstrap and discovery":
     try:
       await peers.dialer.start()
 
-      let ok = await waitLibp2pConnected(peers.dialer.switch, peers.listenerPeerId)
-      check ok
-      check peers.dialer.switch.isConnected(peers.listenerPeerId)
+      check waitUntil(peers.dialer.switch.isConnected(peers.listenerPeerId))
     finally:
       await peers.dialer.stop()
       await peers.listener.stop()
@@ -193,8 +131,8 @@ suite "P2P stack — bootstrap and discovery":
     try:
       await peers.dialer.start()
 
-      check await waitLibp2pConnected(peers.dialer.switch, peers.listenerPeerId)
-      await sleepAsync(1.seconds)
+      check waitUntil(peers.dialer.switch.isConnected(peers.listenerPeerId))
+      await sleepAsync(50.milliseconds)
       check peers.dialer.switch.isConnected(peers.listenerPeerId)
     finally:
       await peers.dialer.stop()
@@ -236,7 +174,7 @@ suite "P2P stack — NAT and AutoNAT v2":
       await peers.dialer.startListening()
       await peers.dialer.start()
 
-      check await waitLibp2pConnected(peers.dialer.switch, peers.listenerPeerId)
+      check waitUntil(peers.dialer.switch.isConnected(peers.listenerPeerId))
       await peers.dialer.switch.peerInfo.update()
 
       let testAddrs = peers.dialer.switch.peerInfo.addrs

@@ -8,7 +8,7 @@
 {.push raises: [].}
 
 import
-  std/[net, strutils, times],
+  std/[net, times],
   bearssl/rand,
   chronos,
   libp2p/[switch, peerid],
@@ -87,22 +87,61 @@ const TestQuicAnyPort* = Port(0)
 template loopbackQuicMultiAddr*(port: Port): string =
   "/ip4/" & $TestLoopbackIp & "/udp/" & $port & "/quic-v1"
 
-proc startLBP2PNodeListening*(
-    rng: ref HmacDrbgContext,
-    conf: NetworkConfig,
-    keys: NetKeyPair,
+template waitUntil*(cond: untyped, timeout: chronos.Duration = chronos.seconds(3)): bool =
+  let deadline = Moment.now() + timeout
+  var res = false
+  while Moment.now() < deadline:
+    if cond:
+      res = true
+      break
+    await sleepAsync(chronos.milliseconds(10))
+  res
+
+proc createTestNode*(
+    agentString: string,
+    bootstrapNodes: seq[string] = @[],
+    bootstrapTimeout: int = DefaultBootstrapTimeout,
+    maxPeers: int = 16,
+): LBP2PNode =
+  let rng = HmacDrbgContext.new()
+  let conf = NetworkConfig(
+    listenAddress: some(TestLoopbackIp),
+    nat: nat.NatConfig(hasExtIp: true, extIp: TestLoopbackIp),
+    quicPort: TestQuicAnyPort,
+    maxPeers: maxPeers,
+    hardMaxPeers: some(maxPeers),
+    agentString: agentString,
+    autonatAllowPrivateAddresses: true,
+    bootstrapNodes: bootstrapNodes,
+    bootstrapTimeout: bootstrapTimeout,
+  )
+  createLBP2PNode(rng, conf, rng.getRandomNetKeys()).valueOr:
+    fail("createLBP2PNode failed for " & agentString & ": " & $error)
+
+proc startTestNode*(
+    agentString: string,
+    bootstrapNodes: seq[string] = @[],
+    bootstrapTimeout: int = DefaultBootstrapTimeout,
+    maxPeers: int = 16,
 ): Future[LBP2PNode] {.async.} =
-  ## Create and start a node; the kernel assigns a free loopback QUIC port.
-  var nodeConf = conf
-  nodeConf.quicPort = TestQuicAnyPort
-  let node = createLBP2PNode(rng, nodeConf, keys).valueOr:
-    fail("createLBP2PNode failed: " & $error)
-  await node.switch.start()
-  if node.switch.peerInfo.listenAddrs.len == 0:
-    fail("no listen addrs on switch")
-  if ($node.switch.peerInfo.listenAddrs[0]).contains("/udp/0/"):
-    fail("switch still bound to ephemeral port 0")
+  let node = createTestNode(agentString, bootstrapNodes, bootstrapTimeout, maxPeers)
+  await node.startListening()
   node
+
+proc fullAddress*(node: LBP2PNode): string =
+  let addrs = node.switch.peerInfo.fullAddrs().valueOr:
+    fail("peerInfo.fullAddrs failed: " & $error)
+  if addrs.len == 0:
+    fail("node has no full addrs")
+  $addrs[0]
+
+const
+  ## Deterministic unreachable loopback QUIC endpoint for testing dial failures and timeouts.
+  ## Multiaddress: /ip4/127.0.0.1/udp/59999/quic-v1/p2p/{peerId}
+  ## The PeerId (12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN) was derived from
+  ## a valid Ed25519 public key generated via HmacDrbgContext([42'u8]).
+  DeadBootstrapAddress* =
+    "/ip4/127.0.0.1/udp/59999/quic-v1/p2p/12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN"
 
 func minimalSignedTx*(): SignedMantleTx =
   SignedMantleTx(
@@ -149,61 +188,14 @@ proc extendChainAfterGenesis*(
     parentId = blockId(blk.header)
   parentId
 
-proc waitLocalTreeBlock*(
-    tree: LocalTree, id: BlockId, attempts: int = 150,
-): Future[bool] {.async.} =
-  for _ in 0 ..< attempts:
-    if tree.hasBlock(id):
-      return true
-    await sleepAsync(chronos.milliseconds(100))
-  false
-
-proc waitLibp2pConnected*(sw: Switch, remote: PeerId): Future[bool] {.async.} =
-  for i in 0 ..< 150:
-    if sw.isConnected(remote):
-      return true
-    await sleepAsync(chronos.milliseconds(100))
-  false
-
 type BootstrapPeers* = object
   listener*, dialer*: LBP2PNode
   listenerPeerId*: PeerId
 
 proc createBootstrapPeers*(): Future[BootstrapPeers] {.async.} =
-  let natCfg = NatConfig(hasExtIp: true, extIp: TestLoopbackIp)
-  let rngL = HmacDrbgContext.new()
-  let rngD = HmacDrbgContext.new()
-  let listenerConf = NetworkConfig(
-    listenAddress: some(TestLoopbackIp),
-    nat: natCfg,
-    quicPort: TestQuicAnyPort,
-    maxPeers: 8,
-    hardMaxPeers: some(8),
-    agentString: "p2p-bootstrap-listener",
-    autonatAllowPrivateAddresses: true,
-  )
-  let listener = await startLBP2PNodeListening(
-    rngL, listenerConf, rngL.getRandomNetKeys(),
-  )
-
+  let listener = await startTestNode("p2p-bootstrap-listener", maxPeers = 8)
   let listenerPeerId = listener.switch.peerInfo.peerId
-  let listenerBootstrap = listener.switch.peerInfo.fullAddrs().valueOr:
-    fail("peerInfo.fullAddrs failed: " & $error)
-  if listenerBootstrap.len == 0:
-    fail("listener has no full addrs")
-  let dialerConf = NetworkConfig(
-    listenAddress: some(TestLoopbackIp),
-    nat: natCfg,
-    quicPort: TestQuicAnyPort,
-    maxPeers: 8,
-    hardMaxPeers: some(8),
-    agentString: "p2p-bootstrap-dialer",
-    autonatAllowPrivateAddresses: true,
-    bootstrapNodes: @[$listenerBootstrap[0]],
-  )
-  let dialer = await startLBP2PNodeListening(
-    rngD, dialerConf, rngD.getRandomNetKeys(),
-  )
+  let dialer = await startTestNode("p2p-bootstrap-dialer", @[listener.fullAddress()], maxPeers = 8)
 
   BootstrapPeers(
     listener: listener,

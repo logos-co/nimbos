@@ -24,7 +24,6 @@ import
     peer_pool,
     bootstrap_nodes
   ],
-  eth/net/nat,
   libp2p/[switch, builders, peerid, peerinfo, peerstore, multiaddress, crypto/rng],
   libp2p/protocols/kademlia
 
@@ -67,19 +66,7 @@ suite "Kad discovery — peerstore, rtable, peer pool":
     check not hasDiscoveredKadPeers(nil)
 
   asyncTest "enqueueKadDiscoveredPeers respects rtable, AddressBook, and peer pool":
-    let rng = HmacDrbgContext.new()
-    let netCfg = NetworkConfig(
-      listenAddress: some(TestLoopbackIp),
-      nat: nat.NatConfig(hasExtIp: true, extIp: TestLoopbackIp),
-      quicPort: TestQuicAnyPort,
-      maxPeers: 16,
-      hardMaxPeers: some(16),
-      agentString: "kad-discovery-rtable-test",
-    )
-    let node = createLBP2PNode(
-      rng, netCfg, rng.getRandomNetKeys()
-    ).expect("createLBP2PNode failed for kad-discovery-rtable-test")
-    await node.startListening()
+    let node = await startTestNode("kad-discovery-rtable-test", maxPeers = 16)
 
     let kad = node.mountedProtocols.kad
     check not isNil(kad)
@@ -133,19 +120,7 @@ suite "Kad discovery — peerstore, rtable, peer pool":
     await kadDiscoveryLookupWalk(nil, nil)
 
   asyncTest "kadDiscoveryLookupWalk: executes lookup walk on populated rtable":
-    let rng = HmacDrbgContext.new()
-    let netCfg = NetworkConfig(
-      listenAddress: some(TestLoopbackIp),
-      nat: nat.NatConfig(hasExtIp: true, extIp: TestLoopbackIp),
-      quicPort: TestQuicAnyPort,
-      maxPeers: 8,
-      hardMaxPeers: some(8),
-      agentString: "kad-lookup-walk-test",
-    )
-    let node = createLBP2PNode(
-      rng, netCfg, rng.getRandomNetKeys()
-    ).expect("createLBP2PNode failed for kad-lookup-walk-test")
-    await node.startListening()
+    let node = await startTestNode("kad-lookup-walk-test", maxPeers = 8)
 
     let kad = node.mountedProtocols.kad
     let remoteKeys = node.rng.getRandomNetKeys()
@@ -162,35 +137,8 @@ suite "Kad discovery — peerstore, rtable, peer pool":
     await logosKadBootstrap(nil, @[], nil)
 
   asyncTest "logosKadBootstrap: dials bootstrap nodes and runs lookup on success":
-    let rngL = HmacDrbgContext.new()
-    let rngD = HmacDrbgContext.new()
-    let natCfg = nat.NatConfig(hasExtIp: true, extIp: TestLoopbackIp)
-
-    let confL = NetworkConfig(
-      listenAddress: some(TestLoopbackIp),
-      nat: natCfg,
-      quicPort: TestQuicAnyPort,
-      maxPeers: 8,
-      hardMaxPeers: some(8),
-      agentString: "kad-boot-listener",
-    )
-    let confD = NetworkConfig(
-      listenAddress: some(TestLoopbackIp),
-      nat: natCfg,
-      quicPort: TestQuicAnyPort,
-      maxPeers: 8,
-      hardMaxPeers: some(8),
-      agentString: "kad-boot-dialer",
-    )
-    let listener = createLBP2PNode(
-      rngL, confL, rngL.getRandomNetKeys()
-    ).expect("createLBP2PNode failed for listener")
-    let dialer = createLBP2PNode(
-      rngD, confD, rngD.getRandomNetKeys()
-    ).expect("createLBP2PNode failed for dialer")
-
-    await listener.startListening()
-    await dialer.startListening()
+    let listener = await startTestNode("kad-boot-listener", maxPeers = 8)
+    let dialer = await startTestNode("kad-boot-dialer", maxPeers = 8)
 
     let kad = dialer.mountedProtocols.kad
     let bInfo = PeerInfo(
@@ -202,7 +150,7 @@ suite "Kad discovery — peerstore, rtable, peer pool":
     proc dialPeer(b: PeerInfo): Future[bool] {.async: (raises: [CancelledError]).} =
       dialed = true
       try:
-        let conn = await dialer.switch.dial(b.peerId, b.addrs, logosKadCodec(confD.logosNetwork))
+        let conn = await dialer.switch.dial(b.peerId, b.addrs, logosKadCodec(LogosNetworkKind.Testnet))
         if not isNil(conn):
           return true
       except CancelledError as exc:
@@ -219,19 +167,7 @@ suite "Kad discovery — peerstore, rtable, peer pool":
       await listener.stop()
 
   asyncTest "logosKadBootstrap: handles failed bootstrap dial without error":
-    let rng = HmacDrbgContext.new()
-    let netCfg = NetworkConfig(
-      listenAddress: some(TestLoopbackIp),
-      nat: nat.NatConfig(hasExtIp: true, extIp: TestLoopbackIp),
-      quicPort: TestQuicAnyPort,
-      maxPeers: 8,
-      hardMaxPeers: some(8),
-      agentString: "kad-bootstrap-fail-test",
-    )
-    let node = createLBP2PNode(
-      rng, netCfg, rng.getRandomNetKeys()
-    ).expect("createLBP2PNode failed for kad-bootstrap-fail-test")
-    await node.startListening()
+    let node = await startTestNode("kad-bootstrap-fail-test", maxPeers = 8)
     let kad = node.mountedProtocols.kad
     let bKeys = node.rng.getRandomNetKeys()
     let bPid = PeerId.init(bKeys.seckey).tryGet()
@@ -346,39 +282,12 @@ suite "Bootstrap link maintenance and disconnection":
       peerPoolLen = 8, wantedPeers = 4, bootstrapPeersInPool = 2)
 
   asyncTest "runBootstrapLinkMaintenanceTick: disconnects bootstrap peer when pool target is met":
-    let rngB = HmacDrbgContext.new()
-    let rngC = HmacDrbgContext.new()
-    let natCfg = nat.NatConfig(hasExtIp: true, extIp: TestLoopbackIp)
-
-    let confB = NetworkConfig(
-      listenAddress: some(TestLoopbackIp),
-      nat: natCfg,
-      quicPort: TestQuicAnyPort,
-      maxPeers: 8,
-      hardMaxPeers: some(8),
-      agentString: "bootstrap-node",
-    )
-    let bootNode = createLBP2PNode(
-      rngB, confB, rngB.getRandomNetKeys()
-    ).expect("createLBP2PNode failed for bootstrap-node")
-    await bootNode.startListening()
+    let bootNode = await startTestNode("bootstrap-node", maxPeers = 8)
     let bootPid = bootNode.switch.peerInfo.peerId
     let bootAddrs = bootNode.switch.peerInfo.addrs
     let bootAddrStr = $bootAddrs[0] & "/p2p/" & $bootPid
 
-    let confC = NetworkConfig(
-      listenAddress: some(TestLoopbackIp),
-      nat: natCfg,
-      quicPort: TestQuicAnyPort,
-      maxPeers: 2,
-      hardMaxPeers: some(2),
-      agentString: "client-node",
-      bootstrapNodes: @[bootAddrStr],
-    )
-    let clientNode = createLBP2PNode(
-      rngC, confC, rngC.getRandomNetKeys()
-    ).expect("createLBP2PNode failed for client-node")
-    await clientNode.startListening()
+    let clientNode = await startTestNode("client-node", @[bootAddrStr], maxPeers = 2)
     await clientNode.start()
 
     try:

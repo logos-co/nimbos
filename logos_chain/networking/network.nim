@@ -9,7 +9,7 @@
 
 import
   # Std lib
-  std/[sequtils, strutils, algorithm, math, tables],
+  std/[sequtils, sets, algorithm, math, tables],
 
   # Vendor / external libs
   bearssl/rand,
@@ -44,7 +44,6 @@ type
   PublicKey = crypto.PublicKey
   PrivateKey = crypto.PrivateKey
 
-  ErrorMsg = List[byte, 256]
   SendResult = Result[void, cstring]
 
   # TODO: This is here only to eradicate a compiler
@@ -83,6 +82,8 @@ type
     peers: Table[PeerId, Peer]
     announcedAddresses*: seq[MultiAddress]
     bootstrapPeers: seq[PeerAddr]
+    bootstrapTimeout*: chronos.Duration
+    peerChangeEvent: AsyncEvent
     validTopics: HashSet[string]
     backgroundTasks: seq[Future[void].Raising([CancelledError])]
     quota: TokenBucket ## Global quota mainly for high-bandwidth stuff
@@ -130,6 +131,13 @@ const
   ConcurrentConnections = 20
     ## Maximum number of active concurrent connection requests.
 
+  BootstrapDialGrace* =
+    when defined(local_testnet) or defined(unittest) or defined(test):
+      300.milliseconds
+    else:
+      3.seconds
+    ## Grace period to allow in-flight bootstrap dials to finish after the first peer connects.
+
   SeenTableTimeTimeout =
     when not defined(local_testnet): 5.minutes else: 10.seconds
 
@@ -137,7 +145,6 @@ const
   SeenTableTimeDeadPeer =
     when not defined(local_testnet): 5.minutes else: 10.seconds
 
-  RESP_TIMEOUT_DUR* = 10'i64.seconds
   MAX_PAYLOAD_SIZE = 10000000
 
     ## Period of time for dead peers.
@@ -152,35 +159,35 @@ const
   SeenTableTimeReconnect = 1.minutes
     ## Minimal time between disconnection and reconnection attempt
 
-# Metrics for tracking attestation and beacon block loss
-declareCounter nbc_gossip_messages_sent,
+# Metrics for tracking network activity
+declareCounter logos_p2p_gossip_messages_sent,
   "Number of gossip messages sent by this peer"
 
-declareCounter nbc_gossip_messages_received,
+declareCounter logos_p2p_gossip_messages_received,
   "Number of gossip messages received by this peer"
 
-declareCounter nbc_successful_dials,
+declareCounter logos_p2p_successful_dials,
   "Number of successfully dialed peers"
 
-declareCounter nbc_failed_dials,
+declareCounter logos_p2p_failed_dials,
   "Number of dialing attempts that failed"
 
-declareCounter nbc_timeout_dials,
+declareCounter logos_p2p_timeout_dials,
   "Number of dialing attempts that exceeded timeout"
 
-declareGauge nbc_peers,
+declareGauge logos_p2p_peers,
   "Number of active libp2p peers"
 
-declareCounter nbc_reqresp_messages_sent,
+declareCounter logos_p2p_reqresp_messages_sent,
   "Number of Req/Resp messages sent", labels = ["protocol"]
 
-declareCounter nbc_reqresp_messages_received,
+declareCounter logos_p2p_reqresp_messages_received,
   "Number of Req/Resp messages received", labels = ["protocol"]
 
-declareCounter nbc_reqresp_messages_failed,
+declareCounter logos_p2p_reqresp_messages_failed,
   "Number of Req/Resp messages that failed decoding", labels = ["protocol"]
 
-declareCounter nbc_reqresp_messages_throttled,
+declareCounter logos_p2p_reqresp_messages_throttled,
   "Number of Req/Resp messages that were throttled", labels = ["protocol"]
 
 const
@@ -282,7 +289,7 @@ template awaitQuota*(peerParam: Peer, costParam: float, protocolIdParam: string)
   if not peer.quota.tryConsume(cost.int):
     let protocolId = protocolIdParam
     debug "Awaiting peer quota", peer, cost = cost, protocolId = protocolId
-    nbc_reqresp_messages_throttled.inc(1, [protocolId])
+    logos_p2p_reqresp_messages_throttled.inc(1, [protocolId])
     await peer.quota.consume(cost.int)
 
 template awaitQuota*(
@@ -294,7 +301,7 @@ template awaitQuota*(
   if not network.quota.tryConsume(cost.int):
     let protocolId = protocolIdParam
     debug "Awaiting network quota", peer, cost = cost, protocolId = protocolId
-    nbc_reqresp_messages_throttled.inc(1, [protocolId])
+    logos_p2p_reqresp_messages_throttled.inc(1, [protocolId])
     await network.quota.consume(cost.int)
 
 func allowedOpsPerSecondCost*(n: int): float =
@@ -432,8 +439,7 @@ proc waitForOutboundDial(
   finally:
     node.connEvents.withValue(pid, curEvent):
       if curEvent[] == event:
-        if event.isSet() or (pid notin node.outboundTable):
-          node.connEvents.del(pid)
+        node.connEvents.del(pid)
 
 proc connectViaConnQueue*(
     node: LBP2PNode,
@@ -476,11 +482,11 @@ proc dialPeer(node: LBP2PNode, peerAddr: PeerAddr, index = 0) {.async: (raises: 
     if workfut.finished():
       if not deadline.finished():
         deadline.cancelSoon()
-      inc nbc_successful_dials
+      inc logos_p2p_successful_dials
     else:
       debug "Connection to remote peer timed out",
         timeout = node.connectTimeout, addrs = peerAddr.addrs
-      inc nbc_timeout_dials
+      inc logos_p2p_timeout_dials
       node.addSeen(peerAddr.peerId, SeenTableTimeTimeout)
       await cancelAndWait(workfut)
   except CancelledError as exc:
@@ -490,7 +496,7 @@ proc dialPeer(node: LBP2PNode, peerAddr: PeerAddr, index = 0) {.async: (raises: 
     raise exc
   except LPError as exc:
     debug "Connection to remote peer failed", msg = exc.msg, addrs = peerAddr.addrs
-    inc nbc_failed_dials
+    inc logos_p2p_failed_dials
     node.addSeen(peerAddr.peerId, SeenTableTimeDeadPeer)
 
 proc connectWorker(node: LBP2PNode, index: int) {.async: (raises: [CancelledError]).} =
@@ -649,6 +655,12 @@ proc new(T: type LBP2PNode,
     seenThreshold: seenThreshold,
     announcedAddresses: @announcedAddresses,
     bootstrapPeers: @bootstrapPeers,
+    bootstrapTimeout:
+      if config.bootstrapTimeout > 0:
+        config.bootstrapTimeout.seconds
+      else:
+        DefaultBootstrapTimeout.seconds,
+    peerChangeEvent: newAsyncEvent(),
     quota: TokenBucket.new(maxGlobalQuota, fullReplenishTime),
   )
 
@@ -807,25 +819,82 @@ proc runKadDiscoveryEnqueueLoop(node: LBP2PNode) {.async: (raises: [CancelledErr
 func bootstrapPeerIds*(node: LBP2PNode): seq[PeerId] =
   node.bootstrapPeers.mapIt(it.peerId)
 
-proc waitForPeers*(
+proc waitForBootstrapPeers*(
     node: LBP2PNode,
-    minPeers: int = 1,
-    timeout: Duration = 10.seconds,
 ): Future[seq[PeerId]] {.async: (raises: [CancelledError]).} =
-  ## Wait until at least ``minPeers`` handshaked peers are admitted to the peer pool,
-  ## and return the list of ready PeerIds.
-  let ok = await node.peerPool.waitForPeers(minPeers, timeout)
-  if not ok:
+  ## Wait until configured bootstrap peers are admitted to the peer pool,
+  ## returning all reachable bootstrap PeerIds once all connect, or after a short grace
+  ## period once at least 1 peer connects, or upon full bootstrapTimeout expiration.
+  if node.bootstrapPeers.len == 0:
     return @[]
-  var readyPeers: seq[PeerId] = @[]
-  for pid, _ in node.peerPool:
-    readyPeers.add(pid)
-  return readyPeers
+
+  let totalConfigured = node.bootstrapPeers.len
+  var deadline = Moment.now() + node.bootstrapTimeout
+  var graceActive = false
+  var lastLogTime = Moment.now()
+
+  info "Waiting to establish connection with bootstrap peers",
+    configured = totalConfigured,
+    timeout = node.bootstrapTimeout
+
+  func collectReadyBootstrapPeers(node: LBP2PNode): seq[PeerId] =
+    var ready: seq[PeerId] = @[]
+    for b in node.bootstrapPeers:
+      if node.peerPool.hasPeer(b.peerId):
+        ready.add(b.peerId)
+    ready
+
+  while true:
+    let readyPeers = node.collectReadyBootstrapPeers()
+
+    # 1. Fast Path: All configured bootstrap peers have connected
+    if readyPeers.len == totalConfigured:
+      info "All configured bootstrap peers connected",
+        connected = readyPeers.len
+      return readyPeers
+
+    # 2. Once at least 1 peer connects, shorten deadline to grace window for in-flight dials
+    let now = Moment.now()
+    if readyPeers.len > 0 and not graceActive:
+      graceActive = true
+      let graceDeadline = now + BootstrapDialGrace
+      if graceDeadline < deadline:
+        deadline = graceDeadline
+        debug "First bootstrap peer connected; allowing in-flight dials to settle",
+          connected = readyPeers.len,
+          graceWindow = BootstrapDialGrace
+
+    let remaining = deadline - now
+
+    # 3. Deadline reached
+    if remaining <= ZeroDuration:
+      if readyPeers.len > 0:
+        info "Proceeding with connected bootstrap peers",
+          connected = readyPeers.len,
+          configured = totalConfigured
+        return readyPeers
+      debug "Bootstrap connection timeout reached with no peers connected",
+        configured = totalConfigured,
+        timeout = node.bootstrapTimeout
+      return @[]
+
+    if now - lastLogTime >= 5.seconds:
+      lastLogTime = now
+      info "Still trying to connect to bootstrap peers...",
+        connected = readyPeers.len,
+        configured = totalConfigured,
+        remainingTimeout = remaining
+
+    let waitInterval = min(remaining, 5.seconds)
+    discard await withTimeout(node.peerChangeEvent.wait(), waitInterval)
+    node.peerChangeEvent.clear()
 
 proc start*(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
   proc onPeerCountChanged() =
     trace "Number of peers has been changed", length = len(node.peerPool)
-    nbc_peers.set int64(len(node.peerPool))
+    logos_p2p_peers.set int64(len(node.peerPool))
+    if not node.peerChangeEvent.isSet():
+      node.peerChangeEvent.fire()
 
   node.peerPool.setPeerCounter(onPeerCountChanged)
 
@@ -1136,7 +1205,7 @@ func addValidator*[MsgType](
   # this is a performance hotspot.
   proc execValidator(topic: string, message: GossipMsg):
       Future[ValidationResult] =
-    inc nbc_gossip_messages_received
+    inc logos_p2p_gossip_messages_received
     trace "Validating incoming gossip message", len = message.data.len, topic
 
     let res = if message.data.len > 0:
@@ -1164,7 +1233,7 @@ proc addAsyncValidator*[MsgType](
       topic: string,
       message: GossipMsg
   ): Future[ValidationResult] {.async: (raw: true).} =
-    inc nbc_gossip_messages_received
+    inc logos_p2p_gossip_messages_received
     trace "Validating incoming gossip message", len = message.data.len, topic
 
     if message.data.len > 0:
@@ -1197,12 +1266,10 @@ proc broadcast(node: LBP2PNode, topic: string, msg: seq[byte]):
     Future[SendResult] {.async: (raises: [CancelledError]).} =
   let peers = await node.pubsub.publish(topic, msg)
 
-  # TODO remove workaround for sync committee BN/VC log spam
-  if peers > 0 or find(topic, "sync_committee_") != -1:
-    inc nbc_gossip_messages_sent
+  if peers > 0:
+    inc logos_p2p_gossip_messages_sent
     ok()
   else:
-    # Increments libp2p_gossipsub_failed_publish metric
     err("No peers on libp2p topic")
 
 proc broadcast(node: LBP2PNode, topic: string, msg: auto):
