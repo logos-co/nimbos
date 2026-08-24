@@ -15,14 +15,15 @@
 {.push raises: [], gcsafe.}
 
 import
-  std/[bitops, math],
+  std/math,
   results,
+  stew/bitops2,
   ../../core/crypto/hashing,
   ../../core/mantle/blend_activity
 
 export blend_activity
 
-const BlendingTokenLen* = ActivityProofBodyLen
+const BlendingTokenLen = ActivityProofBodyLen
 
 type
   TokenParams* = object
@@ -36,7 +37,7 @@ type
 
 func bitLength(n: uint64): uint64 =
   ## ``ceil(log2(n + 1))``, exact for every uint64.
-  if n == 0: 0'u64 else: 64'u64 - uint64(countLeadingZeroBits(n))
+  if n == 0: 0'u64 else: 64'u64 - uint64(leadingZeros(n))
 
 func coreQuota*(
     roundsPerEpoch: uint64,
@@ -97,7 +98,7 @@ func hammingDistance*(
   let tokenHash = blake2bShort(toBytes(token), byteLen)
   var distance = 0'u64
   for i in 0 ..< int(byteLen):
-    distance += uint64(countSetBits(tokenHash[i] xor randomnessDigest[i]))
+    distance += uint64(countOnes(tokenHash[i] xor randomnessDigest[i]))
   distance
 
 {.pop.}

@@ -23,7 +23,7 @@ export ops, utxo, utxo_store, operations, channel_notes
 
 # Devnet-shaped reward parameters; two providers is the smallest network
 # that can freeze a target epoch.
-const testBlendRewardsParams* = BlendRewardsParams(
+const testBlendRewardsParams = BlendRewardsParams(
   roundsPerEpoch: 6000,
   messageFrequencyPerRound: 1.0,
   numBlendLayers: 4,
@@ -53,27 +53,12 @@ func testSdpConfig*(): deploy.SdpConfig =
 func testSdpRegistry*(): SdpRegistry =
   SdpRegistry.init(testSdpConfig(), testBlendRewardsParams)
 
-let nullifierDomain: FieldElement =
-  frFromBytesLE("KEY_NULLIFIER_V1".toOpenArrayByte(0, 15)).get
-
-proc selectionIndex*(rho: FieldElement, membership: uint64): uint64 =
-  ## Test-side restatement of spec §Proof of Selection condition 1.
-  var seedInput = @("BlendNode".toOpenArrayByte(0, 8))
-  seedInput.add encodeFieldElement(rho)
-  var seed: Blake2bPrngSeed
-  seed[0 ..< 64] = blake2bVar(seedInput, 64)
-  let stream = prngBlock(seed, 0)
-  var value = 0'u64
-  for i in countdown(7, 0):
-    value = value shl 8 or uint64(stream[i])
-  value mod membership
-
 proc findRho*(index, membership: uint64): FieldElement =
   ## Smallest fe(k) whose selection index is `index`. One in `membership`
   ## candidates matches, so the bound is never reached in practice.
   for k in 1'u64 .. 10_000'u64:
     let rho = frFromBytesLE(encodeLe(k)).get
-    if selectionIndex(rho, membership) == index:
+    if expectedSelectionIndex(rho, membership) == index:
       return rho
   doAssert false, "no selection randomness found for the requested index"
 
@@ -85,7 +70,7 @@ proc mkActivity*(
     proof = ActivityProof(
       epoch: epoch,
       proofOfQuota: ProofOfQuota(
-        keyNullifier: Poseidon2Hasher.compress(nullifierDomain, rho)),
+        keyNullifier: Poseidon2Hasher.compress(KeyNullifierDomainFr, rho)),
       proofOfSelection: rho)
     keyBytes: array[32, byte]
   keyBytes[0] = keySeed

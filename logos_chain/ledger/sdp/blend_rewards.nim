@@ -38,7 +38,6 @@ type
     epoch*: EpochNumber
     providers*: HashTrieMap[ProviderId, tuple[zkId: ZkPublicKey, index: uint64]]
     tokenParams*: TokenParams
-    epochRandomness*: FieldElement
     randomnessDigest*: array[8, byte]
       ## ``H(R)_e``, hashed once at rotation; valid prefix = tokenParams.byteLen
     epochIncome*: Value
@@ -64,7 +63,7 @@ type
 
 const SelectionDomainTag = "BlendNode"
 
-let KeyNullifierDomainFr: FieldElement =
+let KeyNullifierDomainFr*: FieldElement =
   # DST for deriving the proof-of-quota key nullifier from the secret
   # selection randomness (spec §Proof of Selection, condition 2).
   frFromBytesLE("KEY_NULLIFIER_V1".toOpenArrayByte(0, 15)).get
@@ -100,7 +99,7 @@ func addIncome*(
   r.epochIncome += income
   ok(r)
 
-func expectedSelectionIndex(
+func expectedSelectionIndex*(
     selectionRandomness: FieldElement, membershipSize: uint64
 ): uint64 =
   ## ``CSPRBG(H_N(rho))_8 mod N`` (spec §Proof of Selection, condition 1).
@@ -172,7 +171,7 @@ func payout(state: TargetEpoch, tracker: SubmissionTracker): seq[Utxo] =
   var
     minDistance = high(uint64)
     premiums = 0'u64
-  for _, entry in tracker.submitted.pairs:
+  for entry in tracker.submitted.values:
     if entry.distance < minDistance:
       minDistance = entry.distance
       premiums = 1
@@ -181,8 +180,8 @@ func payout(state: TargetEpoch, tracker: SubmissionTracker): seq[Utxo] =
   # The divisor counts premium providers twice. A non-empty premium set
   # therefore gives base * 2 <= income, so the doubling cannot overflow.
   let base = state.epochIncome div (uint64(tracker.submitted.len) + premiums)
-  var rewards = initTable[ZkPublicKey, Value]()
-  for _, entry in tracker.submitted.pairs:
+  var rewards: Table[ZkPublicKey, Value]
+  for entry in tracker.submitted.values:
     # Declare validation rejects a zk_id already used in the service, so
     # payout entries never collide.
     doAssert entry.zkId notin rewards, "duplicate zk_id in payout set"
@@ -237,7 +236,6 @@ func rotateEpoch*(
         epoch: prevEpoch,
         providers: providers,
         tokenParams: evaluation,
-        epochRandomness: epochRandomness,
         randomnessDigest: randomnessDigest(
           epochRandomness, evaluation.byteLen),
         epochIncome: r.epochIncome),

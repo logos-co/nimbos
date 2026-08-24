@@ -49,10 +49,12 @@ func encodeActivityProofBody*(
   ## The proof fields after the epoch, in wire order.
   # The lottery hashes exactly these bytes, so wire form and token
   # preimage must come from one encoder.
-  result[0 ..< 32] = encodeEd25519PublicKey(signingKey)
-  result[32 ..< 64] = encodeFieldElement(proofOfQuota.keyNullifier)
-  result[64 ..< 192] = proofOfQuota.proof
-  result[192 ..< 224] = encodeFieldElement(selectionRandomness)
+  var body {.noinit.}: array[ActivityProofBodyLen, byte]
+  body[0 ..< 32] = encodeEd25519PublicKey(signingKey)
+  body[32 ..< 64] = encodeFieldElement(proofOfQuota.keyNullifier)
+  body[64 ..< 192] = proofOfQuota.proof
+  body[192 ..< 224] = encodeFieldElement(selectionRandomness)
+  body
 
 func encodeActivityMetadata*(proof: ActivityProof): seq[byte] =
   ## Full SDP Active metadata payload for a Blend activity proof.

@@ -202,7 +202,7 @@ proc tryApplyTx*(
     tx: SignedMantleTx,
     epoch: EpochNumber,
     slot: SlotNumber,
-    verifyPoq: PoqVerifier = acceptAllPoq,
+    verifyPoq: PoqVerifier,
 ): Result[tuple[state: LedgerState, balance: Balance, executionGas: Gas], LedgerError] =
   ## Applies one transaction; the returned balance is the Transfer-only
   ## delta. `slot` is used by channel ops for sequencer rotation.
@@ -331,7 +331,7 @@ proc tryApplyTxns*(
     state: sink LedgerState,
     txs: openArray[SignedMantleTx],
     slot: SlotNumber,
-    verifyPoq: PoqVerifier = acceptAllPoq,
+    verifyPoq: PoqVerifier,
 ): Result[LedgerState, LedgerError] =
   ## Applies a block's transactions in order under the state's active epoch;
   ## each tx's transfer surplus must cover its total gas cost.

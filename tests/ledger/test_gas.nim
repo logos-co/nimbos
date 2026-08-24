@@ -262,7 +262,8 @@ suite "gas: tx execution gas and block limit":
         opProofs: @[
           OpProof(kind: opfChannelInscribe, ed25519SigProof: sign(kp1.seckey, txHash)),
           OpProof(kind: opfChannelInscribe, ed25519SigProof: sign(kp2.seckey, txHash))])
-      r = mkState(@[]).tryApplyTx(tx, epoch = 0'u64, slot = 0'u64)
+      r = mkState(@[]).tryApplyTx(
+        tx, epoch = 0'u64, slot = 0'u64, verifyPoq = acceptAllPoq)
     check r.isOk
     check r.get.executionGas == Gas(112)
 
@@ -285,12 +286,14 @@ suite "gas: fee enforcement via committed transfer fixture":
     var accept = mkState([input])
     accept.feeMarket.executionBaseFee = 0
     accept.feeMarket.storageGasPrice = 0
-    check accept.tryApplyTxns([mkFixtureTransferTx(input)], slot = 0'u64).isOk
+    check accept.tryApplyTxns(
+      [mkFixtureTransferTx(input)], slot = 0'u64, verifyPoq = acceptAllPoq).isOk
 
     var reject = mkState([input])
     reject.feeMarket.executionBaseFee = 0
     reject.feeMarket.storageGasPrice = 1 # storage cost > zero surplus
-    let r = reject.tryApplyTxns([mkFixtureTransferTx(input)], slot = 0'u64)
+    let r = reject.tryApplyTxns(
+      [mkFixtureTransferTx(input)], slot = 0'u64, verifyPoq = acceptAllPoq)
     check r.error == InsufficientBalance
 
   test "prices come from ledger state, not the transaction":
@@ -300,12 +303,14 @@ suite "gas: fee enforcement via committed transfer fixture":
     var sOk = mkState([input])
     sOk.feeMarket.executionBaseFee = 0
     sOk.feeMarket.storageGasPrice = 0
-    check sOk.tryApplyTxns([mkFixtureTransferTx(input)], slot = 0'u64).isOk
+    check sOk.tryApplyTxns(
+      [mkFixtureTransferTx(input)], slot = 0'u64, verifyPoq = acceptAllPoq).isOk
 
     var sBad = mkState([input])
     sBad.feeMarket.executionBaseFee = 10
     sBad.feeMarket.storageGasPrice = 0
-    let r = sBad.tryApplyTxns([mkFixtureTransferTx(input)], slot = 0'u64)
+    let r = sBad.tryApplyTxns(
+      [mkFixtureTransferTx(input)], slot = 0'u64, verifyPoq = acceptAllPoq)
     check r.error == InsufficientBalance
 
 suite "gas: fee comparison width":
@@ -330,7 +335,8 @@ suite "gas: storage accumulation and epoch rotation":
     let
       tx = mkInscribeTx(rng, mkChannelId(1))
       encodedLen = Gas(encodeSignedMantleTx(tx).len)
-    s = s.tryApplyTxns([tx], slot = 1'u64).expect("applied")
+    s = s.tryApplyTxns(
+      [tx], slot = 1'u64, verifyPoq = acceptAllPoq).expect("applied")
     check s.feeMarket.storageGasConsumedInEpoch == encodedLen
 
     s = s.tryApplyHeader(100, sentinelProof(), testLedgerConfig).expect("rotation")

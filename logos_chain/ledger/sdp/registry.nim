@@ -185,10 +185,12 @@ func activeBlendProviders*(
       return @[]
     params = getParametersAt(registry, ServiceType.bn, targetEpoch).valueOr:
       return @[]
-  for _, info in snapshot.declarations.pairs:
+  var providers: seq[tuple[providerId: ProviderId, zkId: ZkPublicKey]]
+  for info in snapshot.declarations.values:
     if info.service == ServiceType.bn and
         isActiveAt(info, targetEpoch, params):
-      result.add (providerId: info.providerId, zkId: info.zkId)
+      providers.add (providerId: info.providerId, zkId: info.zkId)
+  providers
 
 func appendParameters*(
     registry: var SdpRegistry,

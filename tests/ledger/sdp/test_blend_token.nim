@@ -27,16 +27,10 @@ proc mkToken(seed: byte = 1): BlendingToken =
   token
 
 suite "ledger/sdp/blend_token":
-  test "blake2bVar digest length is a hash parameter, not a truncation":
+  test "digest length is a hash parameter, not a truncation":
     let data = @[byte 1, 2, 3]
-    check blake2bVar(data, 1).len == 1
-    check blake2bVar(data, 100).len == 64
     # An 8-byte digest differs from the first 8 bytes of a 64-byte digest.
-    check blake2bVar(data, 8) != blake2bVar(data, 64)[0 ..< 8]
-
-  test "blake2bVar at 64 bytes matches the fixed blake2b-512 hasher":
-    let data = @[byte 0xAA, 0xBB]
-    check blake2bVar(data, 64) == @(blake2b512Hash(data))
+    check @(blake2bShort(data, 8)) != blake2b512Hash(data)[0 ..< 8]
 
   test "tokenParams matches the spec examples":
     # chi = ceil(log2(5*2 + 1)) = 4 -> one digest byte.
