@@ -102,7 +102,7 @@ func addIncome*(
 func expectedSelectionIndex*(
     selectionRandomness: FieldElement, membershipSize: uint64
 ): uint64 =
-  ## ``CSPRBG(H_N(rho))_8 mod N`` (spec §Proof of Selection, condition 1).
+  ## ``CSPRNG(H_N(rho))_8 mod N`` (spec §Proof of Selection, condition 1).
   const TagLen = SelectionDomainTag.len
   var seedInput {.noinit.}: array[TagLen + 32, byte]
   seedInput[0 ..< TagLen] =
