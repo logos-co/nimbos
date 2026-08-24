@@ -294,6 +294,7 @@ suite "ledger/leader_claim — tryApplyTx":
         tx: MantleTx(ops: @[op]),
         opProofs: @[OpProof(kind: opfLeaderClaim, proofOfClaimProof: claimProof)],
       )
+    var
       s0 = LedgerState(cryptarchiaLedger: CryptarchiaState(utxos: UtxoStore.init(), leader: leader))
       r = s0.tryApplyTx(tx, epoch = 0, slot = 0)
     check r.isErr
@@ -309,6 +310,7 @@ suite "ledger/leader_claim — tryApplyTx":
         tx: MantleTx(ops: @[op]),
         opProofs: @[OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))],
       )
+    var
       s0 = LedgerState(cryptarchiaLedger: CryptarchiaState(utxos: UtxoStore.init(), leader: leader))
       r = s0.tryApplyTx(tx, epoch = 0, slot = 0)
     check r.isErr

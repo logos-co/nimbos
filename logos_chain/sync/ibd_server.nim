@@ -19,7 +19,8 @@ import
   ./[framing, syncer_types, types]
 
 from ../core/local_tree import
-  LocalTree, localTipId, lcaBlockIdAndHeight, hasBlock, getBlock, blockHeight
+  LocalTree, localTipId, lcaBlockIdAndHeight, hasBlock, getBlock, blockHeight,
+  localTip
 from ../core/types import Block, BlockId
 from ../core/mantle/primitives import SlotNumber
 
@@ -27,16 +28,9 @@ logScope:
   topics = "cryptarchia_ibd"
 
 func getTipResponseFromLocalTree(localTree: LocalTree): GetTipResponse =
-  let tipId = localTree.localTipId()
-  let height = localTree.blockHeight(tipId).valueOr(0'u64)
-  let blk = localTree.getBlock(tipId).valueOr(default(Block))
   GetTipResponse(
     kind: gtrTip,
-    tipData: Tip(
-      tip: tipId,
-      slot: blk.header.slot,
-      height: height,
-    ),
+    tipData: localTree.localTip(),
   )
 
 func distinctKnownBlockIds(known: KnownBlocks): seq[BlockId] =

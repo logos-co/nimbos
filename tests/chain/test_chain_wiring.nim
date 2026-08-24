@@ -17,7 +17,6 @@
 
 import
   std/[os, strutils, times],
-  bearssl/rand,
   unittest2,
   stew/[byteutils, io2],
   libp2p/crypto/ed25519/ed25519,
@@ -26,43 +25,9 @@ import
   ../../logos_chain/deployment/deployment_settings,
   ../../logos_chain/zk/poseidon2/hasher
 
-from libp2p/crypto/rng import newBearSslRng
-
 const
   testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
   deploymentSettingsPath = testsDir / "../../config/deployment-settings.yaml"
-
-proc testRngSingleton(): ref HmacDrbgContext =
-  var rng {.threadvar.}: ref HmacDrbgContext
-  if rng == nil:
-    rng = HmacDrbgContext.new()
-  rng
-
-proc signedTxWithOps(opsCount: int = 1, txIndex: int = 1): SignedMantleTx =
-  let kp = EdKeyPair.random(newBearSslRng(testRngSingleton()))
-  var ops: seq[Op]
-  var proofs: seq[OpProof]
-  for i in 0 ..< opsCount:
-    var cid: ChannelId
-    cid[0] = byte(txIndex mod 256)
-    cid[1] = byte(txIndex div 256)
-    cid[2] = byte(i mod 256)
-    cid[3] = byte(i div 256)
-    let payload = ChannelInscribePayload(
-      channelId: cid,
-      inscription: @[byte 0x68, 0x69],
-      parent: default(Hash32),
-      signer: kp.pubkey,
-    )
-    ops.add(createChannelInscribeOp(payload))
-
-  let mtx = MantleTx(ops: ops)
-  let txHash = mantleTxHash(mtx)
-  for _ in 0 ..< opsCount:
-    let sig = sign(kp.seckey, txHash)
-    proofs.add(OpProof(kind: opfChannelInscribe, ed25519SigProof: sig))
-
-  SignedMantleTx(tx: mtx, opProofs: proofs)
 
 proc initZeroFeeChain(ds: DeploymentSettings): Chain =
   var chain = Chain.init(ds, mockVerifyLeaderProof).expect("chain init")
@@ -191,7 +156,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
     # 1. Add tx to mempool
     let dummyTx = signedTxWithOps(1, 1)
     let txHash = mantleTxHash(dummyTx.tx)
-    check chain.mempool.add(dummyTx) == true
+    check chain.mempool.add(dummyTx, SlotNumber(0)) == true
     check txHash in chain.mempool
 
     # 2. Ingest block b1 containing dummyTx
@@ -223,7 +188,8 @@ suite "chain/epoch wiring (devnet deployment settings)":
 
     # Proposal selection on the new tip picks up the restored dummyTx
     let selected = chain.mempool.selectTxsForProposal(
-      chain.ledger.state(id3_fork).get, chain.currentWallclockSlot() + MempoolMinAgeSlots
+      chain.ledger.state(id3_fork).get, ledgerConfig(ds),
+      chain.currentWallclockSlot() + MempoolMinAgeSlots
     )
     check selected.len == 1
     check mantleTxHash(selected[0].tx) == txHash
@@ -239,9 +205,9 @@ suite "chain/epoch wiring (devnet deployment settings)":
     let h2 = mantleTxHash(tx2.tx)
     let h3 = mantleTxHash(tx3.tx)
 
-    check chain.mempool.add(tx1)
-    check chain.mempool.add(tx2)
-    check chain.mempool.add(tx3)
+    check chain.mempool.add(tx1, SlotNumber(0))
+    check chain.mempool.add(tx2, SlotNumber(0))
+    check chain.mempool.add(tx3, SlotNumber(0))
 
     # Branch A: Genesis -> A1 (contains tx1) -> A2 (contains tx2) (height 2)
     let a1 = childBlock(chain.genesisBlock.header, gid, SlotNumber(1), [tx1])
@@ -273,5 +239,73 @@ suite "chain/epoch wiring (devnet deployment settings)":
     check h1 in chain.mempool
     check h2 in chain.mempool
     check h3 notin chain.mempool
+
+  test "tryApplyBlock prunes orphaned fork states from localTree and ledger upon finalization":
+    var dsSmallSec = ds
+    dsSmallSec.cryptarchia.securityParam = 2
+    var chain = initZeroFeeChain(dsSmallSec)
+    let gid = blockId(chain.genesisBlock.header)
+
+    # Branch A: Genesis -> A1 (slot 1) (height 1)
+    let a1 = childBlock(chain.genesisBlock.header, gid, SlotNumber(1), [])
+    let idA1 = blockId(a1.header)
+    check chain.tryApplyBlock(a1).isOk
+    check chain.localTree.localTipId == idA1
+
+    # Branch B: Genesis -> B1 (slot 2) -> B2 (slot 3) -> B3 (slot 4)
+    let b1 = childBlock(chain.genesisBlock.header, gid, SlotNumber(2), [])
+    let idB1 = blockId(b1.header)
+    check chain.tryApplyBlock(b1).isOk
+    let b2 = childBlock(b1.header, idB1, SlotNumber(3), [])
+    let idB2 = blockId(b2.header)
+    check chain.tryApplyBlock(b2).isOk
+    let b3 = childBlock(b2.header, idB2, SlotNumber(4), [])
+    let idB3 = blockId(b3.header)
+    check chain.tryApplyBlock(b3).isOk
+    check chain.localTree.localTipId == idB3
+
+    # With securityParam = 2 and tip height = 3, LIB advances to B1 (height 3 - 2 = 1).
+    # Orphaned Fork A block A1 at height 1 is pruned from both tree and ledger.
+    check not chain.localTree.hasBlock(idA1)
+    check chain.ledger.state(idA1).isNone
+
+    # Canonical branch B blocks remain in both tree and ledger.
+    check chain.localTree.hasBlock(idB1)
+    check chain.localTree.hasBlock(idB2)
+    check chain.localTree.hasBlock(idB3)
+    check chain.ledger.state(idB1).isSome
+    check chain.ledger.state(idB2).isSome
+    check chain.ledger.state(idB3).isSome
+
+  test "selectTxsForProposal automatically advances epochs across boundaries":
+    var chain = initZeroFeeChain(ds)
+    # Set genesis in the past so slot 6500 is within current wallclock
+    chain.slotConfig.genesisTime = uint64(getTime().toUnix() - 7000)
+
+    let gid = blockId(chain.genesisBlock.header)
+    let tx = signedTxWithOps(1, 101)
+    check chain.mempool.add(tx, SlotNumber(0))
+
+    let tipState = chain.ledger.state(gid).get()
+    check tipState.epochs.activeEpoch.epoch == 0
+
+    # Proposal at slot 6500 crosses epoch 0 (epoch length = 6000 slots)
+    let selected = chain.mempool.selectTxsForProposal(
+      tipState, ledgerConfig(ds), SlotNumber(6500)
+    )
+    check selected.len == 1
+    check mantleTxHash(selected[0].tx) == mantleTxHash(tx.tx)
+
+    # Verify that a block constructed from this proposal is valid and admitted to localTree & ledger
+    let blk = childBlock(chain.genesisBlock.header, gid, SlotNumber(6500), selected)
+    let blkId = blockId(blk.header)
+    check chain.tryApplyBlock(blk).isOk
+    check chain.localTree.hasBlock(blkId)
+    check chain.localTree.localTipId == blkId
+
+    # Verify that the post-application ledger state has officially transitioned to Epoch 1
+    let appliedState = chain.ledger.state(blkId).get()
+    check appliedState.epochs.activeEpoch.epoch == 1
+    check appliedState.epochs.nextEpoch.epoch == 2
 
 {.pop.}

@@ -25,7 +25,7 @@ suite "core/local_tree":
     check tree.hasBlock(gid)
     check tree.localTipId == gid
     check tree.blockHeight(gid) == Opt.some(0'u64)
-    check tree.fetchParentHeader(gid).get == genesis.header
+    check tree.fetchHeader(gid).get == genesis.header
     check tree.latestImmutableBlockId == gid
 
   test "addBlockToTree extends chain and moves tip":
@@ -247,5 +247,72 @@ suite "core/local_tree (lcaBlockIdAndHeight)":
     # Candidate block extending genesis (which is below b1) -> rejected by canExtend!
     let invalidChild = childBlock(genesis.header, gid, 3'u64, [sm])
     check not tree.canExtend(invalidChild.header)
+
+  test "tryUpdateLib handles linear fast-path, cascades upward orphan pruning, and terminates early":
+    let
+      sm = minimalSignedTx()
+      genesis = createGenesisBlock(sm)
+      gid = blockId(genesis.header)
+      # k = 2: immHeight = tip.height - 2
+      tree = newLocalTree(genesis, securityParam = 2'u64)
+
+      # 1. Build canonical chain up to height 3, verifying fast-path on linear chain
+      b1 = childBlock(genesis.header, gid, 1'u64, [sm])
+      id1 = blockId(b1.header)
+      b2 = childBlock(b1.header, id1, 2'u64, [sm])
+      id2 = blockId(b2.header)
+      b3 = childBlock(b2.header, id2, 3'u64, [sm])
+      id3 = blockId(b3.header)
+
+    check tree.addBlockToTree(b1)
+    check tree.tryUpdateLib().len == 0 # Fast-path: no pruned blocks on linear chain
+    check tree.addBlockToTree(b2)
+    check tree.tryUpdateLib().len == 0 # Fast-path: no pruned blocks on linear chain
+    check tree.addBlockToTree(b3)
+    check tree.tryUpdateLib().len == 0 # Fast-path: no pruned blocks on linear chain
+
+    # 2. Build competing fork branching off b1 (height 1):
+    #    f2 at height 2, f3 at height 3
+    let
+      f2 = childBlock(b1.header, id1, 10'u64, [sm])
+      idF2 = blockId(f2.header)
+      f3 = childBlock(f2.header, idF2, 11'u64, [sm])
+      idF3 = blockId(f3.header)
+
+    check tree.addBlockToTree(f2)
+    check tree.addBlockToTree(f3)
+
+    # Before LIB update: all blocks are in the tree
+    check tree.hasBlock(idF2)
+    check tree.hasBlock(idF3)
+    check tree.blocksIdsAtHeight(3'u64).len == 2
+
+    # 3. Add canonical b4, b5 (tip is now height 5)
+    let
+      b4 = childBlock(b3.header, id3, 4'u64, [sm])
+      id4 = blockId(b4.header)
+      b5 = childBlock(b4.header, id4, 5'u64, [sm])
+      id5 = blockId(b5.header)
+    check tree.addBlockToTree(b4)
+    check tree.addBlockToTree(b5)
+
+    # 4. Trigger LIB update:
+    #    immHeight = 5 - 2 = 3 (new LIB is b3 at height 3).
+    #    - Pass 1 prunes f2 at height 2.
+    #    - Pass 2 prunes f3 at height 3 (missing parent f2).
+    #    - Pass 2 checks height 4 (only canonical b4 exists, ids.len == 1) and breaks early!
+    let pruned = tree.tryUpdateLib()
+    check tree.latestImmutableBlockId == id3
+    check idF2 in pruned
+    check idF3 in pruned
+
+    # Neither f2 nor the floating island f3 should remain in the tree
+    check not tree.hasBlock(idF2)
+    check not tree.hasBlock(idF3)
+
+    # Canonical blocks at all heights are intact
+    for id in [gid, id1, id2, id3, id4, id5]:
+      check tree.hasBlock(id)
+    check tree.blocksIdsAtHeight(3'u64) == @[id3]
 
 {.pop.}

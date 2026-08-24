@@ -73,16 +73,16 @@ func init*(
     genesisBlock: Block,
     ledger: Ledger[BlockId],
     slotConfig: SlotConfig,
-    latestImmutableHeight: uint64 = 0,
     securityParam: uint64 = DefaultSecurityParam,
 ): T =
+  let secParam = max(securityParam, DefaultSecurityParam)
   T(
     genesisBlock: genesisBlock,
-    localTree: newLocalTree(genesisBlock, securityParam),
+    localTree: newLocalTree(genesisBlock, secParam),
     ledger: ledger,
-    mempool: Mempool.init(maxMempoolCapacity(securityParam)),
+    mempool: Mempool.init(maxMempoolCapacity(secParam)),
     slotConfig: slotConfig,
-    securityParam: max(securityParam, DefaultSecurityParam),
+    securityParam: secParam,
   )
 
 proc init*(
@@ -112,13 +112,14 @@ proc currentWallclockSlot*(chain: Chain): SlotNumber =
   wallclockSlot(uint64(max(getTime().toUnix(), 0'i64)), chain.slotConfig)
 
 proc readdBranchTxs(chain: var Chain, fromId, toId: BlockId) =
+  let nowSlot = chain.currentWallclockSlot()
   var curr = fromId
   while not curr.isZero and curr != toId:
     let blkOpt = chain.localTree.getBlock(curr)
     if blkOpt.isSome:
       let b = blkOpt.get
       for stx in b.txs:
-        discard chain.mempool.add(stx, chain.currentWallclockSlot())
+        discard chain.mempool.add(stx, nowSlot)
       curr = header(b).parentBlock
     else:
       warn "Missing block during reorg transaction re-addition",
@@ -173,7 +174,9 @@ proc tryApplyBlock*(
     # 2. tryUpdateLib after mempool reorg: ensures fork pruning does not delete orphaned blocks before transactions are restored.
     chain.readdBranchTxs(oldTip, lcaId)
     chain.removeBranchTxs(newTip, lcaId)
-    chain.localTree.tryUpdateLib()
+    let prunedBlockIds = chain.localTree.tryUpdateLib()
+    for prunedId in prunedBlockIds:
+      discard chain.ledger.pruneStateAt(prunedId)
 
   chain.mempool.pruneExpiredTxs(chain.currentWallclockSlot())
   ok()

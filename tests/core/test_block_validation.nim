@@ -152,7 +152,7 @@ suite "core/block_validation — inclusive size and count bounds":
     proposal[] = initProposal(blk.header, [sm], blk.signature).get()
     
     var mempool = Mempool.init()
-    check mempool.add(sm)
+    check mempool.add(sm, SlotNumber(0))
     
     var state = LedgerState.fromGenesis(
         genesis.txs, default(FieldElement), testSdpRegistry(),

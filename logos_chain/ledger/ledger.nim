@@ -123,15 +123,13 @@ proc fromGenesis*(
   s.sdp = onEpochStarted(s.sdp, genesisEpoch)
   ok(s)
 
-proc tryApplyHeader*(
+proc advanceEpochAndMarket*(
     state: sink LedgerState,
     slot: SlotNumber,
-    proof: ProofOfLeadership,
     cfg: LedgerConfig,
-    verifyProof: LeaderProofVerifier = verifyLeaderProof,
 ): Result[LedgerState, LedgerError] =
-  ## Epoch pipeline for `slot`, leader-proof verification against the active
-  ## epoch state, then entropy/density bookkeeping.
+  ## Advances epoch tracking, runs storage market updates for crossed epochs,
+  ## finalizes SDP epoch transitions, and credits epoch vouchers for `slot`.
   var s = state
   let prevEpoch = s.epochs.activeEpoch.epoch
   s.epochs = ?s.epochs.advanceEpochs(
@@ -148,6 +146,18 @@ proc tryApplyHeader*(
     # https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md#sdp-epoch-finalization
     s.sdp = onEpochStarted(s.sdp, s.epochs.activeEpoch.epoch)
     s.cryptarchiaLedger.leader = ?s.cryptarchiaLedger.leader.addEpochVouchers()
+  ok(s)
+
+proc tryApplyHeader*(
+    state: sink LedgerState,
+    slot: SlotNumber,
+    proof: ProofOfLeadership,
+    cfg: LedgerConfig,
+    verifyProof: LeaderProofVerifier = verifyLeaderProof,
+): Result[LedgerState, LedgerError] =
+  ## Epoch pipeline for `slot`, leader-proof verification against the active
+  ## epoch state, then entropy/density bookkeeping.
+  var s = ?state.advanceEpochAndMarket(slot, cfg)
   let
     active = s.epochs.activeEpoch
     public = LeaderPublic(
@@ -170,39 +180,38 @@ proc tryApplyHeader*(
   s.epochs = s.epochs.recordBlock(slot, entropy)
   ok(s)
 
-func multisigThreshold(s: LedgerState, op: Op): uint16 =
-  ## Signature count the ledger will verify for a channel multisig op —
-  ## the channel's threshold as of the pre-op state, 1'u16 minimum fallback when absent.
+func opMultisigThreshold(op: Op, proof: OpProof): Result[uint16, LedgerError] =
+  ## Signature count for channel multisig operations (ChannelConfig, ChannelWithdraw, ChannelTransfer).
+  ##
+  ## We count signatures directly from the attached proof (`proof.signatures.len`) rather
+  ## than querying the ledger state. This avoids ordering issues when multiple ops in the
+  ## same tx create or update a channel before using it, and charges for the signatures
+  ## actually verified by `verifyChannelMultiSig` in `channel_state.nim` (L92-L107) — if
+  ## `proof.signatures.len != threshold`, the transaction will not be validated (`ThresholdUnmet`).
+  if proof.kind != expectedOpProofKindForOpcode(op.opcode):
+    return err(InvalidProof)
   case op.payload.kind
   of ChannelConfig:
-    let ch = s.mantleLedger.channels.get(op.payload.channelConfig.channel).valueOr:
-      return op.payload.channelConfig.configurationThreshold
-    ch.configurationThreshold
+    ok(max(uint16(proof.channelConfigOpProof.signatures.len), 1'u16))
   of ChannelWithdraw:
-    let ch = s.mantleLedger.channels.get(op.payload.channelWithdraw.channel).valueOr:
-      return 1'u16
-    ch.transferThreshold
+    ok(max(uint16(proof.channelWithdrawOpProof.signatures.len), 1'u16))
   of ChannelTransfer:
-    let ch = s.mantleLedger.channels.get(op.payload.channelTransfer.channel).valueOr:
-      return 1'u16
-    ch.transferThreshold
+    ok(max(uint16(proof.channelTransferOpProof.signatures.len), 1'u16))
   else:
-    1'u16
+    ok(1'u16)
 
 proc tryApplyTx*(
-    state: sink LedgerState,
+    s: var LedgerState,
     tx: SignedMantleTx,
     epoch: EpochNumber,
     slot: SlotNumber,
-): Result[tuple[state: LedgerState, balance: Balance], LedgerError] =
-  ## Applies one transaction; the returned balance is the Transfer-only
+): Result[Balance, LedgerError] =
+  ## Applies one transaction in-place; the returned balance is the Transfer-only
   ## delta. `slot` is used by channel ops for sequencer rotation.
   if tx.tx.ops.len != tx.opProofs.len:
     return err(InvalidProof)
 
-  var
-    s = state
-    balance = Balance.zero
+  var balance = Balance.zero
   let txHash = mantleTxHash(tx.tx)
   for i in 0 ..< tx.tx.ops.len:
     let
@@ -280,15 +289,19 @@ proc tryApplyTx*(
       )
     else:
       return err(UnsupportedOp)
-  ok((state: s, balance: balance))
+  ok(balance)
 
 proc txExecutionGas(
-    s: LedgerState,
     tx: SignedMantleTx,
 ): Result[Gas, LedgerError] =
+  if tx.tx.ops.len != tx.opProofs.len:
+    return err(InvalidProof)
   var total = Gas(0)
-  for op in tx.tx.ops:
-    let thresh = s.multisigThreshold(op)
+  for i in 0 ..< tx.tx.ops.len:
+    let
+      op = tx.tx.ops[i]
+      proof = tx.opProofs[i]
+      thresh = ? opMultisigThreshold(op, proof)
     let added = checkedAdd(total, execution_gas(op, thresh)).valueOr:
       return err(GasOverflow)
     total = added
@@ -298,7 +311,7 @@ proc mandatory_fees*(
     s: LedgerState,
     tx: SignedMantleTx,
 ): Result[tuple[totalCost: GasCost, executionGas, storageGas: Gas], LedgerError] =
-  let execGas = ? s.txExecutionGas(tx)
+  let execGas = ? txExecutionGas(tx)
   let storageGas = Gas(encodeSignedMantleTx(tx).len)
   let prices = s.feeMarket.gasPrices
   let executionCost = execGas.checkedMul(prices.executionBaseFee).valueOr:
@@ -347,15 +360,14 @@ proc tryApplyTxns*(
   for tx in txs:
     let
       (totalCost, execGas, storageGas) = ?s.mandatory_fees(tx)
-      r = ?s.tryApplyTx(tx, epoch, slot)
-    s = r.state
-    if not r.balance.covers(totalCost):
+      txBalance = ?s.tryApplyTx(tx, epoch, slot)
+    if not txBalance.covers(totalCost):
       return err(InsufficientBalance)
     totalFeeBurned = totalFeeBurned.checkedAdd(totalCost).valueOr:
       return err(GasOverflow)
     # tx_priority_tip = checked_uint64(tx_balance - tx_mandatory_fee): only
     # the difference is narrowed — a wide balance with a small tip stays valid.
-    let tip = ?checked_uint64(?r.balance.checkedSub(totalCost.to(Balance)))
+    let tip = ?checked_uint64(?txBalance.checkedSub(totalCost.to(Balance)))
     totalFeeTip = totalFeeTip.checkedAdd(tip).valueOr:
       return err(GasOverflow)
     blockExecutionGas = blockExecutionGas.checkedAdd(execGas).valueOr:

@@ -261,10 +261,13 @@ suite "gas: tx execution gas and block limit":
         tx: body,
         opProofs: @[
           OpProof(kind: opfChannelInscribe, ed25519SigProof: sign(kp1.seckey, txHash)),
-          OpProof(kind: opfChannelInscribe, ed25519SigProof: sign(kp2.seckey, txHash))])
-      r = mkState(@[]).tryApplyTx(tx, epoch = 0'u64, slot = 0'u64)
+          OpProof(kind: opfChannelInscribe, ed25519SigProof: sign(kp2.seckey, txHash)),
+        ],
+      )
+    var s = mkState(@[])
+    let r = s.tryApplyTx(tx, epoch = 0'u64, slot = 0'u64)
     check r.isOk
-    let mf = r.get.state.mandatory_fees(tx)
+    let mf = s.mandatory_fees(tx)
     check mf.isOk
     check mf.get.executionGas == Gas(112)
 
@@ -362,5 +365,14 @@ suite "gas: storage accumulation and epoch rotation":
     )
     let expectedCost = (mf.executionGas * 2) + (mf.storageGas * 3)
     check mf.totalCost == expectedCost
+
+  test "advanceEpochAndMarket rotates storage market and advances epoch without proof":
+    var s = mkState(@[])
+    s.feeMarket.storageGasEma = 800
+    let advanced = s.advanceEpochAndMarket(350, testLedgerConfig).expect("advanced")
+    check:
+      advanced.epochs.activeEpoch.epoch == 3
+      advanced.feeMarket.storageGasEma == Gas(100) # 800 → 400 → 200 → 100
+      advanced.feeMarket.storageGasConsumedInEpoch == Gas(0)
 
 {.pop.}
