@@ -6,20 +6,19 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## Hashing and PRNG over common cryptographic types (see ``encoding``).
-## Spec: [1.0.1 Common Cryptographic Components](https://nomos-tech.notion.site/1-0-1-Common-Cryptographic-Components-1fd261aa09df81ac8ebbe0111e2c2d84)
+## Spec: [Common Cryptographic Components v1.0.2](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/common-cryptographic-components.md)
 
 {.push raises: [], gcsafe.}
 
 import
   nimcrypto/blake2,
-  poseidon2/sponge,
   ./types
 export types
 
 
 func blake2b256Hash*(data: openArray[byte]): Hash32 =
   ## Spec reference (common cryptographic components):
-  ## https://nomos-tech.notion.site/1-0-0-Common-Cryptographic-Components-1fd261aa09df81ac8ebbe0111e2c2d84#1fd261aa09df81b3890fcc4f9606ee9e
+  ## https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/common-cryptographic-components.md#blake2bgeneral-purpose-hashing
   ## Returns BLAKE2b-256(data) as a 32-byte **``Hash32``**.
   var ctx {.noinit.}: Blake2bContext[256]
   ctx.init()
@@ -36,16 +35,10 @@ func generateZkSignature*(): ZkSignature =
   ## Placeholder: return opaque zeroed signature bytes.
   DefaultZkSignature
 
-func poseidon2Hash*(data: openArray[byte]): ZkHash =
-  ## Poseidon2 (BN254, t=3) sponge hash over input bytes.
-  ## Returns canonical 32-byte little-endian field element encoding.
-  ## TODO(zk): replace this direct sponge call with `Poseidon2Hasher` when ready.
-  Sponge.digest(data).toBytes()
-
 
 func prngBlock*(seed: Blake2bPrngSeed, index: uint64): Blake2bPrngBlock =
   ## Spec reference (BLAKE2b-based PRNG):
-  ## https://nomos-tech.notion.site/1-0-0-Common-Cryptographic-Components-1fd261aa09df81ac8ebbe0111e2c2d84#1fd261aa09df81b3890fcc4f9606ee9e
+  ## https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/common-cryptographic-components.md#blake2b-based-prng-construction
   ## Spec construction:
   ## PRNG(seed, i) = BLAKE2b(seed || encode_u64_le(i), out_len=64)
   var input: array[72, byte]
@@ -63,7 +56,7 @@ func prngBlock*(seed: Blake2bPrngSeed, index: uint64): Blake2bPrngBlock =
 
 func prngBytes*(seed: Blake2bPrngSeed, byteLen: Natural): seq[byte] =
   ## Spec reference (PRNG expansion by concatenation):
-  ## https://nomos-tech.notion.site/1-0-0-Common-Cryptographic-Components-1fd261aa09df81ac8ebbe0111e2c2d84#1fd261aa09df81b3890fcc4f9606ee9e
+  ## https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/common-cryptographic-components.md#blake2b-based-prng-construction
   ## Expands PRNG output by concatenating 64-byte PRNG blocks.
   var res = newSeq[byte](byteLen)
   if byteLen == 0:

@@ -96,10 +96,6 @@ proc setStatusMsg(peer: Peer, statusMsg: StatusMsg) =
   peer.state(PeerSync).statusMsg = statusMsg
   peer.state(PeerSync).statusLastTime = Moment.now()
 
-proc setStatusV2Msg(peer: Peer, statusMsg: Opt[StatusMsgV2]) =
-  peer.state(PeerSync).statusMsgV2 = statusMsg
-  peer.state(PeerSync).statusLastTime = Moment.now()
-
 proc handleStatusV1(peer: Peer,
                     state: PeerSyncNetworkState,
                     theirStatus: StatusMsg): Future[bool]

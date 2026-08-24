@@ -13,6 +13,7 @@ import
   std/sets,
   unittest2,
   libp2p/multiaddress,
+  ./test_helpers,
   ../../../logos_chain/core/mantle/primitives,
   ../../../logos_chain/ledger/sdp/state,
   ../../../logos_chain/zk/poseidon2/hasher
@@ -46,6 +47,16 @@ suite "ledger/sdp/state":
     var id: DeclarationId
     id[0] = seed
     id
+
+  proc checkInvariants(state: SdpState) =
+    check state.activeProviders.len == state.declarations.len
+    check state.activeZkIds.len == state.declarations.len
+    for declId, info in state.declarations.pairs:
+      check (info.service, info.providerId) in state.activeProviders
+      check (info.service, info.zkId) in state.activeZkIds
+      check info.lockedNoteId in state.lockedNotes
+      let declsInNote = state.lockedNotes.get(info.lockedNoteId).get()
+      check declId in declsInNote
 
   test "stores declarations and locked notes":
     var state = SdpState.init()
@@ -96,5 +107,61 @@ suite "ledger/sdp/state":
     state = finalizeWithdrawals(state, 7)
     check declId notin state.declarations
     check noteId notin state.lockedNotes
+
+  test "hasProviderOrZkIdConflict uses secondary index maps":
+    var state = SdpState.init()
+    let declId = seedDeclId(10)
+    var info: DeclarationInfo
+    info.service = ServiceType.bn
+    info.providerId = mkProvider(1)
+    info.zkId = seedNoteId(9)
+
+    check not hasProviderOrZkIdConflict(state, info.service, info.providerId, info.zkId)
+    state = insertDeclaration(state, declId, info)
+    check hasProviderOrZkIdConflict(state, info.service, info.providerId, info.zkId)
+
+    # Provider and ZK ID remain conflict-protected until declaration is removed
+    state = removeDeclaration(state, declId)
+    check not hasProviderOrZkIdConflict(state, info.service, info.providerId, info.zkId)
+
+  test "SdpState preserves invariants across declare, active, withdraw, and finalization":
+    var seeded1 = seedDeclaration(pkSeed = 1, declareEpoch = 1)
+    let seeded2 = seedDeclaration(pkSeed = 2, declareEpoch = 1)
+    checkInvariants(seeded1.registry.state)
+
+    # Apply second declaration into seeded1 registry
+    let declareRes2 = applySdpDeclare(seeded1.registry, seeded2.declaration, 1)
+    check declareRes2.isOk
+    seeded1.registry = declareRes2.get()
+    checkInvariants(seeded1.registry.state)
+
+    # Execute active on decl 1
+    let activeMsg1 = ActiveMessage(
+      declarationId: seeded1.declId,
+      nonce: 1,
+    )
+    let decl1 = seeded1.registry.state.declarations.get(seeded1.declId).get()
+    seeded1.registry = applySdpActive(seeded1.registry, activeMsg1, decl1, 2)
+    checkInvariants(seeded1.registry.state)
+
+    # Execute withdraw on decl 1 at epoch 5
+    let withdrawMsg1 = WithdrawMessage(
+      declarationId: seeded1.declId,
+      lockedNoteId: seeded1.declaration.lockedNoteId,
+      nonce: 2,
+    )
+    let decl1Active = seeded1.registry.state.declarations.get(seeded1.declId).get()
+    seeded1.registry = applySdpWithdraw(seeded1.registry, withdrawMsg1, decl1Active, 5)
+    checkInvariants(seeded1.registry.state)
+
+    # Epoch hook at epoch 6 (snapshot/finalization) — does not prune epoch 5 withdrawal yet
+    seeded1.registry = onEpochStarted(seeded1.registry, 6)
+    checkInvariants(seeded1.registry.state)
+    check seeded1.declId in seeded1.registry.state.declarations
+
+    # Epoch hook at epoch 7 — prunes epoch 5 withdrawal
+    seeded1.registry = onEpochStarted(seeded1.registry, 7)
+    checkInvariants(seeded1.registry.state)
+    check seeded1.declId notin seeded1.registry.state.declarations
 
 {.pop.}

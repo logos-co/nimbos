@@ -6,7 +6,7 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## Gas units, per-operation execution gas, and protocol gas constants.
-## Spec: [Mantle — Gas Determination](https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md#gas-determination)
+## Spec: [Bedrock v1.1 — Mantle Specification v1.10.0 — Gas Determination](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md#gas-determination)
 
 {.push raises: [], gcsafe.}
 

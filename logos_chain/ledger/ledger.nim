@@ -287,8 +287,6 @@ proc tryApplyTx*(
       s.cryptarchiaLedger = ?s.cryptarchiaLedger.tryApplyLeaderClaim(
         op.payload.leaderClaim, proof.proofOfClaimProof, txHash,
       )
-    else:
-      return err(UnsupportedOp)
   ok(balance)
 
 proc txExecutionGas(
