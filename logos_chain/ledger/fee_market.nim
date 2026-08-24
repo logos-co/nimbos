@@ -5,9 +5,8 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-## Fee-market consensus state: execution base fee and storage gas price.
-## Spec: [Execution Market](https://github.com/logos-co/logos-lips/blob/38916aa474164ac4acd81e62d19715e17626be17/docs/blockchain/raw/execution-market.md),
-## [Storage Markets](https://github.com/logos-co/logos-lips/blob/38916aa474164ac4acd81e62d19715e17626be17/docs/blockchain/raw/storage-markets.md)
+## Spec: [Execution Market v1.1.0](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/execution-market.md)
+## Spec: [Storage Markets v1.1.0](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/storage-markets.md)
 
 {.push raises: [], gcsafe.}
 
@@ -27,22 +26,22 @@ type
 const
   # Names from the spec's reference code (EXECUTION_ prefix disambiguates
   # from the storage market's constants):
-  # https://github.com/logos-co/logos-lips/blob/38916aa474164ac4acd81e62d19715e17626be17/docs/blockchain/raw/execution-market.md#base-fee-update-rule
+  # https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/execution-market.md#base-fee-update-rule
   EXECUTION_EMA_DENOMINATOR = u128(10)
   EXECUTION_EMA_PREV_WEIGHT = u128(9)
   # 7 * G_target and 8 * G_target for G_target = 1,596,730 = G_max/2
-  # (https://github.com/logos-co/logos-lips/blob/38916aa474164ac4acd81e62d19715e17626be17/docs/blockchain/raw/execution-market.md#notation).
+  # (https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/execution-market.md#notation).
   EXECUTION_BASE_FEE_NUMERATOR = u128(11_177_110)
   EXECUTION_BASE_FEE_DENOMINATOR = u128(12_773_840)
 
-  # https://github.com/logos-co/logos-lips/blob/38916aa474164ac4acd81e62d19715e17626be17/docs/blockchain/raw/storage-markets.md#implementation
+  # https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/storage-markets.md#implementation
   STORAGE_EMA_DENOMINATOR = 2'u64
   STORAGE_CLAMP_DENOMINATOR = u128(8)
   STORAGE_CLAMP_DOWN_NUMERATOR = u128(7)
   STORAGE_CLAMP_UP_NUMERATOR = u128(9)
 
   # Both markets open at price 1:
-  # https://github.com/logos-co/logos-lips/blob/38916aa474164ac4acd81e62d19715e17626be17/docs/blockchain/raw/storage-markets.md#protocol-constants
+  # https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/storage-markets.md#protocol-constants
   GENESIS_EXECUTION_BASE_FEE = GasPrice(1)
   GENESIS_STORAGE_GAS_PRICE = GasPrice(1)
 
@@ -68,7 +67,7 @@ func ceil_div(numerator, denominator: UInt128): UInt128 =
 
 func update_g_avg*(prev_g_avg: Gas, block_gas_used: Gas): Gas =
   ## Per-block execution-gas EMA step.
-  ## https://github.com/logos-co/logos-lips/blob/38916aa474164ac4acd81e62d19715e17626be17/docs/blockchain/raw/execution-market.md#base-fee-update-rule
+  ## https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/execution-market.md#base-fee-update-rule
   let numerator = u128(block_gas_used) +
     EXECUTION_EMA_PREV_WEIGHT * u128(prev_g_avg)
   # numerator <= 10 * uint64.max, so the quotient always fits in uint64.
@@ -76,13 +75,13 @@ func update_g_avg*(prev_g_avg: Gas, block_gas_used: Gas): Gas =
 
 func update_base_fee*(base_fee: GasPrice, g_avg: Gas): GasPrice =
   ## Per-block base-fee update from the current gas EMA.
-  ## https://github.com/logos-co/logos-lips/blob/38916aa474164ac4acd81e62d19715e17626be17/docs/blockchain/raw/execution-market.md#base-fee-update-rule
+  ## https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/execution-market.md#base-fee-update-rule
   let numerator = u128(base_fee) * (EXECUTION_BASE_FEE_NUMERATOR + u128(g_avg))
   ceil_div(numerator, EXECUTION_BASE_FEE_DENOMINATOR).truncate(uint64)
 
 func update_usage*(total_gas_consumed, previous_usage: Gas): Gas =
   ## Per-epoch storage-gas EMA step.
-  ## https://github.com/logos-co/logos-lips/blob/38916aa474164ac4acd81e62d19715e17626be17/docs/blockchain/raw/storage-markets.md#implementation
+  ## https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/storage-markets.md#implementation
   # Overflow-safe floor((a + b) / 2); valid only for a denominator of 2.
   static: doAssert STORAGE_EMA_DENOMINATOR == 2
   (total_gas_consumed and previous_usage) +
@@ -91,7 +90,7 @@ func update_usage*(total_gas_consumed, previous_usage: Gas): Gas =
 func update_storage_price*(
     prev_price: GasPrice, total_gas_consumed, usage: Gas): GasPrice =
   ## Per-epoch price update; `usage` is the already-updated EMA.
-  ## https://github.com/logos-co/logos-lips/blob/38916aa474164ac4acd81e62d19715e17626be17/docs/blockchain/raw/storage-markets.md#implementation
+  ## https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/storage-markets.md#implementation
   # A zero EMA carries no demand signal, so the price is held rather than
   # clamped down.
   if usage == 0:

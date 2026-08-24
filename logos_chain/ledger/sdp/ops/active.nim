@@ -6,7 +6,7 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## SDP Active validation and application.
-## Spec: [1.1.0 Service Declaration Protocol](https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/bedrock-service-declaration-protocol.md)
+## Spec: [Service Declaration Protocol v1.3.0](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/bedrock-service-declaration-protocol.md)
 
 {.push raises: [], gcsafe.}
 
@@ -18,7 +18,7 @@ import
 
 export util, registry, state
 
-func evaluateSdpActivity*(
+func evaluateSdpActivity(
     service: ServiceType,
     declaration: DeclarationInfo,
     metadata: Metadata,
@@ -40,11 +40,24 @@ proc validateSdpActive(
     proof: ZkSigProof,
     txHash: Hash32,
     state: SdpState,
-): Result[void, LedgerError] =
+): Result[DeclarationInfo, LedgerError] =
   let declaration = ?loadDeclaration(state, active.declarationId)
   ?checkNonceMonotonic(declaration, active.nonce)
   ?verifyZkSig(proof, txHash, @[declaration.zkId])
-  ok()
+  ok(declaration)
+
+proc applySdpActive*(
+    registry: sink SdpRegistry,
+    active: ActiveMessage,
+    declaration: DeclarationInfo,
+    epoch: EpochNumber,
+): SdpRegistry =
+  ## Mutation only; assumes validation passed.
+  var updated = declaration
+  updated.nonce = active.nonce
+  updated.active = Opt.some(epoch)
+  registry.state = insertDeclaration(registry.state, active.declarationId, updated)
+  registry
 
 proc tryApplySdpActive*(
     registry: sink SdpRegistry,
@@ -53,8 +66,7 @@ proc tryApplySdpActive*(
     txHash: Hash32,
     epoch: EpochNumber,
 ): Result[SdpRegistry, LedgerError] =
-  ?validateSdpActive(active, proof, txHash, registry.state)
-  let declaration = registry.state.declarations.getOrDefault(active.declarationId)
+  let declaration = ?validateSdpActive(active, proof, txHash, registry.state)
   let params = getParametersAt(
     registry, declaration.service, epoch,
   ).valueOr:
@@ -63,11 +75,6 @@ proc tryApplySdpActive*(
     declaration.service, declaration, active.metadata, epoch, params,
   ):
     return err(ActivityRejected)
-
-  var updated = declaration
-  updated.nonce = active.nonce
-  updated.active = Opt.some(epoch)
-  registry.state = insertDeclaration(registry.state, active.declarationId, updated)
-  ok(registry)
+  ok(applySdpActive(registry, active, declaration, epoch))
 
 {.pop.}
