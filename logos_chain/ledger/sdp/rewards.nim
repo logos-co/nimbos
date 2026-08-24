@@ -17,14 +17,15 @@ import
   ../../core/mantle/[primitives, utxo]
 
 func rewardOpId*(service: ServiceType, epoch: EpochNumber): Hash32 =
-  ## ``op_id = hash(ServiceType || epoch_number)`` (spec §Distribution).
-  # The spec leaves the widths open: 4-byte LE service index, epoch as
-  # u32 LE. The narrowing is safe — headers past the wallclock slot are
-  # rejected upstream, so epochs stay far below 2^32.
+  ## ``op_id = hash(ServiceType || epoch_number)`` with the service as its
+  ## canonical one-byte discriminant (spec §Distribution, logos-lips#402).
+  # The spec still leaves the epoch width open; u32 LE pending upstream
+  # clarification. The narrowing is safe — headers past the wallclock
+  # slot are rejected upstream, so epochs stay far below 2^32.
   doAssert epoch <= EpochNumber(high(uint32)), "reward epoch exceeds u32"
-  var preimage: array[8, byte]
-  preimage[0 ..< 4] = encodeLe(uint32(ord(service)))
-  preimage[4 ..< 8] = encodeLe(uint32(epoch))
+  var preimage: array[5, byte]
+  preimage[0] = encodeServiceType(service)
+  preimage[1 ..< 5] = encodeLe(uint32(epoch))
   blake2b256Hash(preimage)
 
 func cmpNumeric*(a, b: ZkPublicKey): int =

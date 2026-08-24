@@ -17,9 +17,9 @@ import
   ../../../logos_chain/ledger/sdp/rewards
 
 suite "ledger/sdp/rewards":
-  test "rewardOpId hashes the 4-byte service index and u32 LE epoch":
+  test "rewardOpId hashes the one-byte service tag and u32 LE epoch":
     check rewardOpId(ServiceType.bn, 5) ==
-      blake2b256Hash([byte 0, 0, 0, 0, 5, 0, 0, 0])
+      blake2b256Hash([byte 0, 5, 0, 0, 0])
 
   test "rewardOpId differs across epochs":
     check rewardOpId(ServiceType.bn, 1) != rewardOpId(ServiceType.bn, 2)

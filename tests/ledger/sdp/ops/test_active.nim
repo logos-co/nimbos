@@ -122,7 +122,7 @@ suite "ledger/sdp/ops/active — blend activity":
   test "a valid activity proof is recorded against the target epoch":
     let applied = tryApplySdpActive(
       target.registry, mkTargetActivity(target), fixtureProof,
-      fixtureTxHash, 1).expect("valid blend activity")
+      fixtureTxHash, 1, acceptAllPoq).expect("valid blend activity")
     check applied.blendRewards.target.get.tracker.submitted.len == 1
     check getDeclaration(applied.state, target.declId).get().active ==
       Opt.some(1'u64)
@@ -138,7 +138,7 @@ suite "ledger/sdp/ops/active — blend activity":
     let active = ActiveMessage(
       declarationId: target.declId, nonce: 1, metadata: @[byte 1, 2, 3])
     check tryApplySdpActive(
-      target.registry, active, fixtureProof, fixtureTxHash, 1
+      target.registry, active, fixtureProof, fixtureTxHash, 1, acceptAllPoq
     ).error == ActivityRejected
 
 {.pop.}

@@ -200,6 +200,7 @@ proc execActive*(
     defaultActiveProof(),
     mkTxHash(),
     epoch,
+    acceptAllPoq,
   )
 
 proc seedDeclaration*(

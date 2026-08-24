@@ -48,10 +48,9 @@ proc tryApplySdpActive*(
     proof: ZkSigProof,
     txHash: Hash32,
     epoch: EpochNumber,
-    verifyPoq: PoqVerifier = acceptAllPoq,
+    verifyPoq: PoqVerifier,
 ): Result[SdpRegistry, LedgerError] =
-  ?validateSdpActive(active, proof, txHash, registry.state)
-  let declaration = registry.state.declarations.getOrDefault(active.declarationId)
+  let declaration = ?validateSdpActive(active, proof, txHash, registry.state)
   if getParametersAt(registry, declaration.service, epoch).isNone:
     return err(MissingServiceParameters)
   case declaration.service

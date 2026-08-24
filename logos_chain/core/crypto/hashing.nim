@@ -12,7 +12,6 @@
 
 import
   nimcrypto/blake2,
-  poseidon2/sponge,
   stew/staticfor,
   ./types
 export types
