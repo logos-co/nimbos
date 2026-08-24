@@ -36,14 +36,14 @@ type
   MempoolError* {.pure.} = enum
     TxNotFound
 
-  MempoolItem = object
+  MempoolItem = ref object
     tx: SignedMantleTx
     addedAtSlot: SlotNumber
 
   Mempool* = ref object
     txs*: Table[Hash32, MempoolItem]
     queue*: Deque[Hash32]
-    graceCache*: LruCache[Hash32, SignedMantleTx]
+    graceCache*: LruCache[Hash32, MempoolItem]
     capacity*: uint64
     lastAddedSlot*: SlotNumber
 
@@ -54,18 +54,15 @@ func init*(_: typedesc[Mempool],
     capacity = uint64(DefaultMempoolCapacity)): Mempool =
   let cap = max(capacity, 1'u64)
   Mempool(
-    graceCache: LruCache[Hash32, SignedMantleTx].init(int(cap)),
+    graceCache: LruCache[Hash32, MempoolItem].init(int(cap)),
     capacity: cap
   )
 
 proc remove(m: Mempool, hash: Hash32, moveToGrace: bool) =
-  if hash in m.txs:
-    try:
-      if moveToGrace:
-        m.graceCache.put(hash, move(m.txs[hash].tx))
-      m.txs.del(hash)
-    except KeyError:
-      discard
+  m.txs.withValue(hash, item):
+    if moveToGrace:
+      m.graceCache.put(hash, item[])
+    m.txs.del(hash)
 
 proc compactQueue(m: Mempool) =
   var newQueue = initDeque[Hash32](m.txs.len)
@@ -108,9 +105,9 @@ func contains*(m: Mempool, hash: Hash32): bool =
 func get*(m: Mempool, hash: Hash32): Result[SignedMantleTx, MempoolError] =
   m.txs.withValue(hash, item):
     return ok(item[].tx)
-  let tx = m.graceCache.peek(hash).valueOr:
+  let item = m.graceCache.peek(hash).valueOr:
     return err(MempoolError.TxNotFound)
-  ok(tx)
+  ok(item.tx)
 
 proc pruneExpiredTxs*(m: Mempool, currentSlot: SlotNumber) =
   while m.queue.len > 0:
