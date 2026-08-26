@@ -199,12 +199,23 @@ when not (crypto.PKScheme.Ed25519 in crypto.SupportedSchemes):
 
 const
   NetworkInsecureKeyPassword = "INSECUREPASSWORD"
+  maxRequestQuota = 1000000
+  maxGlobalQuota = 2 * maxRequestQuota
+    ## Roughly, this means we allow 2 peers to sync from us at a time
+  fullReplenishTime = 5.seconds
 
 func shortLog*(peer: Peer): string = shortLog(peer.peerId)
 chronicles.formatIt(Peer): shortLog(it)
 chronicles.formatIt(PublicKey): byteutils.toHex(it.getBytes().tryGet())
 
-proc init(T: type Peer, network: LBP2PNode, peerId: PeerId): Peer {.gcsafe.}
+proc init(T: type Peer, network: LBP2PNode, peerId: PeerId): Peer =
+  Peer(
+    peerId: peerId,
+    network: network,
+    connectionState: ConnectionState.None,
+    lastReqTime: now(chronos.Moment),
+    quota: TokenBucket.new(maxRequestQuota.int, fullReplenishTime),
+  )
 
 func peerId*(node: LBP2PNode): PeerId =
   node.switch.peerInfo.peerId
@@ -216,10 +227,6 @@ proc getPeer*(node: LBP2PNode, peerId: PeerId): Peer =
     let peer = Peer.init(node, peerId)
     return node.peers.mgetOrPut(peerId, peer)
 
-proc peerFromStream(network: LBP2PNode, conn: Connection): Peer =
-  var peer = network.getPeer(conn.peerId)
-  peer.peerId = conn.peerId
-  peer
 
 func getKey*(peer: Peer): PeerId {.inline.} =
   peer.peerId
@@ -255,14 +262,6 @@ func calcThroughput(dur: Duration, value: uint64): float =
   else:
     float(value) * (secs / float(dur.nanoseconds))
 
-func updateNetThroughput(peer: Peer, dur: Duration,
-                         bytesCount: uint64) {.inline.} =
-  ## Update peer's ``peer`` network throughput.
-  let bytesPerSecond = calcThroughput(dur, bytesCount)
-  let a = peer.netThroughput.average
-  let n = peer.netThroughput.count
-  peer.netThroughput.average = a + (bytesPerSecond - a) / float(n + 1)
-  inc(peer.netThroughput.count)
 
 func netKbps*(peer: Peer): float {.inline.} =
   ## Returns current network throughput average value in Kbps for peer ``peer``.
@@ -275,11 +274,6 @@ func cmp*(a, b: Peer): int =
   else:
     cmp(a.score, b.score)
 
-const
-  maxRequestQuota = 1000000
-  maxGlobalQuota = 2 * maxRequestQuota
-    ## Roughly, this means we allow 2 peers to sync from us at a time
-  fullReplenishTime = 5.seconds
 
 template awaitQuota*(peerParam: Peer, costParam: float, protocolIdParam: string) =
   let
@@ -308,9 +302,6 @@ func allowedOpsPerSecondCost*(n: int): float =
   const replenishRate = (maxRequestQuota / fullReplenishTime.nanoseconds.float)
   (replenishRate * 1000000000'f / n.float)
 
-const
-  libp2pRequestCost = allowedOpsPerSecondCost(8)
-    ## Maximum number of libp2p requests per peer per second
 
 proc isSeen(network: LBP2PNode, peerId: PeerId): bool =
   ## Returns ``true`` if ``peerId`` present in SeenTable and time period is not
@@ -692,12 +683,12 @@ proc startListening*(node: LBP2PNode) {.async.} =
           exc = exc.msg
     quit 1
 
-  let fullAddrsRes = node.switch.peerInfo.fullAddrs()
-  if fullAddrsRes.isOk:
-    notice "LibP2P transport started", fullAddrs = fullAddrsRes.get()
-  else:
+  let fullAddrs = node.switch.peerInfo.fullAddrs().valueOr:
     warn "LibP2P transport started, but couldn't compute fullAddrs()",
-      error = fullAddrsRes.error
+      error
+    @[]
+  if fullAddrs.len > 0:
+    notice "LibP2P transport started", fullAddrs = fullAddrs
 
   if node.announcedAddresses.len > 0:
     notice "Configured advertised addresses",
@@ -728,8 +719,8 @@ func bootstrapLinkMaintenanceShouldDisconnect*(
   ## peer is not a configured bootstrap peer (so bootstrap links may be released).
   ##
   ## Matches bootstrap link maintenance in the P2P Network Specification:
-  ## https://github.com/logos-co/logos-lips/blob/master/docs/blockchain/draft/p2p-network.md
-  ## https://github.com/logos-co/logos-lips/blob/master/docs/blockchain/raw/p2p-network-bootstrapping.md
+  ## https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/draft/p2p-network.md
+  ## https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/p2p-network-bootstrapping.md
   peerPoolLen >= wantedPeers and (peerPoolLen - bootstrapPeersInPool) > 0
 
 proc runBootstrapLinkMaintenanceTick*(
@@ -739,19 +730,18 @@ proc runBootstrapLinkMaintenanceTick*(
   ## peers when ``bootstrapLinkMaintenanceShouldDisconnect`` holds. Used by
   ## ``bootstrapHeartbeat`` and tests (no fixed sleep). Policy matches the P2P Network
   ## Specification (see doc comment on ``bootstrapLinkMaintenanceShouldDisconnect``):
-  ## https://github.com/logos-co/logos-lips/blob/master/docs/blockchain/draft/p2p-network.md
-  ## https://github.com/logos-co/logos-lips/blob/master/docs/blockchain/raw/p2p-network-bootstrapping.md
+  ## https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/draft/p2p-network.md
+  ## https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/p2p-network-bootstrapping.md
   if node.bootstrapPeers.len == 0:
     return
 
   let connectedBootstrapPeers =
     node.bootstrapPeers.filterIt(
-      node.peerPool.hasPeer(it.peerId) and node.switch.isConnected(it.peerId)
+      node.peerPool.hasPeer(it.peerId)
     ).mapIt(it.peerId)
-  let bootstrapPeersInPool =
-    node.bootstrapPeers.countIt(node.peerPool.hasPeer(it.peerId))
+
   if not bootstrapLinkMaintenanceShouldDisconnect(
-      node.peerPool.len, node.wantedPeers, bootstrapPeersInPool):
+      node.peerPool.len, node.wantedPeers, connectedBootstrapPeers.len):
     return
 
   # Disconnect one bootstrap peer at a time for gradual release
@@ -838,7 +828,7 @@ proc waitForBootstrapPeers*(
     timeout = node.bootstrapTimeout
 
   func collectReadyBootstrapPeers(node: LBP2PNode): seq[PeerId] =
-    var ready: seq[PeerId] = @[]
+    var ready = newSeqOfCap[PeerId](node.bootstrapPeers.len)
     for b in node.bootstrapPeers:
       if node.peerPool.hasPeer(b.peerId):
         ready.add(b.peerId)
@@ -961,20 +951,12 @@ proc stop*(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
       futureErrors = waitedFutures.filterIt(not isNil(it.error)).mapIt(
         it.error.msg)
 
-proc init(T: type Peer, network: LBP2PNode, peerId: PeerId): Peer =
-  Peer(
-    peerId: peerId,
-    network: network,
-    connectionState: ConnectionState.None,
-    lastReqTime: now(chronos.Moment),
-    quota: TokenBucket.new(maxRequestQuota.int, fullReplenishTime)
-  )
 
 template udpEndpoint(address, port): auto =
   MultiAddress.init(address, udpProtocol, port)
 
 ## Specs mandate QUIC (`quic-v1`) as the Logos Chain libp2p transport baseline:
-## https://github.com/logos-co/logos-lips/blob/master/docs/blockchain/draft/p2p-network.md#transport
+## https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/draft/p2p-network.md#transport
 ##
 ## Build a QUIC listener/dialable multiaddr endpoint:
 ## ``/ip4|ip6/<addr>/udp/<port>/quic-v1``
@@ -1057,29 +1039,26 @@ proc createLBP2PNode*(
     quicPort = config.quicPort
 
     listenAddress =
-      if config.listenAddress.isSome():
-        config.listenAddress.get()
-      else:
-        getAutoAddress(Port(0)).toIpAddress()
+      config.listenAddress.get(getAutoAddress(Port(0)).toIpAddress())
 
     quicPorts = @[(port: quicPort, protocol: PortProtocol.UDP)]
     (extIp, extPorts) =
       setupAddress(config.nat, listenAddress, quicPorts, clientId)
     extQuicPort =
       if extPorts.len > 0 and extPorts[0].isSome:
-        Opt.some(extPorts[0].get().port)
+        Opt.some(extPorts[0].value.port)
       else:
         Opt.none(Port)
 
     hostAddress =
       ?quicEndPoint(listenAddress, quicPort)
     announcedAddresses =
-      if extIp.isNone() or extQuicPort.isNone():
-        @[]
-      else:
+      if extIp.isSome and extQuicPort.isSome:
         @[
-          ?quicEndPoint(extIp.get(), extQuicPort.get())
+          ?quicEndPoint(extIp.value, extQuicPort.value)
         ]
+      else:
+        @[]
 
   debug "Initializing networking", hostAddress,
                                    network_public_key = netKeys.pubkey,

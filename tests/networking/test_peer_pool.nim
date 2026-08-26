@@ -10,8 +10,8 @@
 
 import std/[random, heapqueue, tables, sequtils, strutils]
 import chronos, chronos/unittest2/asynctests
-import ../logos_chain/networking/peer_pool
-import ./testutil
+import ../../logos_chain/networking/peer_pool
+import ../testutil
 
 type
   PeerTestID = string
@@ -695,10 +695,10 @@ suite "PeerPool testing suite":
       true
 
     func custom2(peer: PeerTest): bool =
-      if peer.getMetadata() == 2'u64: true else: false
+      peer.getMetadata() == 2'u64
 
     func custom3(peer: PeerTest): bool =
-      if peer.getMetadata() in [2'u64, 4'u64]: true else: false
+      peer.getMetadata() in [2'u64, 4'u64]
 
     check:
       pool.addPeerNoWait(peer2, PeerType.Incoming) == PeerStatus.Success
@@ -915,10 +915,7 @@ suite "PeerPool testing suite":
   test "Score check test":
     var pool = newPeerPool[PeerTest, PeerTestID]()
     func scoreCheck(peer: PeerTest): bool =
-      if peer.weight >= 0:
-        result = true
-      else:
-        result = false
+      peer.weight >= 0
     var peer1 = PeerTest.init("peer1", 100)
     var peer2 = PeerTest.init("peer2", 50)
     var peer3 = PeerTest.init("peer3", 1)
@@ -975,10 +972,7 @@ suite "PeerPool testing suite":
   test "Delete peer on release text":
     proc testDeleteOnRelease(): Future[bool] {.async.} =
       func scoreCheck(peer: PeerTest): bool =
-        if peer.weight >= 0:
-          result = true
-        else:
-          result = false
+        peer.weight >= 0
 
       var pool = newPeerPool[PeerTest, PeerTestID](
         maxPeers = 1, maxIncomingPeers = 1, maxOutgoingPeers = 0

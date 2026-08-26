@@ -12,7 +12,6 @@ import
   chronos,
   libp2p/[switch, peerid, errors],
   ../chain/chain,
-  ../networking/network,
   ./[syncer_types, ibd_server, ibd_client, types]
 
 export syncer_types

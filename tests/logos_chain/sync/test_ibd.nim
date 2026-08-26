@@ -13,7 +13,7 @@ import
   chronos/unittest2/asynctests,
   unittest2,
   bincode,
-  libp2p/[switch, builders, errors, multiaddress],
+  libp2p/switch,
   ../../../logos_chain/networking/network,
   ../../../logos_chain/core/[types, local_tree],
   ../../../logos_chain/chain/[genesis, chain],
@@ -21,16 +21,6 @@ import
   ./helpers,
   ../../testutil
 from ../../../logos_chain/core/mantle/primitives import SlotNumber
-
-proc startQuicTestSwitch(): Future[Switch] {.async.} =
-  let sw = SwitchBuilder
-    .new()
-    .withRng(newRng())
-    .withAddress(MultiAddress.init("/ip4/127.0.0.1/udp/0/quic-v1").tryGet())
-    .withQuicTransport()
-    .build()
-  await sw.start()
-  sw
 
 proc runLbp2pIbdSyncTest(extraBlocks: int) {.async.} =
   let
@@ -77,8 +67,10 @@ suite "sync/initial_block_download (download blocks)":
     let blksOpt = decodeBlocksFromDownloadResponses(@[
       DownloadBlocksResponse(kind: dbrBlock, downloadedBlock: genesisWire),
     ])
-    check blksOpt.isSome and blksOpt.unsafeGet.len == 1
-    check blockId(blksOpt.unsafeGet[0].header) == blockId(genesis.header)
+    check blksOpt.isSome
+    let blks = blksOpt.value
+    check blks.len == 1
+    check blockId(blks[0].header) == blockId(genesis.header)
 
   test "cappedDownloadPathBlockIds returns target block when path is one hop":
     let
@@ -126,10 +118,11 @@ suite "sync/initial_block_download (download blocks)":
     )
     let
       msgs = downloadBlocksResponsesForRequest(tree, req)
-      blks = decodeBlocksFromDownloadResponses(msgs)
-    check blks.isSome
-    check blks.get.len == 1
-    check blockId(blks.get[0].header) == blockId(b1.header)
+      blksOpt = decodeBlocksFromDownloadResponses(msgs)
+    check blksOpt.isSome
+    let blks = blksOpt.value
+    check blks.len == 1
+    check blockId(blks[0].header) == blockId(b1.header)
 
   asyncTest "sendDownloadBlocksRequest round-trips over mounted sync handler":
     let
@@ -156,12 +149,14 @@ suite "sync/initial_block_download (download blocks)":
       let blksOpt = await sendDownloadBlocksRequest(
         clientSyncer, server.peerInfo.peerId, req)
       check blksOpt.isSome
-      let expectedBlks = decodeBlocksFromDownloadResponses(
-        downloadBlocksResponsesForRequest(serverChain.localTree, req)).get
-      check blksOpt.get.len == expectedBlks.len
-      check blksOpt.get.len == 1
-      check blockId(blksOpt.get[0].header) == b1id
-      check blockDownloadWireEqual(blksOpt.get[0], expectedBlks[0])
+      let
+        blks = blksOpt.value
+        expectedBlks = decodeBlocksFromDownloadResponses(
+          downloadBlocksResponsesForRequest(serverChain.localTree, req)).value
+      check blks.len == expectedBlks.len
+      check blks.len == 1
+      check blockId(blks[0].header) == b1id
+      check blockDownloadWireEqual(blks[0], expectedBlks[0])
     finally:
       await client.stop()
       await server.stop()
@@ -184,14 +179,15 @@ suite "sync/initial_block_download (GetTip)":
 
       let tipOpt = await sendGetTipRequest(clientSyncer, server.peerInfo.peerId)
       check tipOpt.isSome
-
-      let expected = Tip(
-        tip: localTipId(serverChain.localTree),
-        slot: SlotNumber(0),
-        height: serverChain.localTree.latestImmutableHeight,
-      )
-      check tipOpt.get.kind == gtrTip
-      check tipOpt.get.tipData == expected
+      let
+        tipResp = tipOpt.value
+        expected = Tip(
+          tip: localTipId(serverChain.localTree),
+          slot: SlotNumber(0),
+          height: serverChain.localTree.latestImmutableHeight,
+        )
+      check tipResp.kind == gtrTip
+      check tipResp.tipData == expected
     finally:
       await client.stop()
       await server.stop()
@@ -201,17 +197,12 @@ suite "sync/initial_block_download (IBD requester loop)":
     let
       sm = minimalSignedTx()
       genesis = createGenesisBlock(sm)
-      sw = try:
-        SwitchBuilder
-          .new()
-          .withRng(newRng())
-          .withAddress(MultiAddress.init("/ip4/127.0.0.1/udp/0/quic-v1").tryGet())
-          .withQuicTransport()
-          .build()
-      except LPError as exc:
-        fail("newStandardSwitch: " & exc.msg)
-    let clientSyncer = Syncer.init(sw, initTestChain(genesis), testChainSyncProtocol)
-    await initialBlockDownload(clientSyncer, @[])
+      sw = await startQuicTestSwitch()
+    try:
+      let clientSyncer = Syncer.init(sw, initTestChain(genesis), testChainSyncProtocol)
+      await initialBlockDownload(clientSyncer, @[])
+    finally:
+      await sw.stop()
 
   asyncTest "initialBlockDownload succeeds when peer tip is already in local tree":
     let
@@ -250,12 +241,8 @@ suite "sync/initial_block_download (IBD requester loop)":
 
     try:
       await client.connect(server.peerInfo.peerId, server.peerInfo.addrs, forceDial = true)
-      var raised = false
-      try:
+      expect IBDFailure:
         await initialBlockDownload(clientSyncer, @[server.peerInfo.peerId])
-      except IBDFailure:
-        raised = true
-      check raised
     finally:
       await client.stop()
       await server.stop()

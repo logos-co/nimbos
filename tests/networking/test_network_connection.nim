@@ -9,7 +9,7 @@
 {.used.}
 
 import
-  std/[net, sets],
+  std/sets,
   chronos,
   chronos/unittest2/asynctests,
   ../testutil
@@ -22,22 +22,18 @@ import
 suite "Network connection state — outboundTable, connQueue, seenTable":
   asyncTest "tryEnqueueOutboundConn: eligible peer is reserved in outboundTable (Queued) and queued once":
     let node = createTestNode("try-enqueue-unit")
-    let keys = node.rng.getRandomNetKeys()
-    let pid = PeerId.init(keys.seckey).tryGet()
+    let pid = getRandomPeerId()
     let ma = MultiAddress.init("/ip4/127.0.0.1/udp/4333/quic-v1").tryGet()
     let pa = PeerAddr(peerId: pid, addrs: @[ma])
 
-    check await tryEnqueueOutboundConn(
-      node, pa, proc(p: PeerAddr): bool = true)
+    check await tryEnqueueOutboundConn(node, pa, alwaysAllowPeer)
     check node.outboundStage(pid) == Opt.some(OutboundConnStage.Queued)
     check node.outboundConnQueueLen == 1
-    check not await tryEnqueueOutboundConn(
-      node, pa, proc(p: PeerAddr): bool = true)
+    check not await tryEnqueueOutboundConn(node, pa, alwaysAllowPeer)
 
   asyncTest "tryEnqueueOutboundConn: ineligible peer does not touch outboundTable":
     let node = createTestNode("try-enqueue-ineligible")
-    let keys = node.rng.getRandomNetKeys()
-    let pid = PeerId.init(keys.seckey).tryGet()
+    let pid = getRandomPeerId()
     let ma = MultiAddress.init("/ip4/127.0.0.1/udp/4334/quic-v1").tryGet()
     let pa = PeerAddr(peerId: pid, addrs: @[ma])
 
@@ -57,33 +53,25 @@ suite "Network connection state — outboundTable, connQueue, seenTable":
     for _ in 0 ..< queueCap:
       var pid: PeerId
       while true:
-        let keys = node.rng.getRandomNetKeys()
-        pid = PeerId.init(keys.seckey).tryGet()
+        pid = getRandomPeerId()
         if pid notin seenIds:
           seenIds.incl(pid)
           break
       let pa = PeerAddr(peerId: pid, addrs: @[ma])
-      check await tryEnqueueOutboundConn(
-        node, pa, proc(p: PeerAddr): bool = true)
+      check await tryEnqueueOutboundConn(node, pa, alwaysAllowPeer)
     check node.outboundConnQueueLen == queueCap
 
     var pidBlocked: PeerId
     while true:
-      let keysLast = node.rng.getRandomNetKeys()
-      pidBlocked = PeerId.init(keysLast.seckey).tryGet()
+      pidBlocked = getRandomPeerId()
       if pidBlocked notin seenIds:
         break
     let paBlocked = PeerAddr(peerId: pidBlocked, addrs: @[ma])
-    let fut = tryEnqueueOutboundConn(
-      node, paBlocked, proc(p: PeerAddr): bool = true)
+    let fut = tryEnqueueOutboundConn(node, paBlocked, alwaysAllowPeer)
     await sleepAsync(chronos.milliseconds(10))
     fut.cancelSoon()
-    var gotCancelled = false
-    try:
+    expect CancelledError:
       discard await fut
-    except CancelledError:
-      gotCancelled = true
-    check gotCancelled
     check node.outboundStage(pidBlocked).isNone
 
   asyncTest "connectViaConnQueue: bootstrap-style integration connects a live peer":
@@ -93,16 +81,12 @@ suite "Network connection state — outboundTable, connQueue, seenTable":
     await dialer.start()
 
     try:
-      let listenerPeerAddr =
-        PeerAddr(
-          peerId: listener.switch.peerInfo.peerId,
-          addrs: listener.switch.peerInfo.addrs
-        )
+      let listenerPeerAddr = listener.peerAddr()
       let connected =
         await connectViaConnQueue(
           dialer,
           listenerPeerAddr,
-          proc(_: PeerAddr): bool {.gcsafe, raises: [].} = true,
+          alwaysAllowPeer,
           3.seconds
         )
       check connected
@@ -117,14 +101,13 @@ suite "Network connection state — outboundTable, connQueue, seenTable":
     await node.start()
 
     try:
-      let deadKeys = node.rng.getRandomNetKeys()
-      let deadPid = PeerId.init(deadKeys.seckey).tryGet()
+      let deadPid = getRandomPeerId()
       let deadAddr = MultiAddress.init("/ip4/127.0.0.1/udp/6551/quic-v1").tryGet()
       let fut =
         connectViaConnQueue(
           node,
           PeerAddr(peerId: deadPid, addrs: @[deadAddr]),
-          proc(_: PeerAddr): bool {.gcsafe, raises: [].} = true,
+          alwaysAllowPeer,
           1.seconds
         )
       check await withTimeout(fut, 2.seconds)
@@ -138,8 +121,7 @@ suite "Network connection state — outboundTable, connQueue, seenTable":
     node.setConnectTimeout(50.milliseconds)
     await node.start()
 
-    let deadKeys = node.rng.getRandomNetKeys()
-    let deadPid = PeerId.init(deadKeys.seckey).tryGet()
+    let deadPid = getRandomPeerId()
     let deadAddr = MultiAddress.init("/ip4/192.0.2.1/udp/6552/quic-v1").tryGet()
 
     try:
@@ -147,7 +129,7 @@ suite "Network connection state — outboundTable, connQueue, seenTable":
         connectViaConnQueue(
           node,
           PeerAddr(peerId: deadPid, addrs: @[deadAddr]),
-          proc(_: PeerAddr): bool {.gcsafe, raises: [].} = true,
+          alwaysAllowPeer,
           200.milliseconds
         )
 
@@ -169,21 +151,17 @@ suite "Network connection state — outboundTable, connQueue, seenTable":
     await dialer.start()
 
     try:
-      let listenerPeerAddr =
-        PeerAddr(
-          peerId: listener.switch.peerInfo.peerId,
-          addrs: listener.switch.peerInfo.addrs
-        )
+      let listenerPeerAddr = listener.peerAddr()
       let fut1 = connectViaConnQueue(
         dialer,
         listenerPeerAddr,
-        proc(_: PeerAddr): bool {.gcsafe, raises: [].} = true,
+        alwaysAllowPeer,
         3.seconds
       )
       let fut2 = connectViaConnQueue(
         dialer,
         listenerPeerAddr,
-        proc(_: PeerAddr): bool {.gcsafe, raises: [].} = true,
+        alwaysAllowPeer,
         3.seconds
       )
       let res1 = await fut1
@@ -203,15 +181,11 @@ suite "Network connection state — outboundTable, connQueue, seenTable":
     await dialer.start()
 
     try:
-      let listenerPeerAddr =
-        PeerAddr(
-          peerId: listener.switch.peerInfo.peerId,
-          addrs: listener.switch.peerInfo.addrs
-        )
+      let listenerPeerAddr = listener.peerAddr()
       check await connectViaConnQueue(
         dialer,
         listenerPeerAddr,
-        proc(_: PeerAddr): bool {.gcsafe, raises: [].} = true,
+        alwaysAllowPeer,
         3.seconds
       )
 

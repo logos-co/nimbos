@@ -11,7 +11,7 @@ import
   std/[net, times],
   bearssl/rand,
   chronos,
-  libp2p/[switch, peerid],
+  libp2p/[switch, builders, peerid, multiaddress],
   libp2p/crypto/rng,
   libp2p/crypto/ed25519/ed25519,
   testutils/markdown_reports,
@@ -60,7 +60,7 @@ method testEnded*(formatter: TimingCollector, testResult: TestResult) =
 
 proc summarizeLongTests*(name: string) =
   # TODO clean-up and make machine-readable/storable the output
-  sort(testTimes, system.cmp, SortOrder.Descending)
+  testTimes.sort(system.cmp, SortOrder.Descending)
 
   try:
     echo ""
@@ -97,13 +97,29 @@ template waitUntil*(cond: untyped, timeout: chronos.Duration = chronos.seconds(3
     await sleepAsync(chronos.milliseconds(10))
   res
 
+let testHmacRng = HmacDrbgContext.new()
+let testRng = newBearSslRng(testHmacRng)
+
+proc getTestHmacRng(): ref HmacDrbgContext =
+  {.gcsafe.}:
+    testHmacRng
+
+proc getTestRng*(): Rng =
+  {.gcsafe.}:
+    testRng
+
+proc getRandomNetKeys*(): KeyPair =
+  getTestHmacRng().getRandomNetKeys()
+
+proc getRandomPeerId*(): PeerId =
+  PeerId.init(getTestHmacRng().getRandomNetKeys().seckey).expect("valid PeerId")
+
 proc createTestNode*(
     agentString: string,
     bootstrapNodes: seq[string] = @[],
     bootstrapTimeout: int = DefaultBootstrapTimeout,
     maxPeers: int = 16,
 ): LBP2PNode =
-  let rng = HmacDrbgContext.new()
   let conf = NetworkConfig(
     listenAddress: some(TestLoopbackIp),
     nat: nat.NatConfig(hasExtIp: true, extIp: TestLoopbackIp),
@@ -115,8 +131,7 @@ proc createTestNode*(
     bootstrapNodes: bootstrapNodes,
     bootstrapTimeout: bootstrapTimeout,
   )
-  createLBP2PNode(rng, conf, rng.getRandomNetKeys()).valueOr:
-    fail("createLBP2PNode failed for " & agentString & ": " & $error)
+  createLBP2PNode(getTestHmacRng(), conf, getRandomNetKeys()).expect("valid test node")
 
 proc startTestNode*(
     agentString: string,
@@ -129,11 +144,35 @@ proc startTestNode*(
   node
 
 proc fullAddress*(node: LBP2PNode): string =
-  let addrs = node.switch.peerInfo.fullAddrs().valueOr:
-    fail("peerInfo.fullAddrs failed: " & $error)
+  let addrs = node.switch.peerInfo.fullAddrs().expect("valid full addrs")
   if addrs.len == 0:
     fail("node has no full addrs")
   $addrs[0]
+
+func peerAddr*(node: LBP2PNode): PeerAddr =
+  PeerAddr(
+    peerId: node.switch.peerInfo.peerId,
+    addrs: node.switch.peerInfo.addrs,
+  )
+
+proc alwaysAllowPeer*(_: PeerAddr): bool {.gcsafe, raises: [].} = true
+
+proc startQuicTestSwitch*(
+    keys: KeyPair = getRandomNetKeys(),
+    port: Port = TestQuicAnyPort,
+    maxConnections: int = 8,
+): Future[Switch] {.async.} =
+  let sw = SwitchBuilder
+    .new()
+    .withAddress(MultiAddress.init(loopbackQuicMultiAddr(port)).expect("valid multiaddr"))
+    .withRng(getTestRng())
+    .withNoise()
+    .withQuicTransport()
+    .withMaxConnections(maxConnections)
+    .withPrivateKey(keys.seckey)
+    .build()
+  await sw.start()
+  sw
 
 const
   ## Deterministic unreachable loopback QUIC endpoint for testing dial failures and timeouts.
@@ -173,21 +212,6 @@ proc childBlock*(
   let sig = testBlockKeyPair.seckey.sign(blockId(h))
   initBlock(h, signature = sig, txs = txs)
 
-proc extendChainAfterGenesis*(
-    tree: LocalTree, genesis: Block, extraBlocks: int,
-): BlockId =
-  ## Add ``extraBlocks`` descendants on top of ``genesis``; return the tip id.
-  # Empty blocks: these exercise sync only, and a tx that can't cover its gas
-  # fails ledger validation.
-  var parentHdr = genesis.header
-  var parentId = blockId(genesis.header)
-  for slot in 1 .. extraBlocks:
-    let blk = childBlock(parentHdr, parentId, SlotNumber(slot.uint64), [])
-    check tree.addBlockToTree(blk)
-    parentHdr = blk.header
-    parentId = blockId(blk.header)
-  parentId
-
 type BootstrapPeers* = object
   listener*, dialer*: LBP2PNode
   listenerPeerId*: PeerId
@@ -203,7 +227,7 @@ proc createBootstrapPeers*(): Future[BootstrapPeers] {.async.} =
     listenerPeerId: listenerPeerId,
   )
 
-proc mockVerifyLeaderProof*(
+func mockVerifyLeaderProof*(
     proof: ProofOfLeadership, public: LeaderPublic
 ): Result[bool, PolLoadError] =
   ok(true)

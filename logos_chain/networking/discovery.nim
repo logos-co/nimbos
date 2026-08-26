@@ -7,14 +7,14 @@
 
 ## Logos Chain P2P peer discovery and Kademlia routing.
 ## Specs:
-## - https://github.com/logos-co/logos-lips/blob/master/docs/blockchain/draft/p2p-network.md#peer-discovery
-## - https://github.com/logos-co/logos-lips/blob/master/docs/blockchain/raw/p2p-network-bootstrapping.md
-## - https://github.com/logos-co/logos-lips/blob/master/docs/anoncomms/raw/extended-kad-disco.md
+## - https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/draft/p2p-network.md#peer-discovery
+## - https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/p2p-network-bootstrapping.md
+## - https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/anoncomms/raw/extended-kad-disco.md
 
 {.push raises: [], gcsafe.}
 
 import
-  std/sets,
+  std/[sets, sequtils],
   chronos, chronicles, results,
   libp2p/[switch, peerinfo, multiaddress, peerid, crypto/rng],
   libp2p/protocols/kademlia,
@@ -36,18 +36,13 @@ else:
 type
   DiscoveredPeerAddr* = tuple[peerId: PeerId, addrs: seq[MultiAddress]]
 
-func hasDiscoveredKadPeers*(kad: KadDHT): bool =
-  if isNil(kad):
-    return false
-  for bucket in kad.rtable.buckets:
-    if bucket.peers.len > 0:
-      return true
-  return false
+func hasRoutingPeers*(kad: KadDHT): bool =
+  not isNil(kad) and kad.rtable.buckets.anyIt(it.peers.len > 0)
 
 proc kadDiscoveryLookupWalk*(
     kad: KadDHT, rng: Rng
 ) {.async: (raises: [CancelledError]).} =
-  if isNil(kad) or isNil(rng) or not hasDiscoveredKadPeers(kad):
+  if isNil(kad) or isNil(rng) or not kad.hasRoutingPeers():
     return
   let targetKey = rng.generateBytes(32)
   debug "Kad discovery findNode lookup walk"
@@ -58,23 +53,22 @@ proc collectKadDiscoveredPeers[T](
     sw: Switch,
     peerPool: PeerPool[T, PeerId],
 ): seq[DiscoveredPeerAddr] =
-  if isNil(kad) or isNil(sw):
+  if isNil(kad) or isNil(sw) or isNil(peerPool):
     return @[]
-  var seen = initHashSet[PeerId]()
+  var
+    seen = initHashSet[PeerId]()
+    discovered: seq[DiscoveredPeerAddr]
   let selfId = sw.peerInfo.peerId
   for bucket in kad.rtable.buckets:
     for entry in bucket.peers:
-      let pidRes = entry.nodeId.toPeerId()
-      if pidRes.isErr():
+      let peerId = entry.nodeId.toPeerId().valueOr:
         continue
-      let peerId = pidRes.get()
-      if peerId == selfId or peerPool.hasPeer(peerId):
+      if peerId == selfId or peerPool.hasPeer(peerId) or seen.containsOrIncl(peerId):
         continue
       let addrs = sw.peerStore[AddressBook][peerId]
-      if addrs.len == 0 or peerId in seen:
-        continue
-      seen.incl(peerId)
-      result.add((peerId: peerId, addrs: addrs))
+      if addrs.len > 0:
+        discovered.add((peerId: peerId, addrs: addrs))
+  discovered
 
 proc enqueueKadDiscoveredPeers*[T](
     kad: KadDHT,
