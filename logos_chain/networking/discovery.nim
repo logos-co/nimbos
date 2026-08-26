@@ -60,7 +60,8 @@ proc collectKadDiscoveredPeers[T](
     discovered: seq[DiscoveredPeerAddr]
   let selfId = sw.peerInfo.peerId
   for bucket in kad.rtable.buckets:
-    for entry in bucket.peers:
+    let peers = bucket.peers
+    for entry in peers:
       let peerId = entry.nodeId.toPeerId().valueOr:
         continue
       if peerId == selfId or peerPool.hasPeer(peerId) or seen.containsOrIncl(peerId):
@@ -103,10 +104,32 @@ proc logosKadBootstrap*(
 
   kad.updatePeers(bootstrapNodes)
 
-  var connectedCount = 0
+  var dialFuts = newSeqOfCap[Future[bool].Raising([CancelledError])](bootstrapNodes.len)
   for b in bootstrapNodes:
     debug "Dialing bootstrap peer", peerId = b.peerId, addrs = b.addrs
-    if await dialBootstrapPeer(b):
+    dialFuts.add dialBootstrapPeer(b)
+
+  try:
+    await allFutures(dialFuts)
+  except CancelledError as exc:
+    for fut in dialFuts:
+      if not isNil(fut) and not fut.finished():
+        fut.cancelSoon()
+    raise exc
+
+  var connectedCount = 0
+  for i, fut in dialFuts:
+    let b = bootstrapNodes[i]
+    let dialSuccess =
+      if fut.completed() and not fut.failed():
+        try:
+          fut.read()
+        except FuturePendingError, CancelledError:
+          false
+      else:
+        false
+
+    if dialSuccess:
       inc connectedCount
       debug "Connected to bootstrap peer", peerId = b.peerId
     else:

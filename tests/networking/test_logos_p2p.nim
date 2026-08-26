@@ -12,11 +12,13 @@ import
   std/[sequtils, strutils],
   chronos,
   chronos/unittest2/asynctests,
-  libp2p/[switch, builders, multiaddress, peerid],
+  libp2p/[switch, builders, multiaddress, peerid, peerstore],
   libp2p/protocols/connectivity/autonatv2/[types, client],
+  libp2p/protocols/pubsub/gossipsub,
   ../testutil,
   ../../logos_chain/conf,
-  ../../logos_chain/networking/[network, discovery]
+  ../../logos_chain/core/mantle/[tx_types, tx_hashing],
+  ../../logos_chain/networking/[network, discovery, protocols, bincode]
 
 from libp2p/protocols/connectivity/autonat/types import NetworkReachability
 
@@ -109,31 +111,61 @@ suite "P2P stack — bootstrap and discovery":
       await peers.listener.stop()
 
   test "Kademlia: DHT protocol registered as /logos-blockchain/kad/1.0.0 (mainnet)":
-    # TODO(logos-chain-networking): implement Logos Kademlia wiring and assertions
-    skip()
+    let node = createTestNode("kad-mainnet", logosNetwork = LogosNetworkKind.Mainnet)
+    check not isNil(node.mountedProtocols.kad)
+    check node.mountedProtocols.kad.codec == "/logos-blockchain/kad/1.0.0"
 
   test "Kademlia: DHT protocol registered as /logos-blockchain-testnet/kad/1.0.0 (testnet)":
-    # TODO(logos-chain-networking): implement Logos Kademlia wiring and assertions
-    skip()
+    let node = createTestNode("kad-testnet", logosNetwork = LogosNetworkKind.Testnet)
+    check not isNil(node.mountedProtocols.kad)
+    check node.mountedProtocols.kad.codec == "/logos-blockchain-testnet/kad/1.0.0"
 
 suite "P2P stack — protocol negotiation and Identify":
-  test "Multistream: connection negotiates an application protocol by exact protocol ID string":
-    # TODO(logos-chain-networking): assert multistream-select (libp2p's protocol
-    # negotiation layer) chooses the Logos protocol IDs (`/logos-blockchain/...`)
-    # exactly as required by the Logos P2P spec.
-    skip()
+  asyncTest "Multistream: connection negotiates an application protocol by exact protocol ID string":
+    let node1 = await startTestNode("p2p-ms-1", maxPeers = 4)
+    let node2 = await startTestNode("p2p-ms-2", maxPeers = 4)
+    try:
+      let pid2 = node2.switch.peerInfo.peerId
+      let conn = await node1.switch.dial(
+        pid2,
+        node2.switch.peerInfo.addrs,
+        logosKadCodec(LogosNetworkKind.Testnet)
+      )
+      check not isNil(conn)
+      check conn.protocol == "/logos-blockchain-testnet/kad/1.0.0"
+      await conn.close()
+    finally:
+      await node1.stop()
+      await node2.stop()
 
   test "Identify: handler registered for /logos-blockchain/identify/1.0.0 (mainnet)":
-    # TODO(logos-chain-networking): verify Identify handler registration for mainnet ID
-    skip()
+    let node = createTestNode("ident-mainnet", logosNetwork = LogosNetworkKind.Mainnet)
+    check not isNil(node.mountedProtocols.identify)
+    check node.mountedProtocols.identify.codec == "/logos-blockchain/identify/1.0.0"
 
   test "Identify: handler registered for /logos-blockchain-testnet/identify/1.0.0 (testnet)":
-    # TODO(logos-chain-networking): verify Identify handler registration for testnet ID
-    skip()
+    let node = createTestNode("ident-testnet", logosNetwork = LogosNetworkKind.Testnet)
+    check not isNil(node.mountedProtocols.identify)
+    check node.mountedProtocols.identify.codec == "/logos-blockchain-testnet/identify/1.0.0"
 
-  test "Identify exchange: peers report protocol support compatible with NAT / AutoNAT discovery needs":
-    # TODO(logos-chain-networking): cover Identify exchange behavior for AutoNAT needs
-    skip()
+  asyncTest "Identify exchange: peers report protocol support compatible with NAT / AutoNAT discovery needs":
+    let node1 = await startTestNode("p2p-ident-1", maxPeers = 4)
+    let node2 = await startTestNode("p2p-ident-2", maxPeers = 4)
+    try:
+      let pid2 = node2.switch.peerInfo.peerId
+      await node1.switch.connect(
+        pid2, node2.switch.peerInfo.addrs, forceDial = true)
+      check node1.switch.isConnected(pid2)
+
+      # Verify Identify exchange populates the remote peer's protocols in peerStore
+      check waitUntil(autonatV2DialBackProto in node1.switch.peerStore[ProtoBook][pid2])
+      let remoteProtos = node1.switch.peerStore[ProtoBook][pid2]
+      check autonatV2DialBackProto in remoteProtos
+      check "/logos-blockchain-testnet/identify/1.0.0" in remoteProtos
+      check "/logos-blockchain-testnet/kad/1.0.0" in remoteProtos
+    finally:
+      await node1.stop()
+      await node2.stop()
 
 suite "P2P stack — NAT and AutoNAT v2":
   asyncTest "AutoNAT v2: dial-request and dial-back prove loopback reachability":
@@ -178,7 +210,12 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
 
 suite "P2P stack — on-the-wire encoding":
   test "Network Wire Format: payloads on negotiated streams follow Logos Chain wire format spec":
-    # TODO(logos-chain-networking): implement Network Wire Format coverage
-    skip()
+    let tx = minimalSignedTx()
+    let encoded = encodeSignedMantleTx(tx)
+    check encoded.len > 0
+    let decoded = decodeSignedMantleTx(encoded)
+    check encodeSignedMantleTx(decoded) == encodeSignedMantleTx(tx)
+    check mantleTxHash(decoded.tx) == mantleTxHash(tx.tx)
+    check decoded.opProofs.len == tx.opProofs.len
 
 {.pop.}

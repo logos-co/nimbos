@@ -216,18 +216,12 @@ suite "Bootstrap multiaddress parsing":
     check parsedNodes[0][0] == pid1
     check parsedNodes[1][0] == pid2
 
-  test "loadBootstrapNodes: handles missing file and unsupported extension gracefully":
+  test "loadBootstrapNodes: handles missing file gracefully":
     let confMissing = NetworkConfig(
       bootstrapNodesFile: InputFile("non_existent_bootstrap_file_12345.txt")
     )
     let nodesMissing = loadBootstrapNodes(confMissing)
     check nodesMissing.len == 0
-
-    let confBadExt = NetworkConfig(
-      bootstrapNodesFile: InputFile("invalid_format.json")
-    )
-    let nodesBadExt = loadBootstrapNodes(confBadExt)
-    check nodesBadExt.len == 0
 
   test "loadBootstrapNodes: deduplicates duplicate bootstrap nodes by peerId":
     let pid = getRandomPeerId()

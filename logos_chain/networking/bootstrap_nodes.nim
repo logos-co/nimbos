@@ -13,7 +13,7 @@
 {.push raises: [], gcsafe.}
 
 import
-  std/[os, sequtils, strutils],
+  std/[sequtils, strutils],
   chronicles, results,
   libp2p/[peerid, peerinfo, multiaddress, multicodec],
   ../conf
@@ -68,17 +68,11 @@ proc loadBootstrapFile(
     bootstrapPeers: var seq[(PeerId, MultiAddress)]
 ) =
   if bootstrapFile.len == 0: return
-  let ext = splitFile(bootstrapFile).ext.toLowerAscii()
-  case ext
-  of ".txt", ".list", ".nodes", ".conf", "":
-    try:
-      for ln in strippedLines(bootstrapFile):
-        addBootstrapNode(ln, bootstrapPeers)
-    except IOError as e:
-      error "Could not read bootstrap file", file = bootstrapFile, msg = e.msg
-  else:
-    error "Unknown bootstrap file format (expected plaintext .txt, .list, .nodes, or .conf)",
-      ext = ext, file = bootstrapFile
+  try:
+    for ln in strippedLines(bootstrapFile):
+      addBootstrapNode(ln, bootstrapPeers)
+  except IOError as e:
+    error "Could not read bootstrap file", file = bootstrapFile, msg = e.msg
 
 proc loadBootstrapNodes*(config: NetworkConfig): seq[(PeerId, MultiAddress)] =
   var bootstrapPeers: seq[(PeerId, MultiAddress)]

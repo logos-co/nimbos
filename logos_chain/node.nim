@@ -228,7 +228,8 @@ proc initializeNetworking(node: LBNode) {.async.} =
       if syncPeers.len == 0:
         fatal "Initial block download failed: no configured bootstrap peer reached within timeout",
           timeout = node.network.bootstrapTimeout
-        quit(QuitFailure)
+        ProcessState.scheduleStop("Bootstrap peer connection timeout")
+        return
       node.syncer.start(syncPeers)
     else:
       node.syncer.start(@[])

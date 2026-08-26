@@ -119,6 +119,7 @@ proc createTestNode*(
     bootstrapNodes: seq[string] = @[],
     bootstrapTimeout: int = DefaultBootstrapTimeout,
     maxPeers: int = 16,
+    logosNetwork: LogosNetworkKind = LogosNetworkKind.Testnet,
 ): LBP2PNode =
   let conf = NetworkConfig(
     listenAddress: some(TestLoopbackIp),
@@ -130,6 +131,7 @@ proc createTestNode*(
     autonatAllowPrivateAddresses: true,
     bootstrapNodes: bootstrapNodes,
     bootstrapTimeout: bootstrapTimeout,
+    logosNetwork: logosNetwork,
   )
   createLBP2PNode(getTestHmacRng(), conf, getRandomNetKeys()).expect("valid test node")
 

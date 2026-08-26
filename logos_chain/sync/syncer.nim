@@ -12,6 +12,7 @@ import
   chronos,
   libp2p/[switch, peerid, errors],
   ../chain/chain,
+  ../process_state,
   ./[syncer_types, ibd_server, ibd_client, types]
 
 export syncer_types
@@ -27,7 +28,8 @@ proc runAtStartup(
   except LPError as exc:
     fatal "Syncer start failed: failed to mount chain-sync handler",
       msg = exc.msg, protocol = syncer.chainSyncProtocol
-    quit(QuitFailure)
+    ProcessState.scheduleStop("Chain-sync handler mount failure")
+    return
   debug "Syncer started chain-sync handler",
     protocol = syncer.chainSyncProtocol,
     syncPeerCount = syncPeers.len
@@ -40,7 +42,8 @@ proc runAtStartup(
     except IBDFailure as exc:
       fatal "Syncer initial block download failed: unable to catch up with any IBD peer",
         msg = exc.msg, protocol = syncer.chainSyncProtocol
-      quit(QuitFailure)
+      ProcessState.scheduleStop("Initial block download failure")
+      return
 
 proc start*(syncer: Syncer, syncPeers: seq[PeerId] = @[]) =
   asyncSpawn syncer.runAtStartup(syncPeers)

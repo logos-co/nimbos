@@ -404,6 +404,23 @@ proc tryEnqueueOutboundConn*(
     raise exc
   return true
 
+proc enqueueOutboundPeer(
+    node: LBP2PNode, peerAddr: PeerAddr
+): Future[bool] {.async: (raises: [CancelledError]).} =
+  await tryEnqueueOutboundConn(
+    node, peerAddr,
+    proc(p: PeerAddr): bool {.gcsafe, raises: [].} =
+      node.checkPeer(p))
+
+proc enqueueBootstrapPeers(
+    node: LBP2PNode
+): Future[int] {.async: (raises: [CancelledError]).} =
+  var count = 0
+  for b in node.bootstrapPeers:
+    if await node.enqueueOutboundPeer(b):
+      inc count
+  count
+
 proc signalConnEvent(node: LBP2PNode, pid: PeerId) =
   node.connEvents.withValue(pid, event):
     event[].fire()
@@ -761,7 +778,10 @@ proc bootstrapHeartbeat(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
   while true:
     # Sleep first so onboarding and discovery can settle before evaluating release.
     await sleepAsync(KadBootstrapHeartbeatPeriod)
-    await runBootstrapLinkMaintenanceTick(node)
+    if node.peerPool.len == 0:
+      discard await node.enqueueBootstrapPeers()
+    else:
+      await runBootstrapLinkMaintenanceTick(node)
 
 proc runKadDiscoveryLookupLoop(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
   debug "Starting Kad discovery lookup loop"
@@ -783,14 +803,8 @@ proc runKadDiscoveryEnqueueLoop(node: LBP2PNode) {.async: (raises: [CancelledErr
           node.peerPool,
           proc(discovered: DiscoveredPeerAddr): Future[bool]
               {.async: (raises: [CancelledError]), gcsafe.} =
-            let peerAddr = PeerAddr(
-              peerId: discovered.peerId,
-              addrs: discovered.addrs
-            )
-            return await tryEnqueueOutboundConn(
-              node, peerAddr,
-              proc(p: PeerAddr): bool {.gcsafe, raises: [].} =
-                node.checkPeer(p))
+            await node.enqueueOutboundPeer(
+              PeerAddr(peerId: discovered.peerId, addrs: discovered.addrs))
         )
       debug "Kad discovery enqueue tick",
         wanted_peers = node.wantedPeers,
@@ -835,6 +849,7 @@ proc waitForBootstrapPeers*(
     ready
 
   while true:
+    node.peerChangeEvent.clear()
     let readyPeers = node.collectReadyBootstrapPeers()
 
     # 1. Fast Path: All configured bootstrap peers have connected
@@ -877,7 +892,6 @@ proc waitForBootstrapPeers*(
 
     let waitInterval = min(remaining, 5.seconds)
     discard await withTimeout(node.peerChangeEvent.wait(), waitInterval)
-    node.peerChangeEvent.clear()
 
 proc start*(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
   proc onPeerCountChanged() =
