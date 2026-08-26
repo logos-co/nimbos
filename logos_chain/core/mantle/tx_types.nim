@@ -8,9 +8,7 @@
 ## Mantle **transaction** layer: re-exports **``mantle/primitives``** and
 ## **``mantle/operations``**; **``Op``** (``Opcode`` + **``OpPayload``**),
 ## **``MantleTx``** / **``SignedMantleTx``**, and **``OpProof``**.
-## Spec: [v1.5.0 Mantle](https://nomos-tech.notion.site/1-5-0-Mantle-33d261aa09df8051b0d0cd4d5ddade85)
-##
-## Wire encoding/decoding: [v1.4.1 Mantle Transaction Encoding](https://nomos-tech.notion.site/1-4-1-Mantle-Transaction-Encoding-33e261aa09df8050beb6c9b72a042217)
+## Spec: [Bedrock v1.1 — Mantle Specification v1.10.0](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md)
 
 {.push raises: [], gcsafe.}
 

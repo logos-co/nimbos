@@ -9,8 +9,7 @@
 ## half (parent linkage, slot ordering, wallclock bound, leader proof verification
 ## called during `tryApplyHeader` in `ledger.nim`) is owned by the `Chain.tryApplyBlock`
 ## composition: ledger `prepareUpdate` plus `LocalTree.addBlockToTree`.
-## Spec: [Cryptarchia v1 — Block Header Validation](https://github.com/logos-co/logos-lips/blob/master/docs/blockchain/raw/cryptarchia-v1-protocol.md#block-header-validation)
-## Spec: [Bedrock v1.1 — Mantle Specification: Validation](https://github.com/logos-co/logos-lips/blob/master/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md#validation)
+## Spec: [Block Construction, Validation and Execution v1.1.2](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/bedrock-v1.1-block-construction.md)
 
 {.push raises: [], gcsafe.}
 

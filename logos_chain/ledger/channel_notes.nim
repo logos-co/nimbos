@@ -6,7 +6,7 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## Ledger registry of channel-owned notes: `NoteId` → owning `ChannelId`.
-## Spec: [Mantle — Channel Notes](https://github.com/logos-co/logos-lips/blob/master/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md#channel-notes)
+## Spec: [Bedrock v1.1 — Mantle Specification v1.10.0 — Channel Notes](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md#channel-notes)
 
 {.push raises: [], gcsafe.}
 

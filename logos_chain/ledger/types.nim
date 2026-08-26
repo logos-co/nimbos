@@ -43,6 +43,7 @@ type
     TooManyLocators
     InvalidLocator
     DuplicateDeclaration
+    DuplicateProviderOrZkId
     LockedNoteNotFound
     InsufficientStake
     LockedNoteServiceConflict
