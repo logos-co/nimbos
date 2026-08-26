@@ -190,9 +190,6 @@ declareCounter logos_p2p_reqresp_messages_failed,
 declareCounter logos_p2p_reqresp_messages_throttled,
   "Number of Req/Resp messages that were throttled", labels = ["protocol"]
 
-const
-  libp2p_pki_schemes {.strdefine.} = ""
-
 when not (crypto.PKScheme.Ed25519 in crypto.SupportedSchemes):
   {.fatal:
     "Incorrect building process, please use -d:\"libp2p_pki_schemes=ed25519\"".}

@@ -197,9 +197,6 @@ proc runOnSecondLoop(node: LBNode) {.async.} =
     let processingTime = finished - afterSleep
     trace "onSecond task completed", sleepTime, processingTime
 
-func connectedPeersCount(node: LBNode): int =
-  len(node.network.peerPool)
-
 proc installMessageValidators(node: LBNode) =
   # Placeholder — real validators will be installed once gossip topics
   # and message types are defined for the Logos chain.

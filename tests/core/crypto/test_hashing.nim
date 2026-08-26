@@ -37,7 +37,4 @@ suite "core/crypto/hashing":
     var seed: Blake2bPrngSeed
     check prngBytes(seed, 0).len == 0
 
-  test "poseidon2Hash is deterministic and input-sensitive":
-    skip()
-
 {.pop.}

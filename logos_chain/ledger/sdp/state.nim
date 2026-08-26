@@ -6,13 +6,13 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## SDP declaration records and in-memory validator state store.
-## Spec: [1.1.0 Service Declaration Protocol](https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/bedrock-service-declaration-protocol.md)
+## Spec: [Service Declaration Protocol v1.3.0](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/bedrock-service-declaration-protocol.md)
 
 {.push raises: [], gcsafe.}
 
 import
   results,
-  std/[sequtils, sets, tables],
+  std/[sequtils, sets],
   ../../core/mantle/primitives,
   ../../utils/hash_trie_map
 
@@ -43,6 +43,8 @@ type
   SdpState* = object
     declarations*: HashTrieMap[DeclarationId, DeclarationInfo]
     lockedNotes*: LockedNotes
+    activeProviders*: HashTrieMap[tuple[service: ServiceType, providerId: Ed25519PublicKey], tuple[]]
+    activeZkIds*: HashTrieMap[tuple[service: ServiceType, zkId: ZkPublicKey], tuple[]]
 
 func defaultBnServiceParameters*(epoch: EpochNumber = 0): ServiceParameters =
   ServiceParameters(
@@ -51,13 +53,11 @@ func defaultBnServiceParameters*(epoch: EpochNumber = 0): ServiceParameters =
   )
 
 func init*(_: typedesc[SdpState]): SdpState =
-  SdpState(
-    declarations: HashTrieMap[DeclarationId, DeclarationInfo].init(),
-    lockedNotes: LockedNotes.init(),
-  )
+  SdpState()
 
 func `==`*(a, b: SdpState): bool =
-  a.declarations == b.declarations and a.lockedNotes == b.lockedNotes
+  a.declarations == b.declarations and a.lockedNotes == b.lockedNotes and
+  a.activeProviders == b.activeProviders and a.activeZkIds == b.activeZkIds
 
 func getDeclaration*(
     state: SdpState, id: DeclarationId,
@@ -77,11 +77,19 @@ func lockedNoteHasService*(
       let info = getDeclaration(state, it)
       info.isSome and info.get().service == service
 
+func hasProviderOrZkIdConflict*(
+    state: SdpState, service: ServiceType, providerId: Ed25519PublicKey, zkId: ZkPublicKey,
+): bool =
+  ((service, providerId) in state.activeProviders) or ((service, zkId) in state.activeZkIds)
+
 func insertDeclaration*(
     state: sink SdpState,
     id: DeclarationId,
     info: sink DeclarationInfo,
 ): SdpState =
+  if id notin state.declarations:
+    state.activeProviders = state.activeProviders.insert((info.service, info.providerId), ())
+    state.activeZkIds = state.activeZkIds.insert((info.service, info.zkId), ())
   state.declarations = state.declarations.insert(id, info)
   state
 
@@ -89,6 +97,10 @@ func removeDeclaration*(
     state: sink SdpState,
     id: DeclarationId,
 ): SdpState =
+  let info = state.declarations.get(id).valueOr:
+    return state
+  state.activeProviders = state.activeProviders.remove((info.service, info.providerId))
+  state.activeZkIds = state.activeZkIds.remove((info.service, info.zkId))
   state.declarations = state.declarations.remove(id)
   state
 
@@ -129,7 +141,7 @@ func finalizeWithdrawals*(
   for declId, info in state.declarations.pairs:
     if info.withdrawAt.valueOr(high(EpochNumber)) <= threshold:
       state = removeDeclarationFromLockedNote(state, info.lockedNoteId, declId)
-      state.declarations = state.declarations.remove(declId)
+      state = removeDeclaration(state, declId)
   state
 
 {.pop.}
