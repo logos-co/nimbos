@@ -9,6 +9,7 @@
 {.used.}
 
 import
+  std/sequtils,
   unittest2,
   ../testutil,
   ./mantle/test_helpers,
@@ -16,7 +17,7 @@ import
   ../../logos_chain/core/mantle/[operations, opcodes, proofs, tx_types],
   ../../logos_chain/chain/block_validation,
   ../../logos_chain/chain/genesis
-from ../../logos_chain/core/mantle/primitives import MaxBlockTxs, SlotNumber
+from ../../logos_chain/core/mantle/primitives import MaxBlockTxs, MantleMaxOps, SlotNumber
 
 const inscribeTxFraming = 166
   ## OpCount, Opcode, ChannelId, the u32 inscription length, Parent, Signer
@@ -97,6 +98,21 @@ suite "core/block_validation":
     let b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [badTx])
     check not validateBlockBody(b1)
 
+  test "validateMantleTx: accepts valid transaction structure and rejects malformed":
+    let validTx = SignedMantleTx(
+      tx: MantleTx(ops: @[createTransferOp(TransferPayload(inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @[])))]),
+      opProofs: @[OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))]
+    )
+    check validateMantleTx(validTx)
+
+    var mismatchProofTx = validTx
+    mismatchProofTx.opProofs = @[]
+    check not validateMantleTx(mismatchProofTx)
+
+    var badOpcodeTx = validTx
+    badOpcodeTx.tx.ops[0].opcode = OpChannelInscribe
+    check not validateMantleTx(badOpcodeTx)
+
 
 suite "core/block_validation — inclusive size and count bounds":
   test "a block whose tx bytes are exactly MaxBlockSize is accepted":
@@ -135,5 +151,25 @@ suite "core/block_validation — inclusive size and count bounds":
         txs: newSeq[SignedMantleTx](MaxBlockTxs + 1),
       )
     check not validateBlock(overLong)
+
+  test "a transaction with exactly MantleMaxOps operations is accepted":
+    let
+      op = createTransferOp(TransferPayload(inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @[])))
+      proof = OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))
+      tx = SignedMantleTx(
+        tx: MantleTx(ops: newSeqWith(MantleMaxOps, op)),
+        opProofs: newSeqWith(MantleMaxOps, proof),
+      )
+    check validateMantleTx(tx)
+
+  test "one operation past MantleMaxOps is rejected":
+    let
+      op = createTransferOp(TransferPayload(inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @[])))
+      proof = OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))
+      tx = SignedMantleTx(
+        tx: MantleTx(ops: newSeqWith(MantleMaxOps + 1, op)),
+        opProofs: newSeqWith(MantleMaxOps + 1, proof),
+      )
+    check not validateMantleTx(tx)
 
 {.pop.}

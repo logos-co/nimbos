@@ -27,6 +27,7 @@ type
     localTree*: LocalTree
     ledger*: Ledger[BlockId]
     slotConfig*: SlotConfig
+    mempool*: seq[SignedMantleTx] # TODO: replace seq placeholder with full Mempool once PR #143 is introduced
 
   BlockApplyErrorKind* {.pure.} = enum
     AlreadyApplied
@@ -75,6 +76,7 @@ func init*(
     localTree: newLocalTree(genesisBlock, latestImmutableHeight),
     ledger: ledger,
     slotConfig: slotConfig,
+    mempool: @[],
   )
 
 proc init*(

@@ -21,8 +21,12 @@ import
   ./sync/syncer,
   ./zk/[circuits, pol, poc, zksign]
 
+from ./chain/block_validation import validateBlock, validateMantleTx
+from ./core/mantle/tx_types import SignedMantleTx
 from ./core/types as coreTypes import Block, blockId
 from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
+from libp2p/peerid import PeerId
+from libp2p/protocols/pubsub/pubsub import ValidationResult
 from libp2p/protocols/pubsub/gossipsub import
   TopicParams, init
 
@@ -40,6 +44,7 @@ type
     netKeys*: NetKeyPair
     config*: LBNodeConf
     deploymentSettings*: DeploymentSettings
+    chain*: Chain
     syncer*: Syncer
     metricsServer*: Opt[MetricsHttpServerRef]
     shutdownEvent*: AsyncEvent
@@ -154,6 +159,7 @@ proc init*(
     network: network,
     config: config,
     deploymentSettings: deploymentSettings,
+    chain: chain,
     syncer: nodeSyncer,
     shutdownEvent: newAsyncEvent())
 
@@ -199,10 +205,84 @@ proc runOnSecondLoop(node: LBNode) {.async.} =
     let processingTime = finished - afterSleep
     trace "onSecond task completed", sleepTime, processingTime
 
-proc installMessageValidators(node: LBNode) =
-  # Placeholder — real validators will be installed once gossip topics
-  # and message types are defined for the Logos chain.
-  discard
+func connectedPeersCount(node: LBNode): int =
+  len(node.network.peerPool)
+
+func toValidationResult(err: BlockApplyError): ValidationResult =
+  case err.kind
+  of BlockApplyErrorKind.AlreadyApplied,
+     BlockApplyErrorKind.FutureSlot,
+     BlockApplyErrorKind.TreeRejected:
+    ValidationResult.Ignore
+  of BlockApplyErrorKind.InvalidStructure,
+     BlockApplyErrorKind.LedgerRejected:
+    ValidationResult.Reject
+
+proc handleGossipBlock(node: LBNode, blk: Block, src: PeerId): ValidationResult =
+  trace "GossipSub handling received block",
+    blockId = byteutils.toHex(blockId(blk.header)),
+    slot = blk.header.slot,
+    src = $src
+
+  if not validateBlock(blk):
+    debug "GossipSub rejected block: invalid structural validation",
+      blockId = byteutils.toHex(blockId(blk.header)), src = $src
+    return ValidationResult.Reject
+
+  if node.chain.localTree != nil:
+    let applyRes = node.chain.tryApplyBlock(blk)
+    if applyRes.isOk():
+      debug "GossipSub accepted block into local tree",
+        blockId = byteutils.toHex(blockId(blk.header)),
+        slot = blk.header.slot,
+        src = $src
+      ValidationResult.Accept
+    else:
+      trace "GossipSub handled block apply result",
+        blockId = byteutils.toHex(blockId(blk.header)),
+        err = applyRes.error.kind
+      toValidationResult(applyRes.error)
+  else:
+    ValidationResult.Accept
+
+proc handleGossipTx(node: LBNode, tx: SignedMantleTx, src: PeerId): ValidationResult =
+  trace "GossipSub handling received tx",
+    opCount = tx.tx.ops.len,
+    src = $src
+
+  if not validateMantleTx(tx):
+    debug "GossipSub rejected invalid mantle tx", src = $src
+    return ValidationResult.Reject
+
+  # TODO: update to use Mempool.add() with full validation/eviction logic once Mempool is introduced
+  node.chain.mempool.add(tx)
+
+  ValidationResult.Accept
+
+proc installMessageValidators(node: LBNode): seq[string] =
+  var topics: seq[string]
+
+  let blockTopic = node.deploymentSettings.cryptarchia.gossipsubProtocol
+  if blockTopic.len > 0:
+    node.network.addValidator(blockTopic) do (
+        blk: Block, src: PeerId
+    ) -> ValidationResult:
+      handleGossipBlock(node, blk, src)
+    topics.add(blockTopic)
+  else:
+    warn "Cryptarchia block gossipsub protocol topic is empty, validator not installed"
+
+  let mempoolTopic = node.deploymentSettings.mempool.pubsubTopic
+  if mempoolTopic.len > 0:
+    node.network.addValidator(mempoolTopic) do (
+        tx: SignedMantleTx, src: PeerId
+    ) -> ValidationResult:
+      handleGossipTx(node, tx, src)
+    topics.add(mempoolTopic)
+  else:
+    warn "Mempool pubsub topic is empty, validator not installed"
+
+  topics
 
 proc stop(node: LBNode) =
   try:
@@ -212,8 +292,11 @@ proc stop(node: LBNode) =
 
   waitFor node.metricsServer.stopMetricsServer()
 
-proc initializeNetworking(node: LBNode) {.async.} =
-  node.installMessageValidators()
+proc initializeNetworking*(node: LBNode) {.async.} =
+  let topics = node.installMessageValidators()
+  for topic in topics:
+    node.network.subscribe(topic, TopicParams.init())
+    debug "Subscribed to gossip topic", topic = topic
 
   info "Listening to incoming network requests"
   await node.network.startListening()
@@ -231,8 +314,6 @@ proc run*(node: LBNode, stopper: StopFuture) {.raises: [CatchableError].} =
   waitFor node.initializeNetworking()
 
   ProcessState.notifyRunning()
-
-  node.network.subscribe("/some/topic", TopicParams.init())
 
   asyncSpawn runSlotLoop(node)
   asyncSpawn runOnSecondLoop(node)

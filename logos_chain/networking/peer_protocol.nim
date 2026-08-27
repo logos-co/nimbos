@@ -28,6 +28,9 @@ type
     statusMsg: StatusMsg
     statusMsgV2: Opt[StatusMsgV2]
 
+deriveBincode(StatusMsg)
+deriveBincode(StatusMsgV2)
+
 func shortLog*(s: StatusMsg): auto =
   (
     e: $s.e

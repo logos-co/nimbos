@@ -28,7 +28,7 @@ type
 
 type
   SerializedBlock = seq[byte]
-    ## Bincode-encoded ``Block`` bytes (``serializeBlockToSeq`` / ``deserializeBlock``).
+    ## Bincode-encoded ``Block`` bytes (``encode`` / ``decode``).
 
 type
   BlocksUnavailableReasonKind* {.pure.} = enum

@@ -26,7 +26,7 @@ import
   bearssl/rand,
   eth/async_utils,
   eth/net/nat,
-  ./bincode,
+  bincode,
   ../[version, conf],
   ../core/utils,
   ./[discovery, protocol_dsl,
@@ -45,6 +45,15 @@ type
   PublicKey = crypto.PublicKey
   PrivateKey = crypto.PrivateKey
 
+  Limit* = int64
+  List*[T; maxLen: static Limit] = distinct seq[T]
+
+func asSeq*[T; N: static int](x: List[T, N]): seq[T] = distinctBase(x)
+
+iterator items*[T; N: static int](x: List[T, N]): T =
+  for item in distinctBase(x): yield item
+
+type
   ErrorMsg = List[byte, 256]
   SendResult = Result[void, cstring]
 
@@ -1960,7 +1969,7 @@ proc addAsyncValidator*[MsgType](
 proc unsubscribe*(node: LBP2PNode, topic: string) =
   node.pubsub.unsubscribeAll(topic)
 
-func gossipEncode(msg: auto): seq[byte] =
+proc gossipEncode(msg: auto): seq[byte] =
   let uncompressed = Bincode.encode(msg)
   # This function only for messages we create. A message this large amounts to
   # an internal logic error.
@@ -1968,7 +1977,7 @@ func gossipEncode(msg: auto): seq[byte] =
 
   uncompressed
 
-proc broadcast(node: LBP2PNode, topic: string, msg: seq[byte]):
+proc broadcast*(node: LBP2PNode, topic: string, msg: seq[byte]):
     Future[SendResult] {.async: (raises: [CancelledError]).} =
   let peers = await node.pubsub.publish(topic, msg)
 
@@ -1980,7 +1989,7 @@ proc broadcast(node: LBP2PNode, topic: string, msg: seq[byte]):
     # Increments libp2p_gossipsub_failed_publish metric
     err("No peers on libp2p topic")
 
-proc broadcast(node: LBP2PNode, topic: string, msg: auto):
+proc broadcast*(node: LBP2PNode, topic: string, msg: auto):
     Future[SendResult] {.async: (raises: [CancelledError], raw: true).} =
   # Avoid {.async.} copies of message while broadcasting
   broadcast(node, topic, gossipEncode(msg))

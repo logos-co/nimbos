@@ -364,11 +364,11 @@ func init*[Id](
     _: typedesc[Ledger[Id]],
     id: Id,
     state: LedgerState,
-    config: LedgerConfig = LedgerConfig(),
+    config = LedgerConfig(),
     leaderProofVerifier: LeaderProofVerifier = verifyLeaderProof,
 ): Ledger[Id] =
   ## Constructs a Ledger seeded with one `(id, state)` entry.
-  var states = initTable[Id, LedgerState]()
+  var states: Table[Id, LedgerState]
   states[id] = state
   Ledger[Id](
     states: states,

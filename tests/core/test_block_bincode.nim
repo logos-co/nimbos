@@ -42,17 +42,17 @@ proc checkBlockEqual(a, b: Block) =
     check encodeSignedMantleTx(a.txs[i]) == encodeSignedMantleTx(b.txs[i])
 
 template roundtrip(blk: Block): untyped =
-  deserializeBlock(serializeBlockToSeq(blk, cfg), cfg)
+  decode(encode(blk, cfg), Block, cfg)
 
 suite "core/block bincode (cryptarchia sync)":
-  test "serializeBlockToSeq / deserializeBlock roundtrip (default signature, empty txs)":
+  test "encode / decode roundtrip (default signature, empty txs)":
     let blk = initBlock(sampleHeader([]), txs = [])
     try:
       checkBlockEqual(roundtrip(blk), blk)
-    except BincodeError, IOError:
+    except BincodeError:
       fail getCurrentExceptionMsg()
 
-  test "serializeBlockToSeq / deserializeBlock roundtrip (non-default signature, one tx)":
+  test "encode / decode roundtrip (non-default signature, one tx)":
     var sig: Ed25519Signature
     for i in 0 ..< EdSignatureSize:
       sig.data[i] = byte(i)
@@ -64,15 +64,15 @@ suite "core/block bincode (cryptarchia sync)":
       checkBlockEqual(back, blk)
       check back.signature.data[0] == 0'u8
       check back.signature.data[EdSignatureSize - 1] == byte(EdSignatureSize - 1)
-    except BincodeError, IOError:
+    except BincodeError:
       fail getCurrentExceptionMsg()
 
-  test "serializeBlockToSeq / deserializeBlock roundtrip (genesis block)":
+  test "encode / decode roundtrip (genesis block)":
     let genesis = createGenesisBlock(minimalSignedTx())
     try:
       checkBlockEqual(roundtrip(genesis), genesis)
       check genesis.signature == DefaultEd25519Signature
-    except BincodeError, IOError:
+    except BincodeError:
       fail getCurrentExceptionMsg()
 
   test "bincode field order is header then signature then txs":
@@ -85,15 +85,15 @@ suite "core/block bincode (cryptarchia sync)":
     let blk = initBlock(h, signature = sig, txs = [sm])
     try:
       let
-        hdrWire = serializeHeaderToSeq(h, cfg)
-        blkWire = serializeBlockToSeq(blk, cfg)
+        hdrWire = encode(h, cfg)
+        blkWire = encode(blk, cfg)
       check blkWire.len > hdrWire.len + EdSignatureSize
       check blkWire[hdrWire.len] == 0xAA'u8
       check blkWire[hdrWire.len + 1] == 0xBB'u8
       let txsLenOff = hdrWire.len + EdSignatureSize
       check blkWire[txsLenOff] == 1'u8
       check blkWire[txsLenOff + 1] == 0'u8
-    except BincodeError, IOError:
+    except BincodeError:
       fail getCurrentExceptionMsg()
 
   test "serialized block wire includes signature bytes in payload size":
@@ -101,14 +101,14 @@ suite "core/block bincode (cryptarchia sync)":
       sm = minimalSignedTx()
       h = sampleHeader([sm])
     try:
-      let withDefaultSig = serializeBlockToSeq(initBlock(h, txs = [sm]), cfg)
+      let withDefaultSig = encode(initBlock(h, txs = [sm]), cfg)
       var sig: Ed25519Signature
       sig.data[0] = 0x55'u8
-      let withMarkedSig = serializeBlockToSeq(initBlock(h, signature = sig, txs = [sm]), cfg)
+      let withMarkedSig = encode(initBlock(h, signature = sig, txs = [sm]), cfg)
       check withDefaultSig.len == withMarkedSig.len
       check withDefaultSig != withMarkedSig
       check withMarkedSig.len > EdSignatureSize
-    except BincodeError, IOError:
+    except BincodeError:
       fail getCurrentExceptionMsg()
 
 {.pop.}

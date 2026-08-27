@@ -14,6 +14,7 @@
 {.push raises: [], gcsafe.}
 
 import
+  std/sequtils,
   results,
   ../core/local_tree,
   ../ledger/ledger,
@@ -21,7 +22,7 @@ import
 
 from ../core/types import
   Block, createBlockRoot, ExpectedBedrockVersion, MaxBlockSize, header, blockId
-from ../core/mantle/primitives import MaxBlockTxs
+from ../core/mantle/primitives import MaxBlockTxs, MantleMaxOps
 from ../core/mantle/tx_types import
   SignedMantleTx,
   encodeSignedMantleTx,
@@ -57,6 +58,21 @@ func validateBlockHeader*(blk: Block): bool =
 
   true
 
+func validateMantleTx*(tx: SignedMantleTx): bool =
+  if tx.tx.ops.len > MantleMaxOps:
+    return false
+  if tx.tx.ops.len != tx.opProofs.len:
+    return false
+  for i in 0 ..< tx.tx.ops.len:
+    let op = tx.tx.ops[i]
+    if not isSupportedOpcode(op.opcode):
+      return false
+    if op.opcode != opPayloadToOpcode(op.payload):
+      return false
+    if tx.opProofs[i].kind != expectedOpProofKindForOpcode(op.opcode):
+      return false
+  true
+
 func validateBlockBody*(blk: Block): bool =
   if blk.signature == default(Ed25519Signature):
     return false
@@ -64,17 +80,8 @@ func validateBlockBody*(blk: Block): bool =
   if blk.txs.len > MaxBlockTxs:
     return false
 
-  for tx in blk.txs:
-    if tx.tx.ops.len != tx.opProofs.len:
-      return false
-    for i in 0 ..< tx.tx.ops.len:
-      let op = tx.tx.ops[i]
-      if not isSupportedOpcode(op.opcode):
-        return false
-      if op.opcode != opPayloadToOpcode(op.payload):
-        return false
-      if tx.opProofs[i].kind != expectedOpProofKindForOpcode(op.opcode):
-        return false
+  if not blk.txs.allIt(validateMantleTx(it)):
+    return false
 
   if txBytesLen(blk.txs) > MaxBlockSize:
     return false
