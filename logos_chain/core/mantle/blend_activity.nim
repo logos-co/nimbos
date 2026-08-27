@@ -16,6 +16,10 @@ import
   libp2p/crypto/ed25519/ed25519,
   ../crypto/types
 
+from ./primitives import EpochNumber
+
+export EpochNumber
+
 const
   ActiveMetadataBlendType* = 0x01'u8
     ## metadata_type selector for Blend activity metadata.
@@ -32,7 +36,7 @@ type
       ## Opaque until the proof-of-quota verifier lands.
 
   ActivityProof* = object
-    epoch*: uint32
+    epoch*: EpochNumber
     signingKey*: Ed25519PublicKey
     proofOfQuota*: ProofOfQuota
     proofOfSelection*: FieldElement
@@ -78,7 +82,7 @@ func decodeActivityMetadata*(
   if metadata[1] != BlendActiveMetadataVersion:
     return err("activity metadata: unsupported version")
   var proof = ActivityProof(
-    epoch: uint32.fromBytesLE(metadata.toOpenArray(2, 5)))
+    epoch: EpochNumber.fromBytesLE(metadata.toOpenArray(2, 5)))
   # The signing key's point validity is checked with proof-of-quota
   # verification, where the key is a public input; the codec checks
   # length only.

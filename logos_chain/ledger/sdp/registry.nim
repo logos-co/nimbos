@@ -39,7 +39,7 @@ type
       ## Highest epoch for which epoch-boundary processing has run.
       ## ``none`` until the first boundary.
 
-func validateInactivityPeriod*(params: ServiceParameters) =
+func validateInactivityPeriod(params: ServiceParameters) =
   doAssert params.inactivityPeriod >= SnapshotFinalizationDelay,
     "inactivity_period must be >= 2 epochs"
 
@@ -64,8 +64,8 @@ func init*(
     rewardsParams: BlendRewardsParams,
 ): T =
   let bnParams = ServiceParameters(
-    inactivityPeriod: sdpConfig.bn.inactivityPeriod.uint64,
-    epoch: sdpConfig.bn.epoch.uint64,
+    inactivityPeriod: sdpConfig.bn.inactivityPeriod,
+    epoch: sdpConfig.bn.epoch,
   )
   validateInactivityPeriod(bnParams)
   validateBlendRewardsParams(rewardsParams)
@@ -76,7 +76,7 @@ func init*(
       parameters: [(ServiceType.bn, bnParams)].toTable(),
       stakeThresholds: @[sdpState.MinStake(
         stakeThreshold: sdpConfig.minStake.threshold.uint64,
-        epoch: sdpConfig.minStake.epoch.uint64,
+        epoch: sdpConfig.minStake.epoch,
       )],
       rewardsParams: rewardsParams,
     ),
@@ -101,9 +101,9 @@ func onEpochStarted*(
     genesisSnap[0] = registry.state
     genesisSnap[1] = registry.state
     registry.snapshots[ServiceType.bn] = genesisSnap
-    registry.lastEpochStarted = Opt.some(0'u64)
+    registry.lastEpochStarted = Opt.some(EpochNumber(0))
     return registry
-  let last = registry.lastEpochStarted
+  let prev = registry.lastEpochStarted.valueOr(EpochNumber(0))
   for service, params in registry.params.parameters.pairs:
     if params.epoch > epoch:
       continue
@@ -121,12 +121,10 @@ func onEpochStarted*(
     # so that target epoch `T` reads the state finalized at the end of `T - 2`.
     # A blockless span ran no boundaries; backfill its snapshot keys.
     # Nothing changed in between, so each one is the boundary state.
-    for target in
-        max(last.get(0'u64) + SnapshotFinalizationDelay, epoch) .. epoch + 1:
+    for target in max(prev + SnapshotFinalizationDelay, epoch) .. epoch + 1:
       byEpoch[target] = registry.state
     # A boundary at epoch E leaves keys {E, E+1}, so only the previous
     # pair can have ended; del ignores absent keys.
-    let prev = last.get(0'u64)
     for target in [prev, prev + 1]:
       if target < epoch:
         byEpoch.del(target)
@@ -161,16 +159,24 @@ func getParametersAt*(
   else:
     Opt.none(ServiceParameters)
 
+func notWithdrawnAt(info: DeclarationInfo, epoch: EpochNumber): bool =
+  ## Whether no scheduled withdrawal has taken effect by ``epoch``.
+  # `slotToEpoch` reaches `high(EpochNumber)`, so that value cannot stand in
+  # for "no withdrawal".
+  let withdrawAt = info.withdrawAt.valueOr:
+    return true
+  epoch < withdrawAt
+
 func isActiveAt(
     info: DeclarationInfo, epoch: EpochNumber, params: ServiceParameters
 ): bool =
   ## Active at ``epoch``: activity seen within the inactivity period, and no
   ## withdrawal in effect. A fresh declaration counts from its first snapshot.
-  # Both operands are epoch counts bounded by the wallclock, so neither
-  # addition can reach the uint64 wrap.
-  info.active.valueOr(info.created + SnapshotFinalizationDelay) +
-    params.inactivityPeriod >= epoch and
-    info.withdrawAt.valueOr(high(EpochNumber)) > epoch
+  # The operator sets `inactivity_period`, and the spec bounds it from below
+  # only. Adding it to an epoch can wrap, so compare the distance instead.
+  let lastActive = info.active.valueOr(info.created + SnapshotFinalizationDelay)
+  (epoch <= lastActive or epoch - lastActive <= params.inactivityPeriod) and
+    info.notWithdrawnAt(epoch)
 
 func activeBlendProviders*(
     registry: SdpRegistry, targetEpoch: EpochNumber

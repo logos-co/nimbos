@@ -63,7 +63,7 @@ proc findRho*(index, membership: uint64): FieldElement =
   doAssert false, "no selection randomness found for the requested index"
 
 proc mkActivity*(
-    rho: FieldElement, epoch: uint32, keySeed: byte
+    rho: FieldElement, epoch: EpochNumber, keySeed: byte
 ): ActivityProof =
   ## Activity proof whose nullifier binds to `rho`, as the circuit requires.
   var

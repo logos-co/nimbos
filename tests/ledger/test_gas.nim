@@ -263,7 +263,7 @@ suite "gas: tx execution gas and block limit":
           OpProof(kind: opfChannelInscribe, ed25519SigProof: sign(kp1.seckey, txHash)),
           OpProof(kind: opfChannelInscribe, ed25519SigProof: sign(kp2.seckey, txHash))])
       r = mkState(@[]).tryApplyTx(
-        tx, epoch = 0'u64, slot = 0'u64, verifyPoq = acceptAllPoq)
+        tx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
     check r.isOk
     check r.get.executionGas == Gas(112)
 

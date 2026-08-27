@@ -86,7 +86,7 @@ proc fromGenesis*(
   ## Genesis state from the genesis block's transactions: ops run through the
   ## pure transition cores (no proof or balance checks), then epochs are
   ## seeded from the faucet-filtered stake and ceremony nonce.
-  const genesisEpoch = 0'u64
+  const genesisEpoch: EpochNumber = 0
   var
     s = LedgerState(
       cryptarchiaLedger: CryptarchiaState.init(),

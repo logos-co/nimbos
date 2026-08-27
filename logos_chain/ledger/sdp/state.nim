@@ -18,7 +18,7 @@ import
 
 export primitives, results, hash_trie_map
 
-const SnapshotFinalizationDelay* = 2'u64
+const SnapshotFinalizationDelay* = EpochNumber(2)
   ## Epochs a registry change waits before the snapshot that carries it is
   ## the one in force.
 
@@ -28,7 +28,7 @@ type
     epoch*: EpochNumber
 
   ServiceParameters* = object
-    inactivityPeriod*: uint64
+    inactivityPeriod*: NumberOfEpochs
     epoch*: EpochNumber
 
   DeclarationInfo* = object
@@ -49,12 +49,6 @@ type
     lockedNotes*: LockedNotes
     activeProviders*: HashTrieMap[tuple[service: ServiceType, providerId: Ed25519PublicKey], tuple[]]
     activeZkIds*: HashTrieMap[tuple[service: ServiceType, zkId: ZkPublicKey], tuple[]]
-
-func defaultBnServiceParameters*(epoch: EpochNumber = 0): ServiceParameters =
-  ServiceParameters(
-    inactivityPeriod: 2'u64,
-    epoch: epoch,
-  )
 
 func init*(_: typedesc[SdpState]): SdpState =
   SdpState()

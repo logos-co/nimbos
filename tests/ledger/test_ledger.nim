@@ -133,7 +133,7 @@ suite "tryApplyTx — structural error paths":
         opProofs: @[],
       ) # zero proofs vs one op
       r = s0.tryApplyTx(
-        tx, epoch = 0'u64, slot = 0'u64, verifyPoq = acceptAllPoq)
+        tx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
     check r.isErr
     check r.error == InvalidProof
 
@@ -162,7 +162,7 @@ suite "tryApplyTx — structural error paths":
           ],
       )
       r = s0.tryApplyTx(
-        tx, epoch = 0'u64, slot = 0'u64, verifyPoq = acceptAllPoq)
+        tx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
     check r.isErr
     check r.error == InvalidProof
 
@@ -201,7 +201,7 @@ suite "tryApplyTx — channel ops":
         opProofs: @[OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))],
       )
       r = s0.tryApplyTx(
-        tx, epoch = 0'u64, slot = 0'u64, verifyPoq = acceptAllPoq)
+        tx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
     check r.error == InvalidProof
 
   test "ChannelWithdraw contributes nothing to the transaction balance":
@@ -223,7 +223,7 @@ suite "tryApplyTx — channel ops":
             indexes: @[ChannelKeyIndex(0)]))],
       )
       r = s0.tryApplyTx(
-        tx, epoch = 0'u64, slot = 0'u64, verifyPoq = acceptAllPoq)
+        tx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
     check r.isOk
     let res = r.get
     # Bridged funds never enter or leave the UTXO set, so a channel op can
@@ -255,7 +255,7 @@ suite "tryApplyTx — channel ops":
             indexes: @[ChannelKeyIndex(0)]))],
       )
       r = s0.tryApplyTx(
-        tx, epoch = 0'u64, slot = 0'u64, verifyPoq = acceptAllPoq)
+        tx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
     check r.isOk
     let
       res = r.get
@@ -275,7 +275,7 @@ suite "tryApplyTx — channel ops":
       s0 = mkChannelState([note], cid, kp.pubkey, [note])
       tx = mkTransferTx([note.id], [mkNote(100, pkSeed = 2)])
       r = s0.tryApplyTx(
-        tx, epoch = 0'u64, slot = 0'u64, verifyPoq = acceptAllPoq)
+        tx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
     check r.error == ChannelNoteSpend
 
 suite "Ledger[Id] map ops":
@@ -346,7 +346,7 @@ suite "tryApplyTx — happy path (Rust-generated fixture)":
       input = mkUtxoWithPk(mkRealZkPubKey(1), value = 100)
       s0 = mkState([input])
       r = s0.tryApplyTx(
-        mkFixtureTransferTx(input), epoch = 0'u64, slot = 0'u64,
+        mkFixtureTransferTx(input), epoch = EpochNumber(0), slot = 0'u64,
         verifyPoq = acceptAllPoq)
     check r.isOk
 
@@ -371,7 +371,7 @@ suite "tryApplyTx — happy path (Rust-generated fixture)":
     )
     discard installTestDeclaration(s0.sdp, declaration, epoch = 1)
     let r = s0.tryApplyTx(
-      mkFixtureTransferTx(input), epoch = 0'u64, slot = 0'u64,
+      mkFixtureTransferTx(input), epoch = EpochNumber(0), slot = 0'u64,
       verifyPoq = acceptAllPoq)
     check r.isOk
     let res = r.get
@@ -410,7 +410,7 @@ when false:
             ],
         )
         r = s0.tryApplyTx(
-          tx, epoch = 0'u64, slot = 0'u64, verifyPoq = acceptAllPoq)
+          tx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
       check r.isOk
       let res = r.get
       check res.balance == Balance.zero
@@ -445,7 +445,7 @@ when false:
             ],
         )
         r = s0.tryApplyTx(
-          tx, epoch = 0'u64, slot = 0'u64, verifyPoq = acceptAllPoq)
+          tx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
       check r.isErr
       check r.error == InvalidProof
 

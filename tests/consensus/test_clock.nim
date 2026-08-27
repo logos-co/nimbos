@@ -36,13 +36,24 @@ suite "consensus/clock":
 
   test "slot to epoch round-trips across boundaries":
     check:
-      slotToEpoch(0, testSchedule) == 0
-      slotToEpoch(99, testSchedule) == 0
-      slotToEpoch(100, testSchedule) == 1
+      slotToEpoch(0, testSchedule) == Opt.some(EpochNumber(0))
+      slotToEpoch(99, testSchedule) == Opt.some(EpochNumber(0))
+      slotToEpoch(100, testSchedule) == Opt.some(EpochNumber(1))
       epochStartSlot(0, testSchedule) == 0
       epochStartSlot(1, testSchedule) == 100
-      slotToEpoch(epochStartSlot(7, testSchedule), testSchedule) == 7
-      slotToEpoch(epochStartSlot(7, testSchedule) - 1, testSchedule) == 6
+      slotToEpoch(epochStartSlot(7, testSchedule), testSchedule) ==
+        Opt.some(EpochNumber(7))
+      slotToEpoch(epochStartSlot(7, testSchedule) - 1, testSchedule) ==
+        Opt.some(EpochNumber(6))
+
+  test "slot past the epoch range has no epoch":
+    const oneSlotEpochs = EpochSchedule(
+      basePeriodLength: 1, stakeDistributionStabilization: 1,
+      nonceBuffer: 0, nonceStabilization: 0)
+    check:
+      slotToEpoch(uint64(high(EpochNumber)), oneSlotEpochs) ==
+        Opt.some(high(EpochNumber))
+      slotToEpoch(uint64(high(EpochNumber)) + 1, oneSlotEpochs).isNone
 
   test "wallclock slot from genesis time":
     check:

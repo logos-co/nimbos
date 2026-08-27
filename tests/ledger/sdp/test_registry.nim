@@ -25,14 +25,14 @@ suite "ledger/sdp/registry":
       inactivityPeriod: 2, epoch: 0,
     ))
     check registry.params.parameters.len == 1
-    check getParametersAt(registry, ServiceType.bn, 100).get().inactivityPeriod == 2'u64
+    check getParametersAt(registry, ServiceType.bn, 100).get().inactivityPeriod == 2'u32
 
     appendParameters(registry, ServiceType.bn, ServiceParameters(
       inactivityPeriod: 3, epoch: 50,
     ))
     check registry.params.parameters.len == 1
     check getParametersAt(registry, ServiceType.bn, 25).isNone
-    check getParametersAt(registry, ServiceType.bn, 50).get().inactivityPeriod == 3'u64
+    check getParametersAt(registry, ServiceType.bn, 50).get().inactivityPeriod == 3'u32
 
   test "stores versioned minimum stake entries":
     var registry = testSdpRegistry()
@@ -73,7 +73,7 @@ suite "ledger/sdp/registry":
       nonce: 1,
     )
     installTestWithdraw(seeded.registry, withdraw, 5)
-    for epoch in 1'u64 .. 6'u64:
+    for epoch in EpochNumber(1) .. EpochNumber(6):
       seeded.registry = onEpochStarted(seeded.registry, epoch)
     check getDeclaration(seeded.registry.state, seeded.declId).isSome
     seeded.registry = onEpochStarted(seeded.registry, 7)
@@ -161,7 +161,7 @@ suite "ledger/sdp/registry — epoch snapshots":
 
   test "retains at most three epoch snapshots in steady state":
     var registry = testSdpRegistry()
-    for epoch in 1'u64 .. 6'u64:
+    for epoch in EpochNumber(1) .. EpochNumber(6):
       registry = onEpochStarted(registry, epoch)
       check registry.snapshots.getOrDefault(ServiceType.bn).len <= 3
 

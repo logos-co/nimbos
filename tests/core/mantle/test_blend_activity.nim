@@ -18,7 +18,7 @@ import
 proc mkActivityProof(seed: byte = 1): ActivityProof =
   var
     proof = ActivityProof(
-      epoch: 7'u32,
+      epoch: EpochNumber(7),
       proofOfQuota: ProofOfQuota(
         keyNullifier: frFromBytesLE([seed]).get),
       proofOfSelection: frFromBytesLE([seed, 2'u8]).get)

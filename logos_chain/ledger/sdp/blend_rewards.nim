@@ -118,7 +118,7 @@ proc verifyActivity(
     providerId: ProviderId,
     verifyPoq: PoqVerifier,
 ): Result[tuple[zkId: ZkPublicKey, distance: uint64], LedgerError] =
-  if uint64(proof.epoch) != state.epoch:
+  if proof.epoch != state.epoch:
     return err(InvalidEpoch)
   # One map probe; checking it first keeps a resubmission from buying
   # the whole proof pipeline.
