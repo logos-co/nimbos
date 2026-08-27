@@ -126,4 +126,19 @@ suite "ledger/sdp/ops/declare":
     check info.nonce == 0'u64
     check getLockedNote(seeded.registry.state, seeded.declaration.lockedNoteId).isSome
 
+  test "tryApplySdpDeclare rejects duplicate providerId or zkId for the same service":
+    let seeded = seedDeclaration(pkSeed = 4, declareEpoch = 10)
+    let utxo = mkUtxo(value = 200, pkSeed = 8)
+    var store = seeded.store.insert(utxo.id, utxo).store
+    let declaration2 = DeclarationMessage(
+      serviceType: ServiceType.bn,
+      locators: @[mkLocator(30304)],
+      providerId: seeded.declaration.providerId,
+      lockedNoteId: utxo.id,
+      zkId: utxo.note.zkPublicKey,
+    )
+    let declareResult = execDeclare(seeded.registry, declaration2, store, 1)
+    check declareResult.isErr
+    check declareResult.error == DuplicateProviderOrZkId
+
 {.pop.}

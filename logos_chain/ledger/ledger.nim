@@ -282,8 +282,6 @@ proc tryApplyTx*(
       s.cryptarchiaLedger = ?s.cryptarchiaLedger.tryApplyLeaderClaim(
         op.payload.leaderClaim, proof.proofOfClaimProof, txHash,
       )
-    else:
-      return err(UnsupportedOp)
   ok((state: s, balance: balance, executionGas: txExecutionGas))
 
 func mandatory_fees(

@@ -6,7 +6,7 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## Bedrock block types aligned with Nomos block construction / validation / execution.
-## Spec: [Cryptarchia v1 — Block & Chain](https://github.com/logos-co/logos-lips/blob/master/docs/blockchain/raw/cryptarchia-v1-protocol.md#block-chain)
+## Spec: [Block Construction, Validation and Execution v1.1.2](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/bedrock-v1.1-block-construction.md)
 
 {.push raises: [], gcsafe.}
 
@@ -70,7 +70,8 @@ func createBlockRoot*(txs: openArray[SignedMantleTx]): Hash32 =
   ## Computes Merkle root over tx hashes (in block order).
   ## Pads the leaf layer to the next power of two with zero ``Hash32`` leaves,
   ## then pairs ``left || right`` with BLAKE2b-256.
-  ## TODO: confirm empty-root rule and domain separation against Nomos spec.
+  ## Empty-root returns default(Hash32) zero hash per Cryptarchia Protocol v1.0.2:
+  ## https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/cryptarchia-v1-protocol.md#block-header-validation
   doAssert txs.len <= MaxBlockTxs,
     "tx set exceeds MaxBlockTxs (" & $MaxBlockTxs & "): " & $txs.len
 

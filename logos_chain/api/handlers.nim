@@ -18,8 +18,8 @@
 
 import
   chronicles,
-  libp2p/[multiaddress, multicodec, peerstore],
-  ../version, ../node,
+  libp2p/[multiaddress, multicodec],
+  ../node,
   ../networking/[network, peer_pool],
   ./utils,
   ./paths
@@ -55,99 +55,7 @@ proc normalize*(address: MultiAddress, value: PeerId): MaResult[MultiAddress] =
   else:
     ok(address)
 
-proc validateState(states: seq[PeerStateKind]): Result[ConnectionStateSet,
-                                                       cstring] =
-  var res: set[ConnectionState]
-  for item in states:
-    case item
-    of PeerStateKind.Disconnected:
-      if ConnectionState.Disconnected in res:
-        return err("Peer connection states must be unique")
-      res.incl(ConnectionState.Disconnected)
-    of PeerStateKind.Connecting:
-      if ConnectionState.Connecting in res:
-        return err("Peer connection states must be unique")
-      res.incl(ConnectionState.Connecting)
-    of PeerStateKind.Connected:
-      if ConnectionState.Connected in res:
-        return err("Peer connection states must be unique")
-      res.incl(ConnectionState.Connected)
-    of PeerStateKind.Disconnecting:
-      if ConnectionState.Disconnecting in res:
-        return err("Peer connection states must be unique")
-      res.incl(ConnectionState.Disconnecting)
-  if res == {}:
-    res = {ConnectionState.Connecting, ConnectionState.Connected,
-           ConnectionState.Disconnecting, ConnectionState.Disconnected}
-  ok(res)
-
-proc validateDirection(directions: seq[PeerDirectKind]): Result[PeerTypeSet,
-                                                                cstring] =
-  var res: set[PeerType]
-  for item in directions:
-    case item
-    of PeerDirectKind.Inbound:
-      if PeerType.Incoming in res:
-        return err("Peer direction states must be unique")
-      res.incl(PeerType.Incoming)
-    of PeerDirectKind.Outbound:
-      if PeerType.Outgoing in res:
-        return err("Peer direction states must be unique")
-      res.incl(PeerType.Outgoing)
-  if res == {}:
-    res = {PeerType.Incoming, PeerType.Outgoing}
-  ok(res)
-
-proc toString(state: ConnectionState): string =
-  case state
-  of ConnectionState.Disconnected:
-    "disconnected"
-  of ConnectionState.Connecting:
-    "connecting"
-  of ConnectionState.Connected:
-    "connected"
-  of ConnectionState.Disconnecting:
-    "disconnecting"
-  else:
-    ""
-
-proc toString(direction: PeerType): string =
-  case direction:
-  of PeerType.Incoming:
-    "inbound"
-  of PeerType.Outgoing:
-    "outbound"
-
-proc getLastSeenAddress(node: LBNode, id: PeerId): string =
-  let
-    address = node.network.switch.peerStore[LastSeenBook][id].valueOr:
-      return ""
-    normalized = address.normalize(id).valueOr:
-      return ""
-  $normalized
-
-proc getP2PAddresses(node: LBNode): seq[string] =
-  let
-    pinfo = node.network.switch.peerInfo
-    maddress = MultiAddress.init(multiCodec("p2p"), pinfo.peerId).valueOr:
-      return default(seq[string])
-
-  var addresses: seq[string]
-  for item in node.network.announcedAddresses:
-    let res = concat(item, maddress)
-    if res.isOk():
-      addresses.add($(res.get()))
-  for item in pinfo.addrs:
-    let res = concat(item, maddress)
-    if res.isOk():
-      addresses.add($(res.get()))
-  addresses
-
 proc installNodeApiHandlers*(router: var RestRouter, node: LBNode) =
-  let
-    cachedVersion =
-      RestApiResponse.prepareJsonResponse((version: nimbusAgentStr))
-
   ## -------------------------------------------------------------------
   ## Logos Chain HTTP API compatibility (stub implementations)
   ##

@@ -164,7 +164,7 @@ proc seedDeclaration*(
   let declaration = DeclarationMessage(
     serviceType: ServiceType.bn,
     locators: @[mkLocator(30303)],
-    providerId: mkProvider(1),
+    providerId: mkProvider(pkSeed),
     lockedNoteId: utxo.id,
     zkId: utxo.note.zkPublicKey,
   )

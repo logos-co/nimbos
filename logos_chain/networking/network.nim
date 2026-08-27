@@ -289,9 +289,6 @@ declareCounter nbc_reqresp_messages_failed,
 declareCounter nbc_reqresp_messages_throttled,
   "Number of Req/Resp messages that were throttled", labels = ["protocol"]
 
-const
-  libp2p_pki_schemes {.strdefine.} = ""
-
 when not (crypto.PKScheme.Ed25519 in crypto.SupportedSchemes):
   {.fatal:
     "Incorrect building process, please use -d:\"libp2p_pki_schemes=ed25519\"".}
@@ -893,11 +890,6 @@ template writeBincode[M; maxLen: static Limit](
     contextBytes: openArray[byte] = []): untyped =
   mixin sendResponseChunk
   sendResponseChunk(UntypedResponse(r), val, contextBytes)
-
-template writeBytesSZ(
-    r: MultipleChunksResponse, uncompressedLen: uint64,
-    bytes: openArray[byte], contextBytes: openArray[byte]): untyped =
-  sendResponseChunkBytesSZ(UntypedResponse(r), uncompressedLen, bytes, contextBytes)
 
 template send*[M](
     r: SingleChunkResponse[M], val: M,
