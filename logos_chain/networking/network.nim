@@ -25,8 +25,7 @@ import
   ./[bincode, discovery, protocols, peer_pool, peer_scores],
 
   # Logos chain core modules
-  ../[version, conf],
-  ../core/utils
+  ../[version, conf]
 
 export
   tables, chronos, version, multiaddress, peerinfo,
