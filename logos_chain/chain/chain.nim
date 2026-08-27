@@ -27,7 +27,7 @@ type
     localTree*: LocalTree
     ledger*: Ledger[BlockId]
     slotConfig*: SlotConfig
-    mempool*: seq[SignedMantleTx]
+    mempool*: seq[SignedMantleTx] # TODO: replace seq placeholder with full Mempool once PR #143 is introduced
 
   BlockApplyErrorKind* {.pure.} = enum
     AlreadyApplied

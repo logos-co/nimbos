@@ -254,6 +254,7 @@ proc handleGossipTx*(node: LBNode, tx: SignedMantleTx, src: PeerId): ValidationR
     debug "GossipSub rejected invalid mantle tx", src = $src
     return ValidationResult.Reject
 
+  # TODO: update to use Mempool.add() with full validation/eviction logic once Mempool is introduced
   node.chain.mempool.add(tx)
 
   ValidationResult.Accept
