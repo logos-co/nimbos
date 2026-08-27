@@ -64,11 +64,9 @@ suite "sync/initial_block_download (download blocks)":
         serializeBlockToSeq(genesis, cryptarchiaSyncBincodeConfig)
       except BincodeError, IOError:
         fail getCurrentExceptionMsg()
-    let blksOpt = decodeBlocksFromDownloadResponses(@[
+    let blks = decodeBlocksFromDownloadResponses(@[
       DownloadBlocksResponse(kind: dbrBlock, downloadedBlock: genesisWire),
-    ])
-    check blksOpt.isSome
-    let blks = blksOpt.value
+    ]).get()
     check blks.len == 1
     check blockId(blks[0].header) == blockId(genesis.header)
 
@@ -118,9 +116,7 @@ suite "sync/initial_block_download (download blocks)":
     )
     let
       msgs = downloadBlocksResponsesForRequest(tree, req)
-      blksOpt = decodeBlocksFromDownloadResponses(msgs)
-    check blksOpt.isSome
-    let blks = blksOpt.value
+      blks = decodeBlocksFromDownloadResponses(msgs).get()
     check blks.len == 1
     check blockId(blks[0].header) == blockId(b1.header)
 
@@ -146,13 +142,11 @@ suite "sync/initial_block_download (download blocks)":
     try:
       await client.connect(server.peerInfo.peerId, server.peerInfo.addrs, forceDial = true)
 
-      let blksOpt = await sendDownloadBlocksRequest(
-        clientSyncer, server.peerInfo.peerId, req)
-      check blksOpt.isSome
       let
-        blks = blksOpt.value
+        blks = (await sendDownloadBlocksRequest(
+          clientSyncer, server.peerInfo.peerId, req)).get()
         expectedBlks = decodeBlocksFromDownloadResponses(
-          downloadBlocksResponsesForRequest(serverChain.localTree, req)).value
+          downloadBlocksResponsesForRequest(serverChain.localTree, req)).get()
       check blks.len == expectedBlks.len
       check blks.len == 1
       check blockId(blks[0].header) == b1id
@@ -177,10 +171,8 @@ suite "sync/initial_block_download (GetTip)":
     try:
       await client.connect(server.peerInfo.peerId, server.peerInfo.addrs, forceDial = true)
 
-      let tipOpt = await sendGetTipRequest(clientSyncer, server.peerInfo.peerId)
-      check tipOpt.isSome
       let
-        tipResp = tipOpt.value
+        tipResp = (await sendGetTipRequest(clientSyncer, server.peerInfo.peerId)).get()
         expected = Tip(
           tip: localTipId(serverChain.localTree),
           slot: SlotNumber(0),

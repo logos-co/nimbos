@@ -9,31 +9,28 @@
 
 import
   # Std lib
-  std/[sequtils, sets, algorithm, math, tables],
+  std/[sequtils, sets, algorithm, tables],
 
   # Vendor / external libs
   bearssl/rand,
-  chronos, chronos/ratelimit, chronicles, metrics, results,
+  chronos, chronicles, metrics, results,
   stew/byteutils,
-  json_serialization, json_serialization/std/[net, sets, options],
   eth/[async_utils, net/nat],
-  libp2p/[switch, peerinfo, multiaddress, multicodec, crypto/crypto, builders],
+  libp2p/[switch, peerinfo, multiaddress, crypto/crypto, builders],
   libp2p/protocols/connectivity/autonatv2/[server, service],
-  libp2p/protocols/pubsub/[
-    pubsub, gossipsub, rpc/message, rpc/messages, peertable, pubsubpeer],
+  libp2p/protocols/pubsub/[pubsub, gossipsub, rpc/message, rpc/messages],
   libp2p/stream/connection,
 
   # Local networking modules
-  ./[bincode, discovery, protocols,
-     libp2p_json_serialization, peer_pool, peer_scores],
+  ./[bincode, discovery, protocols, peer_pool, peer_scores],
 
   # Logos chain core modules
   ../[version, conf],
   ../core/utils
 
 export
-  tables, chronos, ratelimit, version, multiaddress, peerinfo,
-  connection, libp2p_json_serialization, bincode, results,
+  tables, chronos, version, multiaddress, peerinfo,
+  connection, bincode, results,
   discovery, protocols, peer_pool, peer_scores
 
 logScope:
@@ -43,8 +40,6 @@ type
   NetKeyPair* = crypto.KeyPair
   PublicKey = crypto.PublicKey
   PrivateKey = crypto.PrivateKey
-
-  SendResult = Result[void, cstring]
 
   # TODO: This is here only to eradicate a compiler
   # warning about unused import (rpc/messages).
@@ -72,7 +67,6 @@ type
     hardMaxPeers: int
     peerPool*: PeerPool[Peer, PeerId]
     connectTimeout: chronos.Duration
-    seenThreshold: chronos.Duration
     connQueue: AsyncQueue[PeerAddr]
     seenTable: Table[PeerId, SeenItem]
     outboundTable: Table[PeerId, OutboundConnStage]
@@ -86,24 +80,15 @@ type
     peerChangeEvent: AsyncEvent
     validTopics: HashSet[string]
     backgroundTasks: seq[Future[void].Raising([CancelledError])]
-    quota: TokenBucket ## Global quota mainly for high-bandwidth stuff
-
-  AverageThroughput = object
-    count: uint64
-    average: float
 
   Peer* = ref object
     network*: LBP2PNode
     peerId*: PeerId
     connectionState*: ConnectionState
-    netThroughput: AverageThroughput
     score: int
-    quota: TokenBucket
-    lastReqTime: Moment
     connections: int
     direction: PeerType
     disconnectedFut: Future[void]
-    statistics: SyncResponseStats
 
   PeerAddr* = object
     peerId*: PeerId
@@ -160,9 +145,6 @@ const
     ## Minimal time between disconnection and reconnection attempt
 
 # Metrics for tracking network activity
-declareCounter logos_p2p_gossip_messages_sent,
-  "Number of gossip messages sent by this peer"
-
 declareCounter logos_p2p_gossip_messages_received,
   "Number of gossip messages received by this peer"
 
@@ -178,28 +160,9 @@ declareCounter logos_p2p_timeout_dials,
 declareGauge logos_p2p_peers,
   "Number of active libp2p peers"
 
-declareCounter logos_p2p_reqresp_messages_sent,
-  "Number of Req/Resp messages sent", labels = ["protocol"]
-
-declareCounter logos_p2p_reqresp_messages_received,
-  "Number of Req/Resp messages received", labels = ["protocol"]
-
-declareCounter logos_p2p_reqresp_messages_failed,
-  "Number of Req/Resp messages that failed decoding", labels = ["protocol"]
-
-declareCounter logos_p2p_reqresp_messages_throttled,
-  "Number of Req/Resp messages that were throttled", labels = ["protocol"]
-
 when not (crypto.PKScheme.Ed25519 in crypto.SupportedSchemes):
   {.fatal:
     "Incorrect building process, please use -d:\"libp2p_pki_schemes=ed25519\"".}
-
-const
-  NetworkInsecureKeyPassword = "INSECUREPASSWORD"
-  maxRequestQuota = 1000000
-  maxGlobalQuota = 2 * maxRequestQuota
-    ## Roughly, this means we allow 2 peers to sync from us at a time
-  fullReplenishTime = 5.seconds
 
 func shortLog*(peer: Peer): string = shortLog(peer.peerId)
 chronicles.formatIt(Peer): shortLog(it)
@@ -210,8 +173,6 @@ proc init(T: type Peer, network: LBP2PNode, peerId: PeerId): Peer =
     peerId: peerId,
     network: network,
     connectionState: ConnectionState.None,
-    lastReqTime: now(chronos.Moment),
-    quota: TokenBucket.new(maxRequestQuota.int, fullReplenishTime),
   )
 
 func peerId*(node: LBP2PNode): PeerId =
@@ -237,67 +198,11 @@ func getScore*(a: Peer): int {.inline.} =
   ## Returns current score value for peer ``peer``.
   a.score
 
-func updateScore*(peer: Peer, score: int) {.inline.} =
-  ## Update peer's ``peer`` score with value ``score``.
-  peer.score = peer.score + score
-  if peer.score > PeerScoreHighLimit:
-    peer.score = PeerScoreHighLimit
-
-func updateStats*(peer: Peer, index: SyncResponseKind,
-                  value: uint64) {.inline.} =
-  ## Update peer's ``peer`` specific ``index`` statistics with value ``value``.
-  peer.statistics.update(index, value)
-
-func getStats*(peer: Peer, index: SyncResponseKind): uint64 {.inline.} =
-  ## Returns current statistics value for peer ``peer`` and index ``index``.
-  peer.statistics.get(index)
-
-func calcThroughput(dur: Duration, value: uint64): float =
-  let secs = float(chronos.seconds(1).nanoseconds)
-  if isZero(dur):
-    0.0
-  else:
-    float(value) * (secs / float(dur.nanoseconds))
-
-
-func netKbps*(peer: Peer): float {.inline.} =
-  ## Returns current network throughput average value in Kbps for peer ``peer``.
-  round(((peer.netThroughput.average / 1024) * 10_000) / 10_000)
 
 # /!\ Must be exported to be seen by `peerpool`.
 func cmp*(a, b: Peer): int =
-  if a.score == b.score:
-    cmp(a.netThroughput.average, b.netThroughput.average)
-  else:
-    cmp(a.score, b.score)
+  cmp(a.score, b.score)
 
-
-template awaitQuota*(peerParam: Peer, costParam: float, protocolIdParam: string) =
-  let
-    peer = peerParam
-    cost = int(costParam)
-
-  if not peer.quota.tryConsume(cost.int):
-    let protocolId = protocolIdParam
-    debug "Awaiting peer quota", peer, cost = cost, protocolId = protocolId
-    logos_p2p_reqresp_messages_throttled.inc(1, [protocolId])
-    await peer.quota.consume(cost.int)
-
-template awaitQuota*(
-    networkParam: LBP2PNode, costParam: float, protocolIdParam: string) =
-  let
-    network = networkParam
-    cost = int(costParam)
-
-  if not network.quota.tryConsume(cost.int):
-    let protocolId = protocolIdParam
-    debug "Awaiting network quota", peer, cost = cost, protocolId = protocolId
-    logos_p2p_reqresp_messages_throttled.inc(1, [protocolId])
-    await network.quota.consume(cost.int)
-
-func allowedOpsPerSecondCost*(n: int): float =
-  const replenishRate = (maxRequestQuota / fullReplenishTime.nanoseconds.float)
-  (replenishRate * 1000000000'f / n.float)
 
 
 proc isSeen(network: LBP2PNode, peerId: PeerId): bool =
@@ -634,16 +539,12 @@ proc new(T: type LBP2PNode,
          switch: Switch, pubsub: GossipSub,
          announcedAddresses: openArray[MultiAddress],
          bootstrapPeers: openArray[PeerAddr],
-         mountedProtocols: MountedLogosProtocols = MountedLogosProtocols(),
+         mountedProtocols = MountedLogosProtocols(),
          rng: ref HmacDrbgContext): T =
   when not defined(local_testnet):
-    let
-      connectTimeout = chronos.minutes(1)
-      seenThreshold = chronos.minutes(5)
+    let connectTimeout = chronos.minutes(1)
   else:
-    let
-      connectTimeout = chronos.seconds(10)
-      seenThreshold = chronos.seconds(10)
+    let connectTimeout = chronos.seconds(10)
 
   let node = T(
     switch: switch,
@@ -657,7 +558,6 @@ proc new(T: type LBP2PNode,
     mountedProtocols: mountedProtocols,
     rng: rng,
     connectTimeout: connectTimeout,
-    seenThreshold: seenThreshold,
     announcedAddresses: @announcedAddresses,
     bootstrapPeers: @bootstrapPeers,
     bootstrapTimeout:
@@ -666,7 +566,6 @@ proc new(T: type LBP2PNode,
       else:
         DefaultBootstrapTimeout.seconds,
     peerChangeEvent: newAsyncEvent(),
-    quota: TokenBucket.new(maxGlobalQuota, fullReplenishTime),
   )
 
   proc peerHook(
@@ -711,14 +610,14 @@ proc startListening*(node: LBP2PNode) {.async.} =
     debug "No advertised addresses configured"
 
 proc peerTrimmerHeartbeat(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
-  # Disconnect peers in excess of the (soft) max peer count
+  # Disconnect peers in excess of the (soft) max peer count (lowest scoring first)
   while true:
     let excessPeers = node.peerPool.len - node.wantedPeers
 
     if excessPeers > 0:
       var dropped = 0
-      for peer in node.peerPool.peers:
-        debug "Trimming excess peer", peer = peer.peerId
+      for peer in node.peerPool.peers(order = SortOrder.Ascending):
+        debug "Trimming excess lowest-scoring peer", peer = peer.peerId
         await peer.disconnect(ClientShutDown)
         inc dropped
         if dropped == excessPeers:
@@ -1164,9 +1063,6 @@ proc createLBP2PNode*(
 
   ok node
 
-func shortForm*(id: NetKeyPair): string =
-  $PeerId.init(id.pubkey)
-
 proc subscribe*(
     node: LBP2PNode, topic: string, topicParams: TopicParams,
     enableTopicMetrics: bool = false) =
@@ -1241,36 +1137,7 @@ proc addAsyncValidator*[MsgType](
 
   node.pubsub.addValidator(topic, execValidator)
 
-proc unsubscribe*(node: LBP2PNode, topic: string) =
-  node.pubsub.unsubscribeAll(topic)
-
-func gossipEncode(msg: auto): seq[byte] =
-  let uncompressed = Bincode.encode(msg)
-  # This function only for messages we create. A message this large amounts to
-  # an internal logic error.
-  doAssert uncompressed.lenu64 <= MAX_PAYLOAD_SIZE
-
-  uncompressed
-
-proc broadcast(node: LBP2PNode, topic: string, msg: seq[byte]):
-    Future[SendResult] {.async: (raises: [CancelledError]).} =
-  let peers = await node.pubsub.publish(topic, msg)
-
-  if peers > 0:
-    inc logos_p2p_gossip_messages_sent
-    ok()
-  else:
-    err("No peers on libp2p topic")
-
-proc broadcast(node: LBP2PNode, topic: string, msg: auto):
-    Future[SendResult] {.async: (raises: [CancelledError], raw: true).} =
-  # Avoid {.async.} copies of message while broadcasting
-  broadcast(node, topic, gossipEncode(msg))
-
 when defined(unittest) or defined(test):
-  func outboundTableContains*(node: LBP2PNode, pid: PeerId): bool {.inline.} =
-    pid in node.outboundTable
-
   func outboundConnQueueLen*(node: LBP2PNode): int {.inline.} =
     node.connQueue.len
 

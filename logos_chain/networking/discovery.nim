@@ -56,7 +56,7 @@ proc collectKadDiscoveredPeers[T](
   if isNil(kad) or isNil(sw) or isNil(peerPool):
     return @[]
   var
-    seen = initHashSet[PeerId]()
+    seen: HashSet[PeerId]
     discovered: seq[DiscoveredPeerAddr]
   let selfId = sw.peerInfo.peerId
   for bucket in kad.rtable.buckets:
@@ -88,7 +88,7 @@ proc enqueueKadDiscoveredPeers*[T](
   (discoveredPeers.len, queued)
 
 type
-  BootstrapDial* = proc(
+  BootstrapDial = proc(
     b: PeerInfo
   ): Future[bool].Raising([CancelledError]) {.gcsafe, raises: [].}
 

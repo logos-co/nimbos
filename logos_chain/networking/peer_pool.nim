@@ -71,19 +71,21 @@ iterator pairs*[A, B](pool: PeerPool[A, B]): (B, A) =
 
 proc resort[A, B](
     pool: PeerPool[A, B],
-    unsorted: var openArray[PeerIndex]
+    unsorted: var openArray[PeerIndex],
+    order: SortOrder = SortOrder.Descending,
 ) =
   mixin `cmp`
   proc pcmp(a, b: PeerIndex): int {.closure.} =
     cmp(pool.storage[distinctBase(a)].data, pool.storage[distinctBase(b)].data)
-  unsorted.sort(pcmp, order = SortOrder.Descending)
+  unsorted.sort(pcmp, order)
 
 proc resorted[A, B](
     pool: PeerPool[A, B],
-    unsorted: openArray[PeerIndex]
+    unsorted: openArray[PeerIndex],
+    order: SortOrder = SortOrder.Descending,
 ): seq[PeerIndex] =
   var res = @unsorted
-  pool.resort(res)
+  pool.resort(res, order)
   res
 
 proc addToStorage[A, B](pool: PeerPool[A, B], item: PeerItem[A]): PeerIndex =
@@ -713,14 +715,15 @@ proc acquireOutgoingPeers*[A, B](
 
 iterator peers*[A, B](
     pool: PeerPool[A, B],
-    filter = {PeerType.Incoming, PeerType.Outgoing}
+    filter = {PeerType.Incoming, PeerType.Outgoing},
+    order: SortOrder = SortOrder.Descending,
 ): A =
   ## Iterate over sorted list of peers.
   ##
-  ## All peers will be sorted by equation `>`(Peer1, Peer2), so biggest values
-  ## will be first.
+  ## By default, peers will be sorted by equation `>`(Peer1, Peer2), so biggest values
+  ## will be first (order = SortOrder.Descending).
   ##
-  ## NOTE: While it safe to use this iterator in combination with await calls,
+  ## NOTE: While it is safe to use this iterator in combination with await calls,
   ## consider that right after `await` call, PeerPool could become different
   ## from the snapshot this iterator provides.
   var unsorted: seq[PeerIndex]
@@ -731,21 +734,22 @@ iterator peers*[A, B](
   # We allocate new sequence here to avoid problems with missing indices when
   # await operation could be part of iteration.
   let sortedPeers =
-    pool.resorted(unsorted).mapIt(pool.storage[distinctBase(it)].data)
+    pool.resorted(unsorted, order).mapIt(pool.storage[distinctBase(it)].data)
   for peer in sortedPeers:
     yield peer
 
 iterator peers*[A, B](
     pool: PeerPool[A, B],
     filter: set[PeerType],
-    customFilter: PeerCustomFilterCallback[A]
+    customFilter: PeerCustomFilterCallback[A],
+    order: SortOrder = SortOrder.Descending,
 ): A =
   ## Iterate over sorted list of peers.
   ##
-  ## All peers will be sorted by equation `>`(Peer1, Peer2), so biggest values
-  ## will be first.
+  ## By default, peers will be sorted by equation `>`(Peer1, Peer2), so biggest values
+  ## will be first (order = SortOrder.Descending).
   ##
-  ## NOTE: While it safe to use this iterator in combination with await calls,
+  ## NOTE: While it is safe to use this iterator in combination with await calls,
   ## consider that right after `await` call, PeerPool could become different
   ## from the snapshot this iterator provides.
   var unsorted: seq[PeerIndex]
@@ -758,7 +762,7 @@ iterator peers*[A, B](
   # We allocate new sequence here to avoid problems with missing indices when
   # await operation could be part of iteration.
   let sortedPeers =
-    pool.resorted(unsorted).mapIt(pool.storage[distinctBase(it)].data)
+    pool.resorted(unsorted, order).mapIt(pool.storage[distinctBase(it)].data)
   for peer in sortedPeers:
     yield peer
 
