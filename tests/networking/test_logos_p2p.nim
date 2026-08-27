@@ -129,7 +129,7 @@ suite "P2P stack — protocol negotiation and Identify":
       let conn = await node1.switch.dial(
         pid2,
         node2.switch.peerInfo.addrs,
-        logosKadCodec(LogosNetworkKind.Testnet)
+        kadCodec(LogosNetworkKind.Testnet)
       )
       check not isNil(conn)
       check conn.protocol == "/logos-blockchain-testnet/kad/1.0.0"

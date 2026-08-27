@@ -17,7 +17,7 @@ import
   ../conf
 
 type
-  MountedLogosProtocols* = object
+  MountedProtocols* = object
     kad*: KadDHT
     identify*: Identify
       ## Autonomous protocol managed internally by the switch after mounting.
@@ -28,30 +28,30 @@ const
   LogosKadMainnet = "/logos-blockchain/kad/1.0.0"
   LogosKadTestnet = "/logos-blockchain-testnet/kad/1.0.0"
 
-func logosIdentifyCodec(network: LogosNetworkKind): string =
+func identifyCodec(network: LogosNetworkKind): string =
   case network
   of Mainnet: LogosIdentifyMainnet
   of Testnet: LogosIdentifyTestnet
 
-func logosKadCodec*(network: LogosNetworkKind): string =
+func kadCodec*(network: LogosNetworkKind): string =
   case network
   of Mainnet: LogosKadMainnet
   of Testnet: LogosKadTestnet
 
-proc mountLogosIdentifyProtocols*(
+proc mountIdentifyProtocol*(
     sw: Switch, peerInfo: PeerInfo, network: LogosNetworkKind
 ): Identify {.raises: [LPError].} =
-  let codec = logosIdentifyCodec(network)
+  let codec = identifyCodec(network)
   let ident = Identify.new(peerInfo)
   ident.codec = codec
   ident.codecs = @[codec]
   sw.mount(ident)
   ident
 
-proc mountLogosKadProtocols*(
+proc mountKadProtocol*(
     sw: Switch, network: LogosNetworkKind, rng: Rng
 ): KadDHT {.raises: [LPError].} =
-  let codec = logosKadCodec(network)
+  let codec = kadCodec(network)
   let kad = KadDHT.new(sw, rng = rng, codec = codec)
   kad.codecs = @[codec]
   sw.mount(kad)

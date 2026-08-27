@@ -70,7 +70,7 @@ type
     seenTable: Table[PeerId, SeenItem]
     outboundTable: Table[PeerId, OutboundConnStage]
     connEvents: Table[PeerId, AsyncEvent]
-    mountedProtocols*: MountedLogosProtocols
+    mountedProtocols*: MountedProtocols
     rng*: ref HmacDrbgContext
     peers: Table[PeerId, Peer]
     announcedAddresses*: seq[MultiAddress]
@@ -541,7 +541,7 @@ proc new(T: type LBP2PNode,
          switch: Switch, pubsub: GossipSub,
          announcedAddresses: openArray[MultiAddress],
          bootstrapPeers: openArray[PeerAddr],
-         mountedProtocols = MountedLogosProtocols(),
+         mountedProtocols = MountedProtocols(),
          rng: ref HmacDrbgContext): T =
   when not defined(local_testnet):
     let connectTimeout = chronos.minutes(1)
@@ -627,7 +627,7 @@ proc peerTrimmerHeartbeat(node: LBP2PNode) {.async: (raises: [CancelledError]).}
 
     await sleepAsync(1.seconds div max(1, excessPeers))
 
-template bootstrapLinkMaintenanceShouldDisconnect*(
+template shouldDisconnectBootstrap*(
     peerPoolLen, wantedPeers, bootstrapPeersInPool: int
 ): bool =
   ## True when the node is at/above its peer target and at least one admitted
@@ -644,9 +644,9 @@ proc runBootstrapLinkMaintenanceTick*(
     node: LBP2PNode
 ) {.async: (raises: [CancelledError]).} =
   ## One evaluation of bootstrap link maintenance: disconnect configured bootstrap
-  ## peers when ``bootstrapLinkMaintenanceShouldDisconnect`` holds. Used by
+  ## peers when ``shouldDisconnectBootstrap`` holds. Used by
   ## ``bootstrapHeartbeat`` and tests (no fixed sleep). Policy matches the P2P Network
-  ## Specification (see doc comment on ``bootstrapLinkMaintenanceShouldDisconnect``):
+  ## Specification (see doc comment on ``shouldDisconnectBootstrap``):
   ## https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/draft/p2p-network.md
   ## https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/p2p-network-bootstrapping.md
   if node.bootstrapPeers.len == 0:
@@ -657,7 +657,7 @@ proc runBootstrapLinkMaintenanceTick*(
       node.peerPool.hasPeer(it.peerId)
     ).mapIt(it.peerId)
 
-  if not bootstrapLinkMaintenanceShouldDisconnect(
+  if not shouldDisconnectBootstrap(
       node.peerPool.len, node.wantedPeers, connectedBootstrapPeers.len):
     return
 
@@ -813,7 +813,7 @@ proc start*(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
       notice "Starting Kad DHT with bootstrap peers",
         bootstrapPeers = kadBootstrapInfos.len
       debug "Bootstrapping Kad DHT instance"
-      await logosKadBootstrap(
+      await kadBootstrap(
         node.mountedProtocols.kad, kadBootstrapInfos,
         proc(b: PeerInfo): Future[bool].Raising([CancelledError]) =
           connectViaConnQueue(
@@ -984,15 +984,15 @@ proc createLBP2PNode*(
   let switch = ?newSwitch(config, netKeys.seckey, hostAddress, rng)
   let ident =
     try:
-      mountLogosIdentifyProtocols(switch, switch.peerInfo, config.logosNetwork)
+      mountIdentifyProtocol(switch, switch.peerInfo, config.logosNetwork)
     except LPError as exc:
       return err("Cannot mount Logos Identify protocols: " & exc.msg)
   let kad =
     try:
-      mountLogosKadProtocols(switch, config.logosNetwork, switch.rng)
+      mountKadProtocol(switch, config.logosNetwork, switch.rng)
     except LPError as exc:
       return err("Cannot mount Logos Kad protocols: " & exc.msg)
-  let mounted = MountedLogosProtocols(kad: kad, identify: ident)
+  let mounted = MountedProtocols(kad: kad, identify: ident)
 
   func msgIdProvider(m: messages.Message): Result[seq[byte], ValidationResult] =
     ok(gossipId(m.data, m.topic))

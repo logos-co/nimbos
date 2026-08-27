@@ -116,10 +116,10 @@ suite "Kad discovery — peerstore, rtable, peer pool":
     finally:
       await node.stop()
 
-  asyncTest "logosKadBootstrap: nil or empty bootstrap nodes is safe no-op":
-    await logosKadBootstrap(nil, @[], nil)
+  asyncTest "kadBootstrap: nil or empty bootstrap nodes is safe no-op":
+    await kadBootstrap(nil, @[], nil)
 
-  asyncTest "logosKadBootstrap: dials bootstrap nodes and runs lookup on success":
+  asyncTest "kadBootstrap: dials bootstrap nodes and runs lookup on success":
     let listener = await startTestNode("kad-boot-listener", maxPeers = 8)
     let dialer = await startTestNode("kad-boot-dialer", maxPeers = 8)
 
@@ -134,7 +134,7 @@ suite "Kad discovery — peerstore, rtable, peer pool":
       dialed = true
       try:
         let conn = await dialer.switch.dial(
-          b.peerId, b.addrs, logosKadCodec(LogosNetworkKind.Testnet))
+          b.peerId, b.addrs, kadCodec(LogosNetworkKind.Testnet))
         not isNil(conn)
       except CancelledError as exc:
         raise exc
@@ -142,13 +142,13 @@ suite "Kad discovery — peerstore, rtable, peer pool":
         false
 
     try:
-      await logosKadBootstrap(kad, @[bInfo], dialPeer)
+      await kadBootstrap(kad, @[bInfo], dialPeer)
       check dialed
     finally:
       await dialer.stop()
       await listener.stop()
 
-  asyncTest "logosKadBootstrap: handles failed bootstrap dial without error":
+  asyncTest "kadBootstrap: handles failed bootstrap dial without error":
     let node = await startTestNode("kad-bootstrap-fail-test", maxPeers = 8)
     let kad = node.mountedProtocols.kad
     let bPid = getRandomPeerId()
@@ -159,7 +159,7 @@ suite "Kad discovery — peerstore, rtable, peer pool":
       false
 
     try:
-      await logosKadBootstrap(kad, @[bInfo], mockDialFail)
+      await kadBootstrap(kad, @[bInfo], mockDialFail)
     finally:
       await node.stop()
 
@@ -238,27 +238,27 @@ suite "Bootstrap multiaddress parsing":
     check parsedNodes[0][0] == pid
 
 suite "Bootstrap link maintenance and disconnection":
-  test "bootstrapLinkMaintenanceShouldDisconnect: predicate boundaries":
+  test "shouldDisconnectBootstrap: predicate boundaries":
     # Below target -> do not disconnect
-    check not bootstrapLinkMaintenanceShouldDisconnect(
+    check not shouldDisconnectBootstrap(
       peerPoolLen = 1, wantedPeers = 4, bootstrapPeersInPool = 1)
-    check not bootstrapLinkMaintenanceShouldDisconnect(
+    check not shouldDisconnectBootstrap(
       peerPoolLen = 3, wantedPeers = 4, bootstrapPeersInPool = 1)
 
     # At or above target, but all peers in pool are bootstrap nodes -> do not disconnect
-    check not bootstrapLinkMaintenanceShouldDisconnect(
+    check not shouldDisconnectBootstrap(
       peerPoolLen = 4, wantedPeers = 4, bootstrapPeersInPool = 4)
-    check not bootstrapLinkMaintenanceShouldDisconnect(
+    check not shouldDisconnectBootstrap(
       peerPoolLen = 6, wantedPeers = 4, bootstrapPeersInPool = 6)
 
     # At target with at least 1 non-bootstrap peer -> disconnect
-    check bootstrapLinkMaintenanceShouldDisconnect(
+    check shouldDisconnectBootstrap(
       peerPoolLen = 4, wantedPeers = 4, bootstrapPeersInPool = 1)
-    check bootstrapLinkMaintenanceShouldDisconnect(
+    check shouldDisconnectBootstrap(
       peerPoolLen = 4, wantedPeers = 4, bootstrapPeersInPool = 3)
 
     # Above target with non-bootstrap peers -> disconnect
-    check bootstrapLinkMaintenanceShouldDisconnect(
+    check shouldDisconnectBootstrap(
       peerPoolLen = 8, wantedPeers = 4, bootstrapPeersInPool = 2)
 
   asyncTest "runBootstrapLinkMaintenanceTick: disconnects bootstrap peer when pool target is met":

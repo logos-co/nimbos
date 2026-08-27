@@ -92,7 +92,7 @@ type
     b: PeerInfo
   ): Future[bool].Raising([CancelledError]) {.gcsafe, raises: [].}
 
-proc logosKadBootstrap*(
+proc kadBootstrap*(
     kad: KadDHT,
     bootstrapNodes: seq[PeerInfo],
     dialBootstrapPeer: BootstrapDial,
@@ -100,7 +100,7 @@ proc logosKadBootstrap*(
   if isNil(kad) or bootstrapNodes.len == 0:
     return
 
-  debug "Starting Logos Kad bootstrap", peers = bootstrapNodes.len
+  debug "Starting Kad bootstrap", peers = bootstrapNodes.len
 
   kad.updatePeers(bootstrapNodes)
 
