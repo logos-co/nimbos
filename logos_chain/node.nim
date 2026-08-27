@@ -243,7 +243,7 @@ proc runOnSecondLoop(node: LBNode) {.async.} =
 func connectedPeersCount(node: LBNode): int =
   len(node.network.peerPool)
 
-func toValidationResult*(err: BlockApplyError): ValidationResult =
+func toValidationResult(err: BlockApplyError): ValidationResult =
   case err.kind
   of BlockApplyErrorKind.AlreadyApplied,
      BlockApplyErrorKind.FutureSlot,
@@ -254,7 +254,7 @@ func toValidationResult*(err: BlockApplyError): ValidationResult =
      BlockApplyErrorKind.StatelessTxRejected:
     ValidationResult.Reject
 
-proc handleGossipBlock*(
+proc handleGossipBlock(
     node: LBNode, blk: Block, src: PeerId
 ): Future[ValidationResult] {.async: (raises: [CancelledError]).} =
   trace "GossipSub handling received block",
@@ -280,7 +280,7 @@ proc handleGossipBlock*(
       err = applyRes.error.kind
     toValidationResult(applyRes.error)
 
-proc handleGossipTx*(node: LBNode, tx: SignedMantleTx, src: PeerId): ValidationResult =
+proc handleGossipTx(node: LBNode, tx: SignedMantleTx, src: PeerId): ValidationResult =
   trace "GossipSub handling received tx",
     opCount = tx.tx.ops.len,
     src = $src
@@ -295,7 +295,7 @@ proc handleGossipTx*(node: LBNode, tx: SignedMantleTx, src: PeerId): ValidationR
 
   ValidationResult.Accept
 
-proc installMessageValidators*(node: LBNode): seq[string] =
+proc installMessageValidators(node: LBNode): seq[string] =
   var topics: seq[string]
 
   let blockTopic = node.deploymentSettings.cryptarchia.gossipsubProtocol
