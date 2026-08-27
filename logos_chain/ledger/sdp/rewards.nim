@@ -24,16 +24,6 @@ func rewardOpId*(service: ServiceType, epoch: EpochNumber): Hash32 =
   preimage[1 ..< 5] = encodeLe(epoch)
   blake2b256Hash(preimage)
 
-func cmpNumeric*(a, b: ZkPublicKey): int =
-  ## Ascending numeric field-element order over canonical encodings.
-  let
-    aBytes = encodeFieldElement(a)
-    bBytes = encodeFieldElement(b)
-  for i in countdown(31, 0):
-    if aBytes[i] != bBytes[i]:
-      return cmp(aBytes[i], bBytes[i])
-  0
-
 func cmpByZkId(x, y: (ZkPublicKey, Value)): int =
   cmpNumeric(x[0], y[0])
 

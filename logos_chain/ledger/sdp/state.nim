@@ -131,8 +131,8 @@ func finalizeWithdrawals*(
     state: sink SdpState,
     currentEpoch: EpochNumber,
 ): SdpState =
-  ## Removes declarations whose ``withdraw_at <= current_epoch - 2`` and
-  ## unlocks notes no longer bound to any declaration.
+  ## Removes declarations withdrawn at or before
+  ## ``current_epoch - SnapshotFinalizationDelay``, and unlocks the freed notes.
   if currentEpoch < SnapshotFinalizationDelay:
     return state
   let threshold = currentEpoch - SnapshotFinalizationDelay

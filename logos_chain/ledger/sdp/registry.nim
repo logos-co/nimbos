@@ -41,7 +41,7 @@ type
 
 func validateInactivityPeriod(params: ServiceParameters) =
   doAssert params.inactivityPeriod >= SnapshotFinalizationDelay,
-    "inactivity_period must be >= 2 epochs"
+    "inactivity_period must be >= " & $SnapshotFinalizationDelay & " epochs"
 
 func blendRewardsParams*(
     settings: deploy.DeploymentSettings, slotsPerEpoch: uint64
@@ -139,11 +139,9 @@ func getEpochSnapshot*(
     service: ServiceType,
     epochNumber: EpochNumber,
 ): Opt[SdpState] =
-  # One lookup per level; the outer copy is shallow, the states inside are
-  # persistent structures.
-  var byEpoch = snapshots.getOrDefault(service)
-  byEpoch.withValue(epochNumber, state):
-    return Opt.some(state[])
+  snapshots.withValue(service, byEpoch):
+    byEpoch.withValue(epochNumber, state):
+      return Opt.some(state)
   Opt.none(SdpState)
 
 func getParametersAt*(
@@ -151,13 +149,10 @@ func getParametersAt*(
     service: ServiceType,
     epoch: EpochNumber,
 ): Opt[ServiceParameters] =
-  if service notin registry.params.parameters:
-    return Opt.none(ServiceParameters)
-  let params = registry.params.parameters.getOrDefault(service)
-  if params.epoch <= epoch:
-    Opt.some(params)
-  else:
-    Opt.none(ServiceParameters)
+  registry.params.parameters.withValue(service, params):
+    if params.epoch <= epoch:
+      return Opt.some(params)
+  Opt.none(ServiceParameters)
 
 func notWithdrawnAt(info: DeclarationInfo, epoch: EpochNumber): bool =
   ## Whether no scheduled withdrawal has taken effect by ``epoch``.

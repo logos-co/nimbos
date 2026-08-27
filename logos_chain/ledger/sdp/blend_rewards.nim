@@ -34,7 +34,7 @@ type
     # TODO(zk): the real verifier carries the core/leader/pow public-input
     # branches; they land together with the Groth16 circuit.
 
-  TargetEpoch* = object
+  TargetEpoch = object
     epoch*: EpochNumber
     providers*: HashTrieMap[ProviderId, tuple[zkId: ZkPublicKey, index: uint64]]
     tokenParams*: TokenParams
@@ -42,7 +42,7 @@ type
       ## ``H(R)_e``, hashed once at rotation; valid prefix = tokenParams.byteLen
     epochIncome*: Value
 
-  SubmissionTracker* = object
+  SubmissionTracker = object
     submitted*: HashTrieMap[ProviderId, tuple[zkId: ZkPublicKey, distance: uint64]]
       ## One entry per provider; the premium set derives from the
       ## distances at payout, so no second representation can drift.
@@ -79,6 +79,9 @@ func validateBlendRewardsParams*(params: BlendRewardsParams) =
   doAssert params.numBlendLayers > 0, "num_blend_layers must be positive"
   doAssert params.minimumNetworkSize > 0,
     "minimum_network_size must be positive"
+  doAssert float64(params.roundsPerEpoch) * params.messageFrequencyPerRound *
+      float64(params.numBlendLayers) > 0.0,
+    "C * beta_C must be positive"
 
 func acceptAllPoq*(poq: ProofOfQuota, signingKey: Ed25519PublicKey): bool =
   ## Stand-in verifier until the Blend Groth16 circuit lands; every other
