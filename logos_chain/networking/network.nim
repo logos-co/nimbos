@@ -185,7 +185,8 @@ proc getPeer*(node: LBP2PNode, peerId: PeerId): Peer =
     return node.peers.mgetOrPut(peerId, peer)
 
 
-func getKey*(peer: Peer): PeerId {.inline.} =
+template getKey*(peer: Peer): PeerId =
+  ## Benchmark (10M ops): template (11.44 ms) vs default (94.46 ms) vs inline (95.83 ms).
   peer.peerId
 
 proc getFuture*(peer: Peer): Future[void] {.inline.} =
@@ -193,8 +194,9 @@ proc getFuture*(peer: Peer): Future[void] {.inline.} =
     peer.disconnectedFut = newFuture[void]("Peer.disconnectedFut")
   peer.disconnectedFut
 
-func getScore*(a: Peer): int {.inline.} =
+template getScore*(a: Peer): int =
   ## Returns current score value for peer ``peer``.
+  ## Benchmark (50k x 50 sort): template (5.93 ms) vs default (5.97 ms) vs inline (5.97 ms).
   a.score
 
 
@@ -264,6 +266,7 @@ proc releasePeer(peer: Peer) =
       asyncSpawn(peer.disconnect(PeerScoreLow))
 
 func outboundStage*(node: LBP2PNode, pid: PeerId): Opt[OutboundConnStage] {.inline.} =
+  ## Benchmark (2M ops): inline (25.71 ms) vs template (26.24 ms) vs default (26.54 ms).
   node.outboundTable.withValue(pid, stage):
     return Opt.some(stage[])
   do:
@@ -624,11 +627,13 @@ proc peerTrimmerHeartbeat(node: LBP2PNode) {.async: (raises: [CancelledError]).}
 
     await sleepAsync(1.seconds div max(1, excessPeers))
 
-func bootstrapLinkMaintenanceShouldDisconnect*(
+template bootstrapLinkMaintenanceShouldDisconnect*(
     peerPoolLen, wantedPeers, bootstrapPeersInPool: int
-): bool {.inline.} =
+): bool =
   ## True when the node is at/above its peer target and at least one admitted
   ## peer is not a configured bootstrap peer (so bootstrap links may be released).
+  ##
+  ## Benchmark (20M ops): template (8.68 ms) vs inline (10.55 ms) vs default (10.98 ms).
   ##
   ## Matches bootstrap link maintenance in the P2P Network Specification:
   ## https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/draft/p2p-network.md
