@@ -91,6 +91,15 @@ func reqFloat*(root: YamlNode, path: openArray[string]): Result[float, string] =
 func reqUInt64*(root: YamlNode, path: openArray[string]): Result[uint64, string] =
   reqParsed(root, path, parseBiggestUInt, "non-negative integer")
 
+func reqUInt32*(root: YamlNode, path: openArray[string]): Result[uint32, string] =
+  # `reqParsed` drops the message of any `ValueError` and asks for an integer
+  # again. A value that parses but does not fit 32 bits gets its own message.
+  let v = ? reqUInt64(root, path)
+  if v > uint64(high(uint32)):
+    return err(
+      "deployment-settings: " & path.join(".") & " exceeds 32 bits: " & $v)
+  ok(uint32(v))
+
 func parseDecimalRatio(s: string): NonNegativeRatio {.raises: [ValueError].} =
   ## Exact decimal-scalar → rational conversion (`"0.5"` → 5/10, `"1"` → 1/1).
   ## No float ever materialises, so consensus parameters parse

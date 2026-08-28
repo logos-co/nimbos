@@ -112,6 +112,14 @@ proc tryApplyTransfer*(
   ?verifyZkSig(sig, txHash, r.pks)
   ok((r.state, r.balance))
 
+func insertMintedUtxos*(
+    s: sink CryptarchiaState, minted: openArray[Utxo]
+): CryptarchiaState =
+  ## Inserts header-minted reward notes into the live UTXO set, in order.
+  for u in minted:
+    s.utxos = s.utxos.insert(u.id, u).store
+  s
+
 proc tryApplyLeaderClaim*(
     s: sink CryptarchiaState,
     op: LeaderClaimPayload,

@@ -98,6 +98,18 @@ func encodeFieldElement*(value: FieldElement): array[32, byte] =
   ## FieldElement = 32BYTE (BN254 scalar, little-endian).
   value.toBytes()
 
+func cmpNumeric*(a, b: FieldElement): int =
+  ## Ascending numeric order over the canonical encodings.
+  # The encoding is little-endian, so the scan starts at the high byte.
+  # A byte-wise scan from the low end would order the values wrongly.
+  let
+    aBytes = encodeFieldElement(a)
+    bBytes = encodeFieldElement(b)
+  for i in countdown(31, 0):
+    if aBytes[i] != bBytes[i]:
+      return cmp(aBytes[i], bBytes[i])
+  0
+
 func encodeHash32*(value: Hash32): Hash32 =
   ## Hash32 = 32BYTE.
   value

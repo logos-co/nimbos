@@ -40,6 +40,7 @@ type
     states: Table[Id, LedgerState]
     config: LedgerConfig
     leaderProofVerifier: LeaderProofVerifier
+    poqVerifier: PoqVerifier
 
 func latestUtxos*(s: LedgerState): lent UtxoStore =
   ## The live UTXO set.
@@ -85,7 +86,7 @@ proc fromGenesis*(
   ## Genesis state from the genesis block's transactions: ops run through the
   ## pure transition cores (no proof or balance checks), then epochs are
   ## seeded from the faucet-filtered stake and ceremony nonce.
-  const genesisEpoch = 0'u64
+  const genesisEpoch: EpochNumber = 0
   var
     s = LedgerState(
       cryptarchiaLedger: CryptarchiaState.init(),
@@ -142,12 +143,19 @@ proc tryApplyHeader*(
     # empty epochs) run with a zero counter, per the per-epoch timeframe.
     for _ in prevEpoch ..< s.epochs.activeEpoch.epoch:
       s.feeMarket = s.feeMarket.updateStorageMarket()
-    # SDP epoch finalization is part of applying the first block of the new
-    # epoch; reward distribution slots in ahead of the withdrawal removal
-    # once it lands.
-    # https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md#sdp-epoch-finalization
-    s.sdp = onEpochStarted(s.sdp, s.epochs.activeEpoch.epoch)
     s.cryptarchiaLedger.leader = ?s.cryptarchiaLedger.leader.addEpochVouchers()
+    # Rewards distribute before withdrawal removal, so a withdrawn
+    # provider still collects its final reward:
+    # https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md#sdp-epoch-finalization
+    let (blendRewards, minted) = s.sdp.blendRewards.rotateEpoch(
+      prevEpoch, s.epochs.activeEpoch.epoch,
+      s.sdp.activeBlendProviders(prevEpoch),
+      s.epochs.activeEpoch.nonce, s.sdp.params.rewardsParams)
+    s.sdp.blendRewards = blendRewards
+    s.sdp = onEpochStarted(s.sdp, s.epochs.activeEpoch.epoch)
+    # Reward notes enter the live UTXO set in mint order, before the
+    # leader proof is checked against the latest root.
+    s.cryptarchiaLedger = s.cryptarchiaLedger.insertMintedUtxos(minted)
   let
     active = s.epochs.activeEpoch
     public = LeaderPublic(
@@ -194,6 +202,7 @@ proc tryApplyTx*(
     tx: SignedMantleTx,
     epoch: EpochNumber,
     slot: SlotNumber,
+    verifyPoq: PoqVerifier,
 ): Result[tuple[state: LedgerState, balance: Balance, executionGas: Gas], LedgerError] =
   ## Applies one transaction; the returned balance is the Transfer-only
   ## delta. `slot` is used by channel ops for sequencer rotation.
@@ -249,6 +258,7 @@ proc tryApplyTx*(
         proof.sdpActiveProof,
         txHash,
         epoch,
+        verifyPoq,
       )
     of ChannelInscribe:
       s.mantleLedger = ?s.mantleLedger.tryApplyChannelInscribe(
@@ -306,13 +316,13 @@ func creditBlockRewards*(
   s.blockNumber += 1
   s.feeWindow.update(s.blockNumber, totalFeeBurned)
   let
-    # The blend share stays unassigned until service-reward distribution lands.
-    (_, leaderShare) = block_reward(
+    (blendShare, leaderShare) = block_reward(
       s.epochs.activeEpoch.totalStake,
       s.feeWindow.summedFees,
       totalFeeBurned)
     leaderReward = leaderShare.checkedAdd(totalFeeTip).valueOr:
       return err(GasOverflow)
+  s.sdp.blendRewards = ?s.sdp.blendRewards.addIncome(blendShare)
   s.cryptarchiaLedger.leader =
     s.cryptarchiaLedger.leader.addPendingRewards(leaderReward)
   ok(s)
@@ -321,6 +331,7 @@ proc tryApplyTxns*(
     state: sink LedgerState,
     txs: openArray[SignedMantleTx],
     slot: SlotNumber,
+    verifyPoq: PoqVerifier,
 ): Result[LedgerState, LedgerError] =
   ## Applies a block's transactions in order under the state's active epoch;
   ## each tx's transfer surplus must cover its total gas cost.
@@ -335,7 +346,7 @@ proc tryApplyTxns*(
     prices = s.feeMarket.gasPrices
   for tx in txs:
     let
-      r = ?s.tryApplyTx(tx, epoch, slot)
+      r = ?s.tryApplyTx(tx, epoch, slot, verifyPoq)
       storageGas = Gas(encodeSignedMantleTx(tx).len)
       totalCost = ?mandatory_fees(r.executionGas, storageGas, prices)
     s = r.state
@@ -366,14 +377,18 @@ func init*[Id](
     state: LedgerState,
     config: LedgerConfig = LedgerConfig(),
     leaderProofVerifier: LeaderProofVerifier = verifyLeaderProof,
+    poqVerifier: PoqVerifier = acceptAllPoq,
 ): Ledger[Id] =
   ## Constructs a Ledger seeded with one `(id, state)` entry.
+  # TODO(zk): the default becomes the real quota verifier when the
+  # circuit lands.
   var states = initTable[Id, LedgerState]()
   states[id] = state
   Ledger[Id](
     states: states,
     config: config,
     leaderProofVerifier: leaderProofVerifier,
+    poqVerifier: poqVerifier,
   )
 
 func state*[Id](l: Ledger[Id], id: Id): Opt[LedgerState] =
@@ -417,7 +432,7 @@ proc prepareUpdate*[Id](
   let
     parent = l.states.getOrDefault(parentId)
     afterHeader = ?parent.tryApplyHeader(slot, proof, l.config, l.leaderProofVerifier)
-    afterTxs = ?afterHeader.tryApplyTxns(txs, slot)
+    afterTxs = ?afterHeader.tryApplyTxns(txs, slot, l.poqVerifier)
   ok((id: id, state: afterTxs))
 
 {.pop.}

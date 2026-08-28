@@ -42,7 +42,8 @@ type
 
   SlotNumber* = uint64
   BlockNumber* = uint64
-  EpochNumber* = uint64
+  EpochNumber* = uint32
+  NumberOfEpochs* = uint32
   RewardVoucher* = array[32, byte]
 
   TokenValue* = uint64

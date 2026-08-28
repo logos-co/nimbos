@@ -295,7 +295,7 @@ suite "ledger/leader_claim — tryApplyTx":
         opProofs: @[OpProof(kind: opfLeaderClaim, proofOfClaimProof: claimProof)],
       )
       s0 = LedgerState(cryptarchiaLedger: CryptarchiaState(utxos: UtxoStore.init(), leader: leader))
-      r = s0.tryApplyTx(tx, epoch = 0, slot = 0)
+      r = s0.tryApplyTx(tx, epoch = 0, slot = 0, verifyPoq = acceptAllPoq)
     check r.isErr
     check r.error == InvalidProof
 
@@ -310,7 +310,7 @@ suite "ledger/leader_claim — tryApplyTx":
         opProofs: @[OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))],
       )
       s0 = LedgerState(cryptarchiaLedger: CryptarchiaState(utxos: UtxoStore.init(), leader: leader))
-      r = s0.tryApplyTx(tx, epoch = 0, slot = 0)
+      r = s0.tryApplyTx(tx, epoch = 0, slot = 0, verifyPoq = acceptAllPoq)
     check r.isErr
     check r.error == InvalidProof
 

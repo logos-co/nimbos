@@ -132,7 +132,8 @@ suite "tryApplyTx — structural error paths":
         ),
         opProofs: @[],
       ) # zero proofs vs one op
-      r = s0.tryApplyTx(tx, epoch = 0'u64, slot = 0'u64)
+      r = s0.tryApplyTx(
+        tx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
     check r.isErr
     check r.error == InvalidProof
 
@@ -160,7 +161,8 @@ suite "tryApplyTx — structural error paths":
             )
           ],
       )
-      r = s0.tryApplyTx(tx, epoch = 0'u64, slot = 0'u64)
+      r = s0.tryApplyTx(
+        tx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
     check r.isErr
     check r.error == InvalidProof
 
@@ -198,7 +200,8 @@ suite "tryApplyTx — channel ops":
           channel: mkChannelId(1), inputs: @[], outputs: @[]))]),
         opProofs: @[OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))],
       )
-      r = s0.tryApplyTx(tx, epoch = 0'u64, slot = 0'u64)
+      r = s0.tryApplyTx(
+        tx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
     check r.error == InvalidProof
 
   test "ChannelWithdraw contributes nothing to the transaction balance":
@@ -219,7 +222,8 @@ suite "tryApplyTx — channel ops":
             signatures: @[sign(kp.seckey, txHash)],
             indexes: @[ChannelKeyIndex(0)]))],
       )
-      r = s0.tryApplyTx(tx, epoch = 0'u64, slot = 0'u64)
+      r = s0.tryApplyTx(
+        tx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
     check r.isOk
     let res = r.get
     # Bridged funds never enter or leave the UTXO set, so a channel op can
@@ -250,7 +254,8 @@ suite "tryApplyTx — channel ops":
             signatures: @[sign(kp.seckey, txHash)],
             indexes: @[ChannelKeyIndex(0)]))],
       )
-      r = s0.tryApplyTx(tx, epoch = 0'u64, slot = 0'u64)
+      r = s0.tryApplyTx(
+        tx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
     check r.isOk
     let
       res = r.get
@@ -269,7 +274,8 @@ suite "tryApplyTx — channel ops":
       note = mkUtxo(value = 100, pkSeed = 1)
       s0 = mkChannelState([note], cid, kp.pubkey, [note])
       tx = mkTransferTx([note.id], [mkNote(100, pkSeed = 2)])
-      r = s0.tryApplyTx(tx, epoch = 0'u64, slot = 0'u64)
+      r = s0.tryApplyTx(
+        tx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
     check r.error == ChannelNoteSpend
 
 suite "Ledger[Id] map ops":
@@ -339,7 +345,9 @@ suite "tryApplyTx — happy path (Rust-generated fixture)":
     let
       input = mkUtxoWithPk(mkRealZkPubKey(1), value = 100)
       s0 = mkState([input])
-      r = s0.tryApplyTx(mkFixtureTransferTx(input), epoch = 0'u64, slot = 0'u64)
+      r = s0.tryApplyTx(
+        mkFixtureTransferTx(input), epoch = EpochNumber(0), slot = 0'u64,
+        verifyPoq = acceptAllPoq)
     check r.isOk
 
     let res = r.get
@@ -362,7 +370,9 @@ suite "tryApplyTx — happy path (Rust-generated fixture)":
       zkId: lockedElsewhere.note.zkPublicKey,
     )
     discard installTestDeclaration(s0.sdp, declaration, epoch = 1)
-    let r = s0.tryApplyTx(mkFixtureTransferTx(input), epoch = 0'u64, slot = 0'u64)
+    let r = s0.tryApplyTx(
+      mkFixtureTransferTx(input), epoch = EpochNumber(0), slot = 0'u64,
+      verifyPoq = acceptAllPoq)
     check r.isOk
     let res = r.get
     check res.state.epochs == s0.epochs
@@ -399,7 +409,8 @@ when false:
               OpProof(kind: opfTransfer, transferProof: default(ZkSigProof)),
             ],
         )
-        r = s0.tryApplyTx(tx, epoch = 0'u64, slot = 0'u64)
+        r = s0.tryApplyTx(
+          tx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
       check r.isOk
       let res = r.get
       check res.balance == Balance.zero
@@ -433,7 +444,8 @@ when false:
               OpProof(kind: opfChannelInscribe, ed25519SigProof: default(Ed25519SigProof)),
             ],
         )
-        r = s0.tryApplyTx(tx, epoch = 0'u64, slot = 0'u64)
+        r = s0.tryApplyTx(
+          tx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
       check r.isErr
       check r.error == InvalidProof
 
@@ -443,7 +455,7 @@ when false:
         input = mkUtxo(value = 100, pkSeed = 1)
         s0 = mkState([input])
         tx = mkTransferTx([input.id], [mkNote(100, pkSeed = 2)])
-        r = s0.tryApplyTxns([tx], slot = 0'u64)
+        r = s0.tryApplyTxns([tx], slot = 0'u64, verifyPoq = acceptAllPoq)
       check r.isOk
       check r.get.latestUtxos.len == 1
 
@@ -453,7 +465,7 @@ when false:
         s0 = mkState([input])
         tx = mkTransferTx([input.id], [mkNote(60, pkSeed = 2), mkNote(50, pkSeed = 3)])
           # sum 110 > input 100
-        r = s0.tryApplyTxns([tx], slot = 0'u64)
+        r = s0.tryApplyTxns([tx], slot = 0'u64, verifyPoq = acceptAllPoq)
       check r.isErr
       check r.error == InsufficientBalance
 
@@ -462,7 +474,7 @@ when false:
         input = mkUtxo(value = 100, pkSeed = 1)
         s0 = mkState([input])
         tx = mkTransferTx([input.id], [mkNote(50, pkSeed = 2)]) # surplus 50 < fee
-        r = s0.tryApplyTxns([tx], slot = 0'u64)
+        r = s0.tryApplyTxns([tx], slot = 0'u64, verifyPoq = acceptAllPoq)
       check r.isErr
       check r.error == InsufficientBalance
 
@@ -660,7 +672,8 @@ suite "block rewards — per-block leader crediting":
     # epoch rotation rolls it in.
     var s = mkState([mkUtxo()])
     s = s.tryApplyHeader(1'u64, mkProof(), testLedgerConfig).expect("header")
-    s = s.tryApplyTxns(noTxs, slot = 1'u64).expect("txns")
+    s = s.tryApplyTxns(
+      noTxs, slot = 1'u64, verifyPoq = acceptAllPoq).expect("txns")
     check s.cryptarchiaLedger.leader.leadersRewards == 0
     s = s.tryApplyHeader(100'u64, mkProof(), testLedgerConfig).expect("rotation")
     check s.cryptarchiaLedger.leader.leadersRewards == emission
@@ -668,8 +681,10 @@ suite "block rewards — per-block leader crediting":
   test "each applied block advances the block number":
     var s = mkState([mkUtxo()])
     check s.blockNumber == 0'u64
-    s = s.tryApplyTxns(noTxs, slot = 1'u64).expect("block 1")
-    s = s.tryApplyTxns(noTxs, slot = 2'u64).expect("block 2")
+    s = s.tryApplyTxns(
+      noTxs, slot = 1'u64, verifyPoq = acceptAllPoq).expect("block 1")
+    s = s.tryApplyTxns(
+      noTxs, slot = 2'u64, verifyPoq = acceptAllPoq).expect("block 2")
     check:
       s.blockNumber == 2'u64
       s.feeWindow.summedFees == u128(0)
@@ -693,13 +708,32 @@ suite "block rewards — per-block leader crediting":
   test "a rotating block credits the epoch it opens, not the one it closes":
     var s = mkState([mkUtxo()])
     s = s.tryApplyHeader(1'u64, mkProof(), testLedgerConfig).expect("header")
-    s = s.tryApplyTxns(noTxs, slot = 1'u64).expect("txns")
+    s = s.tryApplyTxns(
+      noTxs, slot = 1'u64, verifyPoq = acceptAllPoq).expect("txns")
     # The rotation rolls epoch 0's pending pool; the rotating block's own
     # reward is credited afterwards, so it belongs to epoch 1.
     s = s.tryApplyHeader(100'u64, mkProof(), testLedgerConfig).expect("rotation")
-    s = s.tryApplyTxns(noTxs, slot = 100'u64).expect("txns")
+    s = s.tryApplyTxns(
+      noTxs, slot = 100'u64, verifyPoq = acceptAllPoq).expect("txns")
     check s.cryptarchiaLedger.leader.leadersRewards == emission
     s = s.tryApplyHeader(200'u64, mkProof(), testLedgerConfig).expect("rotation")
     check s.cryptarchiaLedger.leader.leadersRewards == 2 * emission
+
+  test "each block accrues the blend share as epoch income":
+    # The same fixtures emit a blend share of 57 (60% against leader's 38).
+    var s = mkState([mkUtxo()])
+    s = s.creditBlockRewards(GasCost(0), GasCost(0)).expect("credited")
+    check s.sdp.blendRewards.epochIncome == 57
+    s = s.creditBlockRewards(GasCost(0), GasCost(0)).expect("credited")
+    check s.sdp.blendRewards.epochIncome == 114
+
+  test "a rotation without blend providers mints nothing, resets income":
+    var s = mkState([mkUtxo()])
+    s = s.creditBlockRewards(GasCost(0), GasCost(0)).expect("credited")
+    let utxosBefore = s.latestUtxos.len
+    s = s.tryApplyHeader(100'u64, mkProof(), testLedgerConfig).expect("rotation")
+    check s.latestUtxos.len == utxosBefore
+    check s.sdp.blendRewards.target.isNone
+    check s.sdp.blendRewards.epochIncome == 0
 
 {.pop.}
