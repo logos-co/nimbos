@@ -139,6 +139,6 @@ suite "ledger/sdp/ops/active — blend activity":
       declarationId: target.declId, nonce: 1, metadata: @[byte 1, 2, 3])
     check tryApplySdpActive(
       target.registry, active, fixtureProof, fixtureTxHash, 1, acceptAllPoq
-    ).error == ActivityRejected
+    ).error == MalformedActivityMetadata
 
 {.pop.}

@@ -56,7 +56,7 @@ proc tryApplySdpActive*(
   case declaration.service
   of ServiceType.bn:
     let activityProof = decodeActivityMetadata(active.metadata).valueOr:
-      return err(ActivityRejected)
+      return err(MalformedActivityMetadata)
     registry.blendRewards = ?recordActivity(
       registry.blendRewards, activityProof, declaration.providerId, verifyPoq)
 
