@@ -22,12 +22,15 @@ import
   ../chain/genesis,
   ./deployment_settings_helpers
 
+from ../core/mantle/primitives import EpochNumber, NumberOfEpochs
 from ../zk/pol_lottery import isSupportedLotteryF
 
 export
   dom,
   genesis,
-  deployment_settings_helpers
+  deployment_settings_helpers,
+  EpochNumber,
+  NumberOfEpochs
 
 type
   BlendSchedulerCover* = object
@@ -67,12 +70,12 @@ type
     epochPeriodNonceStabilization*: int
 
   BnServiceParams* = object
-    inactivityPeriod*: uint32 ## number of epochs
-    epoch*: uint32
+    inactivityPeriod*: NumberOfEpochs
+    epoch*: EpochNumber
 
   MinStake* = object
     threshold*: int
-    epoch*: uint32
+    epoch*: EpochNumber
 
   SdpConfig* = object
     bn*: BnServiceParams
