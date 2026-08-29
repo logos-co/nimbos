@@ -21,9 +21,19 @@ import
   ../../../logos_chain/zk/poc,
   ./test_helpers
 
-suite "core/mantle/tx_validation — stateless invariants":
-  let rng = HmacDrbgContext.new()
+from libp2p/crypto/rng import newBearSslRng
 
+let
+  testKp = block:
+    var rngRef = new(HmacDrbgContext)
+    rngRef[] = HmacDrbgContext.init([8'u8])
+    EdKeyPair.random(newBearSslRng(rngRef))
+  otherKp = block:
+    var rngRef = new(HmacDrbgContext)
+    rngRef[] = HmacDrbgContext.init([9'u8])
+    EdKeyPair.random(newBearSslRng(rngRef))
+
+suite "core/mantle/tx_validation — stateless invariants":
   test "Transfer: rejects empty inputs":
     let tx = mkTransferTx([], [mkNote(100, 1)])
     let r = validateMantleTxStateless(tx)
@@ -153,10 +163,9 @@ suite "core/mantle/tx_validation — stateless invariants":
     check r.error == StatelessLedgerError.InvalidChannelConfig
 
   test "ChannelConfig: rejects zero configurationThreshold":
-    let kp = mkEdKeyPair(rng)
     let op = createChannelConfigOp(ChannelConfigPayload(
       channel: mkChannelId(1),
-      keys: @[kp.pubkey],
+      keys: @[testKp.pubkey],
       configurationThreshold: 0,
       transferThreshold: 1,
     ))
@@ -168,10 +177,9 @@ suite "core/mantle/tx_validation — stateless invariants":
     check r.error == StatelessLedgerError.InvalidChannelConfig
 
   test "ChannelConfig: rejects configurationThreshold > keys.len":
-    let kp = mkEdKeyPair(rng)
     let op = createChannelConfigOp(ChannelConfigPayload(
       channel: mkChannelId(1),
-      keys: @[kp.pubkey],
+      keys: @[testKp.pubkey],
       configurationThreshold: 2,
       transferThreshold: 1,
     ))
@@ -183,10 +191,9 @@ suite "core/mantle/tx_validation — stateless invariants":
     check r.error == StatelessLedgerError.InvalidChannelConfig
 
   test "ChannelConfig: rejects zero transferThreshold":
-    let kp = mkEdKeyPair(rng)
     let op = createChannelConfigOp(ChannelConfigPayload(
       channel: mkChannelId(1),
-      keys: @[kp.pubkey],
+      keys: @[testKp.pubkey],
       configurationThreshold: 1,
       transferThreshold: 0,
     ))
@@ -198,11 +205,10 @@ suite "core/mantle/tx_validation — stateless invariants":
     check r.error == StatelessLedgerError.InvalidChannelConfig
 
   test "SdpDeclare: rejects empty locators":
-    let kp = mkEdKeyPair(rng)
     let op = createSdpDeclareOp(DeclarationMessage(
       serviceType: ServiceType.bn,
       locators: @[],
-      providerId: kp.pubkey,
+      providerId: testKp.pubkey,
       zkId: mkZkPubKey(1),
       lockedNoteId: mkUtxo(100, 1).id,
     ))
@@ -214,7 +220,6 @@ suite "core/mantle/tx_validation — stateless invariants":
     check r.error == StatelessLedgerError.EmptyLocators
 
   test "SdpDeclare: rejects too many locators (> MaxSdpLocators)":
-    let kp = mkEdKeyPair(rng)
     let validLoc = MultiAddress.init("/ip4/127.0.0.1/tcp/1234").get
     var locators = newSeq[Locator]()
     for _ in 0 .. MaxSdpLocators:
@@ -222,7 +227,7 @@ suite "core/mantle/tx_validation — stateless invariants":
     let op = createSdpDeclareOp(DeclarationMessage(
       serviceType: ServiceType.bn,
       locators: locators,
-      providerId: kp.pubkey,
+      providerId: testKp.pubkey,
       zkId: mkZkPubKey(1),
       lockedNoteId: mkUtxo(100, 1).id,
     ))
@@ -234,14 +239,13 @@ suite "core/mantle/tx_validation — stateless invariants":
     check r.error == StatelessLedgerError.TooManyLocators
 
   test "SdpDeclare: rejects invalid multiaddress locators":
-    let kp = mkEdKeyPair(rng)
     # Exceeds MaxLocatorMultiaddrBytes (329 bytes)
     let longStr = "/dns4/" & repeat('a', 350) & "/tcp/1234"
     let badLoc = MultiAddress.init(longStr).get
     let op = createSdpDeclareOp(DeclarationMessage(
       serviceType: ServiceType.bn,
       locators: @[badLoc],
-      providerId: kp.pubkey,
+      providerId: testKp.pubkey,
       zkId: mkZkPubKey(1),
       lockedNoteId: mkUtxo(100, 1).id,
     ))
@@ -253,18 +257,17 @@ suite "core/mantle/tx_validation — stateless invariants":
     check r.error == StatelessLedgerError.InvalidLocator
 
   test "SdpDeclare: verifies Ed25519 provider signature":
-    let kp = mkEdKeyPair(rng)
     let validLoc = MultiAddress.init("/ip4/127.0.0.1/tcp/1234").get
     let op = createSdpDeclareOp(DeclarationMessage(
       serviceType: ServiceType.bn,
       locators: @[validLoc],
-      providerId: kp.pubkey,
+      providerId: testKp.pubkey,
       zkId: mkZkPubKey(1),
       lockedNoteId: mkUtxo(100, 1).id,
     ))
     let body = MantleTx(ops: @[op])
     let txHash = mantleTxHash(body)
-    let sig = sign(kp.seckey, txHash)
+    let sig = sign(testKp.seckey, txHash)
     let validTx = SignedMantleTx(
       tx: body,
       opProofs: @[OpProof(
@@ -275,7 +278,7 @@ suite "core/mantle/tx_validation — stateless invariants":
     check validateMantleTxStateless(validTx).isOk
 
     # Tampered signature rejects
-    let badSig = sign(mkEdKeyPair(rng).seckey, txHash)
+    let badSig = sign(otherKp.seckey, txHash)
     let badTx = SignedMantleTx(
       tx: body,
       opProofs: @[OpProof(
@@ -287,16 +290,15 @@ suite "core/mantle/tx_validation — stateless invariants":
     check r.error == StatelessLedgerError.InvalidProof
 
   test "ChannelInscribe: verifies Ed25519 signer signature":
-    let kp = mkEdKeyPair(rng)
     let op = createChannelInscribeOp(ChannelInscribePayload(
       channelId: mkChannelId(1),
       inscription: @[1'u8, 2, 3],
       parent: default(Hash32),
-      signer: kp.pubkey,
+      signer: testKp.pubkey,
     ))
     let body = MantleTx(ops: @[op])
     let txHash = mantleTxHash(body)
-    let sig = sign(kp.seckey, txHash)
+    let sig = sign(testKp.seckey, txHash)
     let validTx = SignedMantleTx(
       tx: body,
       opProofs: @[OpProof(kind: opfChannelInscribe, ed25519SigProof: sig)],
@@ -305,7 +307,7 @@ suite "core/mantle/tx_validation — stateless invariants":
 
     let badTx = SignedMantleTx(
       tx: body,
-      opProofs: @[OpProof(kind: opfChannelInscribe, ed25519SigProof: sign(mkEdKeyPair(rng).seckey, txHash))],
+      opProofs: @[OpProof(kind: opfChannelInscribe, ed25519SigProof: sign(otherKp.seckey, txHash))],
     )
     let r = validateMantleTxStateless(badTx)
     check r.error == StatelessLedgerError.InvalidProof
@@ -410,7 +412,6 @@ suite "core/mantle/tx_validation — stateless invariants":
     check r2.error == StatelessLedgerError.VerifierNotInitialised
 
   test "Multi-op transaction: accepts multiple valid operations":
-    let kp = mkEdKeyPair(rng)
     let u1 = mkUtxo(100, 1, opIdSeed = 10)
     let u2 = mkUtxo(100, 2, opIdSeed = 11)
     let op1 = createTransferOp(TransferPayload(
@@ -421,11 +422,11 @@ suite "core/mantle/tx_validation — stateless invariants":
       channelId: mkChannelId(1),
       inscription: @[1'u8, 2, 3],
       parent: default(Hash32),
-      signer: kp.pubkey,
+      signer: testKp.pubkey,
     ))
     let body = MantleTx(ops: @[op1, op2])
     let txHash = mantleTxHash(body)
-    let sig2 = sign(kp.seckey, txHash)
+    let sig2 = sign(testKp.seckey, txHash)
     let tx = SignedMantleTx(
       tx: body,
       opProofs: @[
