@@ -31,12 +31,10 @@ func init*(_: typedesc[MantleState]): MantleState =
 func tryApplyChannelInscribe*(
     ms: sink MantleState,
     op: ChannelInscribePayload,
-    sig: Ed25519Signature,
-    txHash: Hash32,
     blockSlot: SlotNumber,
 ): Result[MantleState, LedgerError] =
   ## ChannelInscribe — validate-then-apply.
-  ?validateChannelInscribe(ms.channels, op, sig, txHash, blockSlot)
+  ?validateChannelInscribe(ms.channels, op, blockSlot)
   ms.channels = applyChannelInscribe(ms.channels, op, blockSlot)
   ok(ms)
 

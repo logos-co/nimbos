@@ -23,13 +23,9 @@ export results, clock, pol_verifier
 
 type
   LedgerError* {.pure.} = enum
-    ## Consensus rejection categories. New variants land with the modules
-    ## that emit them.
     ParentNotFound ## prepareUpdate's parent_id is not in the map
     InvalidNote ## input NoteId not in UtxoStore
     LockedNote ## input NoteId is locked by SDP
-    DoubleSpend ## same NoteId appears twice within a single op's inputs
-    ZeroValueNote ## output Note has value == 0
     InvalidProof ## ZK multi-sig or leader-proof verify failed
     BalanceOutOfRange ## balance math left the representable range
     UnsupportedOp ## Op kind not yet wired in this ledger version
@@ -39,9 +35,6 @@ type
     VerifierNotInitialised ## per-circuit VK singleton wasn't installed at
       ## node startup — wiring bug, not adversarial input
     # SDP (Service Declaration Protocol)
-    EmptyLocators ## SDP Declare locators must contain at least one element
-    TooManyLocators
-    InvalidLocator
     DuplicateDeclaration
     DuplicateProviderOrZkId
     LockedNoteNotFound
@@ -64,10 +57,8 @@ type
     InvalidParent ## ChannelInscribe parent doesn't match the channel's tipMessage
     UnauthorizedSigner ## ChannelInscribe signer isn't the round-robin sequencer
     ThresholdUnmet ## Config/Withdraw/Transfer signature count != channel threshold
-    InvalidChannelConfig ## ChannelConfig has zero threshold or empty keys
     ChannelNoteSpend ## channel note used where a channel-free note is required
     AlreadyChannelNote ## NoteId is already registered to a channel
-    EmptyInputs ## Deposit/Withdraw/Transfer must consume at least one note
     NotAChannelNote ## Withdraw/Transfer input isn't owned by the named channel
     UnbalancedTransfer ## ChannelTransfer input sum != output sum
     DuplicatedVoucherNullifier ## leader-claim voucher nullifier already spent

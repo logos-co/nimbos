@@ -112,60 +112,6 @@ suite "tryApplyHeader":
     let r = s0.tryApplyHeader(slot = 1'u64, proof = bad, cfg = testLedgerConfig)
     check r.error == InvalidProof
 
-suite "tryApplyTx — structural error paths":
-  # No verify exercised — all errors fire before any tryApplyTransfer call.
-  test "ops/proofs count mismatch → InvalidProof":
-    let
-      input = mkUtxo(value = 100, pkSeed = 1)
-      s0 = mkState([input])
-      tx = SignedMantleTx(
-        tx: MantleTx(
-          ops:
-            @[
-              createTransferOp(
-                TransferPayload(
-                  inputs: Inputs(noteIds: @[input.id]),
-                  outputs: Outputs(notes: @[mkNote(100, pkSeed = 2)]),
-                )
-              )
-            ],
-        ),
-        opProofs: @[],
-      ) # zero proofs vs one op
-      r = s0.tryApplyTx(
-        tx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
-    check r.isErr
-    check r.error == InvalidProof
-
-
-  test "Transfer op with wrong proof kind → InvalidProof":
-    let
-      input = mkUtxo(value = 100, pkSeed = 1)
-      s0 = mkState([input])
-      tx = SignedMantleTx(
-        tx: MantleTx(
-          ops:
-            @[
-              createTransferOp(
-                TransferPayload(
-                  inputs: Inputs(noteIds: @[input.id]),
-                  outputs: Outputs(notes: @[mkNote(100, pkSeed = 2)]),
-                )
-              )
-            ],
-        ),
-        opProofs:
-          @[
-            OpProof( # Ed25519 instead of ZkSig
-              kind: opfChannelInscribe, ed25519SigProof: default(Ed25519SigProof)
-            )
-          ],
-      )
-      r = s0.tryApplyTx(
-        tx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
-    check r.isErr
-    check r.error == InvalidProof
-
 suite "tryApplyTx — channel ops":
   proc mkChannelState(
       utxos: openArray[Utxo],
@@ -191,18 +137,6 @@ suite "tryApplyTx — channel ops":
         s.mantleLedger.channelNotes.registerChannelNote(u.id, cid)
           .expect("fresh note")
     s
-
-  test "ChannelTransfer op with wrong proof kind → InvalidProof":
-    let
-      s0 = mkState(@[])
-      tx = SignedMantleTx(
-        tx: MantleTx(ops: @[createChannelTransferOp(ChannelTransferPayload(
-          channel: mkChannelId(1), inputs: @[], outputs: @[]))]),
-        opProofs: @[OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))],
-      )
-      r = s0.tryApplyTx(
-        tx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
-    check r.error == InvalidProof
 
   test "ChannelWithdraw contributes nothing to the transaction balance":
     let

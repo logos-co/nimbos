@@ -18,7 +18,7 @@ import
   ./block_validation,
   ./genesis
 
-export genesis, local_tree
+export genesis, local_tree, block_validation
 export ledger except config
 
 type
@@ -34,17 +34,21 @@ type
     InvalidStructure
     TreeRejected
     LedgerRejected
+    StatelessTxRejected
 
   BlockApplyError* = object
     case kind*: BlockApplyErrorKind
     of BlockApplyErrorKind.LedgerRejected:
       ledgerError*: LedgerError
+    of BlockApplyErrorKind.StatelessTxRejected:
+      statelessError*: StatelessLedgerError
     else:
       discard
 
 func `$`*(e: BlockApplyError): string =
   case e.kind
   of BlockApplyErrorKind.LedgerRejected: "ledger: " & $e.ledgerError
+  of BlockApplyErrorKind.StatelessTxRejected: "stateless tx: " & $e.statelessError
   else: $e.kind
 
 func ledgerConfig*(settings: DeploymentSettings): LedgerConfig =
@@ -122,6 +126,8 @@ proc tryApplyBlock*(
     of BlockValidationErrorKind.HeaderRejected,
         BlockValidationErrorKind.TransactionsRejected:
       return err(BlockApplyError(kind: LedgerRejected, ledgerError: error.ledgerError))
+    of BlockValidationErrorKind.StatelessTxRejected:
+      return err(BlockApplyError(kind: StatelessTxRejected, statelessError: error.statelessError))
   if not chain.localTree.addBlockToTree(blk):
     return err(BlockApplyError(kind: TreeRejected))
   chain.ledger.commitUpdate(prepared.id, prepared.state)

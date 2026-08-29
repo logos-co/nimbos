@@ -10,11 +10,11 @@
 {.push raises: [], gcsafe.}
 
 import
-  std/[sequtils, sets],
+  std/sequtils,
   intops,
   results,
   libp2p/crypto/ed25519/ed25519,
-  ./[types, channel_notes, cryptarchia_state],
+  ./[types, channel_notes, cryptarchia_state, zksig_verify],
   ../core/[utils],
   ../core/mantle/[primitives, operations, proofs, tx_hashing, utxo],
   ../utils/hash_trie_map,
@@ -113,14 +113,10 @@ func assert_spendable(
     inputs: openArray[NoteId],
     channel: Opt[ChannelId],
 ): Result[void, LedgerError] =
-  ## Spendability of `inputs`: non-empty, unique, unlocked and unspent. With
-  ## `channel` set they must be its notes, otherwise no channel may own them.
-  if inputs.len == 0:
-    return err(EmptyInputs)
-  var seen = initHashSet[NoteId](inputs.len)
-  for inputId in inputs:
-    if seen.containsOrIncl(inputId):
-      return err(DoubleSpend)
+  ## Spendability of `inputs`: unlocked and unspent. With `channel` set they
+  ## must be its notes, otherwise no channel may own them.
+  ## Note: Assumes non-empty and unique inputs (no double spend) are verified
+  ## statelessly at ingress via `validateMantleTxStateless`.
   for inputId in inputs:
     if inputId in lockedNotes:
       return err(LockedNote)
@@ -137,14 +133,13 @@ func assert_spendable(
 func validateChannelInscribe*(
     channels: ChannelStore,
     op: ChannelInscribePayload,
-    sig: Ed25519Signature,
-    txHash: Hash32,
     blockSlot: SlotNumber,
 ): Result[void, LedgerError] =
   ## Read-only checks for ChannelInscribe. If the channel exists, the parent
   ## must match its `tipMessage` and the signer must be the current
-  ## round-robin sequencer. JIT path requires `parent == ZERO`. Signature
-  ## must verify against `op.signer` over `txHash`.
+  ## round-robin sequencer. JIT path requires `parent == ZERO`.
+  ## Note: Assumes signer Ed25519 signature is verified statelessly at ingress
+  ## via `validateMantleTxStateless`.
   let chanOpt = channels.get(op.channelId)
   if chanOpt.isSome:
     let chan = chanOpt.get
@@ -156,8 +151,6 @@ func validateChannelInscribe*(
   elif not op.parent.isZero:
     return err(InvalidParent)
 
-  if not verify(sig, txHash, op.signer):
-    return err(InvalidProof)
   ok()
 
 func applyChannelInscribe*(
@@ -182,22 +175,11 @@ func validateChannelConfig*(
     proof: ChannelMultiSigProof,
     txHash: Hash32,
 ): Result[void, LedgerError] =
-  ## Read-only checks for ChannelConfig. Validates well-formedness, and if
-  ## the channel exists, verifies `configuration_threshold` signatures from
-  ## current accredited keys. On the JIT-create path (channel doesn't exist
-  ## yet) no signature is required — there are no accredited keys to
-  ## authenticate against.
-  if op.keys.len == 0:
-    return err(InvalidChannelConfig)
-  # A configuration threshold larger than `keys.len` can never be met — the
-  # resulting channel would be permanently unreconfigurable. An unreachable
-  # transfer threshold is allowed: reconfiguration can still lower it.
-  if op.configurationThreshold == 0 or
-      op.configurationThreshold.int > op.keys.len:
-    return err(InvalidChannelConfig)
-  if op.transferThreshold == 0:
-    return err(InvalidChannelConfig)
-
+  ## Read-only checks for ChannelConfig. If the channel exists, verifies
+  ## `configuration_threshold` signatures from current accredited keys.
+  ## On JIT-create path no signature is required.
+  ## Note: Assumes config structure (non-empty keys, valid thresholds) is
+  ## verified statelessly at ingress via `validateMantleTxStateless`.
   channels.get(op.channel).isErrOr:
     ?verifyChannelMultiSig(
       proof, value.accreditedKeys, value.configurationThreshold, txHash)
@@ -244,13 +226,7 @@ proc validateChannelDeposit*(
       return err(InvalidNote) # unreachable: assert_spendable checked presence
     pks.add(utxo.note.zkPublicKey)
 
-  let
-    input = zksignInput(pks, frFromBytesLEModOrder(txHash)).valueOr:
-      return err(InvalidProof)
-    verified = zksign.verify(sig, input).valueOr:
-      return err(VerifierNotInitialised)
-  if not verified:
-    return err(InvalidProof)
+  ?verifyZkSig(sig, txHash, pks)
   ok()
 
 func applyChannelDeposit*(
@@ -312,10 +288,10 @@ func validateChannelTransfer*(
     txHash: Hash32,
 ): Result[void, LedgerError] =
   ## Read-only checks for ChannelTransfer.
+  ## Note: Assumes non-zero output notes and non-empty/unique inputs are verified
+  ## statelessly at ingress via `validateMantleTxStateless`.
   var outflow: TokenValue = 0
   for outNote in op.outputs:
-    if outNote.value == 0:
-      return err(ZeroValueNote)
     outflow = ?outflow.checkedAdd(outNote.value)
 
   let chan = channels.get(op.channel).valueOr:

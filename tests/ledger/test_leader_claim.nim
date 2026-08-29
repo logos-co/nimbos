@@ -12,10 +12,9 @@ import
   std/[os, strutils],
   unittest2,
   stew/io2,
-  ../../logos_chain/core/crypto/types,
-  ../../logos_chain/core/mantle/[operations, proofs, tx_hashing, tx_types],
+  ../../logos_chain/core/mantle/[operations, proofs, tx_hashing, tx_types, poc_verifier],
   ../../logos_chain/ledger/
-    [cryptarchia_state, leader_state, ledger, poc_verifier, types],
+    [cryptarchia_state, leader_state, ledger, types],
   ../../logos_chain/utils/dynamic_merkle_tree as voucherTree,
   ../../logos_chain/zk/[groth16/utils, poc, poseidon2/hasher],
   ../core/mantle/test_helpers,
@@ -97,7 +96,7 @@ proc recordClaim(
     voucherNullifier: nf,
     publicKey: default(ZkPublicKey),
   )
-  let r = tryRecordClaim(s, op, default(ProofOfClaimProof), default(ZkHash), mockVerifyProofOfClaim)
+  let r = tryRecordClaim(s, op)
   if r.isErr:
     doAssert false, "tryRecordClaim failed: " & $r.error
   r.get
@@ -187,7 +186,7 @@ suite "ledger/leader_claim — tryApplyLeaderClaim":
       claimProof, proofOfClaimPublic(fixtureOp, publicInputs[2], txHash),
     ).get
     let cs = CryptarchiaState(utxos: UtxoStore.init(), leader: leader)
-    let res = cs.tryApplyLeaderClaim(ledgerOp, claimProof, txHash, mockVerifyProofOfClaim)
+    let res = cs.tryApplyLeaderClaim(ledgerOp)
     check res.isOk
     
     let state = res.get
@@ -199,9 +198,8 @@ suite "ledger/leader_claim — tryApplyLeaderClaim":
     let
       leader = makeLeaderState(1'u64, 0'u64)
       op = mkFixtureLeaderClaimOp(publicInputs, voucherTree.root(leader.voucherTree))
-      txHash = fixtureTxHash(publicInputs)
       r = CryptarchiaState(utxos: UtxoStore.init(), leader: leader)
-        .tryApplyLeaderClaim(op, claimProof, txHash, mockVerifyProofOfClaim)
+        .tryApplyLeaderClaim(op)
     check r.isOk
     let state = r.get()
     check state.leader.leadersRewards == 0
@@ -212,10 +210,9 @@ suite "ledger/leader_claim — tryApplyLeaderClaim":
     let
       leader = makeLeaderState(3'u64, 300'u64)
       op = mkFixtureLeaderClaimOp(publicInputs, voucherTree.root(leader.voucherTree))
-      txHash = fixtureTxHash(publicInputs)
     check leader.rewardShare() == 100
     let r = CryptarchiaState(utxos: UtxoStore.init(), leader: leader)
-      .tryApplyLeaderClaim(op, claimProof, txHash, mockVerifyProofOfClaim)
+      .tryApplyLeaderClaim(op)
     check r.isOk
     let
       state = r.get
@@ -233,86 +230,21 @@ suite "ledger/leader_claim — tryApplyLeaderClaim":
     let
       leader = mkFixtureLeaderState()
       op = mkFixtureLeaderClaimOp(publicInputs, voucherTree.root(leader.voucherTree))
-      txHash = fixtureTxHash(publicInputs)
       recorded = leader.recordClaim(op.voucherNullifier)
       s0 = CryptarchiaState(utxos: UtxoStore.init(), leader: recorded.state)
-      second = s0.tryApplyLeaderClaim(op, claimProof, txHash, mockVerifyProofOfClaim)
+      second = s0.tryApplyLeaderClaim(op)
     check second.isErr
     check second.error == DuplicatedVoucherNullifier
 
   test "rejects rewards root mismatch":
     let
       leader = mkFixtureLeaderState()
-      txHash = fixtureTxHash(publicInputs)
     var op = mkFixtureLeaderClaimOp(publicInputs, voucherTree.root(leader.voucherTree))
     op.rewardsRoot = fieldFromSeed(0xAB)
     let r = CryptarchiaState(utxos: UtxoStore.init(), leader: leader)
-      .tryApplyLeaderClaim(op, claimProof, txHash, mockVerifyProofOfClaim)
+      .tryApplyLeaderClaim(op)
     check r.isErr
     check r.error == RewardsRootMismatch
-
-  test "rejects invalid proof":
-    let
-      leader = mkFixtureLeaderState()
-      op = mkFixtureLeaderClaimOp(publicInputs, voucherTree.root(leader.voucherTree))
-      txHash = fixtureTxHash(publicInputs)
-    var badProof = claimProof
-    badProof[0] = badProof[0] xor 0xFF'u8
-    let r = CryptarchiaState(utxos: UtxoStore.init(), leader: leader)
-      .tryApplyLeaderClaim(op, badProof, txHash)
-    check r.isErr
-    check r.error == InvalidProof
-
-  test "rejects op nullifier not matching proof public input":
-    let
-      leader = mkFixtureLeaderState()
-      txHash = fixtureTxHash(publicInputs)
-    var op = mkFixtureLeaderClaimOp(publicInputs, voucherTree.root(leader.voucherTree))
-    op.voucherNullifier = fieldFromSeed(0xCD)
-    let r = CryptarchiaState(utxos: UtxoStore.init(), leader: leader)
-      .tryApplyLeaderClaim(op, claimProof, txHash)
-    check r.isErr
-    check r.error == InvalidProof
-
-
-suite "ledger/leader_claim — tryApplyTx":
-  var
-    claimProof: ProofOfClaimProof
-    publicInputs: seq[FieldElement]
-
-  setup:
-    (claimProof, publicInputs) = fixtureLeaderInputs()
-    check publicInputs.len == 3
-
-  test "LeaderClaim op wired through LedgerState":
-    let
-      leader = mkFixtureLeaderState()
-      op = createLeaderClaimOp(
-        mkFixtureLeaderClaimOp(publicInputs, voucherTree.root(leader.voucherTree)),
-      )
-      tx = SignedMantleTx(
-        tx: MantleTx(ops: @[op]),
-        opProofs: @[OpProof(kind: opfLeaderClaim, proofOfClaimProof: claimProof)],
-      )
-      s0 = LedgerState(cryptarchiaLedger: CryptarchiaState(utxos: UtxoStore.init(), leader: leader))
-      r = s0.tryApplyTx(tx, epoch = 0, slot = 0, verifyPoq = acceptAllPoq)
-    check r.isErr
-    check r.error == InvalidProof
-
-  test "wrong proof kind → InvalidProof":
-    let
-      leader = mkFixtureLeaderState()
-      op = createLeaderClaimOp(
-        mkFixtureLeaderClaimOp(publicInputs, voucherTree.root(leader.voucherTree)),
-      )
-      tx = SignedMantleTx(
-        tx: MantleTx(ops: @[op]),
-        opProofs: @[OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))],
-      )
-      s0 = LedgerState(cryptarchiaLedger: CryptarchiaState(utxos: UtxoStore.init(), leader: leader))
-      r = s0.tryApplyTx(tx, epoch = 0, slot = 0, verifyPoq = acceptAllPoq)
-    check r.isErr
-    check r.error == InvalidProof
 
 suite "ledger/leader_claim — tryApplyHeader epoch hooks":
   test "epoch advance rolls in staged vouchers and rewards":

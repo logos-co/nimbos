@@ -16,18 +16,33 @@
 import
   results,
   ../core/local_tree,
+  ../core/mantle/tx_validation,
   ../ledger/ledger,
   libp2p/crypto/ed25519/ed25519
+
+export tx_validation.StatelessLedgerError
 
 from ../core/types import
   Block, createBlockRoot, ExpectedBedrockVersion, MaxBlockSize, header, blockId
 from ../core/mantle/primitives import MaxBlockTxs
-from ../core/mantle/tx_types import
-  SignedMantleTx,
-  encodeSignedMantleTx,
-  isSupportedOpcode,
-  opPayloadToOpcode,
-  expectedOpProofKindForOpcode
+from ../core/mantle/tx_types import SignedMantleTx, encodeSignedMantleTx
+
+type
+  BlockValidationErrorKind* {.pure.} = enum
+    InvalidBlockStructure
+    TreeAdmissionRejected
+    HeaderRejected
+    TransactionsRejected
+    StatelessTxRejected
+
+  BlockValidationError* = object
+    case kind*: BlockValidationErrorKind
+    of BlockValidationErrorKind.HeaderRejected, BlockValidationErrorKind.TransactionsRejected:
+      ledgerError*: LedgerError
+    of BlockValidationErrorKind.StatelessTxRejected:
+      statelessError*: StatelessLedgerError
+    else:
+      discard
 
 func txBytesLen(txs: openArray[SignedMantleTx]): int =
   var total = 0
@@ -57,50 +72,38 @@ func validateBlockHeader*(blk: Block): bool =
 
   true
 
-func validateBlockBody*(blk: Block): bool =
+proc validateBlockBody*(blk: Block): Result[void, BlockValidationError] =
   if blk.signature == default(Ed25519Signature):
-    return false
+    return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))
 
   if blk.txs.len > MaxBlockTxs:
-    return false
+    return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))
 
+  ## Do NOT change this evaluation order: per-transaction validation MUST run
+  ## before txBytesLen to ensure opcode/payload/proof structures are valid
+  ## prior to transaction serialization in encodeSignedMantleTx (preventing
+  ## AssertionDefect on malformed input).
   for tx in blk.txs:
-    if tx.tx.ops.len != tx.opProofs.len:
-      return false
-    for i in 0 ..< tx.tx.ops.len:
-      let op = tx.tx.ops[i]
-      if not isSupportedOpcode(op.opcode):
-        return false
-      if op.opcode != opPayloadToOpcode(op.payload):
-        return false
-      if tx.opProofs[i].kind != expectedOpProofKindForOpcode(op.opcode):
-        return false
+    validateMantleTxStateless(tx).isOkOr:
+      return err(BlockValidationError(
+        kind: BlockValidationErrorKind.StatelessTxRejected,
+        statelessError: error,
+      ))
 
   if txBytesLen(blk.txs) > MaxBlockSize:
-    return false
+    return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))
 
-  true
+  ok()
 
-func validateBlock*(blk: Block): bool =
+proc validateBlock*(blk: Block): Result[void, BlockValidationError] =
   ## Do NOT change this evaluation order: validateBlockBody MUST run before
   ## validateBlockHeader to ensure transaction count bounds (MaxBlockTxs) and
   ## per-transaction opcode/proof structures are verified prior to Merkle root
   ## construction in validateBlockHeader (preventing AssertionDefect on malformed input).
-  validateBlockBody(blk) and validateBlockHeader(blk)
-
-type
-  BlockValidationErrorKind* {.pure.} = enum
-    InvalidBlockStructure
-    TreeAdmissionRejected
-    HeaderRejected
-    TransactionsRejected
-
-  BlockValidationError* = object
-    case kind*: BlockValidationErrorKind
-    of BlockValidationErrorKind.HeaderRejected, BlockValidationErrorKind.TransactionsRejected:
-      ledgerError*: LedgerError
-    else:
-      discard
+  ?validateBlockBody(blk)
+  if not validateBlockHeader(blk):
+    return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))
+  ok()
 
 proc validateBlockAndTransactions*(
     blk: Block,
@@ -109,8 +112,7 @@ proc validateBlockAndTransactions*(
 ): Result[BlockId, BlockValidationError] =
   ## Read-only validation: stateless structural checks, localTree extension,
   ## and parent existence check in the ledger.
-  if not validateBlock(blk):
-    return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))
+  ?validateBlock(blk)
   if not localTree.canExtend(blk.header):
     return err(BlockValidationError(kind: BlockValidationErrorKind.TreeAdmissionRejected))
   if ledger.state(blk.header.parentBlock).isNone:
@@ -129,7 +131,7 @@ proc prepareBlockUpdate*(
   let prepared = ledger.prepareUpdate(
     id, blk.header.parentBlock, blk.header.slot, blk.header.proofOfLeadership, blk.txs
   ).valueOr:
-    if error in {LedgerError.InvalidSlot, LedgerError.InvalidProof}:
+    if error in {LedgerError.InvalidSlot, LedgerError.InvalidProof, LedgerError.ParentNotFound, LedgerError.UnsupportedLotteryF, LedgerError.VerifierNotInitialised}:
       return err(BlockValidationError(kind: BlockValidationErrorKind.HeaderRejected, ledgerError: error))
     else:
       return err(BlockValidationError(kind: BlockValidationErrorKind.TransactionsRejected, ledgerError: error))

@@ -110,7 +110,7 @@ proc fromGenesis*(
         s.cryptarchiaLedger = r.state
       of ChannelInscribe:
         # Envelope validity (null channel, root parent, zero signer) is
-        # enforced at the chain layer when the ceremony is decoded.
+        # validated statelessly in `core/types.nim`.
         s.mantleLedger.channels = applyChannelInscribe(
           s.mantleLedger.channels, op.payload.channelInscribe, 0)
       of SdpDeclare:
@@ -206,9 +206,9 @@ proc tryApplyTx*(
 ): Result[tuple[state: LedgerState, balance: Balance, executionGas: Gas], LedgerError] =
   ## Applies one transaction; the returned balance is the Transfer-only
   ## delta. `slot` is used by channel ops for sequencer rotation.
-  if tx.tx.ops.len != tx.opProofs.len:
-    return err(InvalidProof)
-
+  ## Note: Structural and cryptographic validation is performed at ingress
+  ## via `validateMantleTxStateless`.
+  doAssert tx.tx.ops.len == tx.opProofs.len, "ops and opProofs count mismatch"
   var
     s = state
     balance = Balance.zero
@@ -221,8 +221,6 @@ proc tryApplyTx*(
       opGas = execution_gas(op, s.multisigThreshold(op))
     txExecutionGas = txExecutionGas.checkedAdd(opGas).valueOr:
       return err(GasOverflow)
-    if proof.kind != expectedOpProofKindForOpcode(op.opcode):
-      return err(InvalidProof)
     case op.payload.kind
     of Transfer:
       let r =
@@ -262,7 +260,7 @@ proc tryApplyTx*(
       )
     of ChannelInscribe:
       s.mantleLedger = ?s.mantleLedger.tryApplyChannelInscribe(
-        op.payload.channelInscribe, proof.ed25519SigProof, txHash, slot,
+        op.payload.channelInscribe, slot,
       )
     of ChannelConfig:
       s.mantleLedger = ?s.mantleLedger.tryApplyChannelConfig(
@@ -290,7 +288,7 @@ proc tryApplyTx*(
       s.mantleLedger = r.ms
     of LeaderClaim:
       s.cryptarchiaLedger = ?s.cryptarchiaLedger.tryApplyLeaderClaim(
-        op.payload.leaderClaim, proof.proofOfClaimProof, txHash,
+        op.payload.leaderClaim,
       )
   ok((state: s, balance: balance, executionGas: txExecutionGas))
 

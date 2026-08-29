@@ -19,7 +19,7 @@ from libp2p/crypto/rng import newBearSslRng
 
 type TestId* = BlockId
 
-func mkZkPubKey(seed: byte): ZkPublicKey =
+func mkZkPubKey*(seed: byte): ZkPublicKey =
   frFromBytesLE([seed]).get
 
 proc mkRealZkPubKey*(sk: byte): ZkPublicKey =

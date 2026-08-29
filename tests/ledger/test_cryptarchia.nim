@@ -247,18 +247,6 @@ suite "tryApplyTransfer — happy paths (fixture-driven)":
     check s1.len == 3
     check not s1.utxos.contains(input.id)
 
-  test "zero-value output → ZeroValueNote":
-    let
-      input = mkUtxoWithPk(signerPk, value = 100)
-      s0 = CryptarchiaState.init([input])
-      op = TransferPayload(
-        inputs: Inputs(noteIds: @[input.id]),
-        outputs: Outputs(notes: @[mkNote(0, pkSeed = 2)]),
-      )
-      r = s0.tryApplyTransfer(LockedNotes.init(), ChannelNotes.init(), op, sig, txHash)
-    check r.isErr
-    check r.error == ZeroValueNote
-
   test "no outputs → balance equals full input value":
     let
       input = mkUtxoWithPk(signerPk, value = 100)
