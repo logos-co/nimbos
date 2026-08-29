@@ -19,7 +19,7 @@ from ../core/crypto/types import isZero
 from ../core/mantle/tx_types import SignedMantleTx
 
 type
-  ProposalValidationError* = enum
+  ProposalValidationError* {.pure.} = enum
     MissingReference
     InvalidBlockStructure
     TreeAdmissionRejected
