@@ -27,6 +27,7 @@ const
   DefaultMempoolCapacity* = 10_240
   MempoolMaxAgeSlots* = 100'u64
   MempoolMinAgeSlots* = 3'u64
+  MaxConsecutiveCandidateMisses* = 10
 
 func maxMempoolCapacity*(securityParam: uint64 = 1): uint64 {.inline.} =
   ## Returns mempool capacity as 10x the maximum unfinalized branch transactions.
@@ -36,9 +37,11 @@ type
   MempoolError* {.pure.} = enum
     TxNotFound
 
-  MempoolItem = ref object
-    tx: SignedMantleTx
-    addedAtSlot: SlotNumber
+  MempoolItem* = ref object
+    tx*: SignedMantleTx
+    addedAtSlot*: SlotNumber
+    byteSize*: Opt[int] ## Lazily computed serialized byte length; cached on first proposal evaluation to avoid re-encoding
+    execGas*: Opt[Gas]  ## Lazily computed execution gas; cached on first proposal evaluation to avoid repeated gas checks
 
   Mempool* = ref object
     txs*: Table[Hash32, MempoolItem]
@@ -76,13 +79,15 @@ proc add*(
     tx: sink SignedMantleTx,
     currentSlot: SlotNumber,
 ): bool =
-  doAssert currentSlot >= m.lastAddedSlot,
-    "Mempool transactions must be added in monotonic slot order: currentSlot=" &
-    $currentSlot & " < lastAddedSlot=" & $m.lastAddedSlot
+  # Clamp to lastAddedSlot to preserve monotonic insertion order against minor clock skew/NTP slewing
+  let effectiveSlot = max(currentSlot, m.lastAddedSlot)
 
   let hash = mantleTxHash(tx.tx)
   if hash in m.txs:
     return false
+
+  # If transaction is currently in grace cache, remove it from grace and promote to active txs
+  m.graceCache.del(hash)
 
   while uint64(m.txs.len) >= m.capacity and m.queue.len > 0:
     # Evict oldest transaction to grace cache when capacity is reached
@@ -94,13 +99,20 @@ proc add*(
   if m.queue.len > int(m.capacity * 2) and m.txs.len < m.queue.len div 2:
     m.compactQueue()
 
-  m.txs[hash] = MempoolItem(tx: tx, addedAtSlot: currentSlot)
+  m.txs[hash] = MempoolItem(
+    tx: tx,
+    addedAtSlot: effectiveSlot,
+    byteSize: Opt.none(int),
+    execGas: Opt.none(Gas),
+  )
   m.queue.addLast(hash)
-  m.lastAddedSlot = currentSlot
+  m.lastAddedSlot = effectiveSlot
   true
 
 func contains*(m: Mempool, hash: Hash32): bool =
-  hash in m.txs
+  ## Returns true if the transaction is in the active mempool or grace cache.
+  ## Any transaction present here has already passed stateless validation.
+  hash in m.txs or m.graceCache.peek(hash).isSome
 
 func get*(m: Mempool, hash: Hash32): Result[SignedMantleTx, MempoolError] =
   m.txs.withValue(hash, item):
@@ -134,7 +146,7 @@ proc pruneBlockTxs*(m: Mempool, blk: Block) =
 proc selectTxsForProposal*(
     m: Mempool,
     tipLedgerState: LedgerState,
-    cfg: LedgerConfig = LedgerConfig(),
+    cfg: LedgerConfig,
     currentSlot: SlotNumber,
     maxTxs: int = MaxBlockTxs,
     maxBytes: int = MaxBlockSize,
@@ -147,6 +159,9 @@ proc selectTxsForProposal*(
     tipLedgerState
   var cumulativeExecutionGas = Gas(0)
   var cumulativeBytes = 0
+  var consecutiveMisses = 0
+
+  let epoch = workingLedger.epochs.activeEpoch.epoch
 
   for hash in m.queue:
     if selected.len >= maxTxs:
@@ -156,29 +171,41 @@ proc selectTxsForProposal*(
       if currentSlot < item[].addedAtSlot + MempoolMinAgeSlots:
         continue
 
-      let txBytes = encodeSignedMantleTx(item[].tx).len
-      if cumulativeBytes + txBytes > maxBytes:
-        continue
+      # Lazily compute and cache byteSize and execGas on first evaluation
+      let txBytes = item[].byteSize.valueOr:
+        let sz = encodeSignedMantleTx(item[].tx).len
+        item[].byteSize = Opt.some(sz)
+        sz
 
-      let feesRes = workingLedger.mandatory_fees(item[].tx)
-      if feesRes.isErr:
-        continue
-
-      let (totalCost, execGas, _) = feesRes.get
+      let execGas = item[].execGas.valueOr:
+        let eg = txExecutionGas(item[].tx).valueOr:
+          continue
+        item[].execGas = Opt.some(eg)
+        eg
 
       let nextExecutionGas = cumulativeExecutionGas.checkedAdd(execGas).valueOr:
         continue
-      if nextExecutionGas > MAX_EXECUTION_GAS_PER_BLOCK:
+
+      if cumulativeBytes + txBytes > maxBytes or
+          nextExecutionGas > MAX_EXECUTION_GAS_PER_BLOCK:
+        inc consecutiveMisses
+        if consecutiveMisses >= MaxConsecutiveCandidateMisses:
+          break
         continue
 
-      let epoch = workingLedger.epochs.activeEpoch.epoch
+      let (totalCost, _, _) = workingLedger.mandatory_fees(execGas, txBytes).valueOr:
+        continue
+
       var candidate = workingLedger
-      let applyRes = candidate.tryApplyTx(item[].tx, epoch, currentSlot)
-      if applyRes.isOk and applyRes.get.covers(totalCost):
+      let balance = candidate.tryApplyTx(item[].tx, epoch, currentSlot).valueOr:
+        continue
+
+      if balance.covers(totalCost):
         selected.add(item[].tx)
         cumulativeExecutionGas = nextExecutionGas
         cumulativeBytes += txBytes
         workingLedger = move(candidate)
+        consecutiveMisses = 0
 
   selected
 

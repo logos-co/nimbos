@@ -11,7 +11,7 @@ import
   std/[net, strutils, times],
   bearssl/rand,
   chronos,
-  libp2p/[switch, peerid],
+  libp2p/[switch, peerid, multiaddress],
   libp2p/crypto/rng,
   libp2p/crypto/ed25519/ed25519,
   testutils/markdown_reports,
@@ -19,7 +19,7 @@ import
   ../logos_chain/conf,
   ../logos_chain/networking/network,
   ../logos_chain/core/[types, local_tree],
-  ../logos_chain/core/mantle/tx_types,
+  ../logos_chain/core/mantle/[operations, tx_types],
   ../logos_chain/chain/genesis,
   ../logos_chain/ledger/[pol_verifier, types]
 
@@ -110,7 +110,7 @@ func minimalSignedTx*(): SignedMantleTx =
     opProofs: @[],
   )
 
-let testTxKeyPair = block:
+let testTxKeyPair* = block:
   var rngRef = new(HmacDrbgContext)
   rngRef[] = HmacDrbgContext.init([8'u8])
   EdKeyPair.random(newBearSslRng(rngRef))
@@ -134,8 +134,8 @@ proc signedTxWithOps*(opsCount: int = 1, txIndex: int = 1): SignedMantleTx =
 
   let mtx = MantleTx(ops: ops)
   let txHash = mantleTxHash(mtx)
+  let sig = sign(testTxKeyPair.seckey, txHash)
   for _ in 0 ..< opsCount:
-    let sig = sign(testTxKeyPair.seckey, txHash)
     proofs.add(OpProof(kind: opfChannelInscribe, ed25519SigProof: sig))
 
   SignedMantleTx(tx: mtx, opProofs: proofs)

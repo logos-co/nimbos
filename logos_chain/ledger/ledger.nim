@@ -289,7 +289,7 @@ proc tryApplyTx*(
       )
   ok(balance)
 
-proc txExecutionGas(
+proc txExecutionGas*(
     tx: SignedMantleTx,
 ): Result[Gas, LedgerError] =
   if tx.tx.ops.len != tx.opProofs.len:
@@ -305,12 +305,12 @@ proc txExecutionGas(
     total = added
   ok(total)
 
-proc mandatory_fees*(
+func mandatory_fees*(
     s: LedgerState,
-    tx: SignedMantleTx,
+    execGas: Gas,
+    txByteLen: int,
 ): Result[tuple[totalCost: GasCost, executionGas, storageGas: Gas], LedgerError] =
-  let execGas = ? txExecutionGas(tx)
-  let storageGas = Gas(encodeSignedMantleTx(tx).len)
+  let storageGas = Gas(txByteLen)
   let prices = s.feeMarket.gasPrices
   let executionCost = execGas.checkedMul(prices.executionBaseFee).valueOr:
     return err(GasOverflow)
@@ -319,6 +319,14 @@ proc mandatory_fees*(
   let totalCost = executionCost.checkedAdd(storageCost).valueOr:
     return err(GasOverflow)
   ok((totalCost: totalCost, executionGas: execGas, storageGas: storageGas))
+
+proc mandatory_fees*(
+    s: LedgerState,
+    tx: SignedMantleTx,
+): Result[tuple[totalCost: GasCost, executionGas, storageGas: Gas], LedgerError] =
+  let execGas = ? txExecutionGas(tx)
+  let txByteLen = encodeSignedMantleTx(tx).len
+  s.mandatory_fees(execGas, txByteLen)
 
 func creditBlockRewards*(
     state: sink LedgerState, totalFeeBurned, totalFeeTip: GasCost
@@ -384,11 +392,11 @@ func init*[Id](
     _: typedesc[Ledger[Id]],
     id: Id,
     state: LedgerState,
-    config: LedgerConfig = LedgerConfig(),
+    config: LedgerConfig,
     leaderProofVerifier: LeaderProofVerifier = verifyLeaderProof,
 ): Ledger[Id] =
   ## Constructs a Ledger seeded with one `(id, state)` entry.
-  var states = initTable[Id, LedgerState]()
+  var states: Table[Id, LedgerState]
   states[id] = state
   Ledger[Id](
     states: states,
