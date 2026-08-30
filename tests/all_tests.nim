@@ -37,6 +37,7 @@ import # Unit test
   ./chain/test_genesis_params,
   ./chain/test_devnet_genesis_mantle_tx,
   ./chain/test_chain_wiring,
+  ./chain/test_proposal,
   ./utils/test_hash_trie_map,
   ./utils/test_dynamic_merkle_tree,
   ./ledger/sdp/test_state,

@@ -8,15 +8,17 @@
 {.push raises: [], gcsafe.}
 
 import
+  std/[deques, tables],
   results,
-  ../core/local_tree,
-  ../core/mempool,
-  ../ledger/ledger,
+  ../core/[types, local_tree, mempool],
+  ../core/crypto/types,
+  ../core/mantle/[gas, primitives, tx_types],
+  ../ledger/[balance, ledger, types],
   ./block_validation
 
-from ../core/types import Block, Proposal, Hash32, header, blockId
-from ../core/crypto/types import isZero
-from ../core/mantle/tx_types import SignedMantleTx
+const
+  TxMaturitySlots* = 3'u64
+  MaxConsecutiveCandidateMisses* = 10
 
 type
   ProposalValidationError* {.pure.} = enum
@@ -25,6 +27,72 @@ type
     TreeAdmissionRejected
     HeaderRejected
     TransactionsRejected
+
+proc selectTxsForProposal*(
+    m: Mempool,
+    tipLedgerState: LedgerState,
+    cfg: LedgerConfig,
+    currentSlot: SlotNumber,
+    maxTxs: int = MaxBlockTxs,
+    maxBytes: int = MaxBlockSize,
+): seq[SignedMantleTx] =
+  ## Selects transactions for block proposal according to the Execution Market spec:
+  ## https://github.com/logos-co/logos-lips/blob/38916aa474164ac4acd81e62d19715e17626be17/docs/blockchain/raw/execution-market.md
+  ## Enforces count (maxTxs), execution gas (MAX_EXECUTION_GAS_PER_BLOCK), and body byte size (maxBytes).
+  var selected: seq[SignedMantleTx]
+  var workingLedger = tipLedgerState.advanceEpochAndMarket(currentSlot, cfg).valueOr:
+    tipLedgerState
+  var cumulativeExecutionGas = Gas(0)
+  var cumulativeBytes = 0
+  var consecutiveMisses = 0
+
+  let epoch = workingLedger.epochs.activeEpoch.epoch
+
+  for hash in m.queue:
+    if selected.len >= maxTxs:
+      break
+
+    m.txs.withValue(hash, item):
+      if currentSlot < item[].addedAtSlot + TxMaturitySlots:
+        continue
+
+      # Lazily compute and cache byteSize and execGas on first evaluation
+      let txBytes = item[].byteSize.valueOr:
+        let sz = encodeSignedMantleTx(item[].tx).len
+        item[].byteSize = Opt.some(sz)
+        sz
+
+      let execGas = item[].execGas.valueOr:
+        let eg = txExecutionGas(item[].tx).valueOr:
+          continue
+        item[].execGas = Opt.some(eg)
+        eg
+
+      let nextExecutionGas = cumulativeExecutionGas.checkedAdd(execGas).valueOr:
+        continue
+
+      if cumulativeBytes + txBytes > maxBytes or
+          nextExecutionGas > MAX_EXECUTION_GAS_PER_BLOCK:
+        inc consecutiveMisses
+        if consecutiveMisses >= MaxConsecutiveCandidateMisses:
+          break
+        continue
+
+      let (totalCost, _, _) = workingLedger.mandatory_fees(execGas, txBytes).valueOr:
+        continue
+
+      var candidate = workingLedger
+      let balance = candidate.tryApplyTx(item[].tx, epoch, currentSlot).valueOr:
+        continue
+
+      if balance.covers(totalCost):
+        selected.add(item[].tx)
+        cumulativeExecutionGas = nextExecutionGas
+        cumulativeBytes += txBytes
+        workingLedger = move(candidate)
+        consecutiveMisses = 0
+
+  selected
 
 func reconstructBlock*(
     proposal: Proposal,

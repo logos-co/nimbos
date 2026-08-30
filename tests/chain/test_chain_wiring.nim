@@ -21,7 +21,7 @@ import
   stew/[byteutils, io2],
   libp2p/crypto/ed25519/ed25519,
   ../testutil,
-  ../../logos_chain/chain/chain,
+  ../../logos_chain/chain/[chain, proposal],
   ../../logos_chain/deployment/deployment_settings,
   ../../logos_chain/zk/poseidon2/hasher
 
@@ -189,7 +189,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
     # Proposal selection on the new tip picks up the restored dummyTx
     let selected = chain.mempool.selectTxsForProposal(
       chain.ledger.state(id3_fork).get, ledgerConfig(ds),
-      chain.currentWallclockSlot() + MempoolMinAgeSlots
+      chain.currentWallclockSlot() + TxMaturitySlots
     )
     check selected.len == 1
     check mantleTxHash(selected[0].tx) == txHash
