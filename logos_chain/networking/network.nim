@@ -970,9 +970,15 @@ proc createLBP2PNode*(
       mountIdentifyProtocol(switch, switch.peerInfo, config.logosNetwork)
     except LPError as exc:
       return err("Cannot mount Logos Identify protocols: " & exc.msg)
+  let addressPolicy =
+    if config.autonatAllowPrivateAddresses:
+      noPrivateAddressPolicy
+    else:
+      publicRoutableAddressPolicy
+
   let kad =
     try:
-      mountKadProtocol(switch, config.logosNetwork, switch.rng)
+      mountKadProtocol(switch, config.logosNetwork, switch.rng, addressPolicy)
     except LPError as exc:
       return err("Cannot mount Logos Kad protocols: " & exc.msg)
   let mounted = MountedProtocols(kad: kad, identify: ident)

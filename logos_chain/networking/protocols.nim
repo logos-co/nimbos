@@ -11,10 +11,12 @@
 {.push raises: [], gcsafe.}
 
 import
-  libp2p/[switch, peerinfo, errors, crypto/crypto],
+  libp2p/[switch, peerinfo, errors, crypto/crypto, peeraddrpolicy],
   libp2p/protocols/identify,
   libp2p/protocols/kademlia,
   ../conf
+
+export peeraddrpolicy
 
 type
   MountedProtocols* = object
@@ -49,10 +51,14 @@ proc mountIdentifyProtocol*(
   ident
 
 proc mountKadProtocol*(
-    sw: Switch, network: LogosNetworkKind, rng: Rng
+    sw: Switch,
+    network: LogosNetworkKind,
+    rng: Rng,
+    addressPolicy: PeerAddressPolicy,
 ): KadDHT {.raises: [LPError].} =
   let codec = kadCodec(network)
-  let kad = KadDHT.new(sw, rng = rng, codec = codec)
+  let config = KadDHTConfig.new(addressPolicy = addressPolicy)
+  let kad = KadDHT.new(sw, rng = rng, codec = codec, config = config)
   kad.codecs = @[codec]
   sw.mount(kad)
   kad
