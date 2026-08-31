@@ -47,6 +47,17 @@ func encodeSignedMantleTx*(signedTx: SignedMantleTx): seq[byte] =
 template encodeSignedMantleTx*(signedTx: ValidSignedMantleTx): seq[byte] =
   encodeSignedMantleTx(SignedMantleTx(signedTx))
 
+func byteLen*(tx: MantleTx): int =
+  ## Exact wire byte length of a MantleTx without allocating buffers.
+  byteLen(tx.ops)
+
+func byteLen*(signedTx: SignedMantleTx): int =
+  ## Exact wire byte length of a SignedMantleTx without allocating buffers.
+  byteLen(signedTx.tx) + byteLen(signedTx.opProofs)
+
+template byteLen*(signedTx: ValidSignedMantleTx): int =
+  byteLen(SignedMantleTx(signedTx))
+
 func decodeMantleTx*(data: openArray[byte]): MantleTx {.raises: [DecodingError].} =
   var pos = 0
   let count = readByte(data, pos)

@@ -25,7 +25,7 @@ export tx_validation.StatelessLedgerError
 from ../core/types import
   Block, createBlockRoot, ExpectedBedrockVersion, MaxBlockSize, header, blockId
 from ../core/mantle/primitives import MaxBlockTxs
-from ../core/mantle/tx_types import SignedMantleTx, ValidSignedMantleTx, encodeSignedMantleTx
+from ../core/mantle/tx_types import SignedMantleTx, ValidSignedMantleTx, byteLen
 
 type
   BlockValidationErrorKind* {.pure.} = enum
@@ -47,7 +47,7 @@ type
 func txBytesLen(txs: openArray[SignedMantleTx]): int =
   var total = 0
   for stx in txs:
-    total += encodeSignedMantleTx(stx).len
+    total += byteLen(stx)
   total
 
 func validateBlockHeader(blk: Block): bool =
@@ -79,19 +79,15 @@ proc validateBlockBody(blk: Block): Result[void, BlockValidationError] =
   if blk.txs.len > MaxBlockTxs:
     return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))
 
-  ## Do NOT change this evaluation order: per-transaction validation MUST run
-  ## before txBytesLen to ensure opcode/payload/proof structures are valid
-  ## prior to transaction serialization in encodeSignedMantleTx (preventing
-  ## AssertionDefect on malformed input).
+  if txBytesLen(blk.txs) > MaxBlockSize:
+    return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))
+
   for tx in blk.txs:
     validateMantleTxStateless(tx).isOkOr:
       return err(BlockValidationError(
         kind: BlockValidationErrorKind.StatelessTxRejected,
         statelessError: error,
       ))
-
-  if txBytesLen(blk.txs) > MaxBlockSize:
-    return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))
 
   ok()
 

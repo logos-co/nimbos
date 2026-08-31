@@ -256,6 +256,10 @@ func encodeLocator*(value: Locator): seq[byte] =
     "Locator exceeds max multiaddr byte length"
   encodeU16LeLenPrefixed(locatorBytes)
 
+func byteLen*(locator: Locator): int =
+  ## Exact wire byte length of a Locator: 2-byte prefix + multiaddr bytes.
+  sizeof(uint16) + locator.data().buffer.len
+
 func encodeLocators*(locators: openArray[Locator]): seq[byte] =
   ## Locators = LocatorCount *Locator
   var res = @[encodeLocatorCount(byte(locators.len))]

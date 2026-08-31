@@ -344,7 +344,7 @@ proc tryApplyTxns*(
   for tx in txs:
     let
       r = ?s.tryApplyTx(tx, epoch, slot, verifyPoq)
-      storageGas = Gas(encodeSignedMantleTx(tx).len)
+      storageGas = Gas(byteLen(tx))
       totalCost = ?mandatory_fees(r.executionGas, storageGas, prices)
     s = r.state
     if not r.balance.covers(totalCost):
