@@ -11,7 +11,7 @@
 {.push raises: [], gcsafe.}
 
 import
-  std/sets,
+  std/[sets, sequtils],
   results,
   libp2p/crypto/ed25519/ed25519,
   libp2p/multiaddress,
@@ -69,45 +69,39 @@ proc validateMantleTxStateless*(
 
     case op.payload.kind
     of Transfer:
-      let t = op.payload.transfer
+      template t: untyped = op.payload.transfer
       if t.inputs.noteIds.len == 0:
         return err(StatelessLedgerError.EmptyInputs)
-      for inputId in t.inputs.noteIds:
-        if allInputs.containsOrIncl(inputId):
-          return err(StatelessLedgerError.DoubleSpend)
-      for note in t.outputs.notes:
-        if note.value == 0:
-          return err(StatelessLedgerError.ZeroValueNote)
+      if t.inputs.noteIds.anyIt(allInputs.containsOrIncl(it)):
+        return err(StatelessLedgerError.DoubleSpend)
+      if t.outputs.notes.anyIt(it.value == 0):
+        return err(StatelessLedgerError.ZeroValueNote)
 
     of ChannelDeposit:
-      let d = op.payload.channelDeposit
+      template d: untyped = op.payload.channelDeposit
       if d.inputs.len == 0:
         return err(StatelessLedgerError.EmptyInputs)
-      for inputId in d.inputs:
-        if allInputs.containsOrIncl(inputId):
-          return err(StatelessLedgerError.DoubleSpend)
+      if d.inputs.anyIt(allInputs.containsOrIncl(it)):
+        return err(StatelessLedgerError.DoubleSpend)
 
     of ChannelWithdraw:
-      let w = op.payload.channelWithdraw
+      template w: untyped = op.payload.channelWithdraw
       if w.inputs.len == 0:
         return err(StatelessLedgerError.EmptyInputs)
-      for inputId in w.inputs:
-        if allInputs.containsOrIncl(inputId):
-          return err(StatelessLedgerError.DoubleSpend)
+      if w.inputs.anyIt(allInputs.containsOrIncl(it)):
+        return err(StatelessLedgerError.DoubleSpend)
 
     of ChannelTransfer:
-      let ct = op.payload.channelTransfer
+      template ct: untyped = op.payload.channelTransfer
       if ct.inputs.len == 0:
         return err(StatelessLedgerError.EmptyInputs)
-      for inputId in ct.inputs:
-        if allInputs.containsOrIncl(inputId):
-          return err(StatelessLedgerError.DoubleSpend)
-      for note in ct.outputs:
-        if note.value == 0:
-          return err(StatelessLedgerError.ZeroValueNote)
+      if ct.inputs.anyIt(allInputs.containsOrIncl(it)):
+        return err(StatelessLedgerError.DoubleSpend)
+      if ct.outputs.anyIt(it.value == 0):
+        return err(StatelessLedgerError.ZeroValueNote)
 
     of ChannelConfig:
-      let cfg = op.payload.channelConfig
+      template cfg: untyped = op.payload.channelConfig
       if cfg.keys.len == 0 or cfg.configurationThreshold == 0 or
           cfg.configurationThreshold.int > cfg.keys.len or
           cfg.transferThreshold == 0:
@@ -118,14 +112,13 @@ proc validateMantleTxStateless*(
         return err(StatelessLedgerError.InvalidProof)
 
     of SdpDeclare:
-      let decl = op.payload.sdpDeclare
+      template decl: untyped = op.payload.sdpDeclare
       if decl.locators.len == 0:
         return err(StatelessLedgerError.EmptyLocators)
       if decl.locators.len > MaxSdpLocators:
         return err(StatelessLedgerError.TooManyLocators)
-      for loc in decl.locators:
-        if not isValidLocator(loc):
-          return err(StatelessLedgerError.InvalidLocator)
+      if decl.locators.anyIt(not isValidLocator(it)):
+        return err(StatelessLedgerError.InvalidLocator)
       if not verify(proof.declarationProof.ed25519Sig, getTxHash(), decl.providerId):
         return err(StatelessLedgerError.InvalidProof)
 
@@ -135,7 +128,7 @@ proc validateMantleTxStateless*(
     of LeaderClaim:
       if verifyProof == nil:
         return err(StatelessLedgerError.VerifierNotInitialised)
-      let claim = op.payload.leaderClaim
+      template claim: untyped = op.payload.leaderClaim
       let public = proofOfClaimPublic(claim, claim.rewardsRoot, getTxHash())
       let verified = verifyProof(proof.proofOfClaimProof, public).valueOr:
         return err(StatelessLedgerError.VerifierNotInitialised)
