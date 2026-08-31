@@ -24,7 +24,7 @@ import
 from ../core/crypto/types import ZkPublicKey
 export
   types, cryptarchia_state, channel_state, mantle_state, epoch_state, registry,
-  fee_market, block_rewards, gas
+  fee_market, block_rewards, gas, tx_types.ValidSignedMantleTx
 
 type
   LedgerState* = object
@@ -199,16 +199,15 @@ func multisigThreshold(s: LedgerState, op: Op): uint16 =
 
 proc tryApplyTx*(
     state: sink LedgerState,
-    tx: SignedMantleTx,
+    tx: ValidSignedMantleTx,
     epoch: EpochNumber,
     slot: SlotNumber,
     verifyPoq: PoqVerifier,
 ): Result[tuple[state: LedgerState, balance: Balance, executionGas: Gas], LedgerError] =
   ## Applies one transaction; the returned balance is the Transfer-only
   ## delta. `slot` is used by channel ops for sequencer rotation.
-  ## Note: Structural and cryptographic validation is performed at ingress
-  ## via `validateMantleTxStateless`.
-  doAssert tx.tx.ops.len == tx.opProofs.len, "ops and opProofs count mismatch"
+  ## Note: Structural and cryptographic validation is guaranteed at compile-time
+  ## via `ValidSignedMantleTx`.
   var
     s = state
     balance = Balance.zero
@@ -327,7 +326,7 @@ func creditBlockRewards*(
 
 proc tryApplyTxns*(
     state: sink LedgerState,
-    txs: openArray[SignedMantleTx],
+    txs: openArray[ValidSignedMantleTx],
     slot: SlotNumber,
     verifyPoq: PoqVerifier,
 ): Result[LedgerState, LedgerError] =
@@ -421,7 +420,7 @@ proc prepareUpdate*[Id](
     id, parentId: Id,
     slot: SlotNumber,
     proof: ProofOfLeadership,
-    txs: openArray[SignedMantleTx],
+    txs: openArray[ValidSignedMantleTx],
 ): Result[tuple[id: Id, state: LedgerState], LedgerError] =
   ## Validates a block's header + transactions against the parent state.
   ## Caller invokes `commitUpdate` to install the result, or drops it to reject.

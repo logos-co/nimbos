@@ -17,8 +17,7 @@ import
   ./[types, channel_notes, cryptarchia_state, zksig_verify],
   ../core/[utils],
   ../core/mantle/[primitives, operations, proofs, tx_hashing, utxo],
-  ../utils/hash_trie_map,
-  ../zk/zksign
+  ../utils/hash_trie_map
 
 export hash_trie_map, channel_notes
 

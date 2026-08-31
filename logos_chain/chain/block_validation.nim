@@ -25,7 +25,7 @@ export tx_validation.StatelessLedgerError
 from ../core/types import
   Block, createBlockRoot, ExpectedBedrockVersion, MaxBlockSize, header, blockId
 from ../core/mantle/primitives import MaxBlockTxs
-from ../core/mantle/tx_types import SignedMantleTx, encodeSignedMantleTx
+from ../core/mantle/tx_types import SignedMantleTx, ValidSignedMantleTx, encodeSignedMantleTx
 
 type
   BlockValidationErrorKind* {.pure.} = enum
@@ -50,7 +50,7 @@ func txBytesLen(txs: openArray[SignedMantleTx]): int =
     total += encodeSignedMantleTx(stx).len
   total
 
-func validateBlockHeader*(blk: Block): bool =
+func validateBlockHeader(blk: Block): bool =
   let h = header(blk)
   if h.bedrockVersion != ExpectedBedrockVersion:
     return false
@@ -72,7 +72,7 @@ func validateBlockHeader*(blk: Block): bool =
 
   true
 
-proc validateBlockBody*(blk: Block): Result[void, BlockValidationError] =
+proc validateBlockBody(blk: Block): Result[void, BlockValidationError] =
   if blk.signature == default(Ed25519Signature):
     return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))
 
@@ -105,7 +105,7 @@ proc validateBlock*(blk: Block): Result[void, BlockValidationError] =
     return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))
   ok()
 
-proc validateBlockAndTransactions*(
+proc validateBlockAndTransactions(
     blk: Block,
     localTree: LocalTree,
     ledger: Ledger[BlockId],
@@ -127,9 +127,14 @@ proc prepareBlockUpdate*(
 ): Result[tuple[id: BlockId, state: LedgerState], BlockValidationError] =
   ## Validates block admission and executes state transitions via `ledger.prepareUpdate`.
   let id = ?validateBlockAndTransactions(blk, localTree, ledger)
+  template validTxs: untyped = cast[seq[ValidSignedMantleTx]](blk.txs)
 
   let prepared = ledger.prepareUpdate(
-    id, blk.header.parentBlock, blk.header.slot, blk.header.proofOfLeadership, blk.txs
+    id,
+    blk.header.parentBlock,
+    blk.header.slot,
+    blk.header.proofOfLeadership,
+    validTxs,
   ).valueOr:
     if error in {LedgerError.InvalidSlot, LedgerError.InvalidProofOfLeadership, LedgerError.ParentNotFound, LedgerError.UnsupportedLotteryF, LedgerError.VerifierNotInitialised}:
       return err(BlockValidationError(kind: BlockValidationErrorKind.HeaderRejected, ledgerError: error))

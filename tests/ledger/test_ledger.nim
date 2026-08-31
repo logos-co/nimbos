@@ -157,7 +157,7 @@ suite "tryApplyTx — channel ops":
             indexes: @[ChannelKeyIndex(0)]))],
       )
       r = s0.tryApplyTx(
-        tx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
+        ValidSignedMantleTx(tx), epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
     check r.isOk
     let res = r.get
     # Bridged funds never enter or leave the UTXO set, so a channel op can
@@ -189,7 +189,7 @@ suite "tryApplyTx — channel ops":
             indexes: @[ChannelKeyIndex(0)]))],
       )
       r = s0.tryApplyTx(
-        tx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
+        ValidSignedMantleTx(tx), epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
     check r.isOk
     let
       res = r.get
@@ -209,7 +209,7 @@ suite "tryApplyTx — channel ops":
       s0 = mkChannelState([note], cid, kp.pubkey, [note])
       tx = mkTransferTx([note.id], [mkNote(100, pkSeed = 2)])
       r = s0.tryApplyTx(
-        tx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
+        ValidSignedMantleTx(tx), epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
     check r.error == ChannelNoteSpend
 
 suite "Ledger[Id] map ops":
@@ -280,7 +280,7 @@ suite "tryApplyTx — happy path (Rust-generated fixture)":
       input = mkUtxoWithPk(mkRealZkPubKey(1), value = 100)
       s0 = mkState([input])
       r = s0.tryApplyTx(
-        mkFixtureTransferTx(input), epoch = EpochNumber(0), slot = 0'u64,
+        ValidSignedMantleTx(mkFixtureTransferTx(input)), epoch = EpochNumber(0), slot = 0'u64,
         verifyPoq = acceptAllPoq)
     check r.isOk
 
@@ -305,7 +305,7 @@ suite "tryApplyTx — happy path (Rust-generated fixture)":
     )
     discard installTestDeclaration(s0.sdp, declaration, epoch = 1)
     let r = s0.tryApplyTx(
-      mkFixtureTransferTx(input), epoch = EpochNumber(0), slot = 0'u64,
+      ValidSignedMantleTx(mkFixtureTransferTx(input)), epoch = EpochNumber(0), slot = 0'u64,
       verifyPoq = acceptAllPoq)
     check r.isOk
     let res = r.get
@@ -389,7 +389,7 @@ when false:
         input = mkUtxo(value = 100, pkSeed = 1)
         s0 = mkState([input])
         tx = mkTransferTx([input.id], [mkNote(100, pkSeed = 2)])
-        r = s0.tryApplyTxns([tx], slot = 0'u64, verifyPoq = acceptAllPoq)
+        r = s0.tryApplyTxns([ValidSignedMantleTx(tx)], slot = 0'u64, verifyPoq = acceptAllPoq)
       check r.isOk
       check r.get.latestUtxos.len == 1
 
@@ -399,7 +399,7 @@ when false:
         s0 = mkState([input])
         tx = mkTransferTx([input.id], [mkNote(60, pkSeed = 2), mkNote(50, pkSeed = 3)])
           # sum 110 > input 100
-        r = s0.tryApplyTxns([tx], slot = 0'u64, verifyPoq = acceptAllPoq)
+        r = s0.tryApplyTxns([ValidSignedMantleTx(tx)], slot = 0'u64, verifyPoq = acceptAllPoq)
       check r.isErr
       check r.error == InsufficientBalance
 
@@ -408,7 +408,7 @@ when false:
         input = mkUtxo(value = 100, pkSeed = 1)
         s0 = mkState([input])
         tx = mkTransferTx([input.id], [mkNote(50, pkSeed = 2)]) # surplus 50 < fee
-        r = s0.tryApplyTxns([tx], slot = 0'u64, verifyPoq = acceptAllPoq)
+        r = s0.tryApplyTxns([ValidSignedMantleTx(tx)], slot = 0'u64, verifyPoq = acceptAllPoq)
       check r.isErr
       check r.error == InsufficientBalance
 
@@ -425,7 +425,7 @@ when false:
           parentId = mkId(0x01),
           slot = 1'u64,
           proof = mkProof(),
-          txs = @[tx],
+          txs = [ValidSignedMantleTx(tx)],
         )
       check r.isOk
       let prepared = r.get
@@ -444,7 +444,7 @@ when false:
           parentId = mkId(0x01),
           slot = 1'u64,
           proof = mkProof(),
-          txs = @[tx],
+          txs = [ValidSignedMantleTx(tx)],
         )
       check r.isErr
       check r.error == InsufficientBalance
@@ -464,7 +464,7 @@ when false:
           parentId = mkId(0x00),
           slot = 1'u64,
           proof = mkProof(),
-          txs = @[tx1],
+          txs = [ValidSignedMantleTx(tx1)],
         )
       check r1.isOk
       l.commitUpdate(r1.get.id, r1.get.state)
@@ -488,7 +488,7 @@ when false:
           parentId = mkId(0x01),
           slot = 2'u64,
           proof = mkProof(),
-          txs = @[tx2],
+          txs = [ValidSignedMantleTx(tx2)],
         )
       check r2.isOk
       l.commitUpdate(r2.get.id, r2.get.state)
@@ -513,7 +513,7 @@ when false:
           parentId = mkId(0x02),
           slot = 3'u64,
           proof = mkProof(),
-          txs = @[tx3],
+          txs = [ValidSignedMantleTx(tx3)],
         )
       check r3.isOk
       l.commitUpdate(r3.get.id, r3.get.state)
@@ -593,7 +593,7 @@ suite "tryApplyTx — SDP":
     l.commitUpdate(r.get.id, r.get.state)
     check declarationId(declaration) in l.state(mkId(0x11)).get.sdp.state.declarations
 
-const noTxs: seq[SignedMantleTx] = @[]
+const noTxs: seq[ValidSignedMantleTx] = @[]
   ## Empty block contents; a compile-time value stays gcsafe, a `let` would not.
 
 suite "block rewards — per-block leader crediting":

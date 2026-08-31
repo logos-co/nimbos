@@ -14,7 +14,6 @@ import
   std/[sets, sequtils],
   results,
   libp2p/crypto/ed25519/ed25519,
-  libp2p/multiaddress,
   ./poc_verifier,
   ./primitives,
   ./operations,
@@ -27,7 +26,7 @@ type
     ## Stateless and monotonic terminal transaction errors.
     DoubleSpend ## same NoteId appears twice as an input across the transaction
     ZeroValueNote ## output Note has value == 0
-    InvalidProof ## ZK multi-sig, leader-proof, or signature verify failed
+    InvalidProof ## ZK multi-sig, transfer, or signature verify failed
     UnsupportedOp ## Op kind not yet wired in this ledger version
     EmptyLocators ## SDP Declare locators must contain at least one element
     TooManyLocators

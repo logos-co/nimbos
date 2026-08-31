@@ -27,6 +27,13 @@ type
     tx*: MantleTx
     opProofs*: seq[OpProof]
 
+  ValidSignedMantleTx* = distinct SignedMantleTx
+    ## A ``SignedMantleTx`` that has successfully passed all stateless structural
+    ## and cryptographic verifications via ``validateMantleTxStateless``.
+
+template tx*(t: ValidSignedMantleTx): untyped = SignedMantleTx(t).tx
+template opProofs*(t: ValidSignedMantleTx): untyped = SignedMantleTx(t).opProofs
+
 func encodeMantleTx*(tx: MantleTx): seq[byte] =
   ## MantleTx = OpCount (u8) || *Op
   encodeOps(tx.ops)
@@ -36,6 +43,9 @@ func encodeSignedMantleTx*(signedTx: SignedMantleTx): seq[byte] =
   var res = encodeMantleTx(signedTx.tx)
   res.add(encodeOpsProofs(signedTx.tx.ops, signedTx.opProofs))
   res
+
+template encodeSignedMantleTx*(signedTx: ValidSignedMantleTx): seq[byte] =
+  encodeSignedMantleTx(SignedMantleTx(signedTx))
 
 func decodeMantleTx*(data: openArray[byte]): MantleTx {.raises: [DecodingError].} =
   var pos = 0
