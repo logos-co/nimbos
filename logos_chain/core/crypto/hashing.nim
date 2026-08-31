@@ -17,15 +17,20 @@ import
 export types
 
 
-func blake2b256Hash*(data: openArray[byte]): Hash32 =
+func blake2b256Hash*(domainTag: string, data: openArray[byte]): Hash32 =
   ## Spec reference (common cryptographic components):
   ## https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/common-cryptographic-components.md#blake2bgeneral-purpose-hashing
-  ## Returns BLAKE2b-256(data) as a 32-byte **``Hash32``**.
+  ## Returns BLAKE2b-256([domainTag ||] data) as a 32-byte **``Hash32``**.
   var ctx {.noinit.}: Blake2bContext[256]
   ctx.init()
+  if domainTag.len > 0:
+    ctx.update(domainTag.toOpenArrayByte(0, domainTag.high))
   ctx.update(data)
   let digest = ctx.finish()
   digest.data
+
+template blake2b256Hash*(data: openArray[byte]): Hash32 =
+  blake2b256Hash("", data)
 
 func blake2b512Hash*(data: openArray[byte]): array[64, byte] =
   ## Returns BLAKE2b-512(data) as a 64-byte digest.
