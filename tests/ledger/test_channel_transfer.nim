@@ -172,7 +172,7 @@ suite "MantleState.tryApplyChannelTransfer":
       r = m.tryApplyChannelTransfer(cs, LockedNotes.init(), op, proof, txHash)
     check r.error == ThresholdUnmet
 
-  test "OOB sig index → InvalidProof":
+  test "OOB sig index → InvalidTxProof":
     let
       rng = HmacDrbgContext.new()
       kp1 = mkEdKeyPair(rng)
@@ -189,9 +189,9 @@ suite "MantleState.tryApplyChannelTransfer":
         indexes: @[ChannelKeyIndex(0), ChannelKeyIndex(99)],
       )
       r = m.tryApplyChannelTransfer(cs, LockedNotes.init(), op, proof, txHash)
-    check r.error == InvalidProof
+    check r.error == InvalidTxProof
 
-  test "tampered signature → InvalidProof":
+  test "tampered signature → InvalidTxProof":
     let
       rng = HmacDrbgContext.new()
       kp1 = mkEdKeyPair(rng)
@@ -211,7 +211,7 @@ suite "MantleState.tryApplyChannelTransfer":
         indexes: @[ChannelKeyIndex(0), ChannelKeyIndex(1)],
       )
       r = m.tryApplyChannelTransfer(cs, LockedNotes.init(), op, proof, txHash)
-    check r.error == InvalidProof
+    check r.error == InvalidTxProof
 
   test "preserves LeaderState":
     let

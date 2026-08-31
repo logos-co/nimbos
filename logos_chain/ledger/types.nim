@@ -26,7 +26,8 @@ type
     ParentNotFound ## prepareUpdate's parent_id is not in the map
     InvalidNote ## input NoteId not in UtxoStore
     LockedNote ## input NoteId is locked by SDP
-    InvalidProof ## ZK multi-sig or leader-proof verify failed
+    InvalidProofOfLeadership ## Proof of Leadership (Cryptarchia) verify failed
+    InvalidTxProof ## ZK multi-sig, transfer, or channel proof verify failed
     BalanceOutOfRange ## balance math left the representable range
     UnsupportedOp ## Op kind not yet wired in this ledger version
     InsufficientBalance ## not enough balance for the requested debit

@@ -101,9 +101,9 @@ func verifyChannelMultiSig(
     return err(ThresholdUnmet)
   for i, idx in proof.indexes:
     if int(idx) >= keys.len:
-      return err(InvalidProof)
+      return err(InvalidTxProof)
     if not verify(proof.signatures[i], txHash, keys[idx]):
-      return err(InvalidProof)
+      return err(InvalidTxProof)
   ok()
 
 func assert_spendable(

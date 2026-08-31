@@ -96,7 +96,7 @@ suite "tryApplyHeader":
     let r = s0.tryApplyHeader(slot = 1'u64, proof = bad, cfg = testLedgerConfig)
     check r.error == VerifierNotInitialised
 
-  test "returns InvalidProof when verifier rejects":
+  test "returns InvalidProofOfLeadership when verifier rejects":
     pol.resetVkForTesting()
     let vkText = readAllChars(fixtureVk).valueOr:
       check false
@@ -110,7 +110,7 @@ suite "tryApplyHeader":
     var bad = mkProof()
     bad.proof[0] = 0x01  # bit-pattern can't be a valid compressed G1 point
     let r = s0.tryApplyHeader(slot = 1'u64, proof = bad, cfg = testLedgerConfig)
-    check r.error == InvalidProof
+    check r.error == InvalidProofOfLeadership
 
 suite "tryApplyTx — channel ops":
   proc mkChannelState(
@@ -352,7 +352,7 @@ when false:
       check not res.state.latestUtxos.contains(in1.id)
       check not res.state.latestUtxos.contains(in2.id)
 
-    test "two ops, second has wrong proof kind → InvalidProof":
+    test "two ops, second has wrong proof kind → InvalidTxProof":
       let
         in1 = mkUtxo(value = 100, pkSeed = 1)
         in2 = mkUtxo(value = 50, pkSeed = 2)
@@ -381,7 +381,7 @@ when false:
         r = s0.tryApplyTx(
           tx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
       check r.isErr
-      check r.error == InvalidProof
+      check r.error == InvalidTxProof
 
   suite "tryApplyTxns":
     test "balanced tx → state advances":

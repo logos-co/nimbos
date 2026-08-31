@@ -168,13 +168,13 @@ proc tryApplyHeader*(
     verified = verifyProof(proof, public).valueOr:
       return err(VerifierNotInitialised)
   if not verified:
-    return err(InvalidProof)
+    return err(InvalidProofOfLeadership)
 
   s.cryptarchiaLedger.leader =
     s.cryptarchiaLedger.leader.recordBlockLeader(proof.leaderVoucher)
 
   let entropy = frFromBytesLE(proof.entropyContribution).valueOr:
-    return err(InvalidProof)
+    return err(InvalidProofOfLeadership)
   s.epochs = s.epochs.recordBlock(slot, entropy)
   ok(s)
 

@@ -120,7 +120,7 @@ suite "MantleState.tryApplyChannelWithdraw":
       r = m.tryApplyChannelWithdraw(cs, LockedNotes.init(), op, proof, txHash)
     check r.error == ThresholdUnmet
 
-  test "OOB sig index → InvalidProof":
+  test "OOB sig index → InvalidTxProof":
     let
       rng = HmacDrbgContext.new()
       kp1 = mkEdKeyPair(rng)
@@ -136,9 +136,9 @@ suite "MantleState.tryApplyChannelWithdraw":
         indexes: @[ChannelKeyIndex(0), ChannelKeyIndex(99)],
       )
       r = m.tryApplyChannelWithdraw(cs, LockedNotes.init(), op, proof, txHash)
-    check r.error == InvalidProof
+    check r.error == InvalidTxProof
 
-  test "tampered signature → InvalidProof":
+  test "tampered signature → InvalidTxProof":
     let
       rng = HmacDrbgContext.new()
       kp1 = mkEdKeyPair(rng)
@@ -157,7 +157,7 @@ suite "MantleState.tryApplyChannelWithdraw":
         indexes: @[ChannelKeyIndex(0), ChannelKeyIndex(1)],
       )
       r = m.tryApplyChannelWithdraw(cs, LockedNotes.init(), op, proof, txHash)
-    check r.error == InvalidProof
+    check r.error == InvalidTxProof
 
 suite "applyChannelWithdraw — released notes rejoin the regular note set":
   test "a released note is spendable by a regular Transfer":

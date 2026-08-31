@@ -120,7 +120,7 @@ suite "MantleState.tryApplyChannelConfig — existing channel":
       r = m.tryApplyChannelConfig(op, proof, txHash, blockSlot = 0'u64)
     check r.error == ThresholdUnmet
 
-  test "OOB index → InvalidProof":
+  test "OOB index → InvalidTxProof":
     let
       rng = HmacDrbgContext.new()
       kp1 = mkEdKeyPair(rng)
@@ -137,9 +137,9 @@ suite "MantleState.tryApplyChannelConfig — existing channel":
         indexes: @[ChannelKeyIndex(0), ChannelKeyIndex(99)],
       )
       r = m.tryApplyChannelConfig(op, proof, txHash, blockSlot = 0'u64)
-    check r.error == InvalidProof
+    check r.error == InvalidTxProof
 
-  test "bad signature → InvalidProof":
+  test "bad signature → InvalidTxProof":
     let
       rng = HmacDrbgContext.new()
       kp1 = mkEdKeyPair(rng)
@@ -159,6 +159,6 @@ suite "MantleState.tryApplyChannelConfig — existing channel":
         indexes: @[ChannelKeyIndex(0), ChannelKeyIndex(1)],
       )
       r = m.tryApplyChannelConfig(op, proof, txHash, blockSlot = 0'u64)
-    check r.error == InvalidProof
+    check r.error == InvalidTxProof
 
 {.pop.}

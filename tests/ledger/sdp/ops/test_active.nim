@@ -132,7 +132,7 @@ suite "ledger/sdp/ops/active — blend activity":
       proc(poq: ProofOfQuota, signingKey: Ed25519PublicKey): bool = false
     check tryApplySdpActive(
       target.registry, mkTargetActivity(target), fixtureProof,
-      fixtureTxHash, 1, rejectAll).error == InvalidProof
+      fixtureTxHash, 1, rejectAll).error == InvalidTxProof
 
   test "metadata that is not a blend activity proof is rejected":
     let active = ActiveMessage(

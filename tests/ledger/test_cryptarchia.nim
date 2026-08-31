@@ -159,7 +159,7 @@ suite "tryApplyTransfer — error paths":
     check r.isErr
     check r.error == ChannelNoteSpend
 
-  test "bad signature → InvalidProof":
+  test "bad signature → InvalidTxProof":
     let
       input = mkUtxo(value = 100, pkSeed = 1)
       s0 = CryptarchiaState.init([input])
@@ -175,7 +175,7 @@ suite "tryApplyTransfer — error paths":
         txHash = mkTxHash(),
       )
     check r.isErr
-    check r.error == InvalidProof
+    check r.error == InvalidTxProof
 
   test "verify before VK install → VerifierNotInitialised":
     zksign.resetVkForTesting()

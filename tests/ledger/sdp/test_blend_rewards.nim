@@ -129,11 +129,11 @@ suite "ledger/sdp/blend_rewards":
     # Provider 1 sits at index 0; a rho selecting index 1 must fail.
     check recordActivity(
       r, mkActivity(wrongIndexRho, 0, 10), mkProvider(1), acceptAllPoq
-    ).error == InvalidProof
+    ).error == InvalidTxProof
     var bad = mkActivity(findRho(0, 2), 0, 10)
     bad.proofOfQuota.keyNullifier = frFromBytesLE([byte 77]).get
     check recordActivity(
-      r, bad, mkProvider(1), acceptAllPoq).error == InvalidProof
+      r, bad, mkProvider(1), acceptAllPoq).error == InvalidTxProof
 
   test "an injected proof-of-quota rejection invalidates the submission":
     let rejectAll: PoqVerifier =
@@ -141,7 +141,7 @@ suite "ledger/sdp/blend_rewards":
     check recordActivity(
       rotated(income = 100, n = 2),
       mkActivity(findRho(0, 2), 0, 10), mkProvider(1), rejectAll
-    ).error == InvalidProof
+    ).error == InvalidTxProof
 
   test "three submitters, premium doubles, remainder dropped":
     var r = rotated(income = 1000, n = 3)

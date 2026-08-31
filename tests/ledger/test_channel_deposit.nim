@@ -183,7 +183,7 @@ suite "MantleState.tryApplyChannelDeposit — verify wrapper (fixture-driven)":
         sig = default(ZkSigProof), txHash = mkTxHash())
     check r.error == VerifierNotInitialised
 
-  test "bad signature → InvalidProof":
+  test "bad signature → InvalidTxProof":
     check installZksignVk(fixtureVk)
     let
       cid = mkChannelId(13)
@@ -196,7 +196,7 @@ suite "MantleState.tryApplyChannelDeposit — verify wrapper (fixture-driven)":
       r = m.tryApplyChannelDeposit(
         cs, LockedNotes.init(), op,
         sig = default(ZkSigProof), txHash = mkTxHash())
-    check r.error == InvalidProof
+    check r.error == InvalidTxProof
 
   test "happy: real proof + matching pks + matching msg → state advances":
     check installZksignVk(fixtureVk)
