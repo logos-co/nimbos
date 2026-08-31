@@ -13,7 +13,7 @@ import
   chronos/unittest2/asynctests,
   unittest2,
   bincode,
-  libp2p/switch,
+  libp2p/[switch, peerid],
   ../../../logos_chain/networking/network,
   ../../../logos_chain/core/[types, local_tree],
   ../../../logos_chain/chain/[genesis, chain],
@@ -21,6 +21,9 @@ import
   ./helpers,
   ../../testutil
 from ../../../logos_chain/core/mantle/primitives import SlotNumber
+
+template peerProvider(peers: varargs[PeerId]): PeerProvider =
+  (proc(): seq[PeerId] = @peers)
 
 proc runLbp2pIbdSyncTest(extraBlocks: int) {.async.} =
   let
@@ -36,7 +39,7 @@ proc runLbp2pIbdSyncTest(extraBlocks: int) {.async.} =
   let peers = await createBootstrapPeers()
   let bootstrapSyncer = Syncer.init(
     peers.listener.switch, chainBootstrap, testChainSyncProtocol)
-  bootstrapSyncer.start(@[])
+  bootstrapSyncer.start()
 
   let
     clientSyncer = Syncer.init(peers.dialer.switch, chainClient, testChainSyncProtocol)
@@ -45,8 +48,10 @@ proc runLbp2pIbdSyncTest(extraBlocks: int) {.async.} =
   try:
     await peers.listener.start()
     await peers.dialer.start()
-    let syncPeers = await peers.dialer.waitForBootstrapPeers()
-    clientSyncer.start(syncPeers)
+    discard await peers.dialer.waitForBootstrapPeers()
+    clientSyncer.start(
+      Opt.some(proc(): seq[PeerId] = peers.dialer.connectedBootstrapPeerIds())
+    )
 
     check waitUntil(peers.dialer.switch.isConnected(peers.listenerPeerId))
     check waitUntil(chainClient.localTree.hasBlock(tipId), chronos.milliseconds(waitAttempts * 100))
@@ -185,14 +190,26 @@ suite "sync/initial_block_download (GetTip)":
       await server.stop()
 
 suite "sync/initial_block_download (IBD requester loop)":
-  asyncTest "initialBlockDownload with no peers completes without raising":
+  asyncTest "initialBlockDownload with no configured peers completes without raising":
     let
       sm = minimalSignedTx()
       genesis = createGenesisBlock(sm)
       sw = await startQuicTestSwitch()
     try:
       let clientSyncer = Syncer.init(sw, initTestChain(genesis), testChainSyncProtocol)
-      await initialBlockDownload(clientSyncer, @[])
+      await initialBlockDownload(clientSyncer, Opt.none(PeerProvider))
+    finally:
+      await sw.stop()
+
+  asyncTest "initialBlockDownload when no configured peers are connected raises IBDFailure":
+    let
+      sm = minimalSignedTx()
+      genesis = createGenesisBlock(sm)
+      sw = await startQuicTestSwitch()
+    try:
+      let clientSyncer = Syncer.init(sw, initTestChain(genesis), testChainSyncProtocol)
+      expect IBDFailure:
+        await initialBlockDownload(clientSyncer, Opt.some(peerProvider()))
     finally:
       await sw.stop()
 
@@ -210,7 +227,7 @@ suite "sync/initial_block_download (IBD requester loop)":
 
     try:
       await client.connect(server.peerInfo.peerId, server.peerInfo.addrs, forceDial = true)
-      await initialBlockDownload(clientSyncer, @[server.peerInfo.peerId])
+      await initialBlockDownload(clientSyncer, Opt.some(peerProvider(server.peerInfo.peerId)))
     finally:
       await client.stop()
       await server.stop()
@@ -234,7 +251,7 @@ suite "sync/initial_block_download (IBD requester loop)":
     try:
       await client.connect(server.peerInfo.peerId, server.peerInfo.addrs, forceDial = true)
       expect IBDFailure:
-        await initialBlockDownload(clientSyncer, @[server.peerInfo.peerId])
+        await initialBlockDownload(clientSyncer, Opt.some(peerProvider(server.peerInfo.peerId)))
     finally:
       await client.stop()
       await server.stop()
@@ -260,12 +277,50 @@ suite "sync/initial_block_download (IBD requester loop)":
 
     try:
       await client.connect(server.peerInfo.peerId, server.peerInfo.addrs, forceDial = true)
-      await initialBlockDownload(clientSyncer, @[server.peerInfo.peerId])
+      await initialBlockDownload(clientSyncer, Opt.some(peerProvider(server.peerInfo.peerId)))
       check clientChain.localTree.hasBlock(b1id)
       check clientChain.localTree.localTipId == b1id
     finally:
       await client.stop()
       await server.stop()
+
+  asyncTest "initialBlockDownload fails over to secondary peer when primary peer fails":
+    let
+      sm = minimalSignedTx()
+      genesis = createGenesisBlock(sm)
+      gid = blockId(genesis.header)
+      b1 = childBlock(genesis.header, gid, SlotNumber(1), [])
+
+    # Server 1: Dead/unmounted handler (will fail)
+    var serverChain1 = initTestChain(genesis)
+    let server1 = await startQuicTestSwitch()
+
+    # Server 2: Healthy mounted handler with block b1
+    var serverChain2 = initTestChain(genesis)
+    check serverChain2.localTree.addBlockToTree(b1)
+    let b1id = blockId(b1.header)
+    let server2 = await startQuicTestSwitch()
+    let serverSyncer2 = Syncer.init(server2, serverChain2, testChainSyncProtocol)
+    mountCryptarchiaSyncHandler(serverSyncer2)
+
+    let client = await startQuicTestSwitch()
+    let clientChain = initTestChain(genesis)
+    let clientSyncer = Syncer.init(client, clientChain, testChainSyncProtocol)
+
+    try:
+      await client.connect(server1.peerInfo.peerId, server1.peerInfo.addrs, forceDial = true)
+      await client.connect(server2.peerInfo.peerId, server2.peerInfo.addrs, forceDial = true)
+
+      await initialBlockDownload(
+        clientSyncer,
+        Opt.some(peerProvider(server1.peerInfo.peerId, server2.peerInfo.peerId)),
+      )
+      check clientChain.localTree.hasBlock(b1id)
+      check clientChain.localTree.localTipId == b1id
+    finally:
+      await client.stop()
+      await server1.stop()
+      await server2.stop()
 
 suite "LBP2PNode cryptarchia IBD at startup":
   asyncTest "bootstrap peer serves chain; client syncs 1-block taller tip on start()":

@@ -231,10 +231,10 @@ suite "Network connection state — outboundTable, connQueue, seenTable":
       await listener1.stop()
       await listener2.stop()
 
-  asyncTest "waitForBootstrapPeers: grace period allows in-flight peers to settle without waiting full bootstrapTimeout":
-    let listener = await startTestNode("p2p-grace-listener")
+  asyncTest "waitForBootstrapPeers: returns immediately once at least one bootstrap peer connects without waiting full bootstrapTimeout":
+    let listener = await startTestNode("p2p-fast-listener")
     let dialer = await startTestNode(
-      "p2p-grace-dialer",
+      "p2p-fast-dialer",
       @[listener.fullAddress(), DeadBootstrapAddress],
     )
 
@@ -250,8 +250,7 @@ suite "Network connection state — outboundTable, connQueue, seenTable":
       # 1. Verify that the live bootstrap peer connected and was returned
       check readyPeers == @[listener.switch.peerInfo.peerId]
 
-      # 2. Verify grace period bounded elapsed time to ~300ms, well under 30s bootstrapTimeout
-      check elapsed >= BootstrapDialGrace
+      # 2. Verify immediate return, well under 30s bootstrapTimeout
       check elapsed < 5.seconds
     finally:
       await dialer.stop()

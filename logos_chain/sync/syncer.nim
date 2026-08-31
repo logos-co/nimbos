@@ -21,7 +21,7 @@ func init*(T: type Syncer, sw: Switch, chain: Chain, protocol: string): T =
   T(sw: sw, chain: chain, chainSyncProtocol: protocol)
 
 proc runAtStartup(
-    syncer: Syncer, syncPeers: seq[PeerId],
+    syncer: Syncer, peerProvider: Opt[PeerProvider]
 ) {.async: (raises: [CancelledError]).} =
   try:
     mountCryptarchiaSyncHandler(syncer)
@@ -31,21 +31,21 @@ proc runAtStartup(
     ProcessState.scheduleStop("Chain-sync handler mount failure")
     return
   debug "Syncer started chain-sync handler",
-    protocol = syncer.chainSyncProtocol,
-    syncPeerCount = syncPeers.len
-  if syncPeers.len > 0:
-    try:
-      await initialBlockDownload(syncer, syncPeers)
-      notice "Syncer completed initial block download",
-        peerCount = syncPeers.len,
-        protocol = syncer.chainSyncProtocol
-    except IBDFailure as exc:
-      fatal "Syncer initial block download failed: unable to catch up with any IBD peer",
-        msg = exc.msg, protocol = syncer.chainSyncProtocol
-      ProcessState.scheduleStop("Initial block download failure")
-      return
+    protocol = syncer.chainSyncProtocol
+  try:
+    await initialBlockDownload(syncer, peerProvider)
+    notice "Syncer completed initial block download",
+      protocol = syncer.chainSyncProtocol
+  except IBDFailure as exc:
+    fatal "Syncer initial block download failed: unable to catch up with any IBD peer",
+      msg = exc.msg, protocol = syncer.chainSyncProtocol
+    ProcessState.scheduleStop("Initial block download failure")
+    return
 
-proc start*(syncer: Syncer, syncPeers: seq[PeerId] = @[]) =
-  asyncSpawn syncer.runAtStartup(syncPeers)
+proc start*(
+    syncer: Syncer,
+    peerProvider: Opt[PeerProvider] = Opt.none(PeerProvider),
+) =
+  asyncSpawn syncer.runAtStartup(peerProvider)
 
 {.pop.}

@@ -115,13 +115,6 @@ const
   ConcurrentConnections = 20
     ## Maximum number of active concurrent connection requests.
 
-  BootstrapDialGrace* =
-    when defined(local_testnet) or defined(unittest) or defined(test):
-      300.milliseconds
-    else:
-      3.seconds
-    ## Grace period to allow in-flight bootstrap dials to finish after the first peer connects.
-
   SeenTableTimeTimeout =
     when not defined(local_testnet): 5.minutes else: 10.seconds
 
@@ -614,16 +607,20 @@ proc startListening*(node: LBP2PNode) {.async.} =
 proc peerTrimmerHeartbeat(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
   # Disconnect peers in excess of the (soft) max peer count (lowest scoring first)
   while true:
-    let excessPeers = node.peerPool.len - node.wantedPeers
+    var connectedPeers = 0
+    var lowestConnectedPeer: Peer = nil
 
-    if excessPeers > 0:
-      var dropped = 0
-      for peer in node.peerPool.peers(order = SortOrder.Ascending):
-        debug "Trimming excess lowest-scoring peer", peer = peer.peerId
-        await peer.disconnect(ClientShutDown)
-        inc dropped
-        if dropped == excessPeers:
-          break
+    for peer in node.peerPool.peers(order = SortOrder.Ascending):
+      if peer.connectionState == ConnectionState.Connected:
+        inc connectedPeers
+        if lowestConnectedPeer == nil:
+          lowestConnectedPeer = peer
+
+    let excessPeers = connectedPeers - node.wantedPeers
+
+    if excessPeers > 0 and lowestConnectedPeer != nil:
+      debug "Trimming excess lowest-scoring peer", peer = lowestConnectedPeer.peerId
+      await lowestConnectedPeer.disconnect(ClientShutDown)
 
     await sleepAsync(1.seconds div max(1, excessPeers))
 
@@ -723,61 +720,47 @@ proc runKadDiscoveryEnqueueLoop(node: LBP2PNode) {.async: (raises: [CancelledErr
 func bootstrapPeerIds*(node: LBP2PNode): seq[PeerId] =
   node.bootstrapPeers.mapIt(it.peerId)
 
+proc connectedBootstrapPeerIds*(node: LBP2PNode): seq[PeerId] =
+  ## Returns the PeerIds of all configured bootstrap peers currently admitted
+  ## to the peer pool.
+  var res = newSeqOfCap[PeerId](node.bootstrapPeers.len)
+  for b in node.bootstrapPeers:
+    if node.peerPool.hasPeer(b.peerId):
+      res.add(b.peerId)
+  res
+
 proc waitForBootstrapPeers*(
     node: LBP2PNode,
 ): Future[seq[PeerId]] {.async: (raises: [CancelledError]).} =
-  ## Wait until configured bootstrap peers are admitted to the peer pool,
-  ## returning all reachable bootstrap PeerIds once all connect, or after a short grace
-  ## period once at least 1 peer connects, or upon full bootstrapTimeout expiration.
+  ## Wait until at least one configured bootstrap peer connects, or upon
+  ## full bootstrapTimeout expiration.
   if node.bootstrapPeers.len == 0:
     return @[]
 
   let totalConfigured = node.bootstrapPeers.len
-  var deadline = Moment.now() + node.bootstrapTimeout
-  var graceActive = false
+  let deadline = Moment.now() + node.bootstrapTimeout
   var lastLogTime = Moment.now()
 
   info "Waiting to establish connection with bootstrap peers",
     configured = totalConfigured,
     timeout = node.bootstrapTimeout
 
-  func collectReadyBootstrapPeers(node: LBP2PNode): seq[PeerId] =
-    var ready = newSeqOfCap[PeerId](node.bootstrapPeers.len)
-    for b in node.bootstrapPeers:
-      if node.peerPool.hasPeer(b.peerId):
-        ready.add(b.peerId)
-    ready
-
   while true:
     node.peerChangeEvent.clear()
-    let readyPeers = node.collectReadyBootstrapPeers()
+    let readyPeers = node.connectedBootstrapPeerIds()
 
-    # 1. Fast Path: All configured bootstrap peers have connected
-    if readyPeers.len == totalConfigured:
-      info "All configured bootstrap peers connected",
-        connected = readyPeers.len
+    # Return once at least 1 bootstrap peer is connected
+    if readyPeers.len > 0:
+      info "Bootstrap peer readiness established",
+        connected = readyPeers.len,
+        configured = totalConfigured
       return readyPeers
 
-    # 2. Once at least 1 peer connects, shorten deadline to grace window for in-flight dials
     let now = Moment.now()
-    if readyPeers.len > 0 and not graceActive:
-      graceActive = true
-      let graceDeadline = now + BootstrapDialGrace
-      if graceDeadline < deadline:
-        deadline = graceDeadline
-        debug "First bootstrap peer connected; allowing in-flight dials to settle",
-          connected = readyPeers.len,
-          graceWindow = BootstrapDialGrace
-
     let remaining = deadline - now
 
-    # 3. Deadline reached
+    # Timeout reached with no peers connected
     if remaining <= ZeroDuration:
-      if readyPeers.len > 0:
-        info "Proceeding with connected bootstrap peers",
-          connected = readyPeers.len,
-          configured = totalConfigured
-        return readyPeers
       debug "Bootstrap connection timeout reached with no peers connected",
         configured = totalConfigured,
         timeout = node.bootstrapTimeout
@@ -786,7 +769,7 @@ proc waitForBootstrapPeers*(
     if now - lastLogTime >= 5.seconds:
       lastLogTime = now
       info "Still trying to connect to bootstrap peers...",
-        connected = readyPeers.len,
+        connected = 0,
         configured = totalConfigured,
         remainingTimeout = remaining
 

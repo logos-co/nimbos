@@ -227,9 +227,11 @@ proc initializeNetworking(node: LBNode) {.async.} =
           timeout = node.network.bootstrapTimeout
         ProcessState.scheduleStop("Bootstrap peer connection timeout")
         return
-      node.syncer.start(syncPeers)
+      node.syncer.start(
+        Opt.some(proc(): seq[PeerId] = node.network.connectedBootstrapPeerIds())
+      )
     else:
-      node.syncer.start(@[])
+      node.syncer.start()
 
 type StopFuture = Future[void].Raising([CancelledError])
 
