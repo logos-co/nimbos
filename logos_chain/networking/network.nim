@@ -421,8 +421,27 @@ proc connectWorker(node: LBP2PNode, index: int) {.async: (raises: [CancelledErro
       node.outboundTable.del(remotePeerAddr.peerId)
       node.signalConnEvent(remotePeerAddr.peerId)
 
+func minOutPeers*(wantedPeers: int): int =
+  ## Minimum number of outbound peers required as defense against eclipse attacks.
+  min(wantedPeers, max(wantedPeers div 10, 3))
+
 proc handlePeer*(peer: Peer) {.async: (raises: [CancelledError]).} =
-  let res = peer.network.peerPool.addPeerNoWait(peer, peer.direction)
+  let node = peer.network
+  if peer.direction == PeerType.Incoming:
+    let minOut = minOutPeers(node.wantedPeers)
+    if node.peerPool.len >= node.hardMaxPeers or
+        (node.peerPool.len >= node.wantedPeers and
+         node.peerPool.lenCurrent({PeerType.Outgoing}) < minOut):
+      debug "Rejecting incoming peer: pool at capacity and outbound peers below minimum",
+        peer = peer,
+        currentPeers = node.peerPool.len,
+        wantedPeers = node.wantedPeers,
+        outPeers = node.peerPool.lenCurrent({PeerType.Outgoing}),
+        minOut = minOut
+      await peer.disconnect(ClientShutDown)
+      return
+
+  let res = node.peerPool.addPeerNoWait(peer, peer.direction)
   case res:
   of PeerStatus.LowScoreError, PeerStatus.NoSpaceError:
     # Peer has low score or we do not have enough space in PeerPool,
@@ -605,22 +624,37 @@ proc startListening*(node: LBP2PNode) {.async.} =
     debug "No advertised addresses configured"
 
 proc peerTrimmerHeartbeat(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
-  # Disconnect peers in excess of the (soft) max peer count (lowest scoring first)
+  # Disconnect peers in excess of the (soft) max peer count (lowest scoring first),
+  # protecting minOutPeers outbound connections to defend against eclipse attacks.
   while true:
     var connectedPeers = 0
+    var connectedOutPeers = 0
     var lowestConnectedPeer: Peer = nil
+    var lowestInboundPeer: Peer = nil
 
     for peer in node.peerPool.peers(order = SortOrder.Ascending):
       if peer.connectionState == ConnectionState.Connected:
         inc connectedPeers
         if lowestConnectedPeer == nil:
           lowestConnectedPeer = peer
+        if peer.direction == PeerType.Outgoing:
+          inc connectedOutPeers
+        elif lowestInboundPeer == nil:
+          lowestInboundPeer = peer
 
     let excessPeers = connectedPeers - node.wantedPeers
+    let minOut = minOutPeers(node.wantedPeers)
 
-    if excessPeers > 0 and lowestConnectedPeer != nil:
-      debug "Trimming excess lowest-scoring peer", peer = lowestConnectedPeer.peerId
-      await lowestConnectedPeer.disconnect(ClientShutDown)
+    if excessPeers > 0:
+      let candidate =
+        if connectedOutPeers <= minOut and lowestInboundPeer != nil:
+          lowestInboundPeer
+        else:
+          lowestConnectedPeer
+
+      if candidate != nil:
+        debug "Trimming excess lowest-scoring peer", peer = candidate.peerId
+        await candidate.disconnect(ClientShutDown)
 
     await sleepAsync(1.seconds div max(1, excessPeers))
 
@@ -683,7 +717,8 @@ proc bootstrapHeartbeat(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
 proc runKadDiscoveryLookupLoop(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
   debug "Starting Kad discovery lookup loop"
   while true:
-    if node.peerPool.len < node.wantedPeers:
+    if node.peerPool.len < node.wantedPeers or
+        node.peerPool.lenCurrent({PeerType.Outgoing}) < minOutPeers(node.wantedPeers):
       await node.mountedProtocols.kad.kadDiscoveryLookupWalk(node.switch.rng)
 
     await sleepAsync(KadDiscoveryLookupPeriod)
@@ -691,7 +726,8 @@ proc runKadDiscoveryLookupLoop(node: LBP2PNode) {.async: (raises: [CancelledErro
 proc runKadDiscoveryEnqueueLoop(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
   debug "Starting Kad discovery enqueue loop"
   while true:
-    if node.peerPool.len < node.wantedPeers:
+    if node.peerPool.len < node.wantedPeers or
+        node.peerPool.lenCurrent({PeerType.Outgoing}) < minOutPeers(node.wantedPeers):
       let kad = node.mountedProtocols.kad
       let (discoveredCount, queuedCount) =
         await enqueueKadDiscoveredPeers(
@@ -706,6 +742,8 @@ proc runKadDiscoveryEnqueueLoop(node: LBP2PNode) {.async: (raises: [CancelledErr
       debug "Kad discovery enqueue tick",
         wanted_peers = node.wantedPeers,
         current_peers = len(node.peerPool),
+        current_out_peers = node.peerPool.lenCurrent({PeerType.Outgoing}),
+        min_out_peers = minOutPeers(node.wantedPeers),
         discovered_nodes = discoveredCount,
         new_peers = queuedCount
       if queuedCount == 0:
