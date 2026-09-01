@@ -12,8 +12,10 @@
 import ./testutil
 
 import # Unit test
-  ./test_peer_pool,
-  ./test_logos_p2p,
+  ./networking/test_peer_pool,
+  ./networking/test_logos_p2p,
+  ./networking/test_discovery,
+  ./networking/test_network_connection,
   ./test_api_handlers,
   ./test_deployment_settings,
   ./test_poseidon_hasher,

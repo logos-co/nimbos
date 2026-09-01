@@ -5,83 +5,140 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option. This file may not be copied, modified, or distributed except according to those terms.
 
+## Logos Chain P2P peer discovery and Kademlia routing.
+## Specs:
+## - https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/draft/p2p-network.md#peer-discovery
+## - https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/p2p-network-bootstrapping.md
+## - https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/anoncomms/raw/extended-kad-disco.md
+
 {.push raises: [], gcsafe.}
 
 import
-  chronicles,
-  libp2p/[peerinfo, multiaddress, multicodec],
-  ../conf
+  std/[sets, sequtils],
+  chronos, chronicles, results,
+  libp2p/[switch, peerinfo, multiaddress, peerid, crypto/rng],
+  libp2p/protocols/kademlia,
+  libp2p/peerstore,
+  ./peer_pool,
+  ./bootstrap_nodes
 
-from std/os import splitFile
-from std/strutils import cmpIgnoreCase, split, startsWith, strip
+export bootstrap_nodes
 
-func parseBootstrapAddress*(address: string):
-    Result[(PeerId, MultiAddress), string] =
-  let trimmed = address.strip()
-  if trimmed.len == 0:
-    return err("Empty bootstrap address")
-  if not trimmed.startsWith("/"):
-    return err("Bootstrap address must be a libp2p multiaddr")
+const
+  KadBootstrapHeartbeatPeriod* = 10.minutes
+  KadDiscoveryLookupPeriod* = 60.seconds
 
-  ## Logos Chain bootstrap addresses are libp2p multiaddrs with `/p2p/<PeerId>`
-  ## and QUIC v1 over UDP (`/udp/.../quic-v1`).
-  ## Spec: https://nomos-tech.notion.site/P2P-Network-Specification-206261aa09df81db8100d5f410e39d75?pvs=25
-  let parsed = parseFullAddress(trimmed)
-  if parsed.isErr:
-    return err("Invalid bootstrap multiaddr: " & parsed.error)
+when defined(local_testnet) or defined(unittest) or defined(test):
+  const KadDiscoveryLoopPeriod* = 200.milliseconds
+else:
+  const KadDiscoveryLoopPeriod* = 5.seconds
 
-  let (peerId, baseAddr) = parsed.get()
-  let protocols = baseAddr.protocols().valueOr:
-    return err("Invalid bootstrap multiaddr protocols: " & error)
+type
+  DiscoveredPeerAddr* = tuple[peerId: PeerId, addrs: seq[MultiAddress]]
 
-  if multiCodec("udp") notin protocols:
-    return err("Bootstrap multiaddr must include /udp")
-  if multiCodec("quic-v1") notin protocols:
-    return err("Bootstrap multiaddr must include /quic-v1")
+func hasRoutingPeers*(kad: KadDHT): bool =
+  not isNil(kad) and kad.rtable.buckets.anyIt(it.peers.len > 0)
 
-  ok((peerId, baseAddr))
+proc kadDiscoveryLookupWalk*(
+    kad: KadDHT, rng: Rng
+) {.async: (raises: [CancelledError]).} =
+  if isNil(kad) or isNil(rng) or not kad.hasRoutingPeers():
+    return
+  let targetKey = rng.generateBytes(32)
+  debug "Kad discovery findNode lookup walk"
+  discard await kad.findNode(targetKey)
 
-iterator strippedLines(filename: string): string {.raises: [ref IOError].} =
-  ## Yields non-empty, trimmed, non-comment lines from ``filename``.
-  for line in lines(filename):
-    let stripped = strip(line)
-    if stripped.startsWith('#'):
-      continue
+proc collectKadDiscoveredPeers[T](
+    kad: KadDHT,
+    sw: Switch,
+    peerPool: PeerPool[T, PeerId],
+): seq[DiscoveredPeerAddr] =
+  if isNil(kad) or isNil(sw) or isNil(peerPool):
+    return @[]
+  var
+    seen: HashSet[PeerId]
+    discovered: seq[DiscoveredPeerAddr]
+  let selfId = sw.peerInfo.peerId
+  for bucket in kad.rtable.buckets:
+    let peers = bucket.peers
+    for entry in peers:
+      let peerId = entry.nodeId.toPeerId().valueOr:
+        continue
+      if peerId == selfId or peerPool.hasPeer(peerId) or seen.containsOrIncl(peerId):
+        continue
+      let addrs = sw.peerStore[AddressBook][peerId]
+      if addrs.len > 0:
+        discovered.add((peerId: peerId, addrs: addrs))
+  discovered
 
-    if stripped.len > 0:
-      yield stripped
+proc enqueueKadDiscoveredPeers*[T](
+    kad: KadDHT,
+    sw: Switch,
+    peerPool: PeerPool[T, PeerId],
+    enqueueIfEligible: proc(
+      peer: DiscoveredPeerAddr
+    ): Future[bool].Raising([CancelledError])
+      {.gcsafe, raises: [].},
+): Future[(int, int)] {.async: (raises: [CancelledError]).} =
+  let discoveredPeers = collectKadDiscoveredPeers(kad, sw, peerPool)
+  var queued = 0
+  for discovered in discoveredPeers:
+    if await enqueueIfEligible(discovered):
+      inc queued
+  (discoveredPeers.len, queued)
 
-proc addBootstrapNode*(bootstrapAddr: string,
-                       bootstrapPeers: var seq[(PeerId, MultiAddress)]) =
-  # Ignore empty lines or lines starting with #
-  if bootstrapAddr.len == 0 or bootstrapAddr[0] == '#':
+type
+  BootstrapDial = proc(
+    b: PeerInfo
+  ): Future[bool].Raising([CancelledError]) {.gcsafe, raises: [].}
+
+proc kadBootstrap*(
+    kad: KadDHT,
+    bootstrapNodes: seq[PeerInfo],
+    dialBootstrapPeer: BootstrapDial,
+) {.async: (raises: [CancelledError]).} =
+  if isNil(kad) or bootstrapNodes.len == 0:
     return
 
-  let addrRes = parseBootstrapAddress(bootstrapAddr.split(" # ")[0])
-  if addrRes.isOk:
-    bootstrapPeers.add addrRes.value
-  else:
-    warn "Ignoring invalid bootstrap address",
-          bootstrapAddr, reason = addrRes.error
+  debug "Starting Kad bootstrap", peers = bootstrapNodes.len
 
-proc loadBootstrapFile*(bootstrapFile: string,
-                        bootstrapPeers: var seq[(PeerId, MultiAddress)]) =
-  if bootstrapFile.len == 0: return
-  let ext = splitFile(bootstrapFile).ext
-  if cmpIgnoreCase(ext, ".txt") == 0:
-    try:
-      for ln in strippedLines(bootstrapFile):
-        addBootstrapNode(ln, bootstrapPeers)
-    except IOError as e:
-      error "Could not read bootstrap file", msg = e.msg
-      quit 1
-  else:
-    error "Unknown bootstrap file format", ext
-    quit 1
+  kad.updatePeers(bootstrapNodes)
 
-proc loadBootstrapNodes*(config: NetworkConfig): seq[(PeerId, MultiAddress)] =
-  var bootstrapPeers: seq[(PeerId, MultiAddress)]
-  for node in config.bootstrapNodes:
-    addBootstrapNode(node, bootstrapPeers)
-  loadBootstrapFile(string config.bootstrapNodesFile, bootstrapPeers)
-  bootstrapPeers
+  var dialFuts = newSeqOfCap[Future[bool].Raising([CancelledError])](bootstrapNodes.len)
+  for b in bootstrapNodes:
+    debug "Dialing bootstrap peer", peerId = b.peerId, addrs = b.addrs
+    dialFuts.add dialBootstrapPeer(b)
+
+  try:
+    await allFutures(dialFuts)
+  except CancelledError as exc:
+    for fut in dialFuts:
+      if not isNil(fut) and not fut.finished():
+        fut.cancelSoon()
+    raise exc
+
+  var connectedCount = 0
+  for i, fut in dialFuts:
+    let b = bootstrapNodes[i]
+    let dialSuccess =
+      if fut.completed() and not fut.failed():
+        try:
+          fut.read()
+        except FuturePendingError, CancelledError:
+          false
+      else:
+        false
+
+    if dialSuccess:
+      inc connectedCount
+      debug "Connected to bootstrap peer", peerId = b.peerId
+    else:
+      warn "Bootstrap peer not connected after dial attempt",
+        peerId = b.peerId, addrs = b.addrs
+
+  if connectedCount > 0:
+    discard await kad.findNode(kad.rtable.selfId)
+
+  info "Bootstrap lookup complete", connected = connectedCount
+
+{.pop.}

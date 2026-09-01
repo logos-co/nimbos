@@ -300,24 +300,35 @@ proc downloadBlocks(
 
 proc initialBlockDownload*(
     syncer: Syncer,
-    peers: seq[PeerId],
+    peerProvider: Opt[PeerProvider],
 ): Future[void] {.async: (raises: [IBDFailure, CancelledError]).} =
-  if peers.len == 0:
-    debug "IBD skipped: no peers"
+  let provider = peerProvider.valueOr:
+    debug "IBD skipped: no configured peers"
     return
-  info "Starting initial block download",
-    peerCount = peers.len, protocol = syncer.chainSyncProtocol
+
+  info "Starting initial block download", protocol = syncer.chainSyncProtocol
+  var attemptedPeers: seq[PeerId]
   var numSuccess = 0
-  for peer in peers:
-    debug "IBD: syncing peer", peer
-    if await downloadBlocks(syncer, peer, Opt.none(BlockId)):
-      inc numSuccess
-      info "IBD succeeded with peer", peer, successes = numSuccess
-    else:
-      debug "IBD: peer sync failed", peer
+
+  while true:
+    let currentPeers = provider()
+    var newlyAttempted = 0
+    for peer in currentPeers:
+      if peer notin attemptedPeers:
+        attemptedPeers.add(peer)
+        inc newlyAttempted
+        debug "IBD: syncing peer", peer
+        if await downloadBlocks(syncer, peer, Opt.none(BlockId)):
+          inc numSuccess
+          info "IBD succeeded with peer", peer, successes = numSuccess
+        else:
+          debug "IBD: peer sync failed", peer
+
+    if newlyAttempted == 0:
+      break
 
   if numSuccess == 0:
-    warn "IBD failed: no peer synced successfully", peerCount = peers.len
+    warn "IBD failed: no peer synced successfully", attemptedCount = attemptedPeers.len
     raise newException(IBDFailure, "Initial block download failed: no successful peer sync")
 
 {.pop.}
