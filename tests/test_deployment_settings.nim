@@ -432,6 +432,38 @@ mempool:
     check v.isErr
     check "pinned lottery constants" in v.error
 
+  test "parseDeploymentSettings: epoch wider than 32 bits":
+    let badYaml = deploymentSettingsBlendBlock & """
+network:
+  kademlia_protocol_name: /a/kad
+  identify_protocol_name: /a/id
+  chain_sync_protocol_name: /a/sync
+""" & "\n" & deploymentSettingsCryptarchiaBlock.replace(
+      "        epoch: 0", "        epoch: 4294967296") &
+      "\n" & deploymentSettingsTimeBlock & """
+mempool:
+  pubsub_topic: /a/mem
+"""
+    let r = parseDeploymentSettings(badYaml)
+    check r.isErr
+    check "exceeds 32 bits" in r.error
+
+  test "parseDeploymentSettings: negative epoch":
+    let badYaml = deploymentSettingsBlendBlock & """
+network:
+  kademlia_protocol_name: /a/kad
+  identify_protocol_name: /a/id
+  chain_sync_protocol_name: /a/sync
+""" & "\n" & deploymentSettingsCryptarchiaBlock.replace(
+      "        epoch: 0", "        epoch: -1") &
+      "\n" & deploymentSettingsTimeBlock & """
+mempool:
+  pubsub_topic: /a/mem
+"""
+    let r = parseDeploymentSettings(badYaml)
+    check r.isErr
+    check "non-negative integer" in r.error
+
   test "validateDeploymentSettings: zero learning rate denominator":
     var ds = parseDeploymentSettings(minimalValidYaml).valueOr:
       check false

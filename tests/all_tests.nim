@@ -12,8 +12,10 @@
 import ./testutil
 
 import # Unit test
-  ./test_peer_pool,
-  ./test_logos_p2p,
+  ./networking/test_peer_pool,
+  ./networking/test_logos_p2p,
+  ./networking/test_discovery,
+  ./networking/test_network_connection,
   ./test_api_handlers,
   ./test_deployment_settings,
   ./test_poseidon_hasher,
@@ -27,6 +29,7 @@ import # Unit test
   ./core/mantle/test_tx_hashing,
   ./core/mantle/test_utxo,
   ./core/mantle/test_declaration_id,
+  ./core/mantle/test_blend_activity,
   ./core/test_block_types,
   ./core/test_block_bincode,
   ./core/test_block_validation,
@@ -40,6 +43,9 @@ import # Unit test
   ./utils/test_dynamic_merkle_tree,
   ./ledger/sdp/test_state,
   ./ledger/sdp/test_registry,
+  ./ledger/sdp/test_blend_token,
+  ./ledger/sdp/test_rewards,
+  ./ledger/sdp/test_blend_rewards,
   ./ledger/sdp/ops/test_declare,
   ./ledger/sdp/ops/test_withdraw,
   ./ledger/sdp/ops/test_active,

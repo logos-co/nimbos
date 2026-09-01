@@ -12,7 +12,7 @@ import
   chronos,
   libp2p/[switch, peerid, errors],
   ../chain/chain,
-  ../networking/network,
+  ../process_state,
   ./[syncer_types, ibd_server, ibd_client, types]
 
 export syncer_types
@@ -21,32 +21,31 @@ func init*(T: type Syncer, sw: Switch, chain: Chain, protocol: string): T =
   T(sw: sw, chain: chain, chainSyncProtocol: protocol)
 
 proc runAtStartup(
-    syncer: Syncer, bootstrapPeerIds: seq[PeerId],
+    syncer: Syncer, peerProvider: Opt[PeerProvider]
 ) {.async: (raises: [CancelledError]).} =
-  if bootstrapPeerIds.len > 0:
-    if not await waitForBootstrapConnectivity(syncer.sw, bootstrapPeerIds):
-      warn "Syncer start skipped: bootstrap peer not connected",
-        protocol = syncer.chainSyncProtocol
-      return
   try:
     mountCryptarchiaSyncHandler(syncer)
   except LPError as exc:
-    warn "Syncer start skipped: failed to mount chain-sync handler",
+    fatal "Syncer start failed: failed to mount chain-sync handler",
       msg = exc.msg, protocol = syncer.chainSyncProtocol
+    ProcessState.scheduleStop("Chain-sync handler mount failure")
     return
   debug "Syncer started chain-sync handler",
-    protocol = syncer.chainSyncProtocol,
-    bootstrapPeerCount = bootstrapPeerIds.len
+    protocol = syncer.chainSyncProtocol
   try:
-    await initialBlockDownload(syncer, bootstrapPeerIds)
+    await initialBlockDownload(syncer, peerProvider)
     notice "Syncer completed initial block download",
-      peerCount = bootstrapPeerIds.len,
       protocol = syncer.chainSyncProtocol
   except IBDFailure as exc:
-    warn "Syncer initial block download failed",
+    fatal "Syncer initial block download failed: unable to catch up with any IBD peer",
       msg = exc.msg, protocol = syncer.chainSyncProtocol
+    ProcessState.scheduleStop("Initial block download failure")
+    return
 
-proc start*(syncer: Syncer, bootstrapPeerIds: seq[PeerId]) =
-  asyncSpawn syncer.runAtStartup(bootstrapPeerIds)
+proc start*(
+    syncer: Syncer,
+    peerProvider: Opt[PeerProvider] = Opt.none(PeerProvider),
+) =
+  asyncSpawn syncer.runAtStartup(peerProvider)
 
 {.pop.}

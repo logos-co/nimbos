@@ -160,7 +160,8 @@ func advanceEpochs*(
   var next = t
   next.nextEpoch = t.nextEpoch.updateFromLedger(
     t.nonce, latestRoot, t.lastAppliedSlot, cfg.epochSchedule)
-  let newEpoch = slotToEpoch(slot, cfg.epochSchedule)
+  let newEpoch = slotToEpoch(slot, cfg.epochSchedule).valueOr:
+    return err(InvalidSlot)
   if newEpoch > t.activeEpoch.epoch:
     next = ?next.rotate(newEpoch, latestRoot, cfg)
   doAssert next.activeEpoch.epoch == newEpoch, "rotation must land on the slot's epoch"

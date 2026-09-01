@@ -22,12 +22,15 @@ import
   ../chain/genesis,
   ./deployment_settings_helpers
 
+from ../core/mantle/primitives import EpochNumber, NumberOfEpochs
 from ../zk/pol_lottery import isSupportedLotteryF
 
 export
   dom,
   genesis,
-  deployment_settings_helpers
+  deployment_settings_helpers,
+  EpochNumber,
+  NumberOfEpochs
 
 type
   BlendSchedulerCover* = object
@@ -67,12 +70,12 @@ type
     epochPeriodNonceStabilization*: int
 
   BnServiceParams* = object
-    inactivityPeriod*: int
-    epoch*: int
+    inactivityPeriod*: NumberOfEpochs
+    epoch*: EpochNumber
 
   MinStake* = object
     threshold*: int
-    epoch*: int
+    epoch*: EpochNumber
 
   SdpConfig* = object
     bn*: BnServiceParams
@@ -188,13 +191,13 @@ func deploymentSettingsFromYaml(root: YamlNode): Result[DeploymentSettings, stri
       learningRate: ? reqDecimalRatio(root, ["cryptarchia", "learning_rate"]),
       sdpConfig: SdpConfig(
         bn: BnServiceParams(
-          inactivityPeriod: ? reqInt(
+          inactivityPeriod: ? reqUInt32(
             root, ["cryptarchia", "sdp_config", "service_params", "BN", "inactivity_period"]),
-          epoch: ? reqInt(root, ["cryptarchia", "sdp_config", "service_params", "BN", "epoch"]),
+          epoch: ? reqUInt32(root, ["cryptarchia", "sdp_config", "service_params", "BN", "epoch"]),
         ),
         minStake: MinStake(
           threshold: ? reqInt(root, ["cryptarchia", "sdp_config", "min_stake", "threshold"]),
-          epoch: ? reqInt(root, ["cryptarchia", "sdp_config", "min_stake", "epoch"]),
+          epoch: ? reqUInt32(root, ["cryptarchia", "sdp_config", "min_stake", "epoch"]),
         )
       ),
       gossipsubProtocol: ? reqScalar(root, ["cryptarchia", "gossipsub_protocol"]),
@@ -248,12 +251,8 @@ func validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
     "cryptarchia.learning_rate denominator must be > 0")
   need(ds.cryptarchia.sdpConfig.bn.inactivityPeriod >= 2,
     "cryptarchia.sdp_config.service_params.BN.inactivity_period must be >= 2")
-  need(ds.cryptarchia.sdpConfig.bn.epoch >= 0,
-    "cryptarchia.sdp_config.service_params.BN.epoch must be >= 0")
   need(ds.cryptarchia.sdpConfig.minStake.threshold > 0,
     "cryptarchia.sdp_config.min_stake.threshold must be > 0")
-  need(ds.cryptarchia.sdpConfig.minStake.epoch >= 0,
-    "cryptarchia.sdp_config.min_stake.epoch must be >= 0")
   need(ds.network.kademliaProtocolName.len > 0, "empty network.kademlia_protocol_name")
   need(ds.network.identifyProtocolName.len > 0, "empty network.identify_protocol_name")
   need(ds.network.chainSyncProtocolName.len > 0, "empty network.chain_sync_protocol_name")

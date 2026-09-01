@@ -59,8 +59,6 @@ proc initFullNode(
 
   asyncSpawn eventWaiter()
 
-  node.network.registerProtocol(PeerSync, PeerSync.NetworkState.init())
-
 proc init*(
     T: type LBNode,
     rng: ref HmacDrbgContext,
@@ -220,8 +218,20 @@ proc initializeNetworking(node: LBNode) {.async.} =
 
   await node.network.start()
   if node.syncer != nil:
-    debug "Scheduling syncer startup after network bootstrap"
-    node.syncer.start(node.network.bootstrapPeerIds)
+    if node.network.bootstrapPeerIds.len > 0:
+      debug "Waiting for bootstrap peer readiness before starting syncer",
+        timeout = node.network.bootstrapTimeout
+      let syncPeers = await node.network.waitForBootstrapPeers()
+      if syncPeers.len == 0:
+        fatal "Initial block download failed: no configured bootstrap peer reached within timeout",
+          timeout = node.network.bootstrapTimeout
+        ProcessState.scheduleStop("Bootstrap peer connection timeout")
+        return
+      node.syncer.start(
+        Opt.some(proc(): seq[PeerId] = node.network.connectedBootstrapPeerIds())
+      )
+    else:
+      node.syncer.start()
 
 type StopFuture = Future[void].Raising([CancelledError])
 

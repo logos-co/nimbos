@@ -85,7 +85,9 @@ proc init*(
   let
     genesisBlock = createGenesisBlock(settings.cryptarchia.genesisState.signedMantleTx)
     cfg = ledgerConfig(settings)
-    sdp = SdpRegistry.init(settings.cryptarchia.sdpConfig)
+    sdp = SdpRegistry.init(
+      settings.cryptarchia.sdpConfig,
+      blendRewardsParams(settings, cfg.epochSchedule.epochLength))
     param = settings.cryptarchia.genesisState.cryptarchiaParameter().valueOr:
       return err("chain: " & $error)
     genesisState = LedgerState.fromGenesis(

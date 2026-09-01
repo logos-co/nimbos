@@ -7,10 +7,12 @@
 
 {.push raises: [], gcsafe.}
 
+import results
+
 from ../core/utils import NonNegativeRatio
 from ../core/mantle/primitives import SlotNumber, EpochNumber
 
-export NonNegativeRatio, SlotNumber, EpochNumber
+export results, NonNegativeRatio, SlotNumber, EpochNumber
 
 type
   WallclockSeconds* = uint64
@@ -40,23 +42,28 @@ func nonceContributionPeriod*(s: EpochSchedule): uint64 =
   ## Stake-distribution + buffer phases; also the TSI observation window.
   (s.stakeDistributionStabilization + s.nonceBuffer) * s.basePeriodLength
 
-func slotToEpoch*(slot: SlotNumber, s: EpochSchedule): EpochNumber =
-  slot div s.epochLength
+func slotToEpoch*(slot: SlotNumber, s: EpochSchedule): Opt[EpochNumber] =
+  ## Epoch that contains `slot`. `none` past the epoch range.
+  let epoch = slot div s.epochLength
+  if epoch <= uint64(high(EpochNumber)):
+    Opt.some(EpochNumber(epoch))
+  else:
+    Opt.none(EpochNumber)
 
 func epochStartSlot*(epoch: EpochNumber, s: EpochSchedule): SlotNumber =
-  epoch * s.epochLength
+  uint64(epoch) * s.epochLength
 
 func stakeDistributionSnapshot*(epoch: EpochNumber, s: EpochSchedule): SlotNumber =
   ## First slot of the previous epoch — where `epoch`'s eligible-note set
   ## freezes. Defined for `epoch >= 1`; epoch 0 is the hardcoded genesis state.
   doAssert epoch >= 1, "epoch-0 state is hardcoded at genesis"
-  (epoch - 1) * s.epochLength
+  (uint64(epoch) - 1) * s.epochLength
 
 func nonceSnapshot*(epoch: EpochNumber, s: EpochSchedule): SlotNumber =
   ## Slot where `epoch`'s nonce freezes — `6⌊k/f⌋` into the previous epoch.
   ## Defined for `epoch >= 1`; epoch 0 is the hardcoded genesis state.
   doAssert epoch >= 1, "epoch-0 state is hardcoded at genesis"
-  (epoch - 1) * s.epochLength + s.nonceContributionPeriod
+  (uint64(epoch) - 1) * s.epochLength + s.nonceContributionPeriod
 
 func wallclockSlot*(
     now, genesis: WallclockSeconds, slotDuration: uint64): SlotNumber =

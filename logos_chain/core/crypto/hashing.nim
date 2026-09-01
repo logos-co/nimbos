@@ -12,6 +12,7 @@
 
 import
   nimcrypto/blake2,
+  stew/staticfor,
   ./types
 export types
 
@@ -25,6 +26,28 @@ func blake2b256Hash*(data: openArray[byte]): Hash32 =
   ctx.update(data)
   let digest = ctx.finish()
   digest.data
+
+func blake2b512Hash*(data: openArray[byte]): array[64, byte] =
+  ## Returns BLAKE2b-512(data) as a 64-byte digest.
+  var ctx {.noinit.}: Blake2bContext[512]
+  ctx.init()
+  ctx.update(data)
+  ctx.finish().data
+
+func blake2bShort*(data: openArray[byte], outLen: uint64): array[8, byte] =
+  ## BLAKE2b digest of ``outLen`` bytes (1..8) in a fixed buffer; bytes
+  ## past ``outLen`` stay zero.
+  # A fixed buffer keeps consensus state allocation-free.
+  doAssert outLen >= 1 and outLen <= 8,
+    "blake2bShort: digest width must be 1..8"
+  var digest: array[8, byte]
+  staticFor i, 1 .. 8:
+    if i == int(outLen):
+      var ctx {.noinit.}: Blake2bContext[i * 8]
+      ctx.init()
+      ctx.update(data)
+      digest[0 ..< i] = ctx.finish().data
+  digest
 
 func generateGroth16Proof*(): CompressedGroth16Proof =
   ## Placeholder: return zeroed compressed Groth16 bytes.
