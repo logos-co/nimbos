@@ -19,7 +19,7 @@ import
   ./deployment/deployment_settings,
   ./networking/network,
   ./sync/syncer,
-  ./zk/[circuits, pol, poc, zksign]
+  ./zk/[circuits, pol, poc, poq, zksign]
 
 from ./core/types as coreTypes import Block, blockId
 from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
@@ -95,6 +95,11 @@ proc init*(
   poc.loadAndInitVk(circuitsDir).isOkOr:
     fatal "PoC verification key install failed",
       path = pocVerificationKeyPath(circuitsDir), err = $error
+    return Opt.none(LBNode)
+
+  poq.loadAndInitVk(circuitsDir).isOkOr:
+    fatal "PoQ verification key install failed",
+      path = poqVerificationKeyPath(circuitsDir), err = $error
     return Opt.none(LBNode)
 
   let chain = Chain.init(deploymentSettings).valueOr:
