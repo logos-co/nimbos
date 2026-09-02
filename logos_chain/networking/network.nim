@@ -13,9 +13,8 @@ import
 
   # Vendor / external libs
   bearssl/rand,
-  chronos, chronicles, metrics, results,
+  chronos, chronicles, chronicles/chronos_tools, metrics, results,
   stew/byteutils,
-  eth/[async_utils, net/nat],
   libp2p/[switch, peerinfo, multiaddress, crypto/crypto, builders],
   libp2p/protocols/connectivity/autonatv2/[server, service],
   libp2p/protocols/pubsub/[pubsub, gossipsub, rpc/message, rpc/messages],
@@ -936,9 +935,12 @@ proc newSwitch(
     seckey: PrivateKey,
     address: MultiAddress,
     rng: ref HmacDrbgContext,
+    announcedAddresses: seq[MultiAddress] = @[],
 ): Result[Switch, string] =
   var sb = SwitchBuilder.new()
   try:
+    if announcedAddresses.len > 0:
+      sb = sb.withAnnouncedAddresses(announcedAddresses)
     ok sb
     .withPrivateKey(seckey)
     .withAddress(address)
@@ -976,33 +978,16 @@ proc createLBP2PNode*(
     listenAddress =
       config.listenAddress.get(getAutoAddress(Port(0)).toIpAddress())
 
-    quicPorts = @[(port: quicPort, protocol: PortProtocol.UDP)]
-    (extIp, extPorts) =
-      setupAddress(config.nat, listenAddress, quicPorts, clientId)
-    extQuicPort =
-      if extPorts.len > 0 and extPorts[0].isSome:
-        Opt.some(extPorts[0].value.port)
-      else:
-        Opt.none(Port)
-
     hostAddress =
       ?quicEndPoint(listenAddress, quicPort)
-    announcedAddresses =
-      if extIp.isSome and extQuicPort.isSome:
-        @[
-          ?quicEndPoint(extIp.value, extQuicPort.value)
-        ]
-      else:
-        @[]
+
+    announcedAddresses = config.announcedAddresses
 
   debug "Initializing networking", hostAddress,
                                    network_public_key = netKeys.pubkey,
                                    announcedAddresses
 
-  # TODO nim-libp2p still doesn't have support for announcing addresses
-  # that are different from the host address (this is relevant when we
-  # are running behind a NAT).
-  let switch = ?newSwitch(config, netKeys.seckey, hostAddress, rng)
+  let switch = ?newSwitch(config, netKeys.seckey, hostAddress, rng, announcedAddresses)
   let ident =
     try:
       mountIdentifyProtocol(switch, switch.peerInfo, config.logosNetwork)

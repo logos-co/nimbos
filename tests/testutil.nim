@@ -100,7 +100,7 @@ template waitUntil*(cond: untyped, timeout: chronos.Duration = chronos.seconds(3
 let testHmacRng = HmacDrbgContext.new()
 let testRng = newBearSslRng(testHmacRng)
 
-proc getTestHmacRng(): ref HmacDrbgContext =
+proc getTestHmacRng*(): ref HmacDrbgContext =
   {.gcsafe.}:
     testHmacRng
 
@@ -123,7 +123,6 @@ proc createTestNode*(
 ): LBP2PNode =
   let conf = NetworkConfig(
     listenAddress: some(TestLoopbackIp),
-    nat: nat.NatConfig(hasExtIp: true, extIp: TestLoopbackIp),
     quicPort: TestQuicAnyPort,
     maxPeers: maxPeers,
     hardMaxPeers: some(maxPeers),

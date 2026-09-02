@@ -32,7 +32,6 @@ func autonatV2ClientOf(node: LBP2PNode): AutonatV2Client =
 suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
   asyncTest "QUIC quic-v1 listen: switch binds and accepts on configured listen multiaddr":
     let node1 = await startTestNode("p2p-test-node1", maxPeers = 4)
-
     # Keep startup/stop scoped so sockets are released promptly.
     let listenMa = $node1.switch.peerInfo.listenAddrs[0]
     let fullAddrs = node1.switch.peerInfo.fullAddrs().tryGet()
@@ -67,6 +66,32 @@ suite "P2P stack — transport and reachability (Logos Chain / libp2p spec)":
       check fullAddrs.anyIt(($it).contains(listenMa) and ($it).contains("/p2p/" & peerIdStr))
     finally:
       await node.stop()
+
+  asyncTest "Explicit advertisement: configured --advertised-address appears in node announcedAddresses":
+    let rng = getTestHmacRng()
+    let net = NetworkConfig(
+      listenAddress: some(parseIpAddress("127.0.0.1")),
+      quicPort: Port(9000),
+      announcedAddresses: announcedAddresses(@[
+        parseUri("quic://198.51.100.1:4433"),
+        parseUri("quic://203.0.113.5"),
+        parseUri("quic://[2001:db8::1]:5001"),
+      ], Port(9000)),
+      logosNetwork: Testnet,
+      maxPeers: 4,
+      hardMaxPeers: some(4),
+      agentString: "p2p-test-advertised",
+    )
+    check net.announcedAddresses.len == 3
+
+    let node = createLBP2PNode(rng, net, getRandomNetKeys()).valueOr:
+      fail("createLBP2PNode failed: " & $error)
+
+    check node.announcedAddresses.len == 3
+    check $node.announcedAddresses[0] == "/ip4/198.51.100.1/udp/4433/quic-v1"
+    check $node.announcedAddresses[1] == "/ip4/203.0.113.5/udp/9000/quic-v1"
+    check $node.announcedAddresses[2] == "/ip6/2001:db8::1/udp/5001/quic-v1"
+    check node.switch.peerInfo.announcedAddrs.len == 3
 
   asyncTest "Lifecycle: network start and stop release listeners and pending dials cleanly":
     let node = await startTestNode("p2p-test-node1", maxPeers = 4)
