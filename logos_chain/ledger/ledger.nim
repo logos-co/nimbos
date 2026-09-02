@@ -110,7 +110,7 @@ proc fromGenesis*(
         s.cryptarchiaLedger = r.state
       of ChannelInscribe:
         # Envelope validity (null channel, root parent, zero signer) is
-        # validated statelessly in `core/types.nim`.
+        # validated statelessly in `chain/genesis.nim` (`decodeCryptarchiaParameter`).
         s.mantleLedger.channels = applyChannelInscribe(
           s.mantleLedger.channels, op.payload.channelInscribe, 0)
       of SdpDeclare:
