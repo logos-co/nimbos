@@ -23,10 +23,17 @@ circuits-bundle release. It must match:
 - `lbc-*-sys` tags in `logos-blockchain/Cargo.toml`
 - `ExpectedCircuitsVersion` in `logos_chain/zk/circuits.nim`
 
-Currently: **v0.5.3**. Bump all three together when the bundle moves.
+Currently: **v0.5.6**. Bump all three together when the bundle moves.
 
 ## Regenerate
 
-Recipe (one-shot Rust `#[ignore]` test, copy outputs here):
-see commit history or PR notes. Inputs are hardcoded as
-`sks = [1, 0, …, 0]` signing `Poseidon2(b"nimbos-test-vector")`.
+No generator is committed. Write a small harness in the reference
+workspace, or adapt the `zksign` crate's prove/verify tests.
+
+The inputs are fixed. The secret keys are `[1, 0, …, 0]`. The signed
+message is a field element. It is the last entry of `public.json`.
+
+Prove with these inputs. Write `proof.json` in snarkjs shape. Write
+`public.json` as decimal strings. It must come back byte-identical.
+Copy `verification_key.json` from the bundle's `signature/` directory
+of the same release.

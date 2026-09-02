@@ -36,6 +36,9 @@ suite "zk/circuits — path derivations":
   test "pocVerificationKeyPath joins <dir>/poc/verification_key.json":
     check pocVerificationKeyPath("/foo") == "/foo" / "poc" / "verification_key.json"
 
+  test "poqVerificationKeyPath joins <dir>/poq/verification_key.json":
+    check poqVerificationKeyPath("/foo") == "/foo" / "poq" / "verification_key.json"
+
 suite "zk/circuits — release bundle layout":
   test "verification key paths exist in logos-blockchain-circuits bundle":
     # Requires `make deps` / circuits-install-test (`tests/circuits-bundle/`).
@@ -43,6 +46,7 @@ suite "zk/circuits — release bundle layout":
     check fileExists(polVerificationKeyPath(testCircuitsDir))
     check fileExists(zksignVerificationKeyPath(testCircuitsDir))
     check fileExists(pocVerificationKeyPath(testCircuitsDir))
+    check fileExists(poqVerificationKeyPath(testCircuitsDir))
 
 suite "zk/circuits — verifyCircuitsVersion":
   test "rejects missing dir":
