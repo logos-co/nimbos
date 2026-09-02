@@ -213,13 +213,13 @@ suite "tryApplyTx — channel ops":
     check r.error == ChannelNoteSpend
 
 suite "Ledger[Id] map ops":
-  test "init seeds one (id, state); state(id) returns Some":
+  test "init seeds one (id, state); hasState returns true for seeded, false for missing":
     let
       seed = mkState(@[mkUtxo()])
       id = mkId(0x01)
       l = initLedger(id, seed, testLedgerConfig)
-    check l.state(id).isSome
-    check l.state(mkId(0x02)).isNone
+    check l.hasState(id)
+    check not l.hasState(mkId(0x02))
 
   test "commitUpdate overwrites":
     var l = initLedger(mkId(0x01), mkState(@[]), testLedgerConfig)

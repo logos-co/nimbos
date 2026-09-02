@@ -20,11 +20,14 @@ export stint
 type
   Balance* = Int128
 
-func zero*(_: typedesc[Balance]): Balance =
+const
+  DefaultBalance* = default(Balance)
+
+func zero*(_: typedesc[Balance]): Balance {.inline.} =
   # `i128(0)` instantiates a buggy `stint(SignedInt, bits)` path in
   # `vendor/nim-stint/stint/io.nim:73` (`result.negate` parses as field
   # lookup, not the proc). `default` sidesteps that path.
-  default(Balance)
+  DefaultBalance
 
 # Stint exposes no public checked arithmetic — only wrapping `+` / `-`. These
 # helpers do explicit MIN/MAX headroom checks for arbitrary signed operands.

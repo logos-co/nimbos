@@ -53,6 +53,8 @@ const
   DefaultCompressedGroth16Proof* = default(CompressedGroth16Proof)
   DefaultZkSignature* = DefaultCompressedGroth16Proof
   DefaultEd25519Signature* = default(Ed25519Signature)
+  DefaultEd25519PublicKey* = default(Ed25519PublicKey)
+  DefaultFieldElement* = default(FieldElement)
 
 let
   KDF*: FieldElement =
@@ -62,7 +64,7 @@ let
   ZeroSecretKeyPublicKey*: ZkPublicKey =
     # PK derived from SK=0 via the zksign key-derivation primitive.
     # Used to right-pad caller-supplied pk lists shorter than 32 entries.
-    Poseidon2Hasher.compress(KDF, default(FieldElement))
+    Poseidon2Hasher.compress(KDF, DefaultFieldElement)
 
 proc zkPublicKeyFromSecret*(sk: FieldElement): ZkPublicKey =
   ## Circuit-equivalent zksign key derivation: PK = Poseidon2.compress(KDF, sk).

@@ -396,6 +396,9 @@ func state*[Id](l: Ledger[Id], id: Id): Opt[LedgerState] =
   else:
     Opt.none(LedgerState)
 
+func hasState*[Id](l: Ledger[Id], id: Id): bool {.inline.} =
+  id in l.states
+
 func config*[Id](l: Ledger[Id]): lent LedgerConfig =
   l.config
 

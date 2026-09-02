@@ -54,6 +54,10 @@ type
     references*: References
     signature*: Ed25519Signature
 
+const
+  DefaultHash32* = default(Hash32)
+  DefaultBlockId* = default(BlockId)
+
 deriveBincode(ProofOfLeadership)
 deriveBincode(Header)
 deriveBincode(Block)
@@ -76,12 +80,12 @@ func createBlockRoot*(txs: openArray[SignedMantleTx]): Hash32 =
     "tx set exceeds MaxBlockTxs (" & $MaxBlockTxs & "): " & $txs.len
 
   if txs.len == 0:
-    return default(Hash32)
+    return DefaultHash32
 
   let paddedLen = nextPow2(txs.len.uint64).int
   var level = newSeq[Hash32](paddedLen)
-  for i, stx in txs:
-    level[i] = mantleTxHash(stx.tx)
+  for i in 0 ..< txs.len:
+    level[i] = mantleTxHash(txs[i].tx)
 
   var curLen = paddedLen
   while curLen > 1:

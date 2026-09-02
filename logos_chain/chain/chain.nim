@@ -113,7 +113,7 @@ proc tryApplyBlock*(
   ## Full block ingestion in `valid_header` order.
   template hdr: auto = header(blk)
   let id = blockId(hdr)
-  if chain.ledger.state(id).isSome:
+  if chain.ledger.hasState(id):
     return err(BlockApplyError(kind: AlreadyApplied))
   if hdr.slot > chain.currentWallclockSlot():
     return err(BlockApplyError(kind: FutureSlot))
