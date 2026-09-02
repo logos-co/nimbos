@@ -16,7 +16,7 @@ import
 
 export results
 
-const ExpectedCircuitsVersion* = "v0.5.3"
+const ExpectedCircuitsVersion* = "v0.5.6"
   ## Pinned bundle version. Bump requires re-running setup + revalidating
   ## committed test vectors against the new VK.
 
@@ -40,8 +40,11 @@ func zksignVerificationKeyPath*(dir: string): string =
 func pocVerificationKeyPath*(dir: string): string =
   dir / "poc" / "verification_key.json"
 
-# Future per-circuit/per-artefact helpers (PoQ; zkey, witness_generator)
-# land here as their verifiers/provers ship.
+func poqVerificationKeyPath*(dir: string): string =
+  dir / "poq" / "verification_key.json"
+
+# Future per-circuit/per-artefact helpers (zkey, witness_generator)
+# land here as their provers ship.
 
 proc verifyCircuitsVersion*(dir: string): Result[void, CircuitsBundleError] =
   ## Startup bundle health check.
