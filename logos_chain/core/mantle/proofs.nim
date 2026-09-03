@@ -240,6 +240,34 @@ func encodeOpProof*(proof: OpProof): seq[byte] =
   of opfChannelDeposit:
     @(encodeZkSigProof(proof.channelDepositProof))
 
+func byteLen*(proof: OpProof): int =
+  ## Exact wire byte length of an OpProof without allocating buffers.
+  case proof.kind
+  of opfChannelInscribe:
+    sizeof(Ed25519Signature)
+  of opfTransfer, opfChannelDeposit, opfSdpWithdraw, opfSdpActive:
+    sizeof(ZkSignature)
+  of opfSdpDeclare:
+    sizeof(ZkSignature) + sizeof(Ed25519Signature)
+  of opfLeaderClaim:
+    sizeof(CompressedGroth16Proof)
+  of opfChannelWithdraw:
+    template w: untyped = proof.channelWithdrawOpProof
+    sizeof(SignatureCount) + w.signatures.len * (sizeof(Ed25519Signature) + sizeof(ChannelKeyIndex))
+  of opfChannelTransfer:
+    template t: untyped = proof.channelTransferOpProof
+    sizeof(SignatureCount) + t.signatures.len * (sizeof(Ed25519Signature) + sizeof(ChannelKeyIndex))
+  of opfChannelConfig:
+    template c: untyped = proof.channelConfigOpProof
+    sizeof(SignatureCount) + c.signatures.len * (sizeof(Ed25519Signature) + sizeof(ChannelKeyIndex))
+
+func byteLen*(proofs: openArray[OpProof]): int =
+  ## Exact wire byte length of an OpProofs sequence without allocating buffers.
+  var total = 0
+  for p in proofs:
+    total += byteLen(p)
+  total
+
 func decodeProofOfClaimProof*(data: openArray[byte]): ProofOfClaimProof {.raises: [DecodingError].} =
   decodeGroth16(data)
 

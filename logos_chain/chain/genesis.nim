@@ -18,7 +18,7 @@ import
 
 from stew/byteutils import fromBytes
 
-from ../core/crypto/types as crypto_types import encodeEd25519PublicKey
+from ../core/crypto/types as crypto_types import DefaultEd25519PublicKey
 from ../consensus/clock import WallclockSeconds
 
 export results, types, hashing, WallclockSeconds
@@ -47,7 +47,7 @@ func decodeCryptarchiaParameter(
   # seconds ‖ 32-byte little-endian epoch nonce below the BN254 order.
   if inscribe.parent != static(default(Parent)):
     return err(cstring"genesis inscription parent is not the root message")
-  if encodeEd25519PublicKey(inscribe.signer) != default(array[32, byte]):
+  if inscribe.signer != DefaultEd25519PublicKey:
     return err(cstring"genesis inscription signer is not zero")
   let data = inscribe.inscription
   if data.len < 1 + 1 + 4 + 32:
@@ -84,14 +84,14 @@ func createGenesisHeader(genesisMantleTx: SignedMantleTx): Header =
   ## - proof-of-leadership fields = zero/default
   initHeader(
     bedrockVersion = GenesisBedrockVersion,
-    parentBlock = default(BlockId),
+    parentBlock = DefaultBlockId,
     slot = 0'u64,
     txs = [genesisMantleTx],
     proofOfLeadership = ProofOfLeadership(
       leaderVoucher: default(RewardVoucher),
       entropyContribution: default(ZkHash),
       proof: DefaultCompressedGroth16Proof,
-      leaderKey: default(Ed25519PublicKey),
+      leaderKey: DefaultEd25519PublicKey,
     ),
   )
 

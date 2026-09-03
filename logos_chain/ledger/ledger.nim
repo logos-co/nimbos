@@ -24,7 +24,7 @@ import
 from ../core/crypto/types import ZkPublicKey
 export
   types, cryptarchia_state, channel_state, mantle_state, epoch_state, registry,
-  fee_market, block_rewards, gas
+  fee_market, block_rewards, gas, tx_types.ValidSignedMantleTx
 
 type
   LedgerState* = object
@@ -110,7 +110,7 @@ proc fromGenesis*(
         s.cryptarchiaLedger = r.state
       of ChannelInscribe:
         # Envelope validity (null channel, root parent, zero signer) is
-        # enforced at the chain layer when the ceremony is decoded.
+        # validated statelessly in `chain/genesis.nim` (`decodeCryptarchiaParameter`).
         s.mantleLedger.channels = applyChannelInscribe(
           s.mantleLedger.channels, op.payload.channelInscribe, 0)
       of SdpDeclare:
@@ -168,13 +168,13 @@ proc tryApplyHeader*(
     verified = verifyProof(proof, public).valueOr:
       return err(VerifierNotInitialised)
   if not verified:
-    return err(InvalidProof)
+    return err(InvalidProofOfLeadership)
 
   s.cryptarchiaLedger.leader =
     s.cryptarchiaLedger.leader.recordBlockLeader(proof.leaderVoucher)
 
   let entropy = frFromBytesLE(proof.entropyContribution).valueOr:
-    return err(InvalidProof)
+    return err(InvalidProofOfLeadership)
   s.epochs = s.epochs.recordBlock(slot, entropy)
   ok(s)
 
@@ -199,16 +199,15 @@ func multisigThreshold(s: LedgerState, op: Op): uint16 =
 
 proc tryApplyTx*(
     state: sink LedgerState,
-    tx: SignedMantleTx,
+    tx: ValidSignedMantleTx,
     epoch: EpochNumber,
     slot: SlotNumber,
     verifyPoq: PoqVerifier,
 ): Result[tuple[state: LedgerState, balance: Balance, executionGas: Gas], LedgerError] =
   ## Applies one transaction; the returned balance is the Transfer-only
   ## delta. `slot` is used by channel ops for sequencer rotation.
-  if tx.tx.ops.len != tx.opProofs.len:
-    return err(InvalidProof)
-
+  ## Note: Structural and cryptographic validation is guaranteed at compile-time
+  ## via `ValidSignedMantleTx`.
   var
     s = state
     balance = Balance.zero
@@ -221,8 +220,6 @@ proc tryApplyTx*(
       opGas = execution_gas(op, s.multisigThreshold(op))
     txExecutionGas = txExecutionGas.checkedAdd(opGas).valueOr:
       return err(GasOverflow)
-    if proof.kind != expectedOpProofKindForOpcode(op.opcode):
-      return err(InvalidProof)
     case op.payload.kind
     of Transfer:
       let r =
@@ -262,7 +259,7 @@ proc tryApplyTx*(
       )
     of ChannelInscribe:
       s.mantleLedger = ?s.mantleLedger.tryApplyChannelInscribe(
-        op.payload.channelInscribe, proof.ed25519SigProof, txHash, slot,
+        op.payload.channelInscribe, slot,
       )
     of ChannelConfig:
       s.mantleLedger = ?s.mantleLedger.tryApplyChannelConfig(
@@ -290,7 +287,7 @@ proc tryApplyTx*(
       s.mantleLedger = r.ms
     of LeaderClaim:
       s.cryptarchiaLedger = ?s.cryptarchiaLedger.tryApplyLeaderClaim(
-        op.payload.leaderClaim, proof.proofOfClaimProof, txHash,
+        op.payload.leaderClaim,
       )
   ok((state: s, balance: balance, executionGas: txExecutionGas))
 
@@ -329,7 +326,7 @@ func creditBlockRewards*(
 
 proc tryApplyTxns*(
     state: sink LedgerState,
-    txs: openArray[SignedMantleTx],
+    txs: openArray[ValidSignedMantleTx],
     slot: SlotNumber,
     verifyPoq: PoqVerifier,
 ): Result[LedgerState, LedgerError] =
@@ -347,7 +344,7 @@ proc tryApplyTxns*(
   for tx in txs:
     let
       r = ?s.tryApplyTx(tx, epoch, slot, verifyPoq)
-      storageGas = Gas(encodeSignedMantleTx(tx).len)
+      storageGas = Gas(byteLen(tx))
       totalCost = ?mandatory_fees(r.executionGas, storageGas, prices)
     s = r.state
     if not r.balance.covers(totalCost):
@@ -399,6 +396,9 @@ func state*[Id](l: Ledger[Id], id: Id): Opt[LedgerState] =
   else:
     Opt.none(LedgerState)
 
+func hasState*[Id](l: Ledger[Id], id: Id): bool {.inline.} =
+  id in l.states
+
 func config*[Id](l: Ledger[Id]): lent LedgerConfig =
   l.config
 
@@ -423,7 +423,7 @@ proc prepareUpdate*[Id](
     id, parentId: Id,
     slot: SlotNumber,
     proof: ProofOfLeadership,
-    txs: openArray[SignedMantleTx],
+    txs: openArray[ValidSignedMantleTx],
 ): Result[tuple[id: Id, state: LedgerState], LedgerError] =
   ## Validates a block's header + transactions against the parent state.
   ## Caller invokes `commitUpdate` to install the result, or drops it to reject.

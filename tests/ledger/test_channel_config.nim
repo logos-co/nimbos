@@ -57,61 +57,6 @@ suite "MantleState.tryApplyChannelConfig — JIT creation":
     check chan.postingTimeout == 10
     check chan.tipSlot == 5'u64
 
-  test "configurationThreshold == 0 → InvalidChannelConfig":
-    let
-      rng = HmacDrbgContext.new()
-      kp = mkEdKeyPair(rng)
-      op = ChannelConfigPayload(
-        channel: mkChannelId(2),
-        keys: @[kp.pubkey],
-        configurationThreshold: 0,
-        transferThreshold: 1,
-      )
-      r = MantleState.init().tryApplyChannelConfig(
-        op, ChannelMultiSigProof(), mkTxHash(), blockSlot = 0'u64)
-    check r.error == InvalidChannelConfig
-
-  test "transferThreshold == 0 → InvalidChannelConfig":
-    let
-      rng = HmacDrbgContext.new()
-      kp = mkEdKeyPair(rng)
-      op = ChannelConfigPayload(
-        channel: mkChannelId(3),
-        keys: @[kp.pubkey],
-        configurationThreshold: 1,
-        transferThreshold: 0,
-      )
-      r = MantleState.init().tryApplyChannelConfig(
-        op, ChannelMultiSigProof(), mkTxHash(), blockSlot = 0'u64)
-    check r.error == InvalidChannelConfig
-
-  test "empty keys → InvalidChannelConfig":
-    let
-      op = ChannelConfigPayload(
-        channel: mkChannelId(4),
-        keys: @[],
-        configurationThreshold: 1,
-        transferThreshold: 1,
-      )
-      r = MantleState.init().tryApplyChannelConfig(
-        op, ChannelMultiSigProof(), mkTxHash(), blockSlot = 0'u64)
-    check r.error == InvalidChannelConfig
-
-  test "configurationThreshold > keys.len → InvalidChannelConfig":
-    let
-      rng = HmacDrbgContext.new()
-      kp1 = mkEdKeyPair(rng)
-      kp2 = mkEdKeyPair(rng)
-      op = ChannelConfigPayload(
-        channel: mkChannelId(5),
-        keys: @[kp1.pubkey, kp2.pubkey],
-        configurationThreshold: 3,
-        transferThreshold: 1,
-      )
-      r = MantleState.init().tryApplyChannelConfig(
-        op, ChannelMultiSigProof(), mkTxHash(), blockSlot = 0'u64)
-    check r.error == InvalidChannelConfig
-
   test "transferThreshold > keys.len is accepted — reconfiguration can lower it":
     let
       rng = HmacDrbgContext.new()
@@ -175,7 +120,7 @@ suite "MantleState.tryApplyChannelConfig — existing channel":
       r = m.tryApplyChannelConfig(op, proof, txHash, blockSlot = 0'u64)
     check r.error == ThresholdUnmet
 
-  test "OOB index → InvalidProof":
+  test "OOB index → InvalidTxProof":
     let
       rng = HmacDrbgContext.new()
       kp1 = mkEdKeyPair(rng)
@@ -192,9 +137,9 @@ suite "MantleState.tryApplyChannelConfig — existing channel":
         indexes: @[ChannelKeyIndex(0), ChannelKeyIndex(99)],
       )
       r = m.tryApplyChannelConfig(op, proof, txHash, blockSlot = 0'u64)
-    check r.error == InvalidProof
+    check r.error == InvalidTxProof
 
-  test "bad signature → InvalidProof":
+  test "bad signature → InvalidTxProof":
     let
       rng = HmacDrbgContext.new()
       kp1 = mkEdKeyPair(rng)
@@ -214,6 +159,6 @@ suite "MantleState.tryApplyChannelConfig — existing channel":
         indexes: @[ChannelKeyIndex(0), ChannelKeyIndex(1)],
       )
       r = m.tryApplyChannelConfig(op, proof, txHash, blockSlot = 0'u64)
-    check r.error == InvalidProof
+    check r.error == InvalidTxProof
 
 {.pop.}

@@ -12,7 +12,6 @@
 
 import
   results,
-  std/sequtils,
   libp2p/crypto/ed25519/ed25519,
   ./util,
   ../[registry, state],
@@ -28,11 +27,7 @@ proc verifySdpDeclareProofs(
     txHash: ZkHash,
     noteZkPublicKey: ZkPublicKey,
 ): Result[void, LedgerError] =
-  if not verify(
-    proof.ed25519Sig, txHash, declaration.providerId,
-  ):
-    return err(InvalidProof)
-  ?verifyZkSig(proof.zkSig, txHash, @[noteZkPublicKey, declaration.zkId])
+  verifyZkSig(proof.zkSig, txHash, @[noteZkPublicKey, declaration.zkId])
 
 proc validateSdpDeclare(
     declaration: DeclarationMessage,
@@ -43,13 +38,10 @@ proc validateSdpDeclare(
     channelNotes: ChannelNotes,
     state: SdpState,
 ): Result[void, LedgerError] =
-  if declaration.locators.len == 0:
-    return err(EmptyLocators)
-  if declaration.locators.len > MaxSdpLocators:
-    return err(TooManyLocators)
-  if not declaration.locators.allIt(isValidLocator(it)):
-    return err(InvalidLocator)
-
+  ## Stateful validation for SdpDeclare: collateral note existence, stake threshold,
+  ## and locked note zkSig verification.
+  ## Note: Structural locators and provider Ed25519 signature are verified
+  ## statelessly at ingress via `validateMantleTxStateless`.
   if lockedNoteHasService(state, declaration.lockedNoteId, declaration.serviceType):
     return err(LockedNoteServiceConflict)
 

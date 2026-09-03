@@ -142,4 +142,24 @@ suite "chain/epoch wiring (devnet deployment settings)":
       r.isErr
       r.error.kind == BlockApplyErrorKind.TreeRejected
 
+  test "tryApplyBlock rejects statelessly invalid transaction with detailed error":
+    var chain = Chain.init(ds, mockVerifyLeaderProof).valueOr:
+      check false
+      return
+    let
+      gid = blockId(chain.genesisBlock.header)
+      badTx = SignedMantleTx(
+        tx: MantleTx(ops: @[createTransferOp(TransferPayload(
+          inputs: Inputs(noteIds: @[]),
+          outputs: Outputs(notes: @[Note(value: 100, zkPublicKey: default(ZkPublicKey))]),
+        ))]),
+        opProofs: @[OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))],
+      )
+      b1 = childBlock(chain.genesisBlock.header, gid, SlotNumber(1), [badTx])
+      r = chain.tryApplyBlock(b1)
+    check:
+      r.isErr
+      r.error.kind == BlockApplyErrorKind.StatelessTxRejected
+      r.error.statelessError == StatelessLedgerError.EmptyInputs
+
 {.pop.}

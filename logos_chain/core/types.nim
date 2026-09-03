@@ -54,6 +54,10 @@ type
     references*: References
     signature*: Ed25519Signature
 
+const
+  DefaultHash32* = default(Hash32)
+  DefaultBlockId* = default(BlockId)
+
 deriveBincode(ProofOfLeadership)
 deriveBincode(Header)
 deriveBincode(Block)
@@ -76,19 +80,19 @@ func createBlockRoot*(txs: openArray[SignedMantleTx]): Hash32 =
     "tx set exceeds MaxBlockTxs (" & $MaxBlockTxs & "): " & $txs.len
 
   if txs.len == 0:
-    return default(Hash32)
+    return DefaultHash32
 
   let paddedLen = nextPow2(txs.len.uint64).int
   var level = newSeq[Hash32](paddedLen)
-  for i, stx in txs:
-    level[i] = mantleTxHash(stx.tx)
+  for i in 0 ..< txs.len:
+    level[i] = mantleTxHash(txs[i].tx)
 
-  while level.len > 1:
-    let parentLen = level.len div 2
-    var parents = newSeq[Hash32](parentLen)
+  var curLen = paddedLen
+  while curLen > 1:
+    let parentLen = curLen div 2
     for i in 0 ..< parentLen:
-      parents[i] = hashPair(level[2 * i], level[2 * i + 1])
-    level = parents
+      level[i] = hashPair(level[2 * i], level[2 * i + 1])
+    curLen = parentLen
 
   level[0]
 
@@ -104,10 +108,16 @@ func blockId*(header: Header): Hash32 =
   ##   header.proof_of_leadership.proof.serialize(),
   ##   header.proof_of_leadership.leader_key.compressed(),
   ## )
-  var preimage: seq[byte]
-  for c in "BLOCK_ID_V1":
-    preimage.add(byte(ord(c)))
+  const
+    DomainTag = "BLOCK_ID_V1"
+    PreimageCap = DomainTag.len + sizeof(header.bedrockVersion) +
+      sizeof(header.parentBlock) + sizeof(uint64) + sizeof(header.blockRoot) +
+      sizeof(header.proofOfLeadership.leaderVoucher) +
+      sizeof(header.proofOfLeadership.entropyContribution) +
+      sizeof(header.proofOfLeadership.proof) + EdPublicKeySize
 
+  var preimage = newSeqOfCap[byte](PreimageCap)
+  preimage.add(DomainTag.toOpenArrayByte(0, DomainTag.high))
   preimage.add(header.bedrockVersion)
   preimage.add(header.parentBlock)
   preimage.add(encodeLe(header.slot))

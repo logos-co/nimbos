@@ -75,19 +75,6 @@ suite "MantleState.tryApplyChannelTransfer":
         cs, LockedNotes.init(), op, ChannelMultiSigProof(), mkTxHash())
     check r.error == UnbalancedTransfer
 
-  test "zero-value output → ZeroValueNote":
-    let
-      cid = mkChannelId(4)
-      note = mkUtxo(value = 100, pkSeed = 1)
-      m = seedMantle(cid, [], [note])
-      cs = CryptarchiaState.init([note])
-      op = ChannelTransferPayload(
-        channel: cid, inputs: @[note.id],
-        outputs: @[mkNote(100, pkSeed = 5), mkNote(0, pkSeed = 6)])
-      r = m.tryApplyChannelTransfer(
-        cs, LockedNotes.init(), op, ChannelMultiSigProof(), mkTxHash())
-    check r.error == ZeroValueNote
-
   test "output sum past uint64 → BalanceOutOfRange":
     let
       cid = mkChannelId(5)
@@ -139,30 +126,7 @@ suite "MantleState.tryApplyChannelTransfer":
       cs, LockedNotes.init(), op, ChannelMultiSigProof(), mkTxHash())
     check r.error == NotAChannelNote
 
-  test "no inputs → EmptyInputs":
-    # Rejected ahead of the balance check, which an all-empty op would pass.
-    let
-      cid = mkChannelId(9)
-      note = mkUtxo(value = 100, pkSeed = 1)
-      m = seedMantle(cid, [], [note])
-      cs = CryptarchiaState.init([note])
-      op = ChannelTransferPayload(channel: cid, inputs: @[], outputs: @[])
-      r = m.tryApplyChannelTransfer(
-        cs, LockedNotes.init(), op, ChannelMultiSigProof(), mkTxHash())
-    check r.error == EmptyInputs
 
-  test "duplicate input NoteId → DoubleSpend":
-    let
-      cid = mkChannelId(9)
-      note = mkUtxo(value = 100, pkSeed = 1)
-      m = seedMantle(cid, [], [note])
-      cs = CryptarchiaState.init([note])
-      op = ChannelTransferPayload(
-        channel: cid, inputs: @[note.id, note.id],
-        outputs: @[mkNote(200, pkSeed = 5)])
-      r = m.tryApplyChannelTransfer(
-        cs, LockedNotes.init(), op, ChannelMultiSigProof(), mkTxHash())
-    check r.error == DoubleSpend
 
   test "input missing from the UTXO set → InvalidNote":
     let
@@ -208,7 +172,7 @@ suite "MantleState.tryApplyChannelTransfer":
       r = m.tryApplyChannelTransfer(cs, LockedNotes.init(), op, proof, txHash)
     check r.error == ThresholdUnmet
 
-  test "OOB sig index → InvalidProof":
+  test "OOB sig index → InvalidTxProof":
     let
       rng = HmacDrbgContext.new()
       kp1 = mkEdKeyPair(rng)
@@ -225,9 +189,9 @@ suite "MantleState.tryApplyChannelTransfer":
         indexes: @[ChannelKeyIndex(0), ChannelKeyIndex(99)],
       )
       r = m.tryApplyChannelTransfer(cs, LockedNotes.init(), op, proof, txHash)
-    check r.error == InvalidProof
+    check r.error == InvalidTxProof
 
-  test "tampered signature → InvalidProof":
+  test "tampered signature → InvalidTxProof":
     let
       rng = HmacDrbgContext.new()
       kp1 = mkEdKeyPair(rng)
@@ -247,7 +211,7 @@ suite "MantleState.tryApplyChannelTransfer":
         indexes: @[ChannelKeyIndex(0), ChannelKeyIndex(1)],
       )
       r = m.tryApplyChannelTransfer(cs, LockedNotes.init(), op, proof, txHash)
-    check r.error == InvalidProof
+    check r.error == InvalidTxProof
 
   test "preserves LeaderState":
     let

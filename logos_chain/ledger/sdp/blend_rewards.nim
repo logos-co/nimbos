@@ -130,14 +130,14 @@ proc verifyActivity(
   let provider = state.providers.get(providerId).valueOr:
     return err(UnknownProvider)
   if not verifyPoq(proof.proofOfQuota, proof.signingKey):
-    return err(InvalidProof)
+    return err(InvalidTxProof)
   let membership = uint64(state.providers.len)
   if expectedSelectionIndex(proof.proofOfSelection, membership) !=
       provider.index:
-    return err(InvalidProof)
+    return err(InvalidTxProof)
   if Poseidon2Hasher.compress(KeyNullifierDomainFr, proof.proofOfSelection) !=
       proof.proofOfQuota.keyNullifier:
-    return err(InvalidProof)
+    return err(InvalidTxProof)
   let
     token = BlendingToken(
       signingKey: proof.signingKey,

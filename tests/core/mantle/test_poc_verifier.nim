@@ -12,18 +12,18 @@ import
   std/[os, strutils],
   unittest2,
   stew/io2,
-  ../../logos_chain/core/crypto/types,
-  ../../logos_chain/core/mantle/proofs,
-  ../../logos_chain/ledger/poc_verifier,
-  ../../logos_chain/zk/poc,
-  ../../logos_chain/zk/poseidon2/hasher,
-  ../zk/snarkjs_helpers
+  ../../../logos_chain/core/crypto/types,
+  ../../../logos_chain/core/mantle/proofs,
+  ../../../logos_chain/core/mantle/poc_verifier,
+  ../../../logos_chain/zk/poc,
+  ../../../logos_chain/zk/poseidon2/hasher,
+  ../../zk/snarkjs_helpers
 
 const
   testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
-  fixtureVk = testsDir / "../fixtures/poc/verification_key.json"
-  fixtureProof = testsDir / "../fixtures/poc/proof.json"
-  fixturePublic = testsDir / "../fixtures/poc/public.json"
+  fixtureVk = testsDir / "../../fixtures/poc/verification_key.json"
+  fixtureProof = testsDir / "../../fixtures/poc/proof.json"
+  fixturePublic = testsDir / "../../fixtures/poc/public.json"
 
 func toProofOfClaimPublic(s: openArray[FieldElement]): ProofOfClaimPublic =
   doAssert s.len == 3
@@ -40,7 +40,7 @@ func outOfModulusHash(): ZkHash =
     h[i] = 0xFF'u8
   h
 
-suite "ledger/poc_verifier":
+suite "core/mantle/poc_verifier":
   var
     claimProof: ProofOfClaimProof
     public: ProofOfClaimPublic
