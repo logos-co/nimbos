@@ -242,9 +242,7 @@ func rotateEpoch*(
         params.roundsPerEpoch, params.messageFrequencyPerRound,
         params.numBlendLayers, providerCount).valueOr:
       return (next, minted)
-    # A quota past the circuit's comparator admits no proof either.
-    if quota >= MaxCircuitQuota:
-      return (next, minted)
+
     let
       evaluation = tokenParams(
         quota, providerCount, params.activityThresholdSensitivity).valueOr:
