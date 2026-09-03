@@ -31,7 +31,7 @@ proc rotated(income: Value, n: int): BlendRewards =
   var r = BlendRewards()
   r = r.addIncome(income).expect("income")
   r.rotateEpoch(0, 1, mkSnapshot(n), frFromBytesLE([byte 99]).get,
-    testBlendLotteryParams).rewards
+    testBlendLotteryParams, testPoqChain()).rewards
 
 suite "ledger/sdp/blend_rewards":
   test "addIncome accumulates and rejects overflow":
@@ -58,7 +58,7 @@ suite "ledger/sdp/blend_rewards":
     var r = BlendRewards()
     r = r.addIncome(500).expect("income")
     let (next, minted) = r.rotateEpoch(
-      0, 1, mkSnapshot(2), frFromBytesLE([byte 99]).get, absurdParams)
+      0, 1, mkSnapshot(2), frFromBytesLE([byte 99]).get, absurdParams, testPoqChain())
     check minted.len == 0
     check next.target.isNone
     check next.epochIncome == 0
@@ -77,7 +77,8 @@ suite "ledger/sdp/blend_rewards":
       r, mkActivity(rho, 0, 10), mkProvider(1), acceptAllPoq
     ).expect("valid submission")
     let (next, minted) = r.rotateEpoch(
-      1, 2, mkSnapshot(2), frFromBytesLE([byte 98]).get, testBlendLotteryParams)
+      1, 2, mkSnapshot(2), frFromBytesLE([byte 98]).get,
+      testBlendLotteryParams, testPoqChain())
     check minted.len == 1
     # base = 1001 div (1 + 1) = 500; the sole submitter is premium.
     check minted[0].note.value == 1000
@@ -86,7 +87,8 @@ suite "ledger/sdp/blend_rewards":
 
   test "no submissions: nothing minted, income forfeited":
     let (next, minted) = rotated(income = 700, n = 2).rotateEpoch(
-      1, 2, mkSnapshot(2), frFromBytesLE([byte 98]).get, testBlendLotteryParams)
+      1, 2, mkSnapshot(2), frFromBytesLE([byte 98]).get,
+      testBlendLotteryParams, testPoqChain())
     check minted.len == 0
     check next.target.get.state.epochIncome == 0
 
@@ -97,7 +99,8 @@ suite "ledger/sdp/blend_rewards":
       r, mkActivity(rho, 0, 10), mkProvider(1), acceptAllPoq
     ).expect("valid submission")
     let (next, minted) = r.rotateEpoch(
-      1, 3, mkSnapshot(2), frFromBytesLE([byte 98]).get, testBlendLotteryParams)
+      1, 3, mkSnapshot(2), frFromBytesLE([byte 98]).get,
+      testBlendLotteryParams, testPoqChain())
     check minted.len == 1
     check next.target.isNone
 
@@ -136,11 +139,9 @@ suite "ledger/sdp/blend_rewards":
       r, bad, mkProvider(1), acceptAllPoq).error == InvalidTxProof
 
   test "an injected proof-of-quota rejection invalidates the submission":
-    let rejectAll: PoqVerifier =
-      proc(poq: ProofOfQuota, signingKey: Ed25519PublicKey): bool = false
     check recordActivity(
       rotated(income = 100, n = 2),
-      mkActivity(findRho(0, 2), 0, 10), mkProvider(1), rejectAll
+      mkActivity(findRho(0, 2), 0, 10), mkProvider(1), rejectAllPoq
     ).error == InvalidTxProof
 
   test "three submitters, premium doubles, remainder dropped":
@@ -169,7 +170,8 @@ suite "ledger/sdp/blend_rewards":
         r, proofs[i], mkProvider(byte(i + 1)), acceptAllPoq
       ).expect("valid submission")
     let (_, minted) = r.rotateEpoch(
-      1, 2, mkSnapshot(3), frFromBytesLE([byte 98]).get, testBlendLotteryParams)
+      1, 2, mkSnapshot(3), frFromBytesLE([byte 98]).get,
+      testBlendLotteryParams, testPoqChain())
     check minted.len == 3
     # Provider i carries zk_id fe(i + 1), so the ascending mint order is the
     # provider order and each note's exact value is pinned.

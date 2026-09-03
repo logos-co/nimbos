@@ -25,7 +25,7 @@ const
   fixtureVk = testsDir / "../fixtures/pol/verification_key.json"
   fixtureProof = testsDir / "../fixtures/pol/proof.json"
   fixturePublic = testsDir / "../fixtures/pol/public.json"
-  fixtureSlot = SlotNumber(511)  # hardcoded from public.json (inputs[1])
+  fixtureSlot = SlotNumber(135)  # hardcoded from public.json (inputs[1])
 
 # Reconstruct the wire-format `ProofOfLeadership` from the canonical Groth16
 # inputs. Inverts what verifyLeaderProof does internally: entropyContribution

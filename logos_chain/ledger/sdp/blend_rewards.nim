@@ -14,26 +14,20 @@
 {.push raises: [], gcsafe.}
 
 import
-  std/[algorithm, tables],
+  std/[algorithm, sequtils, tables],
   results,
   stew/endians2,
   ../types,
+  ../poq_verifier,
   ./[blend_token, rewards],
   ../../core/crypto/hashing,
   ../../core/mantle/primitives,
   ../../core/mantle/utxo,
   ../../utils/hash_trie_map
 
-export blend_token, hash_trie_map
+export blend_token, hash_trie_map, poq_verifier
 
 type
-  PoqVerifier* = proc(
-    poq: ProofOfQuota, signingKey: Ed25519PublicKey
-  ): bool {.raises: [], gcsafe.}
-    ## Injectable proof-of-quota verification.
-    # TODO(zk): the real verifier carries the core/leader/pow public-input
-    # branches; they land together with the Groth16 circuit.
-
   TargetEpoch = object
     epoch*: EpochNumber
     providers*: HashTrieMap[ProviderId, tuple[zkId: ZkPublicKey, index: uint64]]
@@ -41,6 +35,9 @@ type
     randomnessDigest*: array[8, byte]
       ## ``H(R)_e``, hashed once at rotation; valid prefix = tokenParams.byteLen
     epochIncome*: Value
+    poqPublic*: PoqPublic
+      ## Public inputs every activity proof for this epoch verifies
+      ## against. Frozen at rotation from the epoch's own chain values.
 
   SubmissionTracker = object
     submitted*: HashTrieMap[ProviderId, tuple[zkId: ZkPublicKey, distance: uint64]]
@@ -68,6 +65,14 @@ let KeyNullifierDomainFr*: FieldElement =
   # selection randomness (spec §Proof of Selection, condition 2).
   frFromBytesLE("KEY_NULLIFIER_V1".toOpenArrayByte(0, 15)).get
 
+# The quota circuit compares 20-bit integers. A quota at or past this
+# bound admits no proof, so it is a parameter bug, not a proof property.
+const MaxCircuitQuota = 1'u64 shl 20
+
+func leaderQuota(params: BlendRewardsParams): uint64 =
+  ## Blending operations one election win buys: `Q_L = beta * (1 + R_D)`.
+  params.numBlendLayers * (1 + params.dataReplicationFactor)
+
 func validateBlendRewardsParams*(params: BlendRewardsParams) =
   ## The token evaluation needs a positive expected message count and a
   ## nonzero network floor (spec parameter validity, ``C * beta_C > 0``).
@@ -82,11 +87,11 @@ func validateBlendRewardsParams*(params: BlendRewardsParams) =
   doAssert float64(params.roundsPerEpoch) * params.messageFrequencyPerRound *
       float64(params.numBlendLayers) > 0.0,
     "C * beta_C must be positive"
-
-func acceptAllPoq*(poq: ProofOfQuota, signingKey: Ed25519PublicKey): bool =
-  ## Stand-in verifier until the Blend Groth16 circuit lands; every other
-  ## activity check still runs.
-  true
+  doAssert params.dataReplicationFactor <=
+      (high(uint64) div params.numBlendLayers) - 1,
+    "leadership quota overflows uint64"
+  doAssert leaderQuota(params) < MaxCircuitQuota,
+    "leadership quota exceeds the circuit's 20-bit width"
 
 func initSubmissionTracker(): SubmissionTracker =
   SubmissionTracker(
@@ -119,7 +124,7 @@ proc verifyActivity(
     tracker: SubmissionTracker,
     proof: ActivityProof,
     providerId: ProviderId,
-    verifyPoq: PoqVerifier,
+    verifyPoq: ProofOfQuotaVerifier,
 ): Result[tuple[zkId: ZkPublicKey, distance: uint64], LedgerError] =
   if proof.epoch != state.epoch:
     return err(InvalidEpoch)
@@ -129,7 +134,10 @@ proc verifyActivity(
     return err(DuplicateActiveMessage)
   let provider = state.providers.get(providerId).valueOr:
     return err(UnknownProvider)
-  if not verifyPoq(proof.proofOfQuota, proof.signingKey):
+  let quotaProofHolds = verifyPoq(
+      proof.proofOfQuota, proof.signingKey, state.poqPublic).valueOr:
+    return err(VerifierNotInitialised)
+  if not quotaProofHolds:
     return err(InvalidTxProof)
   let membership = uint64(state.providers.len)
   if expectedSelectionIndex(proof.proofOfSelection, membership) !=
@@ -153,7 +161,7 @@ proc recordActivity*(
     r: sink BlendRewards,
     proof: ActivityProof,
     providerId: ProviderId,
-    verifyPoq: PoqVerifier,
+    verifyPoq: ProofOfQuotaVerifier,
 ): Result[BlendRewards, LedgerError] =
   ## Verifies one SDP Active submission for the target epoch and records
   ## its Hamming distance; any error invalidates the transaction.
@@ -203,9 +211,12 @@ func rotateEpoch*(
     snapshot: openArray[tuple[providerId: ProviderId, zkId: ZkPublicKey]],
     epochRandomness: FieldElement,
     params: BlendRewardsParams,
+    poqChain: PoqChainContext,
 ): tuple[rewards: BlendRewards, minted: seq[Utxo]] =
   ## Pays out the frozen target and freezes the finished epoch as the new
   ## target. When no target can form, the finished epoch forfeits its income.
+  # `poqChain` carries the finished epoch's frozen chain values. The
+  # target's activity proofs were generated against them.
   doAssert newEpoch > prevEpoch, "epoch rotation must advance"
   var minted: seq[Utxo]
   if r.target.isSome:
@@ -219,6 +230,7 @@ func rotateEpoch*(
       providerCount >= params.minimumNetworkSize:
     var byZkId = @snapshot
     byZkId.sort(cmpSnapshotEntry)
+    let zkIds = byZkId.mapIt(it.zkId)
     var providers =
       HashTrieMap[ProviderId, tuple[zkId: ZkPublicKey, index: uint64]].init()
     for i, entry in byZkId:
@@ -226,13 +238,16 @@ func rotateEpoch*(
         entry.providerId, (entry.zkId, uint64(i)))
     # No integer represents this quota, so no proof can be evaluated;
     # forfeit like an undersized network instead of halting the node.
-    let
-      quota = coreQuota(
+    let quota = coreQuota(
         params.roundsPerEpoch, params.messageFrequencyPerRound,
         params.numBlendLayers, providerCount).valueOr:
-        return (next, minted)
+      return (next, minted)
+
+    let
       evaluation = tokenParams(
         quota, providerCount, params.activityThresholdSensitivity).valueOr:
+        return (next, minted)
+      coreRoot = coreZkIdRoot(zkIds).valueOr:
         return (next, minted)
     next.target = Opt.some((
       TargetEpoch(
@@ -241,7 +256,13 @@ func rotateEpoch*(
         tokenParams: evaluation,
         randomnessDigest: randomnessDigest(
           epochRandomness, evaluation.byteLen),
-        epochIncome: r.epochIncome),
+        epochIncome: r.epochIncome,
+        poqPublic: PoqPublic(
+          coreQuota: quota,
+          leaderQuota: leaderQuota(params),
+          powQuota: params.numBlendLayers,
+          coreRoot: coreRoot,
+          chain: poqChain)),
       initSubmissionTracker()))
   (next, minted)
 

@@ -31,13 +31,16 @@ const testBlendRewardsParams = BlendRewardsParams(
   minimumNetworkSize: 2,
   activityThresholdSensitivity: 1)
 
-# With 2-3 providers chi lands at 59 (8 digest bytes) and the threshold at
-# 57 of 64 bits, so an honestly-built token fails the lottery with
-# probability ~4.5e-12 (~1.4e-11 across three) — and the inputs are fixed.
-# At 2^56 rounds the quota product runs past 2^53, where the float carries a
-# few ulp of slack; the IEEE result is still the same on every platform.
+# The quota circuit compares 20-bit integers, so the computed core quota
+# must stay below 2^20 or the rotation forfeits the target. At 2^18
+# rounds the quota is 2^19 for two providers and 349526 for three. The
+# token count reaches 2^20, so chi = 21, the digest is 3 bytes, and the
+# threshold is 21 - 2 = 19 of 24 bits. An honest token fails the lottery
+# with probability ~7.7e-4. The inputs are fixed, so every outcome below
+# is deterministic and was checked at generation time. All float products
+# stay under 2^21, well inside exact double range.
 const testBlendLotteryParams* = BlendRewardsParams(
-  roundsPerEpoch: 1'u64 shl 56,
+  roundsPerEpoch: 1'u64 shl 18,
   messageFrequencyPerRound: 1.0,
   numBlendLayers: 4,
   dataReplicationFactor: 0,
@@ -52,6 +55,31 @@ func testSdpConfig*(): deploy.SdpConfig =
 
 func testSdpRegistry*(): SdpRegistry =
   SdpRegistry.init(testSdpConfig(), testBlendRewardsParams)
+
+func testPoqChain*(): PoqChainContext =
+  ## Arbitrary epoch-frozen chain values. Only the real-verifier tests
+  ## need values a proof was actually generated against.
+  PoqChainContext(
+    polLedgerAged: frFromBytesLE([byte 21]).get,
+    polEpochNonce: frFromBytesLE([byte 22]).get,
+    lottery0: frFromBytesLE([byte 23]).get,
+    lottery1: frFromBytesLE([byte 24]).get,
+    powBlendDifficulty: frFromBytesLE([byte 25]).get)
+
+func acceptAllPoq*(
+    proofOfQuota: ProofOfQuota, signingKey: Ed25519PublicKey,
+    public: PoqPublic
+): Result[bool, PoqLoadError] =
+  ## Permissive stub for tests that exercise everything but the Groth16
+  ## check. Production callers use the real verifier.
+  ok(true)
+
+func rejectAllPoq*(
+    proofOfQuota: ProofOfQuota, signingKey: Ed25519PublicKey,
+    public: PoqPublic
+): Result[bool, PoqLoadError] =
+  ## Rejecting stub for tests that assert the quota check gates the path.
+  ok(false)
 
 proc findRho*(index, membership: uint64): FieldElement =
   ## Smallest fe(k) whose selection index is `index`. One in `membership`

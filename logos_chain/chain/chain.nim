@@ -85,6 +85,7 @@ proc init*(
     T: type Chain,
     settings: DeploymentSettings,
     leaderProofVerifier: LeaderProofVerifier = verifyLeaderProof,
+    poqVerifier: ProofOfQuotaVerifier = verifyProofOfQuota,
 ): Result[T, string] =
   let
     genesisBlock = createGenesisBlock(settings.cryptarchia.genesisState.signedMantleTx)
@@ -99,7 +100,9 @@ proc init*(
       return err("chain: failed to build the genesis state: " & $error)
   ok(T.init(
     genesisBlock,
-    Ledger[BlockId].init(blockId(genesisBlock.header), genesisState, cfg, leaderProofVerifier),
+    Ledger[BlockId].init(
+      blockId(genesisBlock.header), genesisState, cfg, leaderProofVerifier,
+      poqVerifier),
     SlotConfig(
       genesisTime: param.genesisTime,
       slotDurationSeconds: uint64(settings.time.slotDuration.seconds))))

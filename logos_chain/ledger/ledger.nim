@@ -15,7 +15,7 @@ import
   std/tables,
   ./[
     balance, types, cryptarchia_state, channel_state, mantle_state,
-    pol_verifier, epoch_state, fee_market, block_rewards,
+    pol_verifier, poq_verifier, epoch_state, fee_market, block_rewards,
   ],
   ./sdp/[registry, ops],
   ../core/mantle/[tx_types, tx_hashing, operations, proofs, gas],
@@ -24,7 +24,7 @@ import
 from ../core/crypto/types import ZkPublicKey
 export
   types, cryptarchia_state, channel_state, mantle_state, epoch_state, registry,
-  fee_market, block_rewards, gas, tx_types.ValidSignedMantleTx
+  poq_verifier, fee_market, block_rewards, gas, tx_types.ValidSignedMantleTx
 
 type
   LedgerState* = object
@@ -40,7 +40,7 @@ type
     states: Table[Id, LedgerState]
     config: LedgerConfig
     leaderProofVerifier: LeaderProofVerifier
-    poqVerifier: PoqVerifier
+    poqVerifier: ProofOfQuotaVerifier
 
 func latestUtxos*(s: LedgerState): lent UtxoStore =
   ## The live UTXO set.
@@ -52,7 +52,7 @@ func stakeContribution(
   ## outsized mint would dominate the lottery.
   if faucetPk.isSome and pk == faucetPk.get: 0'u64 else: value
 
-func fromUtxos*(
+proc fromUtxos*(
     _: typedesc[LedgerState],
     utxos: openArray[Utxo],
     nonce: FieldElement,
@@ -134,7 +134,12 @@ proc tryApplyHeader*(
   ## Epoch pipeline for `slot`, leader-proof verification against the active
   ## epoch state, then entropy/density bookkeeping.
   var s = state
-  let prevEpoch = s.epochs.activeEpoch.epoch
+  # The finished epoch's frozen chain values are the public inputs its
+  # activity proofs were generated against. `advanceEpochs` replaces the
+  # active epoch, so capture them first.
+  let
+    outgoing = s.epochs.activeEpoch
+    prevEpoch = outgoing.epoch
   s.epochs = ?s.epochs.advanceEpochs(
     slot, s.cryptarchiaLedger.latestUtxos.root, cfg)
   if s.epochs.activeEpoch.epoch > prevEpoch:
@@ -150,7 +155,13 @@ proc tryApplyHeader*(
     let (blendRewards, minted) = s.sdp.blendRewards.rotateEpoch(
       prevEpoch, s.epochs.activeEpoch.epoch,
       s.sdp.activeBlendProviders(prevEpoch),
-      s.epochs.activeEpoch.nonce, s.sdp.params.rewardsParams)
+      s.epochs.activeEpoch.nonce, s.sdp.params.rewardsParams,
+      PoqChainContext(
+        polLedgerAged: outgoing.agedUtxoRoot,
+        polEpochNonce: outgoing.nonce,
+        lottery0: outgoing.lottery0,
+        lottery1: outgoing.lottery1,
+        powBlendDifficulty: outgoing.powBlendDifficulty))
     s.sdp.blendRewards = blendRewards
     s.sdp = onEpochStarted(s.sdp, s.epochs.activeEpoch.epoch)
     # Reward notes enter the live UTXO set in mint order, before the
@@ -202,7 +213,7 @@ proc tryApplyTx*(
     tx: ValidSignedMantleTx,
     epoch: EpochNumber,
     slot: SlotNumber,
-    verifyPoq: PoqVerifier,
+    verifyPoq: ProofOfQuotaVerifier,
 ): Result[tuple[state: LedgerState, balance: Balance, executionGas: Gas], LedgerError] =
   ## Applies one transaction; the returned balance is the Transfer-only
   ## delta. `slot` is used by channel ops for sequencer rotation.
@@ -328,7 +339,7 @@ proc tryApplyTxns*(
     state: sink LedgerState,
     txs: openArray[ValidSignedMantleTx],
     slot: SlotNumber,
-    verifyPoq: PoqVerifier,
+    verifyPoq: ProofOfQuotaVerifier,
 ): Result[LedgerState, LedgerError] =
   ## Applies a block's transactions in order under the state's active epoch;
   ## each tx's transfer surplus must cover its total gas cost.
@@ -366,6 +377,8 @@ proc tryApplyTxns*(
         return err(GasOverflow)
   s = ?s.creditBlockRewards(totalFeeBurned, totalFeeTip)
   s.feeMarket = s.feeMarket.updateExecutionMarket(blockExecutionGas)
+  # Per-epoch load counter driving the Blend difficulty retarget.
+  s.epochs = s.epochs.recordBlockTxs(uint64(txs.len))
   ok(s)
 
 func init*[Id](
@@ -374,11 +387,9 @@ func init*[Id](
     state: LedgerState,
     config: LedgerConfig = LedgerConfig(),
     leaderProofVerifier: LeaderProofVerifier = verifyLeaderProof,
-    poqVerifier: PoqVerifier = acceptAllPoq,
+    poqVerifier: ProofOfQuotaVerifier = verifyProofOfQuota,
 ): Ledger[Id] =
   ## Constructs a Ledger seeded with one `(id, state)` entry.
-  # TODO(zk): the default becomes the real quota verifier when the
-  # circuit lands.
   var states = initTable[Id, LedgerState]()
   states[id] = state
   Ledger[Id](

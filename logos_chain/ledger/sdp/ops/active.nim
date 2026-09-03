@@ -48,7 +48,7 @@ proc tryApplySdpActive*(
     proof: ZkSigProof,
     txHash: Hash32,
     epoch: EpochNumber,
-    verifyPoq: PoqVerifier,
+    verifyPoq: ProofOfQuotaVerifier,
 ): Result[SdpRegistry, LedgerError] =
   let declaration = ?validateSdpActive(active, proof, txHash, registry.state)
   if getParametersAt(registry, declaration.service, epoch).isNone:

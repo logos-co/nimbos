@@ -158,4 +158,40 @@ suite "ledger/header apply (epoch pipeline)":
       s.epochs.activeEpoch.nonce == nonceBeforeJump # nothing snapshotted: running values
       s.epochs.nonce != nonceBeforeJump # the rotating block still evolves the chain
 
+  test "the blend target captures the outgoing epoch's chain values":
+    # Two active blend providers at genesis, so the rotation freezes a
+    # target. The target's quota-proof context must carry the epoch-0
+    # values, not the state the rotation installs for epoch 1.
+    var registry = testSdpRegistry()
+    for seed in [byte 1, 2]:
+      let
+        declaration = DeclarationMessage(
+          serviceType: ServiceType.bn,
+          locators: @[mkLocator(30300 + int(seed))],
+          providerId: mkProvider(seed),
+          lockedNoteId: default(NoteId),
+          zkId: fe(uint64(seed)))
+        declId = installTestDeclaration(registry, declaration, 0)
+      installTestActive(
+        registry, ActiveMessage(declarationId: declId, nonce: 1), 0)
+    registry = onEpochStarted(registry, 0)
+    var s = LedgerState.fromUtxos(
+      [mkUtxo(value = 1000)], fe(7), registry, testLedgerConfig
+    ).expect("genesis state")
+    # A block before the nonce snapshot makes epoch 1's nonce diverge from
+    # epoch 0's, so the capture is observable.
+    s = s.tryApplyHeader(5, sentinelProof(), testLedgerConfig).expect("valid")
+    let outgoingNonce = s.epochs.activeEpoch.nonce
+    s = s.tryApplyHeader(100, sentinelProof(), testLedgerConfig).expect(
+      "rotation")
+    check s.epochs.activeEpoch.nonce != outgoingNonce
+    let target = s.sdp.blendRewards.target
+    check target.isSome
+    let public = target.get.state.poqPublic
+    check:
+      public.chain.polEpochNonce == outgoingNonce
+      public.chain.polEpochNonce != s.epochs.activeEpoch.nonce
+      public.coreRoot == coreZkIdRoot([fe(1), fe(2)]).get
+      public.powQuota == 4
+
 {.pop.}
