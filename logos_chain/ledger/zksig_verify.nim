@@ -24,11 +24,11 @@ proc verifyZkSig*(
   ## mod the BN254 field order so prover and verifier agree on the signed Fr.
   let msgFr = frFromBytesLEModOrder(txHash)
   let input = zksignInput(publicKeys, msgFr).valueOr:
-    return err(InvalidProof)
+    return err(InvalidTxProof)
   let verified = zksign.verify(proof, input).valueOr:
     return err(VerifierNotInitialised)
   if not verified:
-    return err(InvalidProof)
+    return err(InvalidTxProof)
   ok()
 
 {.pop.}

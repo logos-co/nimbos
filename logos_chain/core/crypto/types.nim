@@ -53,6 +53,8 @@ const
   DefaultCompressedGroth16Proof* = default(CompressedGroth16Proof)
   DefaultZkSignature* = DefaultCompressedGroth16Proof
   DefaultEd25519Signature* = default(Ed25519Signature)
+  DefaultEd25519PublicKey* = default(Ed25519PublicKey)
+  DefaultFieldElement* = default(FieldElement)
 
 let
   KDF*: FieldElement =
@@ -62,7 +64,7 @@ let
   ZeroSecretKeyPublicKey*: ZkPublicKey =
     # PK derived from SK=0 via the zksign key-derivation primitive.
     # Used to right-pad caller-supplied pk lists shorter than 32 entries.
-    Poseidon2Hasher.compress(KDF, default(FieldElement))
+    Poseidon2Hasher.compress(KDF, DefaultFieldElement)
 
 proc zkPublicKeyFromSecret*(sk: FieldElement): ZkPublicKey =
   ## Circuit-equivalent zksign key derivation: PK = Poseidon2.compress(KDF, sk).
@@ -97,6 +99,18 @@ func encodeGroth16*(proof: CompressedGroth16Proof): CompressedGroth16Proof =
 func encodeFieldElement*(value: FieldElement): array[32, byte] =
   ## FieldElement = 32BYTE (BN254 scalar, little-endian).
   value.toBytes()
+
+func cmpNumeric*(a, b: FieldElement): int =
+  ## Ascending numeric order over the canonical encodings.
+  # The encoding is little-endian, so the scan starts at the high byte.
+  # A byte-wise scan from the low end would order the values wrongly.
+  let
+    aBytes = encodeFieldElement(a)
+    bBytes = encodeFieldElement(b)
+  for i in countdown(31, 0):
+    if aBytes[i] != bBytes[i]:
+      return cmp(aBytes[i], bBytes[i])
+  0
 
 func encodeHash32*(value: Hash32): Hash32 =
   ## Hash32 = 32BYTE.

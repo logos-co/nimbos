@@ -14,7 +14,6 @@ import results
 import
   ./[
     balance, channel_notes, types, utxo_store, zksig_verify, leader_state,
-    poc_verifier,
   ],
   ./sdp/state as sdp_state,
   ../core/mantle/[primitives, operations, proofs, utxo, tx_hashing],
@@ -69,6 +68,8 @@ func applyTransferState*(
   ## Pure state transition for a `TransferPayload`, removes inputs, inserts
   ## outputs, sums balance. No signature verify; the caller must run
   ## `zksign.verify` over the returned `pks` ++ tx hash.
+  ## Note: Assumes stateless transaction validation (`validateMantleTxStateless`)
+  ## has already verified non-empty inputs, no duplicate inputs, and non-zero output notes.
   var
     balance = Balance.zero
     pks = newSeqOfCap[ZkPublicKey](op.inputs.noteIds.len)
@@ -88,8 +89,6 @@ func applyTransferState*(
 
   let transferOpId = opId(op)
   for i, outNote in op.outputs.notes:
-    if outNote.value == 0:
-      return err(ZeroValueNote)
     balance = ?balance.checkedSub(i128(outNote.value))
     let u = Utxo(opId: transferOpId, outputIndex: uint64(i), note: outNote)
     s.utxos = s.utxos.insert(u.id, u).store
@@ -112,14 +111,19 @@ proc tryApplyTransfer*(
   ?verifyZkSig(sig, txHash, r.pks)
   ok((r.state, r.balance))
 
-proc tryApplyLeaderClaim*(
+func insertMintedUtxos*(
+    s: sink CryptarchiaState, minted: openArray[Utxo]
+): CryptarchiaState =
+  ## Inserts header-minted reward notes into the live UTXO set, in order.
+  for u in minted:
+    s.utxos = s.utxos.insert(u.id, u).store
+  s
+
+func tryApplyLeaderClaim*(
     s: sink CryptarchiaState,
     op: LeaderClaimPayload,
-    proof: ProofOfClaimProof,
-    txHash: ZkHash,
-    verifyProof: ProofOfClaimVerifier = verifyProofOfClaim,
 ): Result[CryptarchiaState, LedgerError] =
-  let (leader, reward) = ?s.leader.tryRecordClaim(op, proof, txHash, verifyProof)
+  let (leader, reward) = ?s.leader.tryRecordClaim(op)
   let
     u = Utxo(
       opId: opId(op), outputIndex: 0,

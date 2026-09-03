@@ -42,7 +42,8 @@ type
 
   SlotNumber* = uint64
   BlockNumber* = uint64
-  EpochNumber* = uint64
+  EpochNumber* = uint32
+  NumberOfEpochs* = uint32
   RewardVoucher* = array[32, byte]
 
   TokenValue* = uint64
@@ -254,6 +255,10 @@ func encodeLocator*(value: Locator): seq[byte] =
   doAssert locatorBytes.len <= MaxLocatorMultiaddrBytes,
     "Locator exceeds max multiaddr byte length"
   encodeU16LeLenPrefixed(locatorBytes)
+
+func byteLen*(locator: Locator): int =
+  ## Exact wire byte length of a Locator: 2-byte prefix + multiaddr bytes.
+  sizeof(uint16) + locator.data().buffer.len
 
 func encodeLocators*(locators: openArray[Locator]): seq[byte] =
   ## Locators = LocatorCount *Locator

@@ -16,20 +16,19 @@ import
   confutils/toml/defs as confTomlDefs,
   toml_serialization/std/net as confTomlNet,
   toml_serialization/std/uri as confTomlUri,
-  serialization/errors,
   stew/io2,
-  eth/net/nat, # TODO(logos-chain-networking): replace NatConfig/eth-net-nat with Logos-native reachability config
   json_serialization, json_serialization/std/net as jsnet,
   chronos/transports/common,
+  chronos/transports/ipnet,
+  libp2p/multiaddress,
   ./deployment/deployment_settings,
   ./binary_common,
   ./zk/circuits
 
 from std/os import dirExists, getDataDir, `/`
-from std/strutils import parseBiggestUInt, replace
 
 export
-  uri, nat,
+  uri, multiaddress,
   enabledLogLevel,
   defs, parseCmdArg, completeCmdArg,
   confTomlDefs, confTomlNet, confTomlUri, jsnet,
@@ -58,6 +57,13 @@ proc defaultCircuitsDir*(): InputDir =
   ## suffixed with the pinned bundle version. XDG `data` (not `cache`) because
   ## the bundle is essential for the prover; losing it breaks the node.
   InputDir(getDataDir() / "logos-blockchain-circuits" / ExpectedCircuitsVersion)
+
+const
+  DefaultBootstrapTimeout* =
+    when defined(local_testnet) or defined(unittest) or defined(test):
+      1
+    else:
+      30
 
 type
   LogosNetworkKind* {.pure.} = enum
@@ -215,6 +221,11 @@ type
         defaultValue: ""
         name: "bootstrap-file" .}: InputFile
 
+      bootstrapTimeout* {.
+        desc: "Timeout in seconds to wait for bootstrap peers before aborting IBD"
+        defaultValue: DefaultBootstrapTimeout
+        name: "bootstrap-timeout" .}: int
+
       listenAddress* {.
         desc: "Listening address for Logos Chain libp2p traffic"
         defaultValueDesc: "*"
@@ -239,17 +250,10 @@ type
         desc: "The maximum number of peers to connect to. Defaults to maxPeers * 1.5"
         name: "hard-max-peers" .}: Option[int]
 
-      # TODO(logos-chain-networking): replace this eth-net NatConfig field with a
-      # Logos-native public-address/reachability configuration type. Current UX
-      # is confusing: setting a plain public IP via `extip:<IP>` hangs off the
-      # `nat` flag, mixing NAT strategy selection with \"what address to
-      # advertise\".
-      nat* {.
-        desc: "Specify method to use for determining public address. " &
-              "Must be one of: any, none, upnp, pmp, extip:<IP>"
-        defaultValue: NatConfig(hasExtIp: false, nat: NatAny)
-        defaultValueDesc: "any"
-        name: "nat" .}: NatConfig
+      advertisedAddresses* {.
+        desc: "Public address URIs to advertise in libp2p Identify (e.g. quic://198.51.100.1:5001 or quic://[2001:db8::1]:5001)"
+        defaultValue: @[]
+        name: "advertised-address" .}: seq[Uri]
 
       nodeName* {.
         desc: "A name for this node that will appear in the logs. " &
@@ -290,13 +294,15 @@ type
   NetworkConfig* = object
     listenAddress*: Option[IpAddress]
     quicPort*: Port
-    nat*: NatConfig
+    announcedAddresses*: seq[MultiAddress]
+    logosNetwork*: LogosNetworkKind
     maxPeers*: int
     hardMaxPeers*: Option[int]
     agentString*: string
     autonatAllowPrivateAddresses*: bool
     bootstrapNodes*: seq[string]
     bootstrapNodesFile*: InputFile
+    bootstrapTimeout*: int
 
   AnyConf* = LBNodeConf
 
@@ -319,11 +325,32 @@ template databaseDir*(config: AnyConf): string =
 func runAsService*(config: LBNodeConf): bool =
   config.runAsServiceFlag
 
+func announcedAddress*(uri: Uri, defaultPort: Port): Result[MultiAddress, string] =
+  if uri.hostname.len == 0:
+    return err("Missing hostname in advertised URI: " & $uri)
+
+  let proto = if uri.isIpv6: "ip6" else: "ip4"
+  let port = if uri.port.len > 0: uri.port else: $defaultPort
+
+  MultiAddress.init("/" & proto & "/" & uri.hostname & "/udp/" & port & "/quic-v1")
+
+func announcedAddresses*(
+    advertisedAddresses: seq[Uri],
+    defaultPort: Port,
+): seq[MultiAddress] =
+  var addresses: seq[MultiAddress]
+  for u in advertisedAddresses:
+    let ep = announcedAddress(u, defaultPort).valueOr:
+      continue
+    addresses.add(ep)
+  addresses
+
 proc networkConfig*(config: LBNodeConf): NetworkConfig =
   NetworkConfig(
     listenAddress: config.listenAddress,
     quicPort: config.quicPort,
-    nat: config.nat,
+    announcedAddresses: announcedAddresses(config.advertisedAddresses, config.quicPort),
+    logosNetwork: config.logosNetwork,
     maxPeers: config.maxPeers,
     hardMaxPeers: config.hardMaxPeers,
     agentString: config.agentString,
@@ -332,23 +359,12 @@ proc networkConfig*(config: LBNodeConf): NetworkConfig =
     autonatAllowPrivateAddresses: config.logosNetwork == Testnet,
     bootstrapNodes: config.bootstrapNodes,
     bootstrapNodesFile: config.bootstrapNodesFile,
+    bootstrapTimeout: config.bootstrapTimeout,
   )
 
 template writeValue*(writer: var JsonWriter,
                      value: TypedInputFile|InputFile|InputDir|OutPath|OutDir|OutFile) =
   writer.writeValue(string value)
-
-template raiseUnexpectedValue(r: var TomlReader, msg: string) =
-  # TODO: We need to implement `raiseUnexpectedValue` for TOML,
-  # so the correct line and column information can be included
-  # in error messages:
-  raise newException(SerializationError, msg)
-
-proc readValue*(r: var TomlReader, val: var NatConfig)
-               {.raises: [SerializationError].} =
-  val = try: parseCmdArg(NatConfig, r.readValue(string))
-        except ValueError, IOError:
-          raise newException(SerializationError, getCurrentExceptionMsg())
 
 proc formatIt*(v: Option[IpAddress]): string =
   if v.isSome():

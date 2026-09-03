@@ -68,10 +68,10 @@ suite "ledger/sdp/state":
 
     var info: DeclarationInfo
     info.service = ServiceType.bn
-    info.created = 10'u64
+    info.created = EpochNumber(10)
     state = insertDeclaration(state, declId, info)
     check declId in state.declarations
-    check getDeclaration(state, declId).get().created == 10'u64
+    check getDeclaration(state, declId).get().created == EpochNumber(10)
 
     state = addDeclarationToLockedNote(state, noteId, declId)
     check noteId in state.lockedNotes
@@ -96,7 +96,7 @@ suite "ledger/sdp/state":
     var info: DeclarationInfo
     info.service = ServiceType.bn
     info.lockedNoteId = noteId
-    info.withdrawAt = Opt.some(5'u64)
+    info.withdrawAt = Opt.some(EpochNumber(5))
     state = insertDeclaration(state, declId, info)
     state = addDeclarationToLockedNote(state, noteId, declId)
 

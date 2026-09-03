@@ -31,7 +31,7 @@ type
 func isGenesisLeaderProof(p: ProofOfLeadership): bool =
   p.proof == DefaultCompressedGroth16Proof and
     p.entropyContribution == static(default(ZkHash)) and
-    encodeEd25519PublicKey(p.leaderKey) == static(default(array[32, byte])) and
+    p.leaderKey == DefaultEd25519PublicKey and
     p.leaderVoucher == static(default(RewardVoucher))
 
 proc verifyLeaderProof*(

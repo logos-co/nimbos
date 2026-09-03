@@ -58,32 +58,6 @@ suite "validateChannelDeposit — structural checks (no VK)":
         default(ZkSigProof), mkTxHash())
     check r.error == ChannelNotFound
 
-  test "no inputs → EmptyInputs":
-    let
-      cid = mkChannelId(2)
-      chans = mkChanStore(cid)
-      input = mkUtxo(value = 100, pkSeed = 1)
-      cs = CryptarchiaState.init([input])
-      op = ChannelDepositPayload(channel: cid, inputs: @[], metadata: @[])
-      r = validateChannelDeposit(
-        chans, ChannelNotes.init(), cs, LockedNotes.init(), op,
-        default(ZkSigProof), mkTxHash())
-    check r.error == EmptyInputs
-
-  test "duplicate input NoteId → DoubleSpend":
-    let
-      cid = mkChannelId(2)
-      chans = mkChanStore(cid)
-      input = mkUtxo(value = 100, pkSeed = 1)
-      cs = CryptarchiaState.init([input])
-      op = ChannelDepositPayload(
-        channel: cid, inputs: @[input.id, input.id], metadata: @[],
-      )
-      r = validateChannelDeposit(
-        chans, ChannelNotes.init(), cs, LockedNotes.init(), op,
-        default(ZkSigProof), mkTxHash())
-    check r.error == DoubleSpend
-
   test "missing input UTXO → InvalidNote":
     let
       cid = mkChannelId(3)
@@ -209,7 +183,7 @@ suite "MantleState.tryApplyChannelDeposit — verify wrapper (fixture-driven)":
         sig = default(ZkSigProof), txHash = mkTxHash())
     check r.error == VerifierNotInitialised
 
-  test "bad signature → InvalidProof":
+  test "bad signature → InvalidTxProof":
     check installZksignVk(fixtureVk)
     let
       cid = mkChannelId(13)
@@ -222,7 +196,7 @@ suite "MantleState.tryApplyChannelDeposit — verify wrapper (fixture-driven)":
       r = m.tryApplyChannelDeposit(
         cs, LockedNotes.init(), op,
         sig = default(ZkSigProof), txHash = mkTxHash())
-    check r.error == InvalidProof
+    check r.error == InvalidTxProof
 
   test "happy: real proof + matching pks + matching msg → state advances":
     check installZksignVk(fixtureVk)

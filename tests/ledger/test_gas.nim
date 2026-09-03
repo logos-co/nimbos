@@ -265,9 +265,10 @@ suite "gas: tx execution gas and block limit":
         ],
       )
     var s = mkState(@[])
-    let r = s.tryApplyTx(tx, epoch = 0'u64, slot = 0'u64)
+    let r = s.tryApplyTx(
+      ValidSignedMantleTx(tx), epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
     check r.isOk
-    let mf = s.mandatory_fees(tx)
+    let mf = s.mandatory_fees(ValidSignedMantleTx(tx))
     check mf.isOk
     check mf.get.executionGas == Gas(112)
 
@@ -290,12 +291,14 @@ suite "gas: fee enforcement via committed transfer fixture":
     var accept = mkState([input])
     accept.feeMarket.executionBaseFee = 0
     accept.feeMarket.storageGasPrice = 0
-    check accept.tryApplyTxns([mkFixtureTransferTx(input)], slot = 0'u64).isOk
+    check accept.tryApplyTxns(
+      [ValidSignedMantleTx(mkFixtureTransferTx(input))], slot = 0'u64, verifyPoq = acceptAllPoq).isOk
 
     var reject = mkState([input])
     reject.feeMarket.executionBaseFee = 0
     reject.feeMarket.storageGasPrice = 1 # storage cost > zero surplus
-    let r = reject.tryApplyTxns([mkFixtureTransferTx(input)], slot = 0'u64)
+    let r = reject.tryApplyTxns(
+      [ValidSignedMantleTx(mkFixtureTransferTx(input))], slot = 0'u64, verifyPoq = acceptAllPoq)
     check r.error == InsufficientBalance
 
   test "prices come from ledger state, not the transaction":
@@ -305,12 +308,14 @@ suite "gas: fee enforcement via committed transfer fixture":
     var sOk = mkState([input])
     sOk.feeMarket.executionBaseFee = 0
     sOk.feeMarket.storageGasPrice = 0
-    check sOk.tryApplyTxns([mkFixtureTransferTx(input)], slot = 0'u64).isOk
+    check sOk.tryApplyTxns(
+      [ValidSignedMantleTx(mkFixtureTransferTx(input))], slot = 0'u64, verifyPoq = acceptAllPoq).isOk
 
     var sBad = mkState([input])
     sBad.feeMarket.executionBaseFee = 10
     sBad.feeMarket.storageGasPrice = 0
-    let r = sBad.tryApplyTxns([mkFixtureTransferTx(input)], slot = 0'u64)
+    let r = sBad.tryApplyTxns(
+      [ValidSignedMantleTx(mkFixtureTransferTx(input))], slot = 0'u64, verifyPoq = acceptAllPoq)
     check r.error == InsufficientBalance
 
 suite "gas: fee comparison width":
@@ -335,7 +340,8 @@ suite "gas: storage accumulation and epoch rotation":
     let
       tx = mkInscribeTx(rng, mkChannelId(1))
       encodedLen = Gas(encodeSignedMantleTx(tx).len)
-    s = s.tryApplyTxns([tx], slot = 1'u64).expect("applied")
+    s = s.tryApplyTxns(
+      [ValidSignedMantleTx(tx)], slot = 1'u64, verifyPoq = acceptAllPoq).expect("applied")
     check s.feeMarket.storageGasConsumedInEpoch == encodedLen
 
     s = s.tryApplyHeader(100, sentinelProof(), testLedgerConfig).expect("rotation")
@@ -354,13 +360,13 @@ suite "gas: storage accumulation and epoch rotation":
       s.feeMarket.storageGasEma == Gas(100) # 800 → 400 → 200 → 100
       s.feeMarket.storageGasConsumedInEpoch == Gas(0)
 
-  test "mandatory_fees for SignedMantleTx combines execution gas and storage gas":
+  test "mandatory_fees for ValidSignedMantleTx combines execution gas and storage gas":
     let rng = HmacDrbgContext.new()
     let tx = mkInscribeTx(rng, mkChannelId(1))
     var s = mkState(@[])
     s.feeMarket.executionBaseFee = 2
     s.feeMarket.storageGasPrice = 3
-    let mf = s.mandatory_fees(tx).expect(
+    let mf = s.mandatory_fees(ValidSignedMantleTx(tx)).expect(
       "mandatory_fees should return fee breakdown (totalCost, executionGas, storageGas) for signed mantle tx"
     )
     let expectedCost = (mf.executionGas * 2) + (mf.storageGas * 3)

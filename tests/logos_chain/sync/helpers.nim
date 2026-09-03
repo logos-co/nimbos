@@ -37,6 +37,19 @@ proc initTestChain*(genesis: Block): Chain =
         mockVerifyLeaderProof),
     SlotConfig(genesisTime: 0, slotDurationSeconds: 1))
 
+proc extendChainAfterGenesis*(
+    tree: LocalTree, genesis: Block, extraBlocks: int,
+): BlockId =
+  ## Add ``extraBlocks`` descendants on top of ``genesis``; return the tip id.
+  var parentHdr = genesis.header
+  var parentId = blockId(genesis.header)
+  for slot in 1 .. extraBlocks:
+    let blk = childBlock(parentHdr, parentId, SlotNumber(slot.uint64), [])
+    check tree.addBlockToTree(blk)
+    parentHdr = blk.header
+    parentId = blockId(blk.header)
+  parentId
+
 func exampleBlockId*(fill: byte): BlockId =
   var id: BlockId
   for i in 0 ..< id.len:

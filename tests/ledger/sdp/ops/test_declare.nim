@@ -63,40 +63,7 @@ suite "ledger/sdp/ops/declare":
     missingNote.lockedNoteId = frFromBytesLE([byte(99)]).get
     check execDeclare(registry, missingNote, store, 1).isErr
 
-  test "tryApplySdpDeclare rejects empty locators":
-    let utxo = mkUtxo(value = 200, pkSeed = 6)
-    var store = UtxoStore.init()
-    store = store.insert(utxo.id, utxo).store
-    let declaration = DeclarationMessage(
-      serviceType: ServiceType.bn,
-      locators: @[],
-      providerId: mkProvider(1),
-      lockedNoteId: utxo.id,
-      zkId: utxo.note.zkPublicKey,
-    )
-    var registry = testSdpRegistry()
-    let declareResult = execDeclare(registry, declaration, store, 1)
-    check declareResult.isErr
-    check declareResult.error == EmptyLocators
 
-  test "tryApplySdpDeclare rejects too many locators":
-    let utxo = mkUtxo(value = 200, pkSeed = 5)
-    var store = UtxoStore.init()
-    store = store.insert(utxo.id, utxo).store
-    var locators = newSeq[Locator](MaxSdpLocators + 1)
-    for i in 0 ..< locators.len:
-      locators[i] = mkLocator(30000 + i)
-    let declaration = DeclarationMessage(
-      serviceType: ServiceType.bn,
-      locators: locators,
-      providerId: mkProvider(1),
-      lockedNoteId: utxo.id,
-      zkId: utxo.note.zkPublicKey,
-    )
-    var registry = testSdpRegistry()
-    let declareResult = execDeclare(registry, declaration, store, 1)
-    check declareResult.isErr
-    check declareResult.error == TooManyLocators
 
   test "tryApplySdpDeclare rejects a channel note as collateral":
     let utxo = mkUtxo(value = 200, pkSeed = 7)

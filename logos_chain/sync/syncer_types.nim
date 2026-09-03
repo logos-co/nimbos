@@ -8,12 +8,14 @@
 {.push raises: [], gcsafe.}
 
 import
-  libp2p/switch,
+  libp2p/[switch, peerid],
   ../chain/chain
 
 from ../core/local_tree import LocalTree
 
 type
+  PeerProvider* = proc(): seq[PeerId] {.gcsafe, raises: [].}
+
   Syncer* = ref object
     sw*: Switch
     chain*: Chain

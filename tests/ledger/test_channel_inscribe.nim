@@ -23,16 +23,13 @@ suite "MantleState.tryApplyChannelInscribe — JIT creation":
       rng = HmacDrbgContext.new()
       kp = mkEdKeyPair(rng)
       cid = mkChannelId(1)
-      txHash = mkTxHash()
       op = ChannelInscribePayload(
         channelId: cid,
         inscription: @[byte 0x68, 0x69],
         parent: default(Hash32),
         signer: kp.pubkey,
       )
-      sig = sign(kp.seckey, txHash)
-      r = MantleState.init().tryApplyChannelInscribe(
-        op, sig, txHash, blockSlot = 7'u64)
+      r = MantleState.init().tryApplyChannelInscribe(op, blockSlot = 7'u64)
     check r.isOk
     let chan = r.get.channels.getOrDefault(cid)
     check chan.accreditedKeys == @[kp.pubkey]
@@ -44,16 +41,13 @@ suite "MantleState.tryApplyChannelInscribe — JIT creation":
       rng = HmacDrbgContext.new()
       kp = mkEdKeyPair(rng)
       cid = mkChannelId(2)
-      txHash = mkTxHash()
       op = ChannelInscribePayload(
         channelId: cid,
         inscription: @[byte 0x78],
         parent: mkTxHash(seed = 0x99),
         signer: kp.pubkey,
       )
-      sig = sign(kp.seckey, txHash)
-      r = MantleState.init().tryApplyChannelInscribe(
-        op, sig, txHash, blockSlot = 0'u64)
+      r = MantleState.init().tryApplyChannelInscribe(op, blockSlot = 0'u64)
     check r.error == InvalidParent
 
 suite "MantleState.tryApplyChannelInscribe — existing channel":
@@ -62,22 +56,19 @@ suite "MantleState.tryApplyChannelInscribe — existing channel":
       rng = HmacDrbgContext.new()
       kp = mkEdKeyPair(rng)
       cid = mkChannelId(3)
-      seedTxHash = mkTxHash(seed = 0x01)
       seedOp = ChannelInscribePayload(
         channelId: cid, inscription: @[byte 0x61],
         parent: default(Hash32), signer: kp.pubkey,
       )
       seedMantle = MantleState.init().tryApplyChannelInscribe(
-        seedOp, sign(kp.seckey, seedTxHash), seedTxHash, blockSlot = 1'u64,
+        seedOp, blockSlot = 1'u64,
       ).get
       prevTip = seedMantle.channels.getOrDefault(cid).tipMessage
-      txHash = mkTxHash(seed = 0x02)
       op = ChannelInscribePayload(
         channelId: cid, inscription: @[byte 0x62],
         parent: prevTip, signer: kp.pubkey,
       )
-      r = seedMantle.tryApplyChannelInscribe(
-        op, sign(kp.seckey, txHash), txHash, blockSlot = 2'u64)
+      r = seedMantle.tryApplyChannelInscribe(op, blockSlot = 2'u64)
     check r.isOk
     let newChan = r.get.channels.getOrDefault(cid)
     check newChan.tipMessage == opId(op)
@@ -89,21 +80,18 @@ suite "MantleState.tryApplyChannelInscribe — existing channel":
       rng = HmacDrbgContext.new()
       kp = mkEdKeyPair(rng)
       cid = mkChannelId(4)
-      seedTxHash = mkTxHash(seed = 0x01)
       seedOp = ChannelInscribePayload(
         channelId: cid, inscription: @[byte 0x61],
         parent: default(Hash32), signer: kp.pubkey,
       )
       seedMantle = MantleState.init().tryApplyChannelInscribe(
-        seedOp, sign(kp.seckey, seedTxHash), seedTxHash, blockSlot = 1'u64,
+        seedOp, blockSlot = 1'u64,
       ).get
-      txHash = mkTxHash(seed = 0x03)
       op = ChannelInscribePayload(
         channelId: cid, inscription: @[byte 0x62],
         parent: mkTxHash(seed = 0xFF), signer: kp.pubkey,
       )
-      r = seedMantle.tryApplyChannelInscribe(
-        op, sign(kp.seckey, txHash), txHash, blockSlot = 2'u64)
+      r = seedMantle.tryApplyChannelInscribe(op, blockSlot = 2'u64)
     check r.error == InvalidParent
 
   test "wrong signer (not in accreditedKeys) → UnauthorizedSigner":
@@ -112,47 +100,19 @@ suite "MantleState.tryApplyChannelInscribe — existing channel":
       kp = mkEdKeyPair(rng)
       other = mkEdKeyPair(rng)
       cid = mkChannelId(5)
-      seedTxHash = mkTxHash(seed = 0x01)
       seedOp = ChannelInscribePayload(
         channelId: cid, inscription: @[byte 0x61],
         parent: default(Hash32), signer: kp.pubkey,
       )
       seedMantle = MantleState.init().tryApplyChannelInscribe(
-        seedOp, sign(kp.seckey, seedTxHash), seedTxHash, blockSlot = 1'u64,
+        seedOp, blockSlot = 1'u64,
       ).get
       chan = seedMantle.channels.getOrDefault(cid)
-      txHash = mkTxHash(seed = 0x04)
       op = ChannelInscribePayload(
         channelId: cid, inscription: @[byte 0x62],
         parent: chan.tipMessage, signer: other.pubkey,
       )
-      r = seedMantle.tryApplyChannelInscribe(
-        op, sign(other.seckey, txHash), txHash, blockSlot = 2'u64)
+      r = seedMantle.tryApplyChannelInscribe(op, blockSlot = 2'u64)
     check r.error == UnauthorizedSigner
-
-  test "tampered signature → InvalidProof":
-    let
-      rng = HmacDrbgContext.new()
-      kp = mkEdKeyPair(rng)
-      cid = mkChannelId(6)
-      seedTxHash = mkTxHash(seed = 0x01)
-      seedOp = ChannelInscribePayload(
-        channelId: cid, inscription: @[byte 0x61],
-        parent: default(Hash32), signer: kp.pubkey,
-      )
-      seedMantle = MantleState.init().tryApplyChannelInscribe(
-        seedOp, sign(kp.seckey, seedTxHash), seedTxHash, blockSlot = 1'u64,
-      ).get
-      chan = seedMantle.channels.getOrDefault(cid)
-      txHash = mkTxHash(seed = 0x05)
-      op = ChannelInscribePayload(
-        channelId: cid, inscription: @[byte 0x62],
-        parent: chan.tipMessage, signer: kp.pubkey,
-      )
-      # Sign a different message — produces a valid sig over the wrong
-      # payload, which verify against `txHash` must reject.
-      sig = sign(kp.seckey, mkTxHash(seed = 0xEE))
-      r = seedMantle.tryApplyChannelInscribe(op, sig, txHash, blockSlot = 2'u64)
-    check r.error == InvalidProof
 
 {.pop.}

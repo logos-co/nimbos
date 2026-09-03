@@ -21,11 +21,9 @@ import
   ../utils/hash_trie_map,
   intops,
   results,
-  ../core/mantle/[primitives, operations, proofs],
+  ../core/mantle/[primitives, operations],
   ../utils/dynamic_merkle_tree,
-  ../zk/poseidon2/hasher,
-  ./types,
-  ./poc_verifier
+  ./types
 
 export primitives, results, types
 
@@ -118,24 +116,18 @@ func recordClaim(
   s.leadersRewards -= reward
   (state: s, reward: reward)
 
-proc tryRecordClaim*(
+func tryRecordClaim*(
     s: sink LeaderState,
     op: LeaderClaimPayload,
-    proof: ProofOfClaimProof,
-    txHash: ZkHash,
-    verifyProof: ProofOfClaimVerifier = verifyProofOfClaim,
 ): Result[tuple[state: LeaderState, reward: Value], LedgerError] =
+  ## Stateful validation for LeaderClaim: nullifier uniqueness and rewards root match.
+  ## Note: Groth16 zkSNARK proof of claim is verified statelessly at ingress
+  ## via `validateMantleTxStateless`.
   if op.voucherNullifier in s:
     return err(DuplicatedVoucherNullifier)
   let rewardsRoot = root(s.voucherTree)
   if op.rewardsRoot != rewardsRoot:
     return err(RewardsRootMismatch)
-
-  let public = proofOfClaimPublic(op, rewardsRoot, txHash)
-  let verified = verifyProof(proof, public).valueOr:
-    return err(VerifierNotInitialised)
-  if not verified:
-    return err(InvalidProof)
 
   ok(s.recordClaim(op.voucherNullifier))
 

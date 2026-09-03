@@ -24,7 +24,7 @@ import
 from ../core/crypto/types import ZkPublicKey
 export
   types, balance, cryptarchia_state, channel_state, mantle_state, epoch_state, registry,
-  fee_market, block_rewards, gas
+  fee_market, block_rewards, gas, tx_types.ValidSignedMantleTx
 
 type
   LedgerState* = object
@@ -40,6 +40,7 @@ type
     states: Table[Id, LedgerState]
     config: LedgerConfig
     leaderProofVerifier: LeaderProofVerifier
+    poqVerifier: PoqVerifier
 
 func latestUtxos*(s: LedgerState): lent UtxoStore =
   ## The live UTXO set.
@@ -85,7 +86,7 @@ proc fromGenesis*(
   ## Genesis state from the genesis block's transactions: ops run through the
   ## pure transition cores (no proof or balance checks), then epochs are
   ## seeded from the faucet-filtered stake and ceremony nonce.
-  const genesisEpoch = 0'u64
+  const genesisEpoch: EpochNumber = 0
   var
     s = LedgerState(
       cryptarchiaLedger: CryptarchiaState.init(),
@@ -109,7 +110,7 @@ proc fromGenesis*(
         s.cryptarchiaLedger = r.state
       of ChannelInscribe:
         # Envelope validity (null channel, root parent, zero signer) is
-        # enforced at the chain layer when the ceremony is decoded.
+        # validated statelessly in `chain/genesis.nim` (`decodeCryptarchiaParameter`).
         s.mantleLedger.channels = applyChannelInscribe(
           s.mantleLedger.channels, op.payload.channelInscribe, 0)
       of SdpDeclare:
@@ -140,12 +141,19 @@ proc advanceEpochAndMarket*(
     # empty epochs) run with a zero counter, per the per-epoch timeframe.
     for _ in prevEpoch ..< s.epochs.activeEpoch.epoch:
       s.feeMarket = s.feeMarket.updateStorageMarket()
-    # SDP epoch finalization is part of applying the first block of the new
-    # epoch; reward distribution slots in ahead of the withdrawal removal
-    # once it lands.
-    # https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md#sdp-epoch-finalization
-    s.sdp = onEpochStarted(s.sdp, s.epochs.activeEpoch.epoch)
     s.cryptarchiaLedger.leader = ?s.cryptarchiaLedger.leader.addEpochVouchers()
+    # Rewards distribute before withdrawal removal, so a withdrawn
+    # provider still collects its final reward:
+    # https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md#sdp-epoch-finalization
+    let (blendRewards, minted) = s.sdp.blendRewards.rotateEpoch(
+      prevEpoch, s.epochs.activeEpoch.epoch,
+      s.sdp.activeBlendProviders(prevEpoch),
+      s.epochs.activeEpoch.nonce, s.sdp.params.rewardsParams)
+    s.sdp.blendRewards = blendRewards
+    s.sdp = onEpochStarted(s.sdp, s.epochs.activeEpoch.epoch)
+    # Reward notes enter the live UTXO set in mint order, before the
+    # leader proof is checked against the latest root.
+    s.cryptarchiaLedger = s.cryptarchiaLedger.insertMintedUtxos(minted)
   ok(s)
 
 proc tryApplyHeader*(
@@ -170,13 +178,13 @@ proc tryApplyHeader*(
     verified = verifyProof(proof, public).valueOr:
       return err(VerifierNotInitialised)
   if not verified:
-    return err(InvalidProof)
+    return err(InvalidProofOfLeadership)
 
   s.cryptarchiaLedger.leader =
     s.cryptarchiaLedger.leader.recordBlockLeader(proof.leaderVoucher)
 
   let entropy = frFromBytesLE(proof.entropyContribution).valueOr:
-    return err(InvalidProof)
+    return err(InvalidProofOfLeadership)
   s.epochs = s.epochs.recordBlock(slot, entropy)
   ok(s)
 
@@ -189,7 +197,7 @@ func opMultisigThreshold(op: Op, proof: OpProof): Result[uint16, LedgerError] =
   ## actually verified by `verifyChannelMultiSig` in `channel_state.nim` (L92-L107) — if
   ## `proof.signatures.len != threshold`, the transaction will not be validated (`ThresholdUnmet`).
   if proof.kind != expectedOpProofKindForOpcode(op.opcode):
-    return err(InvalidProof)
+    return err(InvalidTxProof)
   case op.payload.kind
   of ChannelConfig:
     ok(max(uint16(proof.channelConfigOpProof.signatures.len), 1'u16))
@@ -202,23 +210,21 @@ func opMultisigThreshold(op: Op, proof: OpProof): Result[uint16, LedgerError] =
 
 proc tryApplyTx*(
     s: var LedgerState,
-    tx: SignedMantleTx,
+    tx: ValidSignedMantleTx,
     epoch: EpochNumber,
     slot: SlotNumber,
+    verifyPoq: PoqVerifier,
 ): Result[Balance, LedgerError] =
   ## Applies one transaction in-place; the returned balance is the Transfer-only
   ## delta. `slot` is used by channel ops for sequencer rotation.
-  if tx.tx.ops.len != tx.opProofs.len:
-    return err(InvalidProof)
-
+  ## Note: Structural and cryptographic validation is guaranteed at compile-time
+  ## via `ValidSignedMantleTx`.
   var balance = Balance.zero
   let txHash = mantleTxHash(tx.tx)
   for i in 0 ..< tx.tx.ops.len:
     let
       op = tx.tx.ops[i]
       proof = tx.opProofs[i]
-    if proof.kind != expectedOpProofKindForOpcode(op.opcode):
-      return err(InvalidProof)
     case op.payload.kind
     of Transfer:
       let r =
@@ -254,10 +260,11 @@ proc tryApplyTx*(
         proof.sdpActiveProof,
         txHash,
         epoch,
+        verifyPoq,
       )
     of ChannelInscribe:
       s.mantleLedger = ?s.mantleLedger.tryApplyChannelInscribe(
-        op.payload.channelInscribe, proof.ed25519SigProof, txHash, slot,
+        op.payload.channelInscribe, slot,
       )
     of ChannelConfig:
       s.mantleLedger = ?s.mantleLedger.tryApplyChannelConfig(
@@ -285,15 +292,13 @@ proc tryApplyTx*(
       s.mantleLedger = r.ms
     of LeaderClaim:
       s.cryptarchiaLedger = ?s.cryptarchiaLedger.tryApplyLeaderClaim(
-        op.payload.leaderClaim, proof.proofOfClaimProof, txHash,
+        op.payload.leaderClaim,
       )
   ok(balance)
 
 proc txExecutionGas*(
-    tx: SignedMantleTx,
+    tx: ValidSignedMantleTx,
 ): Result[Gas, LedgerError] =
-  if tx.tx.ops.len != tx.opProofs.len:
-    return err(InvalidProof)
   var total = Gas(0)
   for i in 0 ..< tx.tx.ops.len:
     let
@@ -322,10 +327,10 @@ func mandatory_fees*(
 
 proc mandatory_fees*(
     s: LedgerState,
-    tx: SignedMantleTx,
+    tx: ValidSignedMantleTx,
 ): Result[tuple[totalCost: GasCost, executionGas, storageGas: Gas], LedgerError] =
   let execGas = ? txExecutionGas(tx)
-  let txByteLen = encodeSignedMantleTx(tx).len
+  let txByteLen = byteLen(tx)
   s.mandatory_fees(execGas, txByteLen)
 
 func creditBlockRewards*(
@@ -338,21 +343,22 @@ func creditBlockRewards*(
   s.blockNumber += 1
   s.feeWindow.update(s.blockNumber, totalFeeBurned)
   let
-    # The blend share stays unassigned until service-reward distribution lands.
-    (_, leaderShare) = block_reward(
+    (blendShare, leaderShare) = block_reward(
       s.epochs.activeEpoch.totalStake,
       s.feeWindow.summedFees,
       totalFeeBurned)
     leaderReward = leaderShare.checkedAdd(totalFeeTip).valueOr:
       return err(GasOverflow)
+  s.sdp.blendRewards = ?s.sdp.blendRewards.addIncome(blendShare)
   s.cryptarchiaLedger.leader =
     s.cryptarchiaLedger.leader.addPendingRewards(leaderReward)
   ok(s)
 
 proc tryApplyTxns*(
     state: sink LedgerState,
-    txs: openArray[SignedMantleTx],
+    txs: openArray[ValidSignedMantleTx],
     slot: SlotNumber,
+    verifyPoq: PoqVerifier,
 ): Result[LedgerState, LedgerError] =
   ## Applies a block's transactions in order under the state's active epoch;
   ## each tx's transfer surplus must cover its total gas cost.
@@ -366,7 +372,7 @@ proc tryApplyTxns*(
   for tx in txs:
     let
       (totalCost, execGas, storageGas) = ?s.mandatory_fees(tx)
-      txBalance = ?s.tryApplyTx(tx, epoch, slot)
+      txBalance = ?s.tryApplyTx(tx, epoch, slot, verifyPoq)
     if not txBalance.covers(totalCost):
       return err(InsufficientBalance)
     totalFeeBurned = totalFeeBurned.checkedAdd(totalCost).valueOr:
@@ -394,14 +400,18 @@ func init*[Id](
     state: LedgerState,
     config: LedgerConfig,
     leaderProofVerifier: LeaderProofVerifier = verifyLeaderProof,
+    poqVerifier: PoqVerifier = acceptAllPoq,
 ): Ledger[Id] =
   ## Constructs a Ledger seeded with one `(id, state)` entry.
+  # TODO(zk): the default becomes the real quota verifier when the
+  # circuit lands.
   var states: Table[Id, LedgerState]
   states[id] = state
   Ledger[Id](
     states: states,
     config: config,
     leaderProofVerifier: leaderProofVerifier,
+    poqVerifier: poqVerifier,
   )
 
 func state*[Id](l: Ledger[Id], id: Id): Opt[LedgerState] =
@@ -411,6 +421,9 @@ func state*[Id](l: Ledger[Id], id: Id): Opt[LedgerState] =
     Opt.some(l.states.getOrDefault(id))
   else:
     Opt.none(LedgerState)
+
+func hasState*[Id](l: Ledger[Id], id: Id): bool {.inline.} =
+  id in l.states
 
 func config*[Id](l: Ledger[Id]): lent LedgerConfig =
   l.config
@@ -436,7 +449,7 @@ proc prepareUpdate*[Id](
     id, parentId: Id,
     slot: SlotNumber,
     proof: ProofOfLeadership,
-    txs: openArray[SignedMantleTx],
+    txs: openArray[ValidSignedMantleTx],
 ): Result[tuple[id: Id, state: LedgerState], LedgerError] =
   ## Validates a block's header + transactions against the parent state.
   ## Caller invokes `commitUpdate` to install the result, or drops it to reject.
@@ -445,7 +458,7 @@ proc prepareUpdate*[Id](
   let
     parent = l.states.getOrDefault(parentId)
     afterHeader = ?parent.tryApplyHeader(slot, proof, l.config, l.leaderProofVerifier)
-    afterTxs = ?afterHeader.tryApplyTxns(txs, slot)
+    afterTxs = ?afterHeader.tryApplyTxns(txs, slot, l.poqVerifier)
   ok((id: id, state: afterTxs))
 
 {.pop.}

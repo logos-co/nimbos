@@ -20,11 +20,17 @@ export stint
 type
   Balance* = Int128
 
-func zero*(_: typedesc[Balance]): Balance =
-  # `i128(0)` instantiates a buggy `stint(SignedInt, bits)` path in
-  # `vendor/nim-stint/stint/io.nim:73` (`result.negate` parses as field
-  # lookup, not the proc). `default` sidesteps that path.
-  default(Balance)
+const
+  DefaultBalance* = default(Balance)
+
+func zero*(_: typedesc[Balance]): Balance {.inline.} =
+  # `i128(0)` inside a `typedesc` generic routine causes `stint`'s
+  # `stint(SignedInt, bits)` to be instantiated in the caller's scope. Because
+  # `stint/io.nim` does not import `stint/intops.nim`, `result.negate` fails
+  # to resolve (parsed as field lookup) unless the caller has `intops` in scope.
+  # Regardless, `DefaultBalance` is the better choice as a static constant,
+  # sidestepping scope dependency and avoiding constructing `stint(0, 128)` at runtime.
+  DefaultBalance
 
 # Stint exposes no public checked arithmetic — only wrapping `+` / `-`. These
 # helpers do explicit MIN/MAX headroom checks for arbitrary signed operands.

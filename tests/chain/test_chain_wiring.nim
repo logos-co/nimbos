@@ -77,9 +77,12 @@ suite "chain/epoch wiring (devnet deployment settings)":
       param = ds.cryptarchia.genesisState.cryptarchiaParameter().valueOr:
         check false
         return
+      cfg = ledgerConfig(ds)
       state = LedgerState.fromGenesis(
         [ds.cryptarchia.genesisState.signedMantleTx], param.epochNonce,
-        SdpRegistry.init(ds.cryptarchia.sdpConfig), ledgerConfig(ds)).valueOr:
+        SdpRegistry.init(
+          ds.cryptarchia.sdpConfig,
+          blendRewardsParams(ds, cfg.epochSchedule.epochLength)), cfg).valueOr:
         check false
         return
     check:
@@ -307,5 +310,25 @@ suite "chain/epoch wiring (devnet deployment settings)":
     let appliedState = chain.ledger.state(blkId).get()
     check appliedState.epochs.activeEpoch.epoch == 1
     check appliedState.epochs.nextEpoch.epoch == 2
+
+  test "tryApplyBlock rejects statelessly invalid transaction with detailed error":
+    var chain = Chain.init(ds, mockVerifyLeaderProof).valueOr:
+      check false
+      return
+    let
+      gid = blockId(chain.genesisBlock.header)
+      badTx = SignedMantleTx(
+        tx: MantleTx(ops: @[createTransferOp(TransferPayload(
+          inputs: Inputs(noteIds: @[]),
+          outputs: Outputs(notes: @[Note(value: 100, zkPublicKey: default(ZkPublicKey))]),
+        ))]),
+        opProofs: @[OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))],
+      )
+      b1 = childBlock(chain.genesisBlock.header, gid, SlotNumber(1), [badTx])
+      r = chain.tryApplyBlock(b1)
+    check:
+      r.isErr
+      r.error.kind == BlockApplyErrorKind.StatelessTxRejected
+      r.error.statelessError == StatelessLedgerError.EmptyInputs
 
 {.pop.}

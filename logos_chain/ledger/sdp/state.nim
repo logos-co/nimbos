@@ -18,13 +18,17 @@ import
 
 export primitives, results, hash_trie_map
 
+const SnapshotFinalizationDelay* = EpochNumber(2)
+  ## Epochs a registry change waits before the snapshot that carries it is
+  ## the one in force.
+
 type
   MinStake* = object
     stakeThreshold*: uint64
     epoch*: EpochNumber
 
   ServiceParameters* = object
-    inactivityPeriod*: uint64
+    inactivityPeriod*: NumberOfEpochs
     epoch*: EpochNumber
 
   DeclarationInfo* = object
@@ -45,12 +49,6 @@ type
     lockedNotes*: LockedNotes
     activeProviders*: HashTrieMap[tuple[service: ServiceType, providerId: Ed25519PublicKey], tuple[]]
     activeZkIds*: HashTrieMap[tuple[service: ServiceType, zkId: ZkPublicKey], tuple[]]
-
-func defaultBnServiceParameters*(epoch: EpochNumber = 0): ServiceParameters =
-  ServiceParameters(
-    inactivityPeriod: 2'u64,
-    epoch: epoch,
-  )
 
 func init*(_: typedesc[SdpState]): SdpState =
   SdpState()
@@ -133,11 +131,11 @@ func finalizeWithdrawals*(
     state: sink SdpState,
     currentEpoch: EpochNumber,
 ): SdpState =
-  ## Removes declarations whose ``withdraw_at <= current_epoch - 2`` and
-  ## unlocks notes no longer bound to any declaration.
-  if currentEpoch < 2:
+  ## Removes declarations withdrawn at or before
+  ## ``current_epoch - SnapshotFinalizationDelay``, and unlocks the freed notes.
+  if currentEpoch < SnapshotFinalizationDelay:
     return state
-  let threshold = currentEpoch - 2
+  let threshold = currentEpoch - SnapshotFinalizationDelay
   for declId, info in state.declarations.pairs:
     if info.withdrawAt.valueOr(high(EpochNumber)) <= threshold:
       state = removeDeclarationFromLockedNote(state, info.lockedNoteId, declId)

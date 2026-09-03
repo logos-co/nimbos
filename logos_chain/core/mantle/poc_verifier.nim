@@ -12,10 +12,10 @@
 
 import
   results,
-  ../core/mantle/[operations, proofs],
-  ../core/crypto/types,
-  ../zk/poc,
-  ../zk/poseidon2/hasher
+  ./[operations, proofs],
+  ../crypto/types,
+  ../../zk/poc,
+  ../../zk/poseidon2/hasher
 
 export poc, results
 

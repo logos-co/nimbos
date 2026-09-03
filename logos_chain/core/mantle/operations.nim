@@ -394,6 +394,59 @@ func encodeOps*(ops: openArray[Op]): seq[byte] =
     res.add(encodeOp(op))
   res
 
+func byteLen*(payload: OpPayload): int =
+  ## Exact wire byte length of an OpPayload without allocating buffers.
+  case payload.kind
+  of Transfer:
+    template t: untyped = payload.transfer
+    sizeof(byte) + t.inputs.noteIds.len * sizeof(NoteId) +
+      sizeof(byte) + t.outputs.notes.len * (sizeof(Value) + sizeof(ZkPublicKey))
+  of ChannelInscribe:
+    template ci: untyped = payload.channelInscribe
+    sizeof(ChannelId) + sizeof(uint32) + ci.inscription.len +
+      sizeof(Parent) + sizeof(Signer)
+  of ChannelDeposit:
+    template cd: untyped = payload.channelDeposit
+    sizeof(ChannelId) + sizeof(byte) + cd.inputs.len * sizeof(NoteId) +
+      sizeof(uint32) + cd.metadata.len
+  of ChannelWithdraw:
+    template cw: untyped = payload.channelWithdraw
+    sizeof(ChannelId) + sizeof(byte) + cw.inputs.len * sizeof(NoteId)
+  of ChannelTransfer:
+    template ct: untyped = payload.channelTransfer
+    sizeof(ChannelId) + sizeof(byte) + ct.inputs.len * sizeof(NoteId) +
+      sizeof(byte) + ct.outputs.len * (sizeof(Value) + sizeof(ZkPublicKey))
+  of ChannelConfig:
+    template cfg: untyped = payload.channelConfig
+    sizeof(ChannelId) + sizeof(KeyCount) + cfg.keys.len * sizeof(Ed25519PublicKey) +
+      sizeof(PostingTimeframe) + sizeof(PostingTimeout) +
+      sizeof(ConfigurationThreshold) + sizeof(TransferThreshold)
+  of SdpDeclare:
+    template decl: untyped = payload.sdpDeclare
+    var locLen = 0
+    for loc in decl.locators:
+      locLen += byteLen(loc)
+    sizeof(byte) + sizeof(byte) + locLen + sizeof(ProviderId) +
+      sizeof(ZkId) + sizeof(LockedNoteId)
+  of SdpWithdraw:
+    sizeof(DeclarationId) + sizeof(Nonce) + sizeof(LockedNoteId)
+  of SdpActive:
+    template act: untyped = payload.sdpActive
+    sizeof(DeclarationId) + sizeof(Nonce) + sizeof(uint32) + act.metadata.len
+  of LeaderClaim:
+    sizeof(RewardsRoot) + sizeof(VoucherNullifier) + sizeof(ZkPublicKey)
+
+func byteLen*(op: Op): int =
+  ## Exact wire byte length of an Op: Opcode (1B) || OpPayload.
+  sizeof(Opcode) + byteLen(op.payload)
+
+func byteLen*(ops: openArray[Op]): int =
+  ## Exact wire byte length of an Ops sequence: OpCount (1B) || *Op.
+  var total = sizeof(OpCount)
+  for op in ops:
+    total += byteLen(op)
+  total
+
 func decodeTransfer*(data: openArray[byte]): TransferPayload {.raises: [DecodingError].} =
   var pos = 0
   let inputs = readInputs(data, pos)
