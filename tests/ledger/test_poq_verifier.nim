@@ -254,6 +254,6 @@ suite "ledger/poq_verifier — end-to-end activity verification":
     let r = rotatedWith(wrongChain).rewards
     check recordActivity(
       r, activity, mkProvider(1), verifyProofOfQuota
-    ).error == InvalidProof
+    ).error == InvalidTxProof
 
 {.pop.}

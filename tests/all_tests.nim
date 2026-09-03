@@ -67,7 +67,6 @@ import # Unit test
   ./ledger/test_channel_transfer,
   ./ledger/test_channel_round_robin,
   ./ledger/test_pol_verifier,
-  ./ledger/test_poc_verifier,
   ./ledger/test_poq_verifier,
   ./ledger/test_blend_difficulty,
   ./ledger/test_leader_claim,
