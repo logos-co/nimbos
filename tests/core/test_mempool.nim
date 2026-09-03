@@ -23,7 +23,7 @@ suite "core/mempool":
     var m = Mempool.init()
     check m.len == 0
 
-    let tx1 = minimalSignedTx()
+    let tx1 = ValidSignedMantleTx(minimalSignedTx())
     let hash1 = mantleTxHash(tx1.tx)
 
     # Add transaction
@@ -46,8 +46,8 @@ suite "core/mempool":
 
   test "mempool gracefully handles backward slot clock skew":
     var m = Mempool.init()
-    let tx1 = signedTxWithOps(1, 1)
-    let tx2 = signedTxWithOps(1, 2)
+    let tx1 = ValidSignedMantleTx(signedTxWithOps(1, 1))
+    let tx2 = ValidSignedMantleTx(signedTxWithOps(1, 2))
 
     # Add first tx at slot 5
     check m.add(tx1, SlotNumber(5)) == true
@@ -58,14 +58,14 @@ suite "core/mempool":
 
   test "pruneBlockTxs removes committed block transactions":
     var m = Mempool.init()
-    let tx1 = signedTxWithOps(1, 1)
-    let tx2 = signedTxWithOps(1, 2)
+    let tx1 = ValidSignedMantleTx(signedTxWithOps(1, 1))
+    let tx2 = ValidSignedMantleTx(signedTxWithOps(1, 2))
 
     check m.add(tx1, SlotNumber(0)) == true
     check m.add(tx2, SlotNumber(0)) == true
 
     var blk: Block
-    blk.txs = @[tx1]
+    blk.txs = @[SignedMantleTx(tx1)]
 
     m.pruneBlockTxs(blk)
 
@@ -75,9 +75,9 @@ suite "core/mempool":
 
   test "pruneExpiredTxs purges transactions older than MempoolMaxAgeSlots":
     var m = Mempool.init()
-    let tx1 = signedTxWithOps(1, 1)
-    let tx2 = signedTxWithOps(1, 2)
-    let tx3 = signedTxWithOps(1, 3)
+    let tx1 = ValidSignedMantleTx(signedTxWithOps(1, 1))
+    let tx2 = ValidSignedMantleTx(signedTxWithOps(1, 2))
+    let tx3 = ValidSignedMantleTx(signedTxWithOps(1, 3))
 
     # Added at monotonically increasing slots
     check m.add(tx1, SlotNumber(10)) == true
@@ -112,9 +112,9 @@ suite "core/mempool":
 
   test "capacity limit evicts oldest tx to graceCache":
     var m = Mempool.init(capacity = 2)
-    let tx1 = signedTxWithOps(1, 1)
-    let tx2 = signedTxWithOps(1, 2)
-    let tx3 = signedTxWithOps(1, 3)
+    let tx1 = ValidSignedMantleTx(signedTxWithOps(1, 1))
+    let tx2 = ValidSignedMantleTx(signedTxWithOps(1, 2))
+    let tx3 = ValidSignedMantleTx(signedTxWithOps(1, 3))
 
     check m.add(tx1, SlotNumber(1)) == true
     check m.add(tx2, SlotNumber(2)) == true
@@ -135,8 +135,8 @@ suite "core/mempool":
 
   test "add handles non-monotonic backwards slots by clamping to lastAddedSlot":
     var m = Mempool.init()
-    let tx1 = signedTxWithOps(1, 1)
-    let tx2 = signedTxWithOps(1, 2)
+    let tx1 = ValidSignedMantleTx(signedTxWithOps(1, 1))
+    let tx2 = ValidSignedMantleTx(signedTxWithOps(1, 2))
 
     check m.add(tx1, SlotNumber(10)) == true
     check m.lastAddedSlot == SlotNumber(10)

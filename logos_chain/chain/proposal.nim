@@ -14,6 +14,7 @@
 import
   std/[deques, tables],
   results,
+  libp2p/crypto/ed25519/ed25519,
   ../core/[types, local_tree, mempool],
   ../core/crypto/types,
   ../core/mantle/[gas, primitives, tx_types],
@@ -29,8 +30,6 @@ type
     MissingReference
     InvalidBlockStructure
     TreeAdmissionRejected
-    HeaderRejected
-    TransactionsRejected
 
 proc selectTxsForProposal*(
     m: Mempool,
@@ -39,11 +38,11 @@ proc selectTxsForProposal*(
     currentSlot: SlotNumber,
     maxTxs: int = MaxBlockTxs,
     maxBytes: int = MaxBlockSize,
-): seq[SignedMantleTx] =
+): seq[ValidSignedMantleTx] =
   ## Selects transactions for block proposal according to the Execution Market spec:
   ## https://github.com/logos-co/logos-lips/blob/38916aa474164ac4acd81e62d19715e17626be17/docs/blockchain/raw/execution-market.md
   ## Enforces count (maxTxs), execution gas (MAX_EXECUTION_GAS_PER_BLOCK), and body byte size (maxBytes).
-  var selected: seq[SignedMantleTx]
+  var selected: seq[ValidSignedMantleTx]
   var workingLedger = tipLedgerState.advanceEpochAndMarket(currentSlot, cfg).valueOr:
     tipLedgerState
   var cumulativeExecutionGas = Gas(0)
@@ -57,19 +56,19 @@ proc selectTxsForProposal*(
       break
 
     m.txs.withValue(hash, item):
-      if currentSlot < item[].addedAtSlot + TxMaturitySlots:
+      if currentSlot < item.addedAtSlot + TxMaturitySlots:
         continue
 
       # Lazily compute and cache byteSize and execGas on first evaluation
-      let txBytes = item[].byteSize.valueOr:
-        let sz = encodeSignedMantleTx(item[].tx).len
-        item[].byteSize = Opt.some(sz)
+      let txBytes = item.byteSize.valueOr:
+        let sz = byteLen(item.tx)
+        item.byteSize = Opt.some(sz)
         sz
 
-      let execGas = item[].execGas.valueOr:
-        let eg = txExecutionGas(item[].tx).valueOr:
+      let execGas = item.execGas.valueOr:
+        let eg = txExecutionGas(item.tx).valueOr:
           continue
-        item[].execGas = Opt.some(eg)
+        item.execGas = Opt.some(eg)
         eg
 
       let nextExecutionGas = cumulativeExecutionGas.checkedAdd(execGas).valueOr:
@@ -86,11 +85,11 @@ proc selectTxsForProposal*(
         continue
 
       var candidate = workingLedger
-      let balance = candidate.tryApplyTx(item[].tx, epoch, currentSlot).valueOr:
+      let balance = candidate.tryApplyTx(item.tx, epoch, currentSlot, acceptAllPoq).valueOr:
         continue
 
       if balance.covers(totalCost):
-        selected.add(item[].tx)
+        selected.add(item.tx)
         cumulativeExecutionGas = nextExecutionGas
         cumulativeBytes += txBytes
         workingLedger = move(candidate)
@@ -98,7 +97,33 @@ proc selectTxsForProposal*(
 
   selected
 
-func reconstructBlock*(
+proc constructProposal*(
+    m: Mempool,
+    tipLedgerState: LedgerState,
+    cfg: LedgerConfig,
+    currentSlot: SlotNumber,
+    parentBlock: BlockId,
+    proofOfLeadership: ProofOfLeadership,
+    leaderSecKey: EdPrivateKey,
+): Result[Proposal, ProposalError] =
+  ## Full constructor from mempool: selects fee-paying transactions from the
+  ## mempool according to the execution market spec, constructs the header,
+  ## signs it with the leader's private key, and produces the Proposal.
+  let selected = m.selectTxsForProposal(
+    tipLedgerState, cfg, currentSlot
+  )
+  template rawTxs: untyped = cast[seq[SignedMantleTx]](selected)
+  let h = initHeader(
+    bedrockVersion = ExpectedBedrockVersion,
+    parentBlock = parentBlock,
+    slot = currentSlot,
+    txs = rawTxs,
+    proofOfLeadership = proofOfLeadership,
+  )
+  let sig = leaderSecKey.sign(blockId(h))
+  initProposal(h, rawTxs, sig)
+
+func reconstructBlock(
     proposal: Proposal,
     mempool: Mempool
 ): Result[Block, ProposalValidationError] =
@@ -110,7 +135,7 @@ func reconstructBlock*(
       continue
     let tx = mempool.get(r).valueOr:
       return err(ProposalValidationError.MissingReference)
-    txs.add(tx)
+    txs.add(SignedMantleTx(tx))
   
   ok(Block(
     header: proposal.header,
@@ -118,27 +143,26 @@ func reconstructBlock*(
     txs: txs
   ))
 
-proc reconstructAndValidateProposal*(
+func toProposalValidationError(err: BlockValidationError): ProposalValidationError =
+  case err.kind
+  of BlockValidationErrorKind.TreeAdmissionRejected:
+    ProposalValidationError.TreeAdmissionRejected
+  else:
+    ProposalValidationError.InvalidBlockStructure
+
+proc reconstructAndValidateBlock*(
     proposal: Proposal,
     localTree: LocalTree,
     ledger: Ledger[BlockId],
     mempool: Mempool
 ): Result[Block, ProposalValidationError] =
   ## Attempts block reconstruction from references, validates the reconstructed
-  ## block against the localTree, and statefully verifies the leader proof and transactions sequence.
-  ## Returns the reconstructed Block on success.
+  ## block against localTree and ledger admission rules (skipping stateless tx
+  ## checks as mempool txs are already valid), and returns the reconstructed Block.
+  ## State transition (prepareBlockUpdate) is handled afterwards in the pipeline.
   let blk = ? reconstructBlock(proposal, mempool)
-  discard validateBlockAndTransactions(blk, localTree, ledger).valueOr:
-    case error.kind
-    of BlockValidationErrorKind.InvalidBlockStructure:
-      return err(ProposalValidationError.InvalidBlockStructure)
-    of BlockValidationErrorKind.TreeAdmissionRejected:
-      return err(ProposalValidationError.TreeAdmissionRejected)
-    of BlockValidationErrorKind.HeaderRejected:
-      return err(ProposalValidationError.HeaderRejected)
-    of BlockValidationErrorKind.TransactionsRejected:
-      return err(ProposalValidationError.TransactionsRejected)
-      
+  discard validateBlockAndStatelessTransactions(blk, localTree, ledger, []).valueOr:
+    return err(error.toProposalValidationError)
   ok(blk)
 
 {.pop.}

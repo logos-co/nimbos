@@ -17,7 +17,7 @@ import
   results,
   minilru,
   ./crypto/types,
-  ./mantle/[tx_hashing, tx_types, gas]
+  ./mantle/[tx_hashing, tx_types, gas, proofs]
 
 from ./types import Block
 from ./mantle/primitives import MaxBlockTxs, SlotNumber
@@ -35,7 +35,7 @@ type
     TxNotFound
 
   MempoolItem* = ref object
-    tx*: SignedMantleTx
+    tx*: ValidSignedMantleTx
     addedAtSlot*: SlotNumber
     byteSize*: Opt[int] ## Lazily computed serialized byte length; cached on first proposal evaluation to avoid re-encoding
     execGas*: Opt[Gas]  ## Lazily computed execution gas; cached on first proposal evaluation to avoid repeated gas checks
@@ -73,7 +73,7 @@ proc compactQueue(m: Mempool) =
 
 proc add*(
     m: Mempool,
-    tx: sink SignedMantleTx,
+    tx: sink ValidSignedMantleTx,
     currentSlot: SlotNumber,
 ): bool =
   # Clamp to lastAddedSlot to preserve monotonic insertion order against minor clock skew/NTP slewing
@@ -111,7 +111,7 @@ func contains*(m: Mempool, hash: Hash32): bool =
   ## Any transaction present here has already passed stateless validation.
   hash in m.txs or m.graceCache.peek(hash).isSome
 
-func get*(m: Mempool, hash: Hash32): Result[SignedMantleTx, MempoolError] =
+func get*(m: Mempool, hash: Hash32): Result[ValidSignedMantleTx, MempoolError] =
   m.txs.withValue(hash, item):
     return ok(item[].tx)
   let item = m.graceCache.peek(hash).valueOr:
@@ -139,5 +139,41 @@ proc pruneExpiredTxs*(m: Mempool, currentSlot: SlotNumber) =
 proc pruneBlockTxs*(m: Mempool, blk: Block) =
   for stx in blk.txs:
     m.remove(mantleTxHash(stx.tx), moveToGrace = false)
+
+func isKnownValid*(m: Mempool, tx: SignedMantleTx): bool =
+  ## Light validation check: checks if transaction is present in the mempool
+  ## with identical cryptographic proofs.
+  ## Pre-checks (cheapest to most expensive):
+  ## 1. Mempool existence & non-emptiness (< 1 ns)
+  ## 2. Structural 1:1 proof count alignment (< 2 ns)
+  ## 3. Opcode-to-proof kind matching (< 5 ns)
+  ## Lookup & verification:
+  ## 4. mantleTxHash calculation & mempool lookup (~1 µs)
+  ## 5. Proof equivalence memory comparison (~10-20 ns, requires poolTx from lookup)
+  if m == nil or m.len == 0:
+    return false
+
+  if tx.tx.ops.len != tx.opProofs.len:
+    return false
+
+  for i in 0 ..< tx.tx.ops.len:
+    if tx.opProofs[i].kind != expectedOpProofKindForOpcode(tx.tx.ops[i].opcode):
+      return false
+
+  let hash = mantleTxHash(tx.tx)
+  let poolTx = m.get(hash).valueOr:
+    return false
+
+  sameOpProofs(SignedMantleTx(poolTx).opProofs, tx.opProofs)
+
+func unverifiedTxs*(m: Mempool, txs: openArray[SignedMantleTx]): seq[SignedMantleTx] =
+  ## Filters out transactions that are already verified in the mempool.
+  if m == nil or m.len == 0:
+    return @txs
+  var unverified: seq[SignedMantleTx]
+  for tx in txs:
+    if not m.isKnownValid(tx):
+      unverified.add(tx)
+  unverified
 
 {.pop.}

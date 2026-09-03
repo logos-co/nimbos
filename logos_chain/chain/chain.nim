@@ -125,7 +125,7 @@ proc readdBranchTxs(chain: var Chain, fromId, toId: BlockId) =
     if blkOpt.isSome:
       let b = blkOpt.get
       for stx in b.txs:
-        discard chain.mempool.add(stx, nowSlot)
+        discard chain.mempool.add(ValidSignedMantleTx(stx), nowSlot)
       curr = header(b).parentBlock
     else:
       warn "Missing block during reorg transaction re-addition",
@@ -154,7 +154,8 @@ proc tryApplyBlock*(
     return err(BlockApplyError(kind: AlreadyApplied))
   if hdr.slot > chain.currentWallclockSlot():
     return err(BlockApplyError(kind: FutureSlot))
-  let prepared = prepareBlockUpdate(blk, chain.localTree, chain.ledger).valueOr:
+  let unverified = chain.mempool.unverifiedTxs(blk.txs)
+  let prepared = prepareBlockUpdate(blk, chain.localTree, chain.ledger, unverified).valueOr:
     case error.kind
     of BlockValidationErrorKind.InvalidBlockStructure:
       return err(BlockApplyError(kind: InvalidStructure))

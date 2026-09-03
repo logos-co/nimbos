@@ -87,10 +87,15 @@ func validateBlockStructure(blk: Block): bool =
 
   true
 
-proc validateStatelessTransactions(blk: Block): Result[void, BlockValidationError] =
+proc validateStatelessTransactions(
+    txs: openArray[SignedMantleTx],
+): Result[void, BlockValidationError] =
   ## Validates mantle transactions statelessly using a 2-pass light-first scan:
   ## Pass 1: Light (non-ZK) transactions (~130 ns per tx)
   ## Pass 2: Heavy ZK transactions (LeaderClaim Groth16 proofs, ~1.13 ms per tx)
+  if txs.len == 0:
+    return ok()
+
   template validateTx(tx: SignedMantleTx): untyped =
     validateMantleTxStateless(tx).isOkOr:
       return err(BlockValidationError(
@@ -101,41 +106,41 @@ proc validateStatelessTransactions(blk: Block): Result[void, BlockValidationErro
   var heavyIndices: seq[int]
 
   # Pass 1: Validate light txs, record heavy ZK txs without running heavy verifications
-  for i in 0 ..< blk.txs.len:
-    template tx: untyped = blk.txs[i]
-    if tx.hasHeavyZkProof():
+  for i in 0 ..< txs.len:
+    if txs[i].hasHeavyZkProof():
       heavyIndices.add(i)
     else:
-      validateTx(tx)
+      validateTx(txs[i])
 
   # Pass 2: Validate heavy ZK txs (only if any exist)
   for idx in heavyIndices:
-    validateTx(blk.txs[idx])
+    validateTx(txs[idx])
 
   ok()
 
-proc validateBlockAndTransactions*(
+proc validateBlockAndStatelessTransactions*(
     blk: Block,
     localTree: LocalTree,
     ledger: Ledger[BlockId],
+    txsToVerify: openArray[SignedMantleTx],
 ): Result[BlockId, BlockValidationError] =
-  ## Multi-tier block admission validation:
+  ## Multi-tier block admission and stateless transaction validation:
   ## Tier 0: Structural & size bounds (~1 µs)
   ## Tier 1: Topology & parent existence in localTree/ledger (< 5 µs)
   ## Tier 2: Merkle root & Ed25519 signature verification (~1.9 ms)
-  ## Tier 3: Light-first stateless transaction validation (0 - 5.2s)
+  ## Tier 3: Light-first stateless transaction validation on `txsToVerify` (0 - 5.2s).
+  ## Only `txsToVerify` will be validated; if empty, all transactions are in the mempool
+  ## thus no need to validate statelessly.
   if not validateBlockStructure(blk):
     return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))
 
-  if not ledger.hasState(blk.header.parentBlock):
-    return err(BlockValidationError(kind: BlockValidationErrorKind.TreeAdmissionRejected))
-  if not localTree.canExtend(blk.header):
+  if not ledger.hasState(blk.header.parentBlock) or not localTree.canExtend(blk.header):
     return err(BlockValidationError(kind: BlockValidationErrorKind.TreeAdmissionRejected))
 
   if not validateBlockHeader(blk):
     return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))
 
-  ?validateStatelessTransactions(blk)
+  ?validateStatelessTransactions(txsToVerify)
 
   ok(blockId(blk.header))
 
@@ -143,9 +148,12 @@ proc prepareBlockUpdate*(
     blk: Block,
     localTree: LocalTree,
     ledger: Ledger[BlockId],
+    txsToVerify: openArray[SignedMantleTx],
 ): Result[tuple[id: BlockId, state: LedgerState], BlockValidationError] =
-  ## Validates block admission and executes state transitions via `ledger.prepareUpdate`.
-  let id = ?validateBlockAndTransactions(blk, localTree, ledger)
+  ## Validates block admission, statelessly validates only `txsToVerify` (if empty,
+  ## all transactions are in the mempool thus no need to validate statelessly), and
+  ## executes state transitions via `ledger.prepareUpdate`.
+  let id = ?validateBlockAndStatelessTransactions(blk, localTree, ledger, txsToVerify)
   template validTxs: untyped = cast[seq[ValidSignedMantleTx]](blk.txs)
 
   let prepared = ledger.prepareUpdate(

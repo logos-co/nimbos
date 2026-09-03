@@ -159,7 +159,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
     # 1. Add tx to mempool
     let dummyTx = signedTxWithOps(1, 1)
     let txHash = mantleTxHash(dummyTx.tx)
-    check chain.mempool.add(dummyTx, SlotNumber(0)) == true
+    check chain.mempool.add(ValidSignedMantleTx(dummyTx), SlotNumber(0)) == true
     check txHash in chain.mempool
 
     # 2. Ingest block b1 containing dummyTx
@@ -208,9 +208,9 @@ suite "chain/epoch wiring (devnet deployment settings)":
     let h2 = mantleTxHash(tx2.tx)
     let h3 = mantleTxHash(tx3.tx)
 
-    check chain.mempool.add(tx1, SlotNumber(0))
-    check chain.mempool.add(tx2, SlotNumber(0))
-    check chain.mempool.add(tx3, SlotNumber(0))
+    check chain.mempool.add(ValidSignedMantleTx(tx1), SlotNumber(0))
+    check chain.mempool.add(ValidSignedMantleTx(tx2), SlotNumber(0))
+    check chain.mempool.add(ValidSignedMantleTx(tx3), SlotNumber(0))
 
     # Branch A: Genesis -> A1 (contains tx1) -> A2 (contains tx2) (height 2)
     let a1 = childBlock(chain.genesisBlock.header, gid, SlotNumber(1), [tx1])
@@ -287,7 +287,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
 
     let gid = blockId(chain.genesisBlock.header)
     let tx = signedTxWithOps(1, 101)
-    check chain.mempool.add(tx, SlotNumber(0))
+    check chain.mempool.add(ValidSignedMantleTx(tx), SlotNumber(0))
 
     let tipState = chain.ledger.state(gid).get()
     check tipState.epochs.activeEpoch.epoch == 0
@@ -300,7 +300,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
     check mantleTxHash(selected[0].tx) == mantleTxHash(tx.tx)
 
     # Verify that a block constructed from this proposal is valid and admitted to localTree & ledger
-    let blk = childBlock(chain.genesisBlock.header, gid, SlotNumber(6500), selected)
+    let blk = childBlock(chain.genesisBlock.header, gid, SlotNumber(6500), cast[seq[SignedMantleTx]](selected))
     let blkId = blockId(blk.header)
     check chain.tryApplyBlock(blk).isOk
     check chain.localTree.hasBlock(blkId)
