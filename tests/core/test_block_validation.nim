@@ -12,15 +12,16 @@ import
   bearssl/rand,
   libp2p/crypto/ed25519/ed25519,
   unittest2,
-  ../testutil,
   ./mantle/test_helpers,
-  ../../logos_chain/core/types,
-  ../../logos_chain/core/local_tree,
+  ../testutil,
+  ../../logos_chain/core/[types, local_tree, mempool],
   ../../logos_chain/core/mantle/[operations, opcodes, proofs, tx_types, tx_hashing],
-  ../../logos_chain/chain/block_validation,
-  ../../logos_chain/chain/genesis,
+  ../../logos_chain/chain/[block_validation, genesis, proposal],
   ../../logos_chain/ledger/ledger
+from ../../logos_chain/core/crypto/types import FieldElement
 from ../../logos_chain/core/mantle/primitives import MaxBlockTxs, SlotNumber
+from ../ledger/test_helpers import testLedgerConfig
+from ../ledger/sdp/test_helpers import testSdpRegistry
 
 const inscribeTxFraming = 166
   ## OpCount, Opcode, ChannelId, the u32 inscription length, Parent, Signer
@@ -46,9 +47,31 @@ proc mkSizedTx(bytes: int): SignedMantleTx =
   )
 
 proc validate(genesis: Block, blk: Block): Result[BlockId, BlockValidationError] =
-  let tree = newLocalTree(genesis)
+  let tree = newLocalTree(genesis, 1'u64)
   let ledger = Ledger[BlockId].init(blockId(genesis.header), default(LedgerState), default(LedgerConfig))
-  validateBlockAndTransactions(blk, tree, ledger)
+  validateBlockAndStatelessTransactions(blk, tree, ledger, blk.txs)
+
+proc childProposal(
+    parentHdr: Header,
+    parentId: BlockId,
+    slot: SlotNumber,
+    txs: openArray[SignedMantleTx],
+): Proposal =
+  var proofOfLeadership = parentHdr.proofOfLeadership
+  proofOfLeadership.leaderKey = testBlockKeyPair.pubkey
+
+  let h = initHeader(
+    bedrockVersion = parentHdr.bedrockVersion,
+    parentBlock = parentId,
+    slot = slot,
+    txs = txs,
+    proofOfLeadership = proofOfLeadership,
+  )
+  let sig = testBlockKeyPair.seckey.sign(blockId(h))
+  var refs: References
+  for i, tx in txs:
+    refs[i] = mantleTxHash(tx.tx)
+  initProposal(h, refs, sig)
 
 suite "core/block_validation":
   test "accepts a structurally valid block":
@@ -250,5 +273,92 @@ suite "core/block_validation — multi-tier evaluation order":
     check res.isErr
     check res.error.kind == BlockValidationErrorKind.StatelessTxRejected
     check res.error.statelessError in {StatelessLedgerError.InvalidProof, StatelessLedgerError.VerifierNotInitialised}
+
+  test "validateProposal reconstructs block and validates it":
+    let
+      sm = minimalSignedTx()
+      genesis = createGenesisBlock(sm)
+      gid = blockId(genesis.header)
+      tree = newLocalTree(genesis, 1'u64)
+      proposal = childProposal(genesis.header, gid, SlotNumber(1), [sm])
+    
+    var mempool = Mempool.init()
+    check mempool.add(ValidSignedMantleTx(sm), SlotNumber(0))
+    
+    var state = LedgerState.fromGenesis(
+        genesis.txs, default(FieldElement), testSdpRegistry(),
+        testLedgerConfig).expect("genesis state")
+    state.feeMarket.executionBaseFee = 0
+    state.feeMarket.storageGasPrice = 0
+    let ledger = Ledger[BlockId].init(gid, state, testLedgerConfig, mockVerifyLeaderProof)
+      
+    check reconstructAndValidateBlock(proposal, tree, ledger, mempool).isOk
+    
+
+  test "reconstructAndValidateBlock rejects if referenced transaction is missing from mempool":
+    let
+      sm = minimalSignedTx()
+      genesis = createGenesisBlock(sm)
+      gid = blockId(genesis.header)
+      tree = newLocalTree(genesis, 1'u64)
+      proposal = childProposal(genesis.header, gid, SlotNumber(1), [sm])
+    var state = LedgerState.fromGenesis(
+        genesis.txs, default(FieldElement), testSdpRegistry(),
+        testLedgerConfig).expect("genesis state")
+    state.feeMarket.executionBaseFee = 0
+    state.feeMarket.storageGasPrice = 0
+    let
+      ledger = Ledger[BlockId].init(gid, state, testLedgerConfig, mockVerifyLeaderProof)
+      mempool = Mempool.init()
+      
+    let res = reconstructAndValidateBlock(proposal, tree, ledger, mempool)
+    check res.isErr and res.error == MissingReference
+
+  test "mempool identifies known valid transactions":
+    var mempool = Mempool.init()
+    let tx = minimalSignedTx()
+    check not mempool.isKnownValid(tx)
+    check mempool.add(ValidSignedMantleTx(tx), SlotNumber(0))
+    check mempool.isKnownValid(tx)
+
+    # If proof differs, isKnownValid returns false
+    var badProofTx = tx
+    badProofTx.opProofs = @[defaultOpProofForOpcode(OpChannelInscribe)]
+    check not mempool.isKnownValid(badProofTx)
+
+  test "validateBlockAndStatelessTransactions fast-paths with unverified txs":
+    let
+      sm = minimalSignedTx()
+      genesis = createGenesisBlock(sm)
+      gid = blockId(genesis.header)
+      tree = newLocalTree(genesis, 1'u64)
+      blk = childBlock(genesis.header, gid, SlotNumber(1), [sm])
+      ledger = Ledger[BlockId].init(gid, default(LedgerState), default(LedgerConfig))
+    var mempool = Mempool.init()
+    check mempool.add(ValidSignedMantleTx(sm), SlotNumber(0))
+
+    let unverified = mempool.unverifiedTxs(blk.txs)
+    check unverified.len == 0
+    check validateBlockAndStatelessTransactions(blk, tree, ledger, unverified).isOk
+
+  test "prepareBlockUpdate rejects stateful transaction failures":
+    let
+      sm = minimalSignedTx()
+      genesis = createGenesisBlock(sm)
+      gid = blockId(genesis.header)
+      tree = newLocalTree(genesis, 1'u64)
+      blk = childBlock(genesis.header, gid, SlotNumber(1), [sm])
+      
+    var state = LedgerState.fromGenesis(
+        genesis.txs, default(FieldElement), testSdpRegistry(),
+        testLedgerConfig).expect("genesis state")
+    # Non-zero base fee causes minimalSignedTx with 0 transfer balance to fail fee coverage
+    state.feeMarket.executionBaseFee = 1000
+    state.feeMarket.storageGasPrice = 1000
+    let
+      ledger = Ledger[BlockId].init(gid, state, testLedgerConfig, mockVerifyLeaderProof)
+      
+    let res = prepareBlockUpdate(blk, tree, ledger, [])
+    check res.isErr and res.error.kind == BlockValidationErrorKind.TransactionsRejected
 
 {.pop.}

@@ -246,6 +246,7 @@ suite "ledger/leader_claim — tryApplyLeaderClaim":
     check r.isErr
     check r.error == RewardsRootMismatch
 
+
 suite "ledger/leader_claim — tryApplyHeader epoch hooks":
   test "epoch advance rolls in staged vouchers and rewards":
     let s0 = LedgerState.fromUtxos(@[], default(FieldElement), testSdpRegistry(), testLedgerConfig).get

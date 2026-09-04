@@ -19,7 +19,7 @@ import
   ../logos_chain/conf,
   ../logos_chain/networking/network,
   ../logos_chain/core/[types, local_tree],
-  ../logos_chain/core/mantle/tx_types,
+  ../logos_chain/core/mantle/[operations, tx_types],
   ../logos_chain/chain/genesis,
   ../logos_chain/ledger/[pol_verifier, types]
 
@@ -189,7 +189,37 @@ func minimalSignedTx*(): SignedMantleTx =
     opProofs: @[],
   )
 
-let testBlockKeyPair = block:
+let testTxKeyPair* = block:
+  var rngRef = new(HmacDrbgContext)
+  rngRef[] = HmacDrbgContext.init([8'u8])
+  EdKeyPair.random(newBearSslRng(rngRef))
+
+proc signedTxWithOps*(opsCount: int = 1, txIndex: int = 1): SignedMantleTx =
+  var ops: seq[Op]
+  var proofs: seq[OpProof]
+  for i in 0 ..< opsCount:
+    var cid: ChannelId
+    cid[0] = byte(txIndex mod 256)
+    cid[1] = byte(txIndex div 256)
+    cid[2] = byte(i mod 256)
+    cid[3] = byte(i div 256)
+    let payload = ChannelInscribePayload(
+      channelId: cid,
+      inscription: @[byte 0x68, 0x69],
+      parent: default(Hash32),
+      signer: testTxKeyPair.pubkey,
+    )
+    ops.add(createChannelInscribeOp(payload))
+
+  let mtx = MantleTx(ops: ops)
+  let txHash = mantleTxHash(mtx)
+  let sig = sign(testTxKeyPair.seckey, txHash)
+  for _ in 0 ..< opsCount:
+    proofs.add(OpProof(kind: opfChannelInscribe, ed25519SigProof: sig))
+
+  SignedMantleTx(tx: mtx, opProofs: proofs)
+
+let testBlockKeyPair* = block:
   var rngRef = new(HmacDrbgContext)
   rngRef[] = HmacDrbgContext.init([9'u8])
   EdKeyPair.random(newBearSslRng(rngRef))
@@ -212,6 +242,9 @@ proc childBlock*(
   )
   let sig = testBlockKeyPair.seckey.sign(blockId(h))
   initBlock(h, signature = sig, txs = txs)
+
+func singleTxRefs*(hash: Hash32): References {.inline.} =
+  result[0] = hash
 
 type BootstrapPeers* = object
   listener*, dialer*: LBP2PNode

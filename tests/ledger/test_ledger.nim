@@ -9,7 +9,7 @@
 {.used.}
 
 import
-  std/[os, strutils, tables],
+  std/[os, strutils],
   unittest2,
   results,
   stew/io2,
@@ -138,12 +138,14 @@ suite "tryApplyTx — channel ops":
           .expect("fresh note")
     s
 
+
   test "ChannelWithdraw contributes nothing to the transaction balance":
     let
       rng = HmacDrbgContext.new()
       kp = mkEdKeyPair(rng)
       cid = mkChannelId(2)
       note = mkUtxo(value = 100, pkSeed = 1)
+    var
       s0 = mkChannelState([note], cid, kp.pubkey, [note])
       body = MantleTx(ops: @[createChannelWithdrawOp(
         ChannelWithdrawPayload(channel: cid, inputs: @[note.id]))])
@@ -159,14 +161,14 @@ suite "tryApplyTx — channel ops":
       r = s0.tryApplyTx(
         ValidSignedMantleTx(tx), epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
     check r.isOk
-    let res = r.get
+    let balance = r.get
     # Bridged funds never enter or leave the UTXO set, so a channel op can
     # never fund its own fees — a Transfer op in the same tx must.
-    check res.balance == Balance.zero
-    check res.executionGas == Gas(56)
-    check res.state.latestUtxos.len == 1
-    check res.state.latestUtxos.contains(note.id)
-    check res.state.mantleLedger.channelNotes.isEmpty
+    check balance == Balance.zero
+    check s0.mandatory_fees(ValidSignedMantleTx(tx)).get.executionGas == Gas(56)
+    check s0.latestUtxos.len == 1
+    check s0.latestUtxos.contains(note.id)
+    check s0.mantleLedger.channelNotes.isEmpty
 
   test "ChannelTransfer keeps the balance at zero while rewriting the notes":
     let
@@ -175,6 +177,7 @@ suite "tryApplyTx — channel ops":
       cid = mkChannelId(3)
       note = mkUtxo(value = 100, pkSeed = 1)
       reassigned = mkNote(100, pkSeed = 2)
+    var
       s0 = mkChannelState([note], cid, kp.pubkey, [note])
       op = ChannelTransferPayload(
         channel: cid, inputs: @[note.id], outputs: @[reassigned])
@@ -192,13 +195,13 @@ suite "tryApplyTx — channel ops":
         ValidSignedMantleTx(tx), epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
     check r.isOk
     let
-      res = r.get
+      balance = r.get
       minted = Utxo(opId: opId(op), outputIndex: 0, note: reassigned)
-    check res.balance == Balance.zero
-    check res.executionGas == Gas(56)
-    check not res.state.latestUtxos.contains(note.id)
-    check res.state.latestUtxos.contains(minted.id)
-    check res.state.mantleLedger.channelNotes.isChannelNoteOf(minted.id, cid)
+    check balance == Balance.zero
+    check s0.mandatory_fees(ValidSignedMantleTx(tx)).get.executionGas == Gas(56)
+    check not s0.latestUtxos.contains(note.id)
+    check s0.latestUtxos.contains(minted.id)
+    check s0.mantleLedger.channelNotes.isChannelNoteOf(minted.id, cid)
 
   test "a regular Transfer cannot spend a channel note → ChannelNoteSpend":
     let
@@ -206,6 +209,7 @@ suite "tryApplyTx — channel ops":
       kp = mkEdKeyPair(rng)
       cid = mkChannelId(4)
       note = mkUtxo(value = 100, pkSeed = 1)
+    var
       s0 = mkChannelState([note], cid, kp.pubkey, [note])
       tx = mkTransferTx([note.id], [mkNote(100, pkSeed = 2)])
       r = s0.tryApplyTx(
@@ -278,16 +282,17 @@ suite "tryApplyTx — happy path (Rust-generated fixture)":
   test "single OpTransfer (balanced) verifies and clears the input":
     let
       input = mkUtxoWithPk(mkRealZkPubKey(1), value = 100)
+    var
       s0 = mkState([input])
       r = s0.tryApplyTx(
         ValidSignedMantleTx(mkFixtureTransferTx(input)), epoch = EpochNumber(0), slot = 0'u64,
         verifyPoq = acceptAllPoq)
     check r.isOk
 
-    let res = r.get
-    check res.balance == Balance.zero
-    check res.state.latestUtxos.len == 1
-    check not res.state.latestUtxos.contains(input.id)
+    let balance = r.get
+    check balance == Balance.zero
+    check s0.latestUtxos.len == 1
+    check not s0.latestUtxos.contains(input.id)
 
   test "tx application preserves the epoch tracker and SDP registry":
     # Guards against ops rebuilding LedgerState and resetting omitted fields.
@@ -304,13 +309,13 @@ suite "tryApplyTx — happy path (Rust-generated fixture)":
       zkId: lockedElsewhere.note.zkPublicKey,
     )
     discard installTestDeclaration(s0.sdp, declaration, epoch = 1)
+    let prevEpochs = s0.epochs
     let r = s0.tryApplyTx(
       ValidSignedMantleTx(mkFixtureTransferTx(input)), epoch = EpochNumber(0), slot = 0'u64,
       verifyPoq = acceptAllPoq)
     check r.isOk
-    let res = r.get
-    check res.state.epochs == s0.epochs
-    check declarationId(declaration) in res.state.sdp.state.declarations
+    check s0.epochs == prevEpochs
+    check declarationId(declaration) in s0.sdp.state.declarations
 
 # Suites below need a valid `OpProof` per transfer op — i.e. a zksign proof
 # generated for that op's input pks + tx hash. nimbos has no Nim-side prover

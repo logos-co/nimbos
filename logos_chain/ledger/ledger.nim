@@ -23,7 +23,7 @@ import
 
 from ../core/crypto/types import ZkPublicKey
 export
-  types, cryptarchia_state, channel_state, mantle_state, epoch_state, registry,
+  types, balance, cryptarchia_state, channel_state, mantle_state, epoch_state, registry,
   fee_market, block_rewards, gas, tx_types.ValidSignedMantleTx
 
 type
@@ -124,15 +124,13 @@ proc fromGenesis*(
   s.sdp = onEpochStarted(s.sdp, genesisEpoch)
   ok(s)
 
-proc tryApplyHeader*(
+proc advanceEpochAndMarket*(
     state: sink LedgerState,
     slot: SlotNumber,
-    proof: ProofOfLeadership,
     cfg: LedgerConfig,
-    verifyProof: LeaderProofVerifier = verifyLeaderProof,
 ): Result[LedgerState, LedgerError] =
-  ## Epoch pipeline for `slot`, leader-proof verification against the active
-  ## epoch state, then entropy/density bookkeeping.
+  ## Advances epoch tracking, runs storage market updates for crossed epochs,
+  ## finalizes SDP epoch transitions, and credits epoch vouchers for `slot`.
   var s = state
   let prevEpoch = s.epochs.activeEpoch.epoch
   s.epochs = ?s.epochs.advanceEpochs(
@@ -156,6 +154,18 @@ proc tryApplyHeader*(
     # Reward notes enter the live UTXO set in mint order, before the
     # leader proof is checked against the latest root.
     s.cryptarchiaLedger = s.cryptarchiaLedger.insertMintedUtxos(minted)
+  ok(s)
+
+proc tryApplyHeader*(
+    state: sink LedgerState,
+    slot: SlotNumber,
+    proof: ProofOfLeadership,
+    cfg: LedgerConfig,
+    verifyProof: LeaderProofVerifier = verifyLeaderProof,
+): Result[LedgerState, LedgerError] =
+  ## Epoch pipeline for `slot`, leader-proof verification against the active
+  ## epoch state, then entropy/density bookkeeping.
+  var s = ?state.advanceEpochAndMarket(slot, cfg)
   let
     active = s.epochs.activeEpoch
     public = LeaderPublic(
@@ -178,48 +188,43 @@ proc tryApplyHeader*(
   s.epochs = s.epochs.recordBlock(slot, entropy)
   ok(s)
 
-func multisigThreshold(s: LedgerState, op: Op): uint16 =
-  ## Signature count the ledger will verify for a channel multisig op —
-  ## the channel's threshold as of the pre-op state, 0 when absent.
+func opMultisigThreshold(op: Op, proof: OpProof): Result[uint16, LedgerError] =
+  ## Signature count for channel multisig operations (ChannelConfig, ChannelWithdraw, ChannelTransfer).
+  ##
+  ## We count signatures directly from the attached proof (`proof.signatures.len`) rather
+  ## than querying the ledger state. This avoids ordering issues when multiple ops in the
+  ## same tx create or update a channel before using it, and charges for the signatures
+  ## actually verified by `verifyChannelMultiSig` in `channel_state.nim` (L92-L107) — if
+  ## `proof.signatures.len != threshold`, the transaction will not be validated (`ThresholdUnmet`).
+  if proof.kind != expectedOpProofKindForOpcode(op.opcode):
+    return err(InvalidTxProof)
   case op.payload.kind
   of ChannelConfig:
-    let ch = s.mantleLedger.channels.get(op.payload.channelConfig.channel).valueOr:
-      return 0'u16
-    ch.configurationThreshold
+    ok(max(uint16(proof.channelConfigOpProof.signatures.len), 1'u16))
   of ChannelWithdraw:
-    let ch = s.mantleLedger.channels.get(op.payload.channelWithdraw.channel).valueOr:
-      return 0'u16
-    ch.transferThreshold
+    ok(max(uint16(proof.channelWithdrawOpProof.signatures.len), 1'u16))
   of ChannelTransfer:
-    let ch = s.mantleLedger.channels.get(op.payload.channelTransfer.channel).valueOr:
-      return 0'u16
-    ch.transferThreshold
+    ok(max(uint16(proof.channelTransferOpProof.signatures.len), 1'u16))
   else:
-    0'u16
+    ok(1'u16)
 
 proc tryApplyTx*(
-    state: sink LedgerState,
+    s: var LedgerState,
     tx: ValidSignedMantleTx,
     epoch: EpochNumber,
     slot: SlotNumber,
     verifyPoq: PoqVerifier,
-): Result[tuple[state: LedgerState, balance: Balance, executionGas: Gas], LedgerError] =
-  ## Applies one transaction; the returned balance is the Transfer-only
+): Result[Balance, LedgerError] =
+  ## Applies one transaction in-place; the returned balance is the Transfer-only
   ## delta. `slot` is used by channel ops for sequencer rotation.
   ## Note: Structural and cryptographic validation is guaranteed at compile-time
   ## via `ValidSignedMantleTx`.
-  var
-    s = state
-    balance = Balance.zero
-    txExecutionGas = Gas(0)
+  var balance = Balance.zero
   let txHash = mantleTxHash(tx.tx)
   for i in 0 ..< tx.tx.ops.len:
     let
       op = tx.tx.ops[i]
       proof = tx.opProofs[i]
-      opGas = execution_gas(op, s.multisigThreshold(op))
-    txExecutionGas = txExecutionGas.checkedAdd(opGas).valueOr:
-      return err(GasOverflow)
     case op.payload.kind
     of Transfer:
       let r =
@@ -289,19 +294,44 @@ proc tryApplyTx*(
       s.cryptarchiaLedger = ?s.cryptarchiaLedger.tryApplyLeaderClaim(
         op.payload.leaderClaim,
       )
-  ok((state: s, balance: balance, executionGas: txExecutionGas))
+  ok(balance)
 
-func mandatory_fees(
-    executionGas, storageGas: Gas, prices: GasPrices
-): Result[GasCost, LedgerError] =
-  let
-    executionCost = executionGas.checkedMul(prices.executionBaseFee).valueOr:
+proc txExecutionGas*(
+    tx: ValidSignedMantleTx,
+): Result[Gas, LedgerError] =
+  var total = Gas(0)
+  for i in 0 ..< tx.tx.ops.len:
+    let
+      op = tx.tx.ops[i]
+      proof = tx.opProofs[i]
+      thresh = ? opMultisigThreshold(op, proof)
+    let added = checkedAdd(total, execution_gas(op, thresh)).valueOr:
       return err(GasOverflow)
-    storageCost = storageGas.checkedMul(prices.storageGasPrice).valueOr:
-      return err(GasOverflow)
-    total = executionCost.checkedAdd(storageCost).valueOr:
-      return err(GasOverflow)
+    total = added
   ok(total)
+
+func mandatory_fees*(
+    s: LedgerState,
+    execGas: Gas,
+    txByteLen: int,
+): Result[tuple[totalCost: GasCost, executionGas, storageGas: Gas], LedgerError] =
+  let storageGas = Gas(txByteLen)
+  let prices = s.feeMarket.gasPrices
+  let executionCost = execGas.checkedMul(prices.executionBaseFee).valueOr:
+    return err(GasOverflow)
+  let storageCost = storageGas.checkedMul(prices.storageGasPrice).valueOr:
+    return err(GasOverflow)
+  let totalCost = executionCost.checkedAdd(storageCost).valueOr:
+    return err(GasOverflow)
+  ok((totalCost: totalCost, executionGas: execGas, storageGas: storageGas))
+
+proc mandatory_fees*(
+    s: LedgerState,
+    tx: ValidSignedMantleTx,
+): Result[tuple[totalCost: GasCost, executionGas, storageGas: Gas], LedgerError] =
+  let execGas = ? txExecutionGas(tx)
+  let txByteLen = byteLen(tx)
+  s.mandatory_fees(execGas, txByteLen)
 
 func creditBlockRewards*(
     state: sink LedgerState, totalFeeBurned, totalFeeTip: GasCost
@@ -338,25 +368,21 @@ proc tryApplyTxns*(
     totalFeeBurned = GasCost(0)
     totalFeeTip = GasCost(0)
   # The state, not the caller, is the source of truth for the epoch.
-  let
-    epoch = s.epochs.activeEpoch.epoch
-    prices = s.feeMarket.gasPrices
+  let epoch = s.epochs.activeEpoch.epoch
   for tx in txs:
     let
-      r = ?s.tryApplyTx(tx, epoch, slot, verifyPoq)
-      storageGas = Gas(byteLen(tx))
-      totalCost = ?mandatory_fees(r.executionGas, storageGas, prices)
-    s = r.state
-    if not r.balance.covers(totalCost):
+      (totalCost, execGas, storageGas) = ?s.mandatory_fees(tx)
+      txBalance = ?s.tryApplyTx(tx, epoch, slot, verifyPoq)
+    if not txBalance.covers(totalCost):
       return err(InsufficientBalance)
     totalFeeBurned = totalFeeBurned.checkedAdd(totalCost).valueOr:
       return err(GasOverflow)
     # tx_priority_tip = checked_uint64(tx_balance - tx_mandatory_fee): only
     # the difference is narrowed — a wide balance with a small tip stays valid.
-    let tip = ?checked_uint64(?r.balance.checkedSub(totalCost.to(Balance)))
+    let tip = ?checked_uint64(?txBalance.checkedSub(totalCost.to(Balance)))
     totalFeeTip = totalFeeTip.checkedAdd(tip).valueOr:
       return err(GasOverflow)
-    blockExecutionGas = blockExecutionGas.checkedAdd(r.executionGas).valueOr:
+    blockExecutionGas = blockExecutionGas.checkedAdd(execGas).valueOr:
       return err(GasOverflow)
     if blockExecutionGas > MAX_EXECUTION_GAS_PER_BLOCK:
       return err(TooMuchExecutionGas)
@@ -372,14 +398,14 @@ func init*[Id](
     _: typedesc[Ledger[Id]],
     id: Id,
     state: LedgerState,
-    config: LedgerConfig = LedgerConfig(),
+    config: LedgerConfig,
     leaderProofVerifier: LeaderProofVerifier = verifyLeaderProof,
     poqVerifier: PoqVerifier = acceptAllPoq,
 ): Ledger[Id] =
   ## Constructs a Ledger seeded with one `(id, state)` entry.
   # TODO(zk): the default becomes the real quota verifier when the
   # circuit lands.
-  var states = initTable[Id, LedgerState]()
+  var states: Table[Id, LedgerState]
   states[id] = state
   Ledger[Id](
     states: states,
