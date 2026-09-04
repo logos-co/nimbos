@@ -190,12 +190,12 @@ suite "chain/epoch wiring (devnet deployment settings)":
     check txHash in chain.mempool
 
     # Proposal selection on the new tip picks up the restored dummyTx
-    let selected = chain.mempool.selectTxsForProposal(
+    let (refs, count) = chain.mempool.selectProposalReferences(
       chain.ledger.state(id3_fork).get, ledgerConfig(ds),
       chain.currentWallclockSlot() + TxMaturitySlots
     )
-    check selected.len == 1
-    check mantleTxHash(selected[0].tx) == txHash
+    check count == 1
+    check refs[0] == txHash
 
   test "multi-fork reorg correctly handles multiple competing branches":
     var chain = initZeroFeeChain(ds)
@@ -293,14 +293,14 @@ suite "chain/epoch wiring (devnet deployment settings)":
     check tipState.epochs.activeEpoch.epoch == 0
 
     # Proposal at slot 6500 crosses epoch 0 (epoch length = 6000 slots)
-    let selected = chain.mempool.selectTxsForProposal(
+    let (refs, count) = chain.mempool.selectProposalReferences(
       tipState, ledgerConfig(ds), SlotNumber(6500)
     )
-    check selected.len == 1
-    check mantleTxHash(selected[0].tx) == mantleTxHash(tx.tx)
+    check count == 1
+    check refs[0] == mantleTxHash(tx.tx)
 
     # Verify that a block constructed from this proposal is valid and admitted to localTree & ledger
-    let blk = childBlock(chain.genesisBlock.header, gid, SlotNumber(6500), cast[seq[SignedMantleTx]](selected))
+    let blk = childBlock(chain.genesisBlock.header, gid, SlotNumber(6500), [tx])
     let blkId = blockId(blk.header)
     check chain.tryApplyBlock(blk).isOk
     check chain.localTree.hasBlock(blkId)

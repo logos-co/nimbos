@@ -219,7 +219,7 @@ proc signedTxWithOps*(opsCount: int = 1, txIndex: int = 1): SignedMantleTx =
 
   SignedMantleTx(tx: mtx, opProofs: proofs)
 
-let testBlockKeyPair = block:
+let testBlockKeyPair* = block:
   var rngRef = new(HmacDrbgContext)
   rngRef[] = HmacDrbgContext.init([9'u8])
   EdKeyPair.random(newBearSslRng(rngRef))
@@ -242,6 +242,9 @@ proc childBlock*(
   )
   let sig = testBlockKeyPair.seckey.sign(blockId(h))
   initBlock(h, signature = sig, txs = txs)
+
+func singleTxRefs*(hash: Hash32): References {.inline.} =
+  result[0] = hash
 
 type BootstrapPeers* = object
   listener*, dialer*: LBP2PNode

@@ -31,18 +31,20 @@ type
     InvalidBlockStructure
     TreeAdmissionRejected
 
-proc selectTxsForProposal*(
+proc selectProposalReferences*(
     m: Mempool,
     tipLedgerState: LedgerState,
     cfg: LedgerConfig,
     currentSlot: SlotNumber,
     maxTxs: int = MaxBlockTxs,
     maxBytes: int = MaxBlockSize,
-): seq[ValidSignedMantleTx] =
+): tuple[references: References, count: int] =
   ## Selects transactions for block proposal according to the Execution Market spec:
   ## https://github.com/logos-co/logos-lips/blob/38916aa474164ac4acd81e62d19715e17626be17/docs/blockchain/raw/execution-market.md
   ## Enforces count (maxTxs), execution gas (MAX_EXECUTION_GAS_PER_BLOCK), and body byte size (maxBytes).
-  var selected: seq[ValidSignedMantleTx]
+  ## Populates and returns the fixed-size References array and the selected count directly for proposal creation.
+  var refs: References
+  var count = 0
   var workingLedger = tipLedgerState.advanceEpochAndMarket(currentSlot, cfg).valueOr:
     tipLedgerState
   var cumulativeExecutionGas = Gas(0)
@@ -52,11 +54,12 @@ proc selectTxsForProposal*(
   let epoch = workingLedger.epochs.activeEpoch.epoch
 
   for hash in m.queue:
-    if selected.len >= maxTxs:
+    if count >= maxTxs:
       break
 
     m.txs.withValue(hash, item):
       if currentSlot < item.addedAtSlot + TxMaturitySlots:
+        # Immature transactions are skipped without counting toward consecutive candidate misses
         continue
 
       # Lazily compute and cache byteSize and execGas on first evaluation
@@ -89,13 +92,14 @@ proc selectTxsForProposal*(
         continue
 
       if balance.covers(totalCost):
-        selected.add(item.tx)
+        refs[count] = hash
+        inc count
         cumulativeExecutionGas = nextExecutionGas
         cumulativeBytes += txBytes
         workingLedger = move(candidate)
         consecutiveMisses = 0
 
-  selected
+  (refs, count)
 
 proc constructProposal*(
     m: Mempool,
@@ -105,23 +109,22 @@ proc constructProposal*(
     parentBlock: BlockId,
     proofOfLeadership: ProofOfLeadership,
     leaderSecKey: EdPrivateKey,
-): Result[Proposal, ProposalError] =
-  ## Full constructor from mempool: selects fee-paying transactions from the
+): Proposal =
+  ## Full constructor from mempool: selects fee-paying transaction references from the
   ## mempool according to the execution market spec, constructs the header,
   ## signs it with the leader's private key, and produces the Proposal.
-  let selected = m.selectTxsForProposal(
+  let (refs, count) = m.selectProposalReferences(
     tipLedgerState, cfg, currentSlot
   )
-  template rawTxs: untyped = cast[seq[SignedMantleTx]](selected)
   let h = initHeader(
     bedrockVersion = ExpectedBedrockVersion,
     parentBlock = parentBlock,
     slot = currentSlot,
-    txs = rawTxs,
+    txHashes = refs[0 ..< count],
     proofOfLeadership = proofOfLeadership,
   )
   let sig = leaderSecKey.sign(blockId(h))
-  initProposal(h, rawTxs, sig)
+  initProposal(h, refs, sig)
 
 func reconstructBlock(
     proposal: Proposal,
@@ -132,7 +135,7 @@ func reconstructBlock(
   var txs: seq[SignedMantleTx]
   for r in proposal.references:
     if r.isZero():
-      continue
+      break
     let tx = mempool.get(r).valueOr:
       return err(ProposalValidationError.MissingReference)
     txs.add(SignedMantleTx(tx))

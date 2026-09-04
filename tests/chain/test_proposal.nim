@@ -44,15 +44,15 @@ suite "chain/proposal":
     state.feeMarket.executionBaseFee = 0
     state.feeMarket.storageGasPrice = 0
 
-    let selected = m.selectTxsForProposal(state, testLedgerConfig, SlotNumber(10))
-    check selected.len == 1
+    let (refs, count) = m.selectProposalReferences(state, testLedgerConfig, SlotNumber(10))
+    check count == 1
 
     # After selection, metrics are cached
     check m.txs[hash1].byteSize.isSome
     check m.txs[hash1].execGas.isSome
     check m.txs[hash1].byteSize.get == encodeSignedMantleTx(tx1).len
 
-  test "selectTxsForProposal enforces maxBytes budget":
+  test "selectProposalReferences enforces maxBytes budget":
     var m = Mempool.init()
     let tx1 = signedTxWithOps(1, 1)
     let tx2 = signedTxWithOps(1, 2)
@@ -71,19 +71,19 @@ suite "chain/proposal":
     let tx2Bytes = encodeSignedMantleTx(tx2).len
 
     # With byte limit allowing only 1 tx
-    let selected = m.selectTxsForProposal(
+    let (refs, count) = m.selectProposalReferences(
       state, testLedgerConfig, SlotNumber(10), maxBytes = tx1Bytes + tx2Bytes - 1
     )
-    check selected.len == 1
-    check mantleTxHash(selected[0].tx) == mantleTxHash(tx1.tx)
+    check count == 1
+    check refs[0] == mantleTxHash(tx1.tx)
 
     # With byte limit allowing both txs
-    let selectedAll = m.selectTxsForProposal(
+    let (refsAll, countAll) = m.selectProposalReferences(
       state, testLedgerConfig, SlotNumber(10), maxBytes = tx1Bytes + tx2Bytes
     )
-    check selectedAll.len == 2
+    check countAll == 2
 
-  test "selectTxsForProposal stops search after MaxConsecutiveCandidateMisses":
+  test "selectProposalReferences stops search after MaxConsecutiveCandidateMisses":
     var m = Mempool.init()
     let initialTx = signedTxWithOps(1, 1)
     let initialTxBytes = encodeSignedMantleTx(initialTx).len
@@ -106,15 +106,15 @@ suite "chain/proposal":
     state.feeMarket.executionBaseFee = 0
     state.feeMarket.storageGasPrice = 0
 
-    let selected = m.selectTxsForProposal(
+    let (refs, count) = m.selectProposalReferences(
       state, testLedgerConfig, SlotNumber(10),
       maxBytes = initialTxBytes + tinyTxBytes,
     )
     # Search terminated after MaxConsecutiveCandidateMisses (10 misses), tinyTx was not evaluated
-    check selected.len == 1
-    check mantleTxHash(selected[0].tx) == mantleTxHash(initialTx.tx)
+    check count == 1
+    check refs[0] == mantleTxHash(initialTx.tx)
 
-  test "selectTxsForProposal continues search when misses < MaxConsecutiveCandidateMisses":
+  test "selectProposalReferences continues search when misses < MaxConsecutiveCandidateMisses":
     var m = Mempool.init()
     let initialTx = signedTxWithOps(1, 1)
     let initialTxBytes = encodeSignedMantleTx(initialTx).len
@@ -137,14 +137,14 @@ suite "chain/proposal":
     state.feeMarket.executionBaseFee = 0
     state.feeMarket.storageGasPrice = 0
 
-    let selected = m.selectTxsForProposal(
+    let (refs, count) = m.selectProposalReferences(
       state, testLedgerConfig, SlotNumber(10),
       maxBytes = initialTxBytes + tinyTxBytes,
     )
     # Search did not cut off (9 misses < 10), so tinyTx was evaluated and included
-    check selected.len == 2
-    check mantleTxHash(selected[0].tx) == mantleTxHash(initialTx.tx)
-    check mantleTxHash(selected[1].tx) == mantleTxHash(tinyTx.tx)
+    check count == 2
+    check refs[0] == mantleTxHash(initialTx.tx)
+    check refs[1] == mantleTxHash(tinyTx.tx)
 
   proc testTransientRetention(
       transientTx: ValidSignedMantleTx,
@@ -164,11 +164,11 @@ suite "chain/proposal":
     check m.add(transientTx, SlotNumber(1)) == true
     check m.len == 1
 
-    let selected = m.selectTxsForProposal(
+    let (refs, count) = m.selectProposalReferences(
       state, testLedgerConfig, SlotNumber(10),
     )
     # Not selected because prerequisite condition is not yet satisfied
-    check selected.len == 0
+    check count == 0
 
     # Transient transaction is NOT purged; it remains in active mempool for subsequent blocks
     check mantleTxHash(transientTx.tx) in m.txs
@@ -218,7 +218,7 @@ suite "chain/proposal":
     var pol = default(ProofOfLeadership)
     pol.leaderKey = testTxKeyPair.pubkey
 
-    let proposalRes = m.constructProposal(
+    let proposal = m.constructProposal(
       tipLedgerState = state,
       cfg = testLedgerConfig,
       currentSlot = SlotNumber(10),
@@ -226,8 +226,6 @@ suite "chain/proposal":
       proofOfLeadership = pol,
       leaderSecKey = testTxKeyPair.seckey,
     )
-    check proposalRes.isOk
-    let proposal = proposalRes.get()
     check proposal.header.slot == SlotNumber(10)
     check proposal.header.parentBlock == gid
     check proposal.header.proofOfLeadership.leaderKey == testTxKeyPair.pubkey

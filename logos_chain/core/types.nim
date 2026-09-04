@@ -11,6 +11,7 @@
 {.push raises: [], gcsafe.}
 
 import
+  std/sequtils,
   results,
   stew/[assign2, bitops2],
   bincode,
@@ -72,22 +73,23 @@ func hashPair*(left, right: Hash32): Hash32 =
   assign(pairBytes.toOpenArray(32, 63), right)
   blake2b256Hash(pairBytes)
 
-func createBlockRoot*(txs: openArray[SignedMantleTx]): Hash32 =
+func createBlockRoot*(hashes: openArray[Hash32]): Hash32 =
   ## Computes Merkle root over tx hashes (in block order).
   ## Pads the leaf layer to the next power of two with zero ``Hash32`` leaves,
   ## then pairs ``left || right`` with BLAKE2b-256.
   ## Empty-root returns default(Hash32) zero hash per Cryptarchia Protocol v1.0.2:
   ## https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/cryptarchia-v1-protocol.md#block-header-validation
-  doAssert txs.len <= MaxBlockTxs,
-    "tx set exceeds MaxBlockTxs (" & $MaxBlockTxs & "): " & $txs.len
+  doAssert hashes.len <= MaxBlockTxs,
+    "hash set exceeds MaxBlockTxs (" & $MaxBlockTxs & "): " & $hashes.len
 
-  if txs.len == 0:
+  if hashes.len == 0:
     return DefaultHash32
+  if hashes.len == 1:
+    return hashes[0]
 
-  let paddedLen = nextPow2(txs.len.uint64).int
+  let paddedLen = nextPow2(hashes.len.uint64).int
   var level = newSeq[Hash32](paddedLen)
-  for i in 0 ..< txs.len:
-    level[i] = mantleTxHash(txs[i].tx)
+  copyMem(addr level[0], unsafeAddr hashes[0], hashes.len * sizeof(Hash32))
 
   var curLen = paddedLen
   while curLen > 1:
@@ -97,6 +99,13 @@ func createBlockRoot*(txs: openArray[SignedMantleTx]): Hash32 =
     curLen = parentLen
 
   level[0]
+
+func createBlockRoot*(txs: openArray[SignedMantleTx]): Hash32 =
+  if txs.len == 0:
+    return DefaultHash32
+  if txs.len == 1:
+    return mantleTxHash(txs[0].tx)
+  createBlockRoot(txs.mapIt(mantleTxHash(it.tx)))
 
 func blockId*(header: Header): Hash32 =
   ## block_id(header) = hash(
@@ -152,10 +161,26 @@ func initHeader*(
     bedrockVersion: uint8,
     parentBlock: BlockId,
     slot: SlotNumber,
+    txHashes: openArray[Hash32],
+    proofOfLeadership: ProofOfLeadership,
+): Header =
+  ## Canonical constructor for block headers with transaction hashes. Mainly used for proposal creation.
+  Header(
+    bedrockVersion: bedrockVersion,
+    parentBlock: parentBlock,
+    slot: slot,
+    blockRoot: createBlockRoot(txHashes),
+    proofOfLeadership: proofOfLeadership,
+  )
+
+func initHeader*(
+    bedrockVersion: uint8,
+    parentBlock: BlockId,
+    slot: SlotNumber,
     txs: openArray[SignedMantleTx],
     proofOfLeadership: ProofOfLeadership,
 ): Header =
-  ## Canonical constructor for block headers.
+  ## Canonical constructor for block headers. Used during block import and validation, where the full transactions are available.
   Header(
     bedrockVersion: bedrockVersion,
     parentBlock: parentBlock,
@@ -164,26 +189,11 @@ func initHeader*(
     proofOfLeadership: proofOfLeadership,
   )
 
-type
-  ProposalError* {.pure.} = enum
-    TooManyTransactions
-
-func createReferences(txs: openArray[SignedMantleTx]): Result[References, ProposalError] =
-  ## Constructs a references array from the given transactions.
-  ## Pads with zeros when necessary to match MaxBlockTxs.
-  if txs.len > MaxBlockTxs:
-    return err(ProposalError.TooManyTransactions)
-  var refs: References
-  for i, tx in txs:
-    refs[i] = mantleTxHash(tx.tx)
-  ok(refs)
-
 func initProposal*(
     header: Header,
-    txs: openArray[SignedMantleTx],
+    references: References,
     signature: Ed25519Signature,
-): Result[Proposal, ProposalError] =
-  let refs = ? createReferences(txs)
-  ok(Proposal(header: header, references: refs, signature: signature))
+): Proposal =
+  Proposal(header: header, references: references, signature: signature)
 
 {.pop.}

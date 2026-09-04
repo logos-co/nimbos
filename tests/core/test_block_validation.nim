@@ -51,6 +51,28 @@ proc validate(genesis: Block, blk: Block): Result[BlockId, BlockValidationError]
   let ledger = Ledger[BlockId].init(blockId(genesis.header), default(LedgerState), default(LedgerConfig))
   validateBlockAndStatelessTransactions(blk, tree, ledger, blk.txs)
 
+proc childProposal(
+    parentHdr: Header,
+    parentId: BlockId,
+    slot: SlotNumber,
+    txs: openArray[SignedMantleTx],
+): Proposal =
+  var proofOfLeadership = parentHdr.proofOfLeadership
+  proofOfLeadership.leaderKey = testBlockKeyPair.pubkey
+
+  let h = initHeader(
+    bedrockVersion = parentHdr.bedrockVersion,
+    parentBlock = parentId,
+    slot = slot,
+    txs = txs,
+    proofOfLeadership = proofOfLeadership,
+  )
+  let sig = testBlockKeyPair.seckey.sign(blockId(h))
+  var refs: References
+  for i, tx in txs:
+    refs[i] = mantleTxHash(tx.tx)
+  initProposal(h, refs, sig)
+
 suite "core/block_validation":
   test "accepts a structurally valid block":
     let
@@ -258,10 +280,7 @@ suite "core/block_validation — multi-tier evaluation order":
       genesis = createGenesisBlock(sm)
       gid = blockId(genesis.header)
       tree = newLocalTree(genesis, 1'u64)
-      blk = childBlock(genesis.header, gid, SlotNumber(1), [sm])
-      
-    var proposal = new(Proposal)
-    proposal[] = initProposal(blk.header, [sm], blk.signature).get()
+      proposal = childProposal(genesis.header, gid, SlotNumber(1), [sm])
     
     var mempool = Mempool.init()
     check mempool.add(ValidSignedMantleTx(sm), SlotNumber(0))
@@ -273,7 +292,7 @@ suite "core/block_validation — multi-tier evaluation order":
     state.feeMarket.storageGasPrice = 0
     let ledger = Ledger[BlockId].init(gid, state, testLedgerConfig, mockVerifyLeaderProof)
       
-    check reconstructAndValidateBlock(proposal[], tree, ledger, mempool).isOk
+    check reconstructAndValidateBlock(proposal, tree, ledger, mempool).isOk
     
 
   test "reconstructAndValidateBlock rejects if referenced transaction is missing from mempool":
@@ -282,10 +301,7 @@ suite "core/block_validation — multi-tier evaluation order":
       genesis = createGenesisBlock(sm)
       gid = blockId(genesis.header)
       tree = newLocalTree(genesis, 1'u64)
-      blk = childBlock(genesis.header, gid, SlotNumber(1), [sm])
-      
-    var proposal = new(Proposal)
-    proposal[] = initProposal(blk.header, [sm], blk.signature).get()
+      proposal = childProposal(genesis.header, gid, SlotNumber(1), [sm])
     var state = LedgerState.fromGenesis(
         genesis.txs, default(FieldElement), testSdpRegistry(),
         testLedgerConfig).expect("genesis state")
@@ -295,7 +311,7 @@ suite "core/block_validation — multi-tier evaluation order":
       ledger = Ledger[BlockId].init(gid, state, testLedgerConfig, mockVerifyLeaderProof)
       mempool = Mempool.init()
       
-    let res = reconstructAndValidateBlock(proposal[], tree, ledger, mempool)
+    let res = reconstructAndValidateBlock(proposal, tree, ledger, mempool)
     check res.isErr and res.error == MissingReference
 
   test "mempool identifies known valid transactions":
