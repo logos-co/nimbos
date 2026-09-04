@@ -46,8 +46,6 @@ type
       discard
 
 func txBytesLen(txs: openArray[SignedMantleTx]): int =
-  ## The block body is the serialized transactions only; neither the header
-  ## nor the block signature counts toward `MaxBlockSize`.
   var total = 0
   for i in 0 ..< txs.len:
     total += byteLen(txs[i])
