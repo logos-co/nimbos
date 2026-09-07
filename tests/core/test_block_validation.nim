@@ -226,7 +226,7 @@ suite "core/block_validation — multi-tier evaluation order":
       blk = childBlock(genesis.header, missingParentId, SlotNumber(1), [sm])
     let res = validate(genesis, blk)
     check res.isErr
-    check res.error.kind == BlockValidationErrorKind.TreeAdmissionRejected
+    check res.error.kind == BlockValidationErrorKind.MissingParent
 
   test "Tier 1: rejects block with non-advancing slot (slot <= parent.slot)":
     let
@@ -236,7 +236,7 @@ suite "core/block_validation — multi-tier evaluation order":
       blk = childBlock(genesis.header, blockId(genesis.header), SlotNumber(0), [sm])
     let res = validate(genesis, blk)
     check res.isErr
-    check res.error.kind == BlockValidationErrorKind.TreeAdmissionRejected
+    check res.error.kind == BlockValidationErrorKind.UnviableFork
 
   test "Tier 2: rejects block with empty leader key":
     let

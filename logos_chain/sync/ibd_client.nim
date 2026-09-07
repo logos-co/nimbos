@@ -16,7 +16,7 @@ import
   libp2p/[switch, peerid],
   libp2p/stream/connection,
   stew/byteutils as sbyteutils,
-  ../chain/chain,
+  ../chain/block_processor,
   ./[framing, syncer_types, types]
 
 from ../core/local_tree import
@@ -24,7 +24,7 @@ from ../core/local_tree import
 from ../core/types import Block, BlockId, blockId, header
 from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
 
-export types, chain, syncer_types
+export types, block_processor, syncer_types
 
 logScope:
   topics = "cryptarchia_ibd"
@@ -201,8 +201,10 @@ proc sendDownloadBlocksRequest*(
   finally:
     await noCancel conn.close()
 
-proc onBlock(syncer: Syncer, blk: Block) {.raises: [InvalidBlock].} =
-  syncer.chain.tryApplyBlock(blk).isOkOr:
+proc onBlock(
+    syncer: Syncer, blk: Block) {.async: (raises: [InvalidBlock, CancelledError]).} =
+  let res = await syncer.processor.addBlock(BlockSource.Sync, blk)
+  res.isOkOr:
     if error.kind == BlockApplyErrorKind.AlreadyApplied:
       debug "IBD: block already applied",
         id = sbyteutils.toHex(blockId(header(blk)))
@@ -284,7 +286,7 @@ proc downloadBlocks(
     for blk in blocks:
       latestDownloaded = Opt.some(blk)
       try:
-        onBlock(syncer, blk)
+        await onBlock(syncer, blk)
         debug "IBD: block ingest ok", peer, blockId = sbyteutils.toHex(blockId(blk.header))
         if blockId(blk.header) == effectiveTarget.get:
           targetReached = true

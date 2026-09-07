@@ -31,7 +31,8 @@ from ../core/mantle/tx_types import SignedMantleTx, ValidSignedMantleTx, byteLen
 type
   BlockValidationErrorKind* {.pure.} = enum
     InvalidBlockStructure
-    TreeAdmissionRejected
+    MissingParent      # parent id has no ledger state
+    UnviableFork       # parent known; slot order or immutable bound fails
     HeaderRejected
     TransactionsRejected
     StatelessTxRejected
@@ -132,8 +133,10 @@ proc validateBlockAndStatelessTransactions*(
   if not validateBlockStructure(blk):
     return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))
 
-  if not ledger.hasState(blk.header.parentBlock) or not localTree.canExtend(blk.header):
-    return err(BlockValidationError(kind: BlockValidationErrorKind.TreeAdmissionRejected))
+  if not ledger.hasState(blk.header.parentBlock):
+    return err(BlockValidationError(kind: BlockValidationErrorKind.MissingParent))
+  if not localTree.canExtend(blk.header):
+    return err(BlockValidationError(kind: BlockValidationErrorKind.UnviableFork))
 
   if not validateBlockHeader(blk):
     return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))

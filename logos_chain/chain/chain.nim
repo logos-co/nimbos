@@ -37,7 +37,8 @@ type
     AlreadyApplied
     FutureSlot
     InvalidStructure
-    TreeRejected
+    MissingParent
+    UnviableFork
     LedgerRejected
     StatelessTxRejected
 
@@ -167,8 +168,10 @@ proc tryApplyBlock*(
     case error.kind
     of BlockValidationErrorKind.InvalidBlockStructure:
       return err(BlockApplyError(kind: InvalidStructure))
-    of BlockValidationErrorKind.TreeAdmissionRejected:
-      return err(BlockApplyError(kind: TreeRejected))
+    of BlockValidationErrorKind.MissingParent:
+      return err(BlockApplyError(kind: MissingParent))
+    of BlockValidationErrorKind.UnviableFork:
+      return err(BlockApplyError(kind: UnviableFork))
     of BlockValidationErrorKind.HeaderRejected,
         BlockValidationErrorKind.TransactionsRejected:
       return err(BlockApplyError(kind: LedgerRejected, ledgerError: error.ledgerError))
@@ -177,7 +180,7 @@ proc tryApplyBlock*(
 
   let oldTip = chain.localTree.localTipId()
   if not chain.localTree.addBlockToTree(blk):
-    return err(BlockApplyError(kind: TreeRejected))
+    return err(BlockApplyError(kind: UnviableFork))
   chain.ledger.commitUpdate(prepared.id, prepared.state)
   let newTip = chain.localTree.localTipId()
 

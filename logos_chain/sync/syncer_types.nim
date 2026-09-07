@@ -8,19 +8,19 @@
 {.push raises: [], gcsafe.}
 
 import
+  chronos,
   libp2p/[switch, peerid],
-  ../chain/chain
-
-from ../core/local_tree import LocalTree
+  ../chain/block_processor
 
 type
   PeerProvider* = proc(): seq[PeerId] {.gcsafe, raises: [].}
 
   Syncer* = ref object
     sw*: Switch
-    chain*: Chain
+    processor*: BlockProcessor
     chainSyncProtocol*: string
+    ibdFut*: Future[void].Raising([CancelledError])
 
-template localTree*(syncer: Syncer): LocalTree = syncer.chain.localTree
+template localTree*(syncer: Syncer): LocalTree = syncer.processor.chain.localTree
 
 {.pop.}
