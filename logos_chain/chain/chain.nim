@@ -13,11 +13,11 @@ import
   std/times,
   chronicles,
   results,
-  ../core/[types, local_tree, mempool],
+  ../core/[local_tree, types],
   ../deployment/deployment_settings,
   ../ledger/[ledger, stake_inference],
-  ./block_validation,
-  ./genesis
+  ../mempool,
+  ./[block_validation, genesis]
 
 export genesis, local_tree, mempool, block_validation
 export ledger except config

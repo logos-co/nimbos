@@ -13,12 +13,13 @@
 
 import
   std/[deques, tables],
-  results,
   libp2p/crypto/ed25519/ed25519,
-  ../core/[types, local_tree, mempool],
+  results,
+  ../core/[local_tree, types],
   ../core/crypto/types,
   ../core/mantle/[gas, primitives, tx_types],
   ../ledger/[balance, ledger, types],
+  ../mempool,
   ./block_validation
 
 const

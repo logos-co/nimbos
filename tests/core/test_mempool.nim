@@ -11,14 +11,13 @@
 import
   std/tables,
   unittest2,
-  ../testutil,
-  ../../logos_chain/core/types,
-  ../../logos_chain/core/mempool,
   ../../logos_chain/core/crypto/types,
-  ../../logos_chain/core/mantle/[tx_hashing, tx_types],
-  ../../logos_chain/core/mantle/primitives
+  ../../logos_chain/core/mantle/[primitives, tx_hashing, tx_types],
+  ../../logos_chain/core/types,
+  ../../logos_chain/mempool,
+  ../testutil
 
-suite "core/mempool":
+suite "mempool":
   test "mempool lifecycle (add, contains, get, len)":
     var m = Mempool.init()
     check m.len == 0

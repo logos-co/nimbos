@@ -12,16 +12,17 @@ import
   bearssl/rand,
   libp2p/crypto/ed25519/ed25519,
   unittest2,
-  ./mantle/test_helpers,
-  ../testutil,
-  ../../logos_chain/core/[types, local_tree, mempool],
-  ../../logos_chain/core/mantle/[operations, opcodes, proofs, tx_types, tx_hashing],
   ../../logos_chain/chain/[block_validation, genesis, proposal],
-  ../../logos_chain/ledger/ledger
+  ../../logos_chain/core/[local_tree, types],
+  ../../logos_chain/core/mantle/[opcodes, operations, proofs, tx_hashing, tx_types],
+  ../../logos_chain/ledger/ledger,
+  ../../logos_chain/mempool,
+  ./mantle/test_helpers,
+  ../testutil
 from ../../logos_chain/core/crypto/types import FieldElement
 from ../../logos_chain/core/mantle/primitives import MaxBlockTxs, SlotNumber
-from ../ledger/test_helpers import testLedgerConfig
 from ../ledger/sdp/test_helpers import testSdpRegistry
+from ../ledger/test_helpers import testLedgerConfig
 
 const inscribeTxFraming = 166
   ## OpCount, Opcode, ChannelId, the u32 inscription length, Parent, Signer

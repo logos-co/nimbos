@@ -14,13 +14,13 @@
 
 import
   std/[deques, tables],
-  results,
   minilru,
-  ./crypto/types,
-  ./mantle/[tx_hashing, tx_types, gas, proofs]
+  results,
+  ./core/crypto/types,
+  ./core/mantle/[gas, proofs, tx_hashing, tx_types]
 
-from ./types import Block
-from ./mantle/primitives import MaxBlockTxs, SlotNumber
+from ./core/mantle/primitives import MaxBlockTxs, SlotNumber
+from ./core/types import Block
 
 const
   DefaultMempoolCapacity* = 10_240
