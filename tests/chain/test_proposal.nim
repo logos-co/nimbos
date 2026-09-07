@@ -9,7 +9,7 @@
 {.used.}
 
 import
-  std/tables,
+  std/[os, strutils, tables],
   libp2p/crypto/ed25519/ed25519,
   unittest2,
   ../../logos_chain/chain/[genesis, proposal],
@@ -21,7 +21,12 @@ import
   ../../logos_chain/zk/poseidon2/hasher,
   ../core/mantle/test_helpers,
   ../ledger/[sdp/test_helpers, test_helpers],
+  ../zk/zksign_helpers,
   ../testutil
+
+const
+  testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
+  zksignFixtureVk = testsDir / "../fixtures/zksign/verification_key.json"
 
 suite "chain/proposal":
   test "selectTxsForProposal lazily caches byteSize and execGas":
@@ -198,6 +203,63 @@ suite "chain/proposal":
       opProofs: @[OpProof(kind: opfChannelInscribe, ed25519SigProof: sig)],
     )
     testTransientRetention(ValidSignedMantleTx(txTransient))
+
+  test "selectTxsForProposal retains transactions with state-dependent InvalidTxProof in mempool":
+    var cid: ChannelId
+    cid[0] = 77
+    let
+      kp1 = testTxKeyPair
+      op = ChannelConfigPayload(
+        channel: cid, keys: @[kp1.pubkey],
+        configurationThreshold: 1, transferThreshold: 1,
+      )
+      proof = ChannelMultiSigProof(
+        signatures: @[sign(kp1.seckey, default(Hash32))],
+        indexes: @[ChannelKeyIndex(99)],
+      )
+      tx = SignedMantleTx(
+        tx: MantleTx(ops: @[createChannelConfigOp(op)]),
+        opProofs: @[OpProof(kind: opfChannelConfig, channelConfigOpProof: proof)],
+      )
+    testTransientRetention(
+      ValidSignedMantleTx(tx),
+      setupState = proc(s: var LedgerState) =
+        s.mantleLedger = seedMantle(cid, [kp1.pubkey], transferThreshold = 1)
+    )
+
+  test "selectProposalReferences evicts transactions with permanent PermanentInvalidTxProof from mempool":
+    check installZksignVk(zksignFixtureVk)
+    var m = Mempool.init()
+    let genesis = createGenesisBlock(signedTxWithOps(1, 0))
+    var state = LedgerState.fromGenesis(
+      genesis.txs, default(FieldElement), testSdpRegistry(),
+      testLedgerConfig).expect("genesis state")
+    state.feeMarket.executionBaseFee = 0
+    state.feeMarket.storageGasPrice = 0
+
+    let u = mkUtxo(value = 100, pkSeed = 1, opIdSeed = 42)
+    state.cryptarchiaLedger = state.cryptarchiaLedger.insertMintedUtxos(@[u])
+
+    let pk = mkZkPubKey(1)
+    # txInvalid spends note 'u.id' which exists in state, but carries default (all-zero) ZkSigProof,
+    # causing LedgerError.PermanentInvalidTxProof during tryApplyTx
+    let txInvalid = mkTransferTx([u.id], [Note(value: 50, zkPublicKey: pk)])
+    let txHash = mantleTxHash(txInvalid.tx)
+
+    check m.add(ValidSignedMantleTx(txInvalid), SlotNumber(1)) == true
+    check txHash in m
+    check m.len == 1
+
+    let (_, count) = m.selectProposalReferences(
+      state, testLedgerConfig, SlotNumber(10),
+    )
+    # Transaction rejected from proposal
+    check count == 0
+
+    # Cryptographically invalid transaction is permanently evicted from mempool
+    check txHash notin m.txs
+    check txHash notin m
+    check m.len == 0
 
   test "constructProposal selects from mempool, creates header, and signs with leader key":
     var m = Mempool.init()

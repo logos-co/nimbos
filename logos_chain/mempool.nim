@@ -58,7 +58,7 @@ func init*(_: typedesc[Mempool],
     capacity: cap
   )
 
-proc remove(m: Mempool, hash: Hash32, moveToGrace: bool) =
+proc remove*(m: Mempool, hash: Hash32, moveToGrace: bool = false) =
   m.txs.withValue(hash, item):
     if moveToGrace:
       m.graceCache.put(hash, item[])

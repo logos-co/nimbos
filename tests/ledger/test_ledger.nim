@@ -357,7 +357,7 @@ when false:
       check not res.state.latestUtxos.contains(in1.id)
       check not res.state.latestUtxos.contains(in2.id)
 
-    test "two ops, second has wrong proof kind → InvalidTxProof":
+    test "two ops, second has wrong proof kind → PermanentInvalidTxProof":
       let
         in1 = mkUtxo(value = 100, pkSeed = 1)
         in2 = mkUtxo(value = 50, pkSeed = 2)
@@ -386,7 +386,7 @@ when false:
         r = s0.tryApplyTx(
           tx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
       check r.isErr
-      check r.error == InvalidTxProof
+      check r.error == PermanentInvalidTxProof
 
   suite "tryApplyTxns":
     test "balanced tx → state advances":

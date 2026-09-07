@@ -121,29 +121,37 @@ proc readdBranchTxs(chain: var Chain, fromId, toId: BlockId) =
   let nowSlot = chain.currentWallclockSlot()
   var curr = fromId
   while not curr.isZero and curr != toId:
-    let blkOpt = chain.localTree.getBlock(curr)
-    if blkOpt.isSome:
-      let b = blkOpt.get
-      for stx in b.txs:
-        discard chain.mempool.add(ValidSignedMantleTx(stx), nowSlot)
-      curr = header(b).parentBlock
-    else:
+    let b = chain.localTree.getBlock(curr).valueOr:
       warn "Missing block during reorg transaction re-addition",
           missingBlockId = curr, toId = toId
       break
+    for stx in b.txs:
+      discard chain.mempool.add(ValidSignedMantleTx(stx), nowSlot)
+    curr = header(b).parentBlock
 
 proc removeBranchTxs(chain: var Chain, fromId, toId: BlockId) =
   var curr = fromId
   while not curr.isZero and curr != toId:
-    let blkOpt = chain.localTree.getBlock(curr)
-    if blkOpt.isSome:
-      let b = blkOpt.get
-      chain.mempool.pruneBlockTxs(b)
-      curr = header(b).parentBlock
-    else:
+    let b = chain.localTree.getBlock(curr).valueOr:
       warn "Missing block during reorg transaction removal",
           missingBlockId = curr, toId = toId
       break
+    chain.mempool.pruneBlockTxs(b)
+    curr = header(b).parentBlock
+
+proc pruneStatesBeforeLib(chain: var Chain, newLibId, oldLibId: BlockId) =
+  ## Prunes canonical ledger states strictly older than the new immutable block (LIB).
+  ## The state at `newLibId` is retained as the finalized base anchor.
+  let newLib = chain.localTree.getBlock(newLibId).valueOr:
+    return
+  var curr = header(newLib).parentBlock
+  while not curr.isZero:
+    discard chain.ledger.pruneStateAt(curr)
+    if curr == oldLibId:
+      break
+    let blk = chain.localTree.getBlock(curr).valueOr:
+      break
+    curr = header(blk).parentBlock
 
 proc tryApplyBlock*(
     chain: var Chain, blk: Block): Result[void, BlockApplyError] =
@@ -181,11 +189,16 @@ proc tryApplyBlock*(
     ).expect("LCA must exist between active tree tips")
     # 1. readd before remove: if a transaction exists in both branches, readding first allows removing it next.
     # 2. tryUpdateLib after mempool reorg: ensures fork pruning does not delete orphaned blocks before transactions are restored.
+    # 3. Prune fork states and canonical states older than the new immutable block (retaining latestImmutableId as anchor).
     chain.readdBranchTxs(oldTip, lcaId)
     chain.removeBranchTxs(newTip, lcaId)
+    let oldLibId = chain.localTree.latestImmutableBlockId()
     let prunedBlockIds = chain.localTree.tryUpdateLib()
     for prunedId in prunedBlockIds:
       discard chain.ledger.pruneStateAt(prunedId)
+    let newLibId = chain.localTree.latestImmutableBlockId()
+    if newLibId != oldLibId:
+      chain.pruneStatesBeforeLib(newLibId, oldLibId)
 
   chain.mempool.pruneExpiredTxs(chain.currentWallclockSlot())
   ok()

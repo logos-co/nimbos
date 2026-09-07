@@ -197,7 +197,7 @@ func opMultisigThreshold(op: Op, proof: OpProof): Result[uint16, LedgerError] =
   ## actually verified by `verifyChannelMultiSig` in `channel_state.nim` (L92-L107) — if
   ## `proof.signatures.len != threshold`, the transaction will not be validated (`ThresholdUnmet`).
   if proof.kind != expectedOpProofKindForOpcode(op.opcode):
-    return err(InvalidTxProof)
+    return err(PermanentInvalidTxProof)
   case op.payload.kind
   of ChannelConfig:
     ok(max(uint16(proof.channelConfigOpProof.signatures.len), 1'u16))

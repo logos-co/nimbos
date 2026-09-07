@@ -49,7 +49,7 @@ suite "core/mantle/blend_activity":
     var encoded = encodeActivityMetadata(mkActivityProof())
     encoded.add 0'u8
     check decodeActivityMetadata(encoded).isErr
-    check decodeActivityMetadata(encoded[0 ..< ActivityMetadataLen - 1]).isErr
+    check decodeActivityMetadata(encoded.toOpenArray(0, ActivityMetadataLen - 2)).isErr
     check decodeActivityMetadata(newSeq[byte]()).isErr
 
   test "decode rejects an unknown metadata type":

@@ -13,6 +13,7 @@
 
 import
   std/[deques, tables],
+  chronicles,
   libp2p/crypto/ed25519/ed25519,
   results,
   ../core/[local_tree, types],
@@ -51,6 +52,7 @@ proc selectProposalReferences*(
   var cumulativeExecutionGas = Gas(0)
   var cumulativeBytes = 0
   var consecutiveMisses = 0
+  var toEvict: seq[Hash32]
 
   let epoch = workingLedger.epochs.activeEpoch.epoch
 
@@ -90,6 +92,8 @@ proc selectProposalReferences*(
 
       var candidate = workingLedger
       let balance = candidate.tryApplyTx(item.tx, epoch, currentSlot, acceptAllPoq).valueOr:
+        if error == LedgerError.PermanentInvalidTxProof:
+          toEvict.add(hash)
         continue
 
       if balance.covers(totalCost):
@@ -99,6 +103,11 @@ proc selectProposalReferences*(
         cumulativeBytes += txBytes
         workingLedger = move(candidate)
         consecutiveMisses = 0
+
+  for h in toEvict:
+    warn "Evicting transaction with invalid cryptographic proof from mempool",
+        txHash = h
+    m.remove(h, moveToGrace = false)
 
   (refs, count)
 
@@ -121,7 +130,7 @@ proc constructProposal*(
     bedrockVersion = ExpectedBedrockVersion,
     parentBlock = parentBlock,
     slot = currentSlot,
-    txHashes = refs[0 ..< count],
+    txHashes = refs.toOpenArray(0, count - 1),
     proofOfLeadership = proofOfLeadership,
   )
   let sig = leaderSecKey.sign(blockId(h))

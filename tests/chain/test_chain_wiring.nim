@@ -272,6 +272,11 @@ suite "chain/epoch wiring (devnet deployment settings)":
     check not chain.localTree.hasBlock(idA1)
     check chain.ledger.state(idA1).isNone
 
+    # Genesis at height 0 (strictly older than LIB at height 1) has its state pruned from ledger,
+    # while its Block remains in localTree for IBD syncing.
+    check chain.ledger.state(gid).isNone
+    check chain.localTree.hasBlock(gid)
+
     # Canonical branch B blocks remain in both tree and ledger.
     check chain.localTree.hasBlock(idB1)
     check chain.localTree.hasBlock(idB2)
