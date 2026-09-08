@@ -16,7 +16,7 @@ import
   stew/byteutils,
   ./chain
 
-from ../core/types import Block, blockId, header
+from ../core/types import Block, BlockId, blockId, header
 
 export chain
 
@@ -41,12 +41,18 @@ type
     queueTick: Moment
 
   BlockProcessor* = ref object
-    chain*: Chain
+    chain: Chain
     blockQueue: AsyncQueue[BlockEntry]
     loopFut: Future[void].Raising([CancelledError])
 
 proc new*(T: type BlockProcessor, chain: sink Chain): T =
   T(chain: chain, blockQueue: newAsyncQueue[BlockEntry]())
+
+func localTree*(bp: BlockProcessor): LocalTree =
+  bp.chain.localTree
+
+func ledger*(bp: BlockProcessor): lent Ledger[BlockId] =
+  bp.chain.ledger
 
 func hasBlocks*(bp: BlockProcessor): bool =
   bp.blockQueue.len > 0

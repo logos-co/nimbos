@@ -37,8 +37,8 @@ suite "chain/block_processor":
         b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
         r = await bp.addBlock(BlockSource.Sync, b1)
       check r.isOk
-      check bp.chain.localTree.localTipId == blockId(b1.header)
-      check bp.chain.ledger.state(blockId(b1.header)).isSome
+      check bp.localTree.localTipId == blockId(b1.header)
+      check bp.ledger.state(blockId(b1.header)).isSome
 
   asyncTest "addBlock on an applied block completes with AlreadyApplied":
     withProcessor:
@@ -101,7 +101,7 @@ suite "chain/block_processor":
         b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
       discard bp.addBlock(BlockSource.Gossip, orphan)
       check (await bp.addBlock(BlockSource.Sync, b1)).isOk
-      check not bp.chain.localTree.hasBlock(blockId(orphan.header))
+      check not bp.localTree.hasBlock(blockId(orphan.header))
 
   asyncTest "error kinds: MissingParent and UnviableFork":
     withProcessor:

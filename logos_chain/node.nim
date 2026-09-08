@@ -137,7 +137,7 @@ proc init*(
 
   let processor = BlockProcessor.new(chain)
   var nodeSyncer: Syncer = nil
-  if processor.chain.localTree != nil and
+  if processor.localTree != nil and
       deploymentSettings.network.chainSyncProtocolName.len > 0:
     nodeSyncer = Syncer.init(
       network.switch, processor, deploymentSettings.network.chainSyncProtocolName)
@@ -148,7 +148,7 @@ proc init*(
       genesisBlockId = blockId(genesisBlock.header)
   else:
     debug "Syncer not configured at node startup",
-      hasLocalTree = processor.chain.localTree != nil,
+      hasLocalTree = processor.localTree != nil,
       chainSyncProtocol = deploymentSettings.network.chainSyncProtocolName
 
   ok LBNode(
