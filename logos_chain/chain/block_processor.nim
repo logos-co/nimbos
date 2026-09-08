@@ -87,10 +87,12 @@ proc processBlock(bp: BlockProcessor, entry: BlockEntry) =
 
 proc runQueueProcessingLoop(bp: BlockProcessor) {.async: (raises: [CancelledError]).} =
   while true:
-    # One block per turn. Networking and block application share one thread.
-    # `idleAsync` completes after a poll pass with no pending callbacks. The
-    # timeout keeps blocks moving when the network never goes idle.
+    # One block per turn; networking shares the thread. The timeout caps the
+    # wait when the network never goes idle.
+    let idleTick = Moment.now()
     discard await idleAsync().withTimeout(IdleTimeout)
+    # TODO nim-metrics histogram
+    debug "Idle wait before block", idleDur = Moment.now() - idleTick
     bp.processBlock(await bp.blockQueue.popFirst())
 
 proc start*(bp: BlockProcessor) =
