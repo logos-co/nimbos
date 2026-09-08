@@ -103,7 +103,7 @@ suite "chain/block_processor":
       check (await bp.addBlock(BlockSource.Sync, b1)).isOk
       check not bp.localTree.hasBlock(blockId(orphan.header))
 
-  asyncTest "error kinds: MissingParent and UnviableFork":
+  asyncTest "error kinds: MissingParent and InvalidStructure":
     withProcessor:
       var fakeParentId: BlockId
       fakeParentId[0] = 7
@@ -113,7 +113,7 @@ suite "chain/block_processor":
       check (await bp.addBlock(BlockSource.Sync, orphan)).error.kind ==
         BlockApplyErrorKind.MissingParent
       check (await bp.addBlock(BlockSource.Sync, stale)).error.kind ==
-        BlockApplyErrorKind.UnviableFork
+        BlockApplyErrorKind.InvalidStructure
 
   asyncTest "stop ends the loop and cancels later addBlock calls":
     withProcessor:

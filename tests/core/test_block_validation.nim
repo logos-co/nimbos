@@ -232,11 +232,11 @@ suite "core/block_validation — multi-tier evaluation order":
     let
       genesis = createGenesisBlock(minimalSignedTx())
       sm = minimalSignedTx()
-      # Genesis is slot 0; child with slot 0 cannot extend tree
+      # Genesis is slot 0; a child at slot 0 does not advance
       blk = childBlock(genesis.header, blockId(genesis.header), SlotNumber(0), [sm])
     let res = validate(genesis, blk)
     check res.isErr
-    check res.error.kind == BlockValidationErrorKind.UnviableFork
+    check res.error.kind == BlockValidationErrorKind.InvalidBlockStructure
 
   test "Tier 2: rejects block with empty leader key":
     let

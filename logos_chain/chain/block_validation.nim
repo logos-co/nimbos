@@ -32,7 +32,7 @@ type
   BlockValidationErrorKind* {.pure.} = enum
     InvalidBlockStructure
     MissingParent      # parent id has no ledger state
-    UnviableFork       # parent known; slot order or immutable bound fails
+    UnviableFork       # parent known; at or behind the immutable ancestor
     HeaderRejected
     TransactionsRejected
     StatelessTxRejected
@@ -135,7 +135,11 @@ proc validateBlockAndStatelessTransactions*(
 
   if not ledger.hasState(blk.header.parentBlock):
     return err(BlockValidationError(kind: BlockValidationErrorKind.MissingParent))
-  if not localTree.canExtend(blk.header):
+  let parent = localTree.fetchParentHeader(blk.header.parentBlock).valueOr:
+    return err(BlockValidationError(kind: BlockValidationErrorKind.MissingParent))
+  if blk.header.slot <= parent.slot:
+    return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))
+  if not localTree.isFutureDescendantOfImmutable(blk.header):
     return err(BlockValidationError(kind: BlockValidationErrorKind.UnviableFork))
 
   if not validateBlockHeader(blk):
