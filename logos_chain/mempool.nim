@@ -137,8 +137,12 @@ proc pruneExpiredTxs*(m: Mempool, currentSlot: SlotNumber) =
       break
 
 proc pruneBlockTxs*(m: Mempool, blk: Block) =
+  # TODO(mempool): Retain mined transactions in graceCache so concurrent or competing
+  # fork proposals can resolve shared references during block reconstruction.
+  # In a follow-up PR, replace this with an unfinalized canonical transaction index
+  # (tip to LIB) to eliminate reliance on bounded LRU grace eviction under high mempool churn.
   for stx in blk.txs:
-    m.remove(mantleTxHash(stx.tx), moveToGrace = false)
+    m.remove(mantleTxHash(stx.tx), moveToGrace = true)
 
 func isKnownValid*(m: Mempool, tx: SignedMantleTx): bool =
   ## Light validation check: checks if transaction is present in the mempool

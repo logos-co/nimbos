@@ -16,7 +16,7 @@
 {.used.}
 
 import
-  std/[os, strutils, times],
+  std/[os, strutils, tables, times],
   unittest2,
   stew/[byteutils, io2],
   libp2p/crypto/ed25519/ed25519,
@@ -169,8 +169,9 @@ suite "chain/epoch wiring (devnet deployment settings)":
     check chain.tryApplyBlock(b1).isOk
     check chain.localTree.localTipId == id1
 
-    # Immediate removal upon block addition
-    check txHash notin chain.mempool
+    # Immediate removal from active mempool upon block addition
+    check txHash notin chain.mempool.txs
+    check chain.mempool.get(txHash).isOk # Retained in graceCache for fork proposals
 
     # 3. Build a longer fork (b2_fork at slot 2 from genesis, b3_fork at slot 3 from b2_fork)
     let b2_fork = childBlock(chain.genesisBlock.header, gid, SlotNumber(2), [])
@@ -178,7 +179,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
     check chain.tryApplyBlock(b2_fork).isOk
     # b2_fork height 1 is not strictly higher than b1 height 1, so tip remains id1
     check chain.localTree.localTipId == id1
-    check txHash notin chain.mempool
+    check txHash notin chain.mempool.txs
 
     # Add b3_fork extending b2_fork -> height 2 > height 1, triggering fork switch!
     let b3_fork = childBlock(b2_fork.header, id2_fork, SlotNumber(3), [])
@@ -186,8 +187,8 @@ suite "chain/epoch wiring (devnet deployment settings)":
     check chain.tryApplyBlock(b3_fork).isOk
     check chain.localTree.localTipId == id3_fork
 
-    # Fork switch re-added dummyTx from the forked-off branch b1 back into mempool!
-    check txHash in chain.mempool
+    # Fork switch re-added dummyTx from the forked-off branch b1 back into active mempool!
+    check txHash in chain.mempool.txs
 
     # Proposal selection on the new tip picks up the restored dummyTx
     let (refs, count) = chain.mempool.selectProposalReferences(
@@ -221,10 +222,12 @@ suite "chain/epoch wiring (devnet deployment settings)":
     check chain.tryApplyBlock(a2).isOk
     check chain.localTree.localTipId == idA2
 
-    # tx1 and tx2 removed from mempool
-    check h1 notin chain.mempool
-    check h2 notin chain.mempool
-    check h3 in chain.mempool
+    # tx1 and tx2 removed from active mempool (retained in graceCache)
+    check h1 notin chain.mempool.txs
+    check h2 notin chain.mempool.txs
+    check h1 in chain.mempool # in graceCache
+    check h2 in chain.mempool # in graceCache
+    check h3 in chain.mempool.txs
 
     # Branch B: Genesis -> B1 -> B2 -> B3 (contains tx3) (height 3 > height 2)
     let b1 = childBlock(chain.genesisBlock.header, gid, SlotNumber(3), [])
@@ -238,10 +241,11 @@ suite "chain/epoch wiring (devnet deployment settings)":
     check chain.tryApplyBlock(b3).isOk
     check chain.localTree.localTipId == idB3
 
-    # Reorg from Branch A to Branch B: tx1 and tx2 restored, tx3 removed
-    check h1 in chain.mempool
-    check h2 in chain.mempool
-    check h3 notin chain.mempool
+    # Reorg from Branch A to Branch B: tx1 and tx2 restored to active mempool, tx3 removed
+    check h1 in chain.mempool.txs
+    check h2 in chain.mempool.txs
+    check h3 notin chain.mempool.txs
+    check h3 in chain.mempool # in graceCache
 
   test "tryApplyBlock prunes orphaned fork states from localTree and ledger upon finalization":
     var dsSmallSec = ds

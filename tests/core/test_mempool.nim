@@ -68,7 +68,9 @@ suite "mempool":
 
     m.pruneBlockTxs(blk)
 
-    check mantleTxHash(tx1.tx) notin m
+    check mantleTxHash(tx1.tx) notin m.txs
+    check mantleTxHash(tx1.tx) in m
+    check m.get(mantleTxHash(tx1.tx)).isOk
     check mantleTxHash(tx2.tx) in m
     check m.len == 1
 
