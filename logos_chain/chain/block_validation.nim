@@ -135,7 +135,7 @@ proc validateBlockAndStatelessTransactions*(
 
   if not ledger.hasState(blk.header.parentBlock):
     return err(BlockValidationError(kind: BlockValidationErrorKind.MissingParent))
-  let parent = localTree.fetchParentHeader(blk.header.parentBlock).valueOr:
+  let parent = localTree.fetchHeader(blk.header.parentBlock).valueOr:
     return err(BlockValidationError(kind: BlockValidationErrorKind.MissingParent))
   if blk.header.slot <= parent.slot:
     return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))

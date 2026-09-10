@@ -184,7 +184,7 @@ func isAncestor*(localTree: LocalTree, ancestor: BlockId,
       n = n.parent
   false
 
-func isFutureDescendantOfImmutable(localTree: LocalTree,
+func isFutureDescendantOfImmutable*(localTree: LocalTree,
     header: Header): bool =
   ## Validates that an incoming block header descends from `latestImmutableId` and has candidate height > immutableHeight.
   let parentHeight = blockHeight(localTree, header.parentBlock).valueOr:
