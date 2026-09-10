@@ -224,7 +224,7 @@ proc tryApplyTx*(
     tx: ValidSignedMantleTx,
     epoch: EpochNumber,
     slot: SlotNumber,
-    verifyPoq: PoqVerifier,
+    verifyPoq: ProofOfQuotaVerifier,
 ): Result[Balance, LedgerError] =
   ## Applies one transaction in-place; the returned balance is the Transfer-only
   ## delta. `slot` is used by channel ops for sequencer rotation.

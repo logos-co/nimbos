@@ -19,7 +19,7 @@ import
   ../core/[local_tree, types],
   ../core/crypto/types,
   ../core/mantle/[gas, primitives, tx_types],
-  ../ledger/[balance, ledger, types],
+  ../ledger/[balance, ledger, poq_verifier, types],
   ../mempool,
   ./block_validation
 
@@ -38,6 +38,7 @@ proc selectProposalReferences*(
     tipLedgerState: LedgerState,
     cfg: LedgerConfig,
     currentSlot: SlotNumber,
+    verifyPoq: ProofOfQuotaVerifier = verifyProofOfQuota,
     maxTxs: int = MaxBlockTxs,
     maxBytes: int = MaxBlockSize,
 ): tuple[references: References, count: int] =
@@ -91,7 +92,7 @@ proc selectProposalReferences*(
         continue
 
       var candidate = workingLedger
-      let balance = candidate.tryApplyTx(item.tx, epoch, currentSlot, acceptAllPoq).valueOr:
+      let balance = candidate.tryApplyTx(item.tx, epoch, currentSlot, verifyPoq).valueOr:
         if error == LedgerError.PermanentInvalidTxProof:
           toEvict.add(hash)
         continue
@@ -119,12 +120,13 @@ proc constructProposal*(
     parentBlock: BlockId,
     proofOfLeadership: ProofOfLeadership,
     leaderSecKey: EdPrivateKey,
+    verifyPoq: ProofOfQuotaVerifier = verifyProofOfQuota,
 ): Proposal =
   ## Full constructor from mempool: selects fee-paying transaction references from the
   ## mempool according to the execution market spec, constructs the header,
   ## signs it with the leader's private key, and produces the Proposal.
   let (refs, count) = m.selectProposalReferences(
-    tipLedgerState, cfg, currentSlot
+    tipLedgerState, cfg, currentSlot, verifyPoq
   )
   let h = initHeader(
     bedrockVersion = ExpectedBedrockVersion,

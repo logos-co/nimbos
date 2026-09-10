@@ -23,6 +23,7 @@ import
   ../testutil,
   ../../logos_chain/chain/[chain, proposal],
   ../../logos_chain/deployment/deployment_settings,
+  ../../logos_chain/ledger/poq_verifier,
   ../../logos_chain/zk/poseidon2/hasher
 
 const
@@ -193,7 +194,8 @@ suite "chain/epoch wiring (devnet deployment settings)":
     # Proposal selection on the new tip picks up the restored dummyTx
     let (refs, count) = chain.mempool.selectProposalReferences(
       chain.ledger.state(id3_fork).get, ledgerConfig(ds),
-      chain.currentWallclockSlot() + TxMaturitySlots
+      chain.currentWallclockSlot() + TxMaturitySlots,
+      verifyPoq = verifyProofOfQuota,
     )
     check count == 1
     check refs[0] == txHash
@@ -303,7 +305,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
 
     # Proposal at slot 6500 crosses epoch 0 (epoch length = 6000 slots)
     let (refs, count) = chain.mempool.selectProposalReferences(
-      tipState, ledgerConfig(ds), SlotNumber(6500)
+      tipState, ledgerConfig(ds), SlotNumber(6500), verifyPoq = verifyProofOfQuota
     )
     check count == 1
     check refs[0] == mantleTxHash(tx.tx)
