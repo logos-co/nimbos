@@ -17,8 +17,8 @@ import
 export results
 
 const ExpectedCircuitsVersion* = "v0.5.6"
-  ## Pinned bundle version. Bump requires re-running setup + revalidating
-  ## committed test vectors against the new VK.
+  ## Pinned bundle version. A bump needs a new setup run, fresh test
+  ## vectors, and a new source link in `poq.nim`.
 
 type
   CircuitsBundleError* {.pure.} = enum

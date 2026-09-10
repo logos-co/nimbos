@@ -18,11 +18,10 @@ type
   PoqLoadError* = VkLoadError
 
   PoqVerifierInput* = object
-    ## PoQ public-input vector. Field order is positional in the
-    ## circuit's IC. Do not reorder: the spec pins the 12 signals.
-    # The order is the output first, then the inputs in circuit
-    # declaration order. It is not the `public [...]` clause order, which
-    # is why `pol_ledger_aged` sits sixth.
+    ## PoQ public-input vector in the circuit's IC order. Do not reorder.
+    # Output first, then inputs in declaration order, not `public [...]`
+    # order. That is why `pol_ledger_aged` sits sixth. Source at v0.5.6:
+    # https://github.com/logos-blockchain/logos-blockchain-circuits/blob/07c439356435eb6a2f1f4a8daa973bd04bd0b088/blend/poq.circom
     keyNullifier*: FieldElement
     coreQuota*: FieldElement
     leaderQuota*: FieldElement

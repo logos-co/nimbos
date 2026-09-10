@@ -11,7 +11,6 @@
 {.push raises: [], gcsafe.}
 
 import
-  std/algorithm,
   results,
   stew/endians2,
   ../core/mantle/blend_activity,
@@ -55,18 +54,18 @@ func quotaToFr(quota: uint64): FieldElement =
 func coreZkIdRoot*(
     zkIds: openArray[ZkPublicKey]
 ): Result[FieldElement, cstring] =
-  ## Root of the fixed-depth registry tree.
-  # Members sort ascending by numeric value. Empty leaves are zero and
-  # follow the members. Nodes use Poseidon2 compression.
+  ## Root of the fixed-depth registry tree. `zkIds` must be sorted
+  ## ascending. The leaf index is the position.
+  # The caller sorts once and takes leaf indices from that order.
+  # Empty leaves are zero and follow the members.
   if zkIds.len == 0:
     return err(cstring"core zk-id set is empty")
   if zkIds.len > 1 shl CORE_MERKLE_TREE_HEIGHT:
     return err(cstring"core zk-id set exceeds tree capacity")
+  for i in 1 ..< zkIds.len:
+    if cmpNumeric(zkIds[i - 1], zkIds[i]) >= 0:
+      return err(cstring"core zk-ids not strictly ascending")
   var level = @zkIds
-  level.sort(cmpNumeric)
-  for i in 1 ..< level.len:
-    if level[i - 1] == level[i]:
-      return err(cstring"duplicate core zk-id")
   # Each level keeps only the populated prefix. Every sibling to the
   # right of it is the empty-subtree root for that height. The cache
   # behind `getEmptyRoots` fills once and is read-only after.

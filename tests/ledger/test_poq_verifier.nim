@@ -9,13 +9,14 @@
 {.used.}
 
 import
-  std/[json, os, strutils],
+  std/[algorithm, json, os, strutils],
   unittest2,
   stew/[endians2, io2],
   libp2p/crypto/ed25519/ed25519,
   ../../logos_chain/ledger/sdp/blend_rewards,
   ../../logos_chain/zk/groth16/utils,
   ../../logos_chain/core/mantle/blend_activity,
+  ../../logos_chain/core/crypto/types,
   ./sdp/test_helpers,
   ../zk/snarkjs_helpers
 
@@ -137,20 +138,22 @@ suite "ledger/poq_verifier — coreZkIdRoot":
     let x = frFromBytesLE([byte 3]).get
     check coreZkIdRoot([x, x]).isErr
 
-  test "input order does not matter — the builder sorts":
+  test "unsorted zk-ids are an error":
     let
       a = frFromBytesLE([byte 1]).get
       b = frFromBytesLE([byte 2]).get
       c = frFromBytesLE([byte 3]).get
-    check coreZkIdRoot([a, b, c]).get == coreZkIdRoot([c, a, b]).get
+    check:
+      coreZkIdRoot([a, b, c]).isOk
+      coreZkIdRoot([c, a, b]).isErr
 
   test "single leaf differs from the empty-subtree chain":
     let a = frFromBytesLE([byte 1]).get
     check coreZkIdRoot([a]).isOk
 
   test "reproduces the root the committed member-set proof was made against":
-    # The core_set fixture proof was generated against the root of this
-    # two-member set. The builder must reproduce it exactly.
+    # The core_set proof was made against this two-member root. The
+    # meta file lists the members unsorted.
     let metaText = readAllChars(fixtureDir / "core_set_meta.json").expect(
       "meta readable")
     let meta =
@@ -167,7 +170,7 @@ suite "ledger/poq_verifier — coreZkIdRoot":
       publicText = readAllChars(fixtureDir / "public_core_set.json").expect(
         "public readable")
       signals = publicJsonToInputs(publicText).expect("public parses")
-    check coreZkIdRoot(zkIds).get == signals[3]
+    check coreZkIdRoot(zkIds.sorted(cmpNumeric)).get == signals[3]
 
 suite "ledger/poq_verifier — end-to-end activity verification":
   # Reward parameters whose derived quotas equal the core_set fixture's

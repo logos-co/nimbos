@@ -228,9 +228,9 @@ func rotateEpoch*(
   let providerCount = uint64(snapshot.len)
   if newEpoch == prevEpoch + 1 and snapshot.len > 0 and
       providerCount >= params.minimumNetworkSize:
-    var byZkId = @snapshot
-    byZkId.sort(cmpSnapshotEntry)
-    let zkIds = byZkId.mapIt(it.zkId)
+    let
+      byZkId = snapshot.sorted(cmpSnapshotEntry)
+      zkIds = byZkId.mapIt(it.zkId)
     var providers =
       HashTrieMap[ProviderId, tuple[zkId: ZkPublicKey, index: uint64]].init()
     for i, entry in byZkId:
