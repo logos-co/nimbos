@@ -71,6 +71,43 @@ type
     of opfLeaderClaim: proofOfClaimProof*: ProofOfClaimProof
     of opfChannelConfig: channelConfigOpProof*: ChannelMultiSigProof
 
+func `==`*(a, b: ChannelMultiSigProof): bool {.raises: [].} =
+  if a.signatures.len != b.signatures.len or a.indexes.len != b.indexes.len:
+    return false
+  for i in 0 ..< a.signatures.len:
+    if a.signatures[i] != b.signatures[i]:
+      return false
+  for i in 0 ..< a.indexes.len:
+    if a.indexes[i] != b.indexes[i]:
+      return false
+  true
+
+func `==`*(a, b: ZkAndEd25519SigsProof): bool {.raises: [].} =
+  a.zkSig == b.zkSig and a.ed25519Sig == b.ed25519Sig
+
+func `==`*(a, b: OpProof): bool {.raises: [].} =
+  if a.kind != b.kind:
+    return false
+  case a.kind
+  of opfTransfer: a.transferProof == b.transferProof
+  of opfChannelDeposit: a.channelDepositProof == b.channelDepositProof
+  of opfSdpDeclare: a.declarationProof == b.declarationProof
+  of opfSdpWithdraw: a.sdpWithdrawProof == b.sdpWithdrawProof
+  of opfSdpActive: a.sdpActiveProof == b.sdpActiveProof
+  of opfChannelInscribe: a.ed25519SigProof == b.ed25519SigProof
+  of opfChannelWithdraw: a.channelWithdrawOpProof == b.channelWithdrawOpProof
+  of opfChannelTransfer: a.channelTransferOpProof == b.channelTransferOpProof
+  of opfLeaderClaim: a.proofOfClaimProof == b.proofOfClaimProof
+  of opfChannelConfig: a.channelConfigOpProof == b.channelConfigOpProof
+
+func sameOpProofs*(a, b: openArray[OpProof]): bool {.raises: [].} =
+  if a.len != b.len:
+    return false
+  for i in 0 ..< a.len:
+    if not (a[i] == b[i]):
+      return false
+  true
+
 func proofTypeForKind(kind: OpProofKind): ProofType =
   ## Canonical mapping from OpProof variant to proof family.
   case kind

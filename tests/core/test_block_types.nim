@@ -68,10 +68,12 @@ suite "core/types":
         metadata: @[],
       )),
     )
-    check createBlockRoot([txA, txB]) != createBlockRoot([txB, txA])
+    let hA = mantleTxHash(txA.tx)
+    let hB = mantleTxHash(txB.tx)
+    check createBlockRoot([hA, hB]) != createBlockRoot([hB, hA])
 
   test "createBlockRoot returns zero hash for empty tx list":
-    check createBlockRoot([]) == default(Hash32)
+    check createBlockRoot(openArray[Hash32]([])) == default(Hash32)
 
   test "createBlockRoot single tx equals that tx hash":
     let tx = sampleTx(
@@ -80,7 +82,8 @@ suite "core/types":
         outputs: Outputs(notes: @[]),
       )),
     )
-    check createBlockRoot([tx]) == mantleTxHash(tx.tx)
+    let h = mantleTxHash(tx.tx)
+    check createBlockRoot([h]) == h
 
   test "createBlockRoot odd leaf count uses zero padding not duplicate last":
     let txA = sampleTx(
@@ -107,8 +110,8 @@ suite "core/types":
     let hB = mantleTxHash(txB.tx)
     let hC = mantleTxHash(txC.tx)
     let zero = default(Hash32)
-    check createBlockRoot([txA, txB, txC]) == hashPair(hashPair(hA, hB), hashPair(hC, zero))
-    check createBlockRoot([txA, txB, txC]) != createBlockRoot([txA, txB, txC, txC])
+    check createBlockRoot([hA, hB, hC]) == hashPair(hashPair(hA, hB), hashPair(hC, zero))
+    check createBlockRoot([hA, hB, hC]) != createBlockRoot([hA, hB, hC, hC])
 
   test "blockId is deterministic for same header":
     let tx = sampleTx(
@@ -118,9 +121,9 @@ suite "core/types":
       )),
     )
     let h = initHeader(
-      bedrockVersion = testBedrockVersion,
+      bedrockVersion = 1'u8,
       parentBlock = default(BlockId),
-      slot = 42'u64,
+      slot = SlotNumber(100),
       txs = [tx],
       proofOfLeadership = ProofOfLeadership(
         leaderVoucher: default(RewardVoucher),
@@ -130,5 +133,46 @@ suite "core/types":
       ),
     )
     check blockId(h) == blockId(h)
+
+  test "createBlockRoot directly accepts list of hashes":
+    let txA = sampleTx(createTransferOp(TransferPayload(inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @[]))))
+    let txB = sampleTx(createSdpActiveOp(ActiveMessage(declarationId: default(DeclarationId), nonce: 1'u64, metadata: @[])))
+    let hA = mantleTxHash(txA.tx)
+    let hB = mantleTxHash(txB.tx)
+
+    let hashes = [hA, hB]
+    check createBlockRoot(hashes) == hashPair(hA, hB)
+    check createBlockRoot([txA, txB]) == createBlockRoot(hashes)
+    check createBlockRoot(openArray[Hash32]([])) == default(Hash32)
+    check createBlockRoot([hA]) == hA
+
+  test "initHeader accepts openArray[Hash32]":
+    let tx = sampleTx(createTransferOp(TransferPayload(inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @[]))))
+    let hx = mantleTxHash(tx.tx)
+    let pol = ProofOfLeadership(
+      leaderVoucher: default(RewardVoucher),
+      entropyContribution: default(ZkHash),
+      proof: DefaultCompressedGroth16Proof,
+      leaderKey: default(Ed25519PublicKey),
+    )
+    let hFromHashes = initHeader(1'u8, default(BlockId), SlotNumber(10), [hx], pol)
+    let hFromTxs = initHeader(1'u8, default(BlockId), SlotNumber(10), [tx], pol)
+    check hFromHashes == hFromTxs
+
+  test "initProposal accepts References directly":
+    var refs: References
+    let tx = sampleTx(createTransferOp(TransferPayload(inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @[]))))
+    let hx = mantleTxHash(tx.tx)
+    refs[0] = hx
+
+    let pol = ProofOfLeadership(
+      leaderVoucher: default(RewardVoucher),
+      entropyContribution: default(ZkHash),
+      proof: DefaultCompressedGroth16Proof,
+      leaderKey: default(Ed25519PublicKey),
+    )
+    let h = initHeader(1'u8, default(BlockId), SlotNumber(10), [hx], pol)
+    let prop = initProposal(h, refs, DefaultEd25519Signature)
+    check prop.references[0] == hx
 
 {.pop.}

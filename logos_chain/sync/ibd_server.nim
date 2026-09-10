@@ -19,8 +19,8 @@ import
   ./[framing, syncer_types, types]
 
 from ../core/local_tree import
-  LocalTree, localTipId, latestImmutableBlockId, lcaBlockIdAndHeight,
-  hasBlock, getBlock, blockHeight
+  LocalTree, localTipId, lcaBlockIdAndHeight, hasBlock, getBlock, blockHeight,
+  localTip
 from ../core/types import Block, BlockId
 from ../core/mantle/primitives import SlotNumber
 
@@ -30,11 +30,7 @@ logScope:
 func getTipResponseFromLocalTree(localTree: LocalTree): GetTipResponse =
   GetTipResponse(
     kind: gtrTip,
-    tipData: Tip(
-      tip: localTipId(localTree),
-      slot: SlotNumber(0),
-      height: localTree.latestImmutableHeight,
-    ),
+    tipData: localTree.localTip(),
   )
 
 func distinctKnownBlockIds(known: KnownBlocks): seq[BlockId] =

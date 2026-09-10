@@ -116,7 +116,7 @@ suite "sync/types (download RequestMessage / request & response payloads)":
       sm = minimalSignedTx()
       genesis = createGenesisBlock(sm)
       gid = blockId(genesis.header)
-      tree = newLocalTree(genesis)
+      tree = newLocalTree(genesis, 1'u64)
       req = DownloadBlocksRequest(targetBlock: gid, knownBlocks: buildKnownBlocks(tree))
     let inner = try:
       serializeDownloadBlocksRequestToSeq(req, cryptarchiaSyncBincodeConfig)
@@ -134,7 +134,7 @@ suite "sync/types (download RequestMessage / request & response payloads)":
       sm = minimalSignedTx()
       genesis = createGenesisBlock(sm)
       gid = blockId(genesis.header)
-      tree = newLocalTree(genesis)
+      tree = newLocalTree(genesis, 1'u64)
       req = DownloadBlocksRequest(targetBlock: gid, knownBlocks: buildKnownBlocks(tree))
     let wire = try:
       serializeRequestMessageToSeq(

@@ -27,7 +27,8 @@ type
     InvalidNote ## input NoteId not in UtxoStore
     LockedNote ## input NoteId is locked by SDP
     InvalidProofOfLeadership ## Proof of Leadership (Cryptarchia) verify failed
-    InvalidTxProof ## ZK multi-sig, transfer, or channel proof verify failed
+    PermanentInvalidTxProof ## Cryptographic proof permanently invalid (e.g. ZkSig Groth16, proof kind mismatch)
+    InvalidTxProof ## Transaction proof verification failed against current state (e.g. channel multisig, SDP activity)
     BalanceOutOfRange ## balance math left the representable range
     UnsupportedOp ## Op kind not yet wired in this ledger version
     InsufficientBalance ## not enough balance for the requested debit

@@ -78,7 +78,7 @@ func decodeSignedMantleTx*(data: openArray[byte]): SignedMantleTx {.raises: [Dec
     if ops.len == 0:
       @[]
     elif pos < data.len:
-      decodeOpsProofs(ops, data[pos .. data.high])
+      decodeOpsProofs(ops, data.toOpenArray(pos, data.high))
     else:
       raise newException(DecodingError, "SignedMantleTx: missing OpsProofs")
   SignedMantleTx(tx: tx, opProofs: opProofs)

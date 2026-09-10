@@ -261,11 +261,16 @@ suite "gas: tx execution gas and block limit":
         tx: body,
         opProofs: @[
           OpProof(kind: opfChannelInscribe, ed25519SigProof: sign(kp1.seckey, txHash)),
-          OpProof(kind: opfChannelInscribe, ed25519SigProof: sign(kp2.seckey, txHash))])
-      r = mkState(@[]).tryApplyTx(
-        ValidSignedMantleTx(tx), epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
+          OpProof(kind: opfChannelInscribe, ed25519SigProof: sign(kp2.seckey, txHash)),
+        ],
+      )
+    var s = mkState(@[])
+    let r = s.tryApplyTx(
+      ValidSignedMantleTx(tx), epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
     check r.isOk
-    check r.get.executionGas == Gas(112)
+    let mf = s.mandatory_fees(ValidSignedMantleTx(tx))
+    check mf.isOk
+    check mf.get.executionGas == Gas(112)
 
   test "per-block execution gas limit constant and accumulator overflow":
     # The TooMuchExecutionGas branch fires when the block's summed execution
@@ -354,5 +359,26 @@ suite "gas: storage accumulation and epoch rotation":
       s.epochs.activeEpoch.epoch == 3
       s.feeMarket.storageGasEma == Gas(100) # 800 → 400 → 200 → 100
       s.feeMarket.storageGasConsumedInEpoch == Gas(0)
+
+  test "mandatory_fees for ValidSignedMantleTx combines execution gas and storage gas":
+    let rng = HmacDrbgContext.new()
+    let tx = mkInscribeTx(rng, mkChannelId(1))
+    var s = mkState(@[])
+    s.feeMarket.executionBaseFee = 2
+    s.feeMarket.storageGasPrice = 3
+    let mf = s.mandatory_fees(ValidSignedMantleTx(tx)).expect(
+      "mandatory_fees should return fee breakdown (totalCost, executionGas, storageGas) for signed mantle tx"
+    )
+    let expectedCost = (mf.executionGas * 2) + (mf.storageGas * 3)
+    check mf.totalCost == expectedCost
+
+  test "advanceEpochAndMarket rotates storage market and advances epoch without proof":
+    var s = mkState(@[])
+    s.feeMarket.storageGasEma = 800
+    let advanced = s.advanceEpochAndMarket(350, testLedgerConfig).expect("advanced")
+    check:
+      advanced.epochs.activeEpoch.epoch == 3
+      advanced.feeMarket.storageGasEma == Gas(100) # 800 → 400 → 200 → 100
+      advanced.feeMarket.storageGasConsumedInEpoch == Gas(0)
 
 {.pop.}
