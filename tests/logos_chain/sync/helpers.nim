@@ -38,15 +38,10 @@ proc initTestChain*(genesis: Block): Chain =
         mockVerifyLeaderProof),
     SlotConfig(genesisTime: 0, slotDurationSeconds: 1))
 
-proc startTestProcessor*(chain: Chain): BlockProcessor =
-  ## Processor over `chain` with its loop running. Callers stop it in `finally`.
+proc startTestProcessor(chain: Chain): BlockProcessor =
   let bp = BlockProcessor.new(chain)
   bp.start()
   bp
-
-proc initTestSyncer*(
-    sw: Switch, chain: Chain, protocol = testChainSyncProtocol): Syncer =
-  Syncer.init(sw, startTestProcessor(chain), protocol)
 
 proc mountTestServer*(
     sw: Switch, chain: Chain, protocol = testChainSyncProtocol
@@ -56,16 +51,31 @@ proc mountTestServer*(
   mountCryptarchiaSyncHandler(syncer)
   syncer
 
-template withClientSyncer*(clientChain: Chain, body: untyped) =
-  ## One switch and a client syncer, stopped after `body`.
-  let
-    client {.inject.} = await startQuicTestSwitch()
-    clientSyncer {.inject.} = initTestSyncer(client, clientChain)
+template withProcessor*(chain: Chain, body: untyped) =
+  ## Running processor over `chain`, stopped after `body`.
+  let bp {.inject.} = startTestProcessor(chain)
+  try:
+    body
+  finally:
+    await bp.stop()
+
+template withClientSyncerOn*(sw: Switch, clientChain: Chain, body: untyped) =
+  ## Client syncer on the caller's switch, stopped with its processor after `body`.
+  let clientSyncer {.inject.} =
+    Syncer.init(sw, startTestProcessor(clientChain), testChainSyncProtocol)
   try:
     body
   finally:
     await clientSyncer.stop()
     await clientSyncer.processor.stop()
+
+template withClientSyncer*(clientChain: Chain, body: untyped) =
+  ## One switch and a client syncer, stopped after `body`.
+  let client {.inject.} = await startQuicTestSwitch()
+  try:
+    withClientSyncerOn(client, clientChain):
+      body
+  finally:
     await client.stop()
 
 template withSyncPair*(serverChain, clientChain: Chain, body: untyped) =

@@ -34,32 +34,25 @@ proc runLbp2pIbdSyncTest(extraBlocks: int) {.async.} =
   let tipId = extendChainAfterGenesis(chainBootstrap.localTree, genesis, extraBlocks)
   check chainBootstrap.localTree.localTipId == tipId
 
-  let chainClient = initTestChain(genesis)
-
-  let peers = await createBootstrapPeers()
-  let bootstrapSyncer = initTestSyncer(peers.listener.switch, chainBootstrap)
-  bootstrapSyncer.start()
-
   let
-    clientSyncer = initTestSyncer(peers.dialer.switch, chainClient)
+    chainClient = initTestChain(genesis)
+    peers = await createBootstrapPeers()
     waitAttempts = 150 + extraBlocks * 5
+  discard mountTestServer(peers.listener.switch, chainBootstrap)
 
   try:
-    await peers.listener.start()
-    await peers.dialer.start()
-    discard await peers.dialer.waitForBootstrapPeers()
-    clientSyncer.start(
-      Opt.some(proc(): seq[PeerId] = peers.dialer.connectedBootstrapPeerIds())
-    )
+    withClientSyncerOn(peers.dialer.switch, chainClient):
+      await peers.listener.start()
+      await peers.dialer.start()
+      discard await peers.dialer.waitForBootstrapPeers()
+      clientSyncer.start(
+        Opt.some(proc(): seq[PeerId] = peers.dialer.connectedBootstrapPeerIds())
+      )
 
-    check waitUntil(peers.dialer.switch.isConnected(peers.listenerPeerId))
-    check waitUntil(chainClient.localTree.hasBlock(tipId), chronos.milliseconds(waitAttempts * 100))
-    check chainClient.localTree.localTipId == tipId
+      check waitUntil(peers.dialer.switch.isConnected(peers.listenerPeerId))
+      check waitUntil(chainClient.localTree.hasBlock(tipId), chronos.milliseconds(waitAttempts * 100))
+      check chainClient.localTree.localTipId == tipId
   finally:
-    await clientSyncer.stop()
-    await bootstrapSyncer.stop()
-    await clientSyncer.processor.stop()
-    await bootstrapSyncer.processor.stop()
     await peers.dialer.stop()
     await peers.listener.stop()
 
