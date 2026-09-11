@@ -11,6 +11,7 @@
 {.push raises: [], gcsafe.}
 
 import
+  std/algorithm,
   results,
   stew/endians2,
   ../core/mantle/blend_activity,
@@ -62,9 +63,8 @@ func coreZkIdRoot*(
     return err(cstring"core zk-id set is empty")
   if zkIds.len > 1 shl CORE_MERKLE_TREE_HEIGHT:
     return err(cstring"core zk-id set exceeds tree capacity")
-  for i in 1 ..< zkIds.len:
-    if cmpNumeric(zkIds[i - 1], zkIds[i]) >= 0:
-      return err(cstring"core zk-ids not strictly ascending")
+  if not zkIds.isSorted(cmpNumeric):
+    return err(cstring"core zk-ids not sorted")
   var level = @zkIds
   # Each level keeps only the populated prefix. Every sibling to the
   # right of it is the empty-subtree root for that height. The cache

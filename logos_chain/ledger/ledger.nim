@@ -23,7 +23,7 @@ import
 
 from ../core/crypto/types import ZkPublicKey
 export
-  types,balance, cryptarchia_state, channel_state, mantle_state, epoch_state, registry,
+  types, balance, cryptarchia_state, channel_state, mantle_state, epoch_state, registry,
   poq_verifier, fee_market, block_rewards, gas, tx_types.ValidSignedMantleTx
 
 type

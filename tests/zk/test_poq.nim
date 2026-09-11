@@ -18,7 +18,7 @@ import
 
 const
   testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
-  fixtureDir = testsDir / "../fixtures/poq"
+  fixtureDir = testsDir.parentDir / "fixtures" / "poq"
   fixtureVk = fixtureDir / "verification_key.json"
 
 func toPoqInput(s: openArray[FieldElement]): PoqVerifierInput =

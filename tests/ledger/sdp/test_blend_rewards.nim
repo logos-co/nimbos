@@ -31,7 +31,7 @@ proc rotated(income: Value, n: int): BlendRewards =
   var r = BlendRewards()
   r = r.addIncome(income).expect("income")
   r.rotateEpoch(0, 1, mkSnapshot(n), frFromBytesLE([byte 99]).get,
-    testBlendLotteryParams, testPoqChain()).rewards
+    testBlendLotteryParams, testPoqChain).rewards
 
 suite "ledger/sdp/blend_rewards":
   test "addIncome accumulates and rejects overflow":
@@ -58,7 +58,7 @@ suite "ledger/sdp/blend_rewards":
     var r = BlendRewards()
     r = r.addIncome(500).expect("income")
     let (next, minted) = r.rotateEpoch(
-      0, 1, mkSnapshot(2), frFromBytesLE([byte 99]).get, absurdParams, testPoqChain())
+      0, 1, mkSnapshot(2), frFromBytesLE([byte 99]).get, absurdParams, testPoqChain)
     check minted.len == 0
     check next.target.isNone
     check next.epochIncome == 0
@@ -78,7 +78,7 @@ suite "ledger/sdp/blend_rewards":
     ).expect("valid submission")
     let (next, minted) = r.rotateEpoch(
       1, 2, mkSnapshot(2), frFromBytesLE([byte 98]).get,
-      testBlendLotteryParams, testPoqChain())
+      testBlendLotteryParams, testPoqChain)
     check minted.len == 1
     # base = 1001 div (1 + 1) = 500; the sole submitter is premium.
     check minted[0].note.value == 1000
@@ -88,7 +88,7 @@ suite "ledger/sdp/blend_rewards":
   test "no submissions: nothing minted, income forfeited":
     let (next, minted) = rotated(income = 700, n = 2).rotateEpoch(
       1, 2, mkSnapshot(2), frFromBytesLE([byte 98]).get,
-      testBlendLotteryParams, testPoqChain())
+      testBlendLotteryParams, testPoqChain)
     check minted.len == 0
     check next.target.get.state.epochIncome == 0
 
@@ -100,7 +100,7 @@ suite "ledger/sdp/blend_rewards":
     ).expect("valid submission")
     let (next, minted) = r.rotateEpoch(
       1, 3, mkSnapshot(2), frFromBytesLE([byte 98]).get,
-      testBlendLotteryParams, testPoqChain())
+      testBlendLotteryParams, testPoqChain)
     check minted.len == 1
     check next.target.isNone
 
@@ -171,7 +171,7 @@ suite "ledger/sdp/blend_rewards":
       ).expect("valid submission")
     let (_, minted) = r.rotateEpoch(
       1, 2, mkSnapshot(3), frFromBytesLE([byte 98]).get,
-      testBlendLotteryParams, testPoqChain())
+      testBlendLotteryParams, testPoqChain)
     check minted.len == 3
     # Provider i carries zk_id fe(i + 1), so the ascending mint order is the
     # provider order and each note's exact value is pinned.

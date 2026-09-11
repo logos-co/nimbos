@@ -56,9 +56,9 @@ func testSdpConfig*(): deploy.SdpConfig =
 func testSdpRegistry*(): SdpRegistry =
   SdpRegistry.init(testSdpConfig(), testBlendRewardsParams)
 
-func testPoqChain*(): PoqChainContext =
-  ## Arbitrary epoch-frozen chain values. Only the real-verifier tests
-  ## need values a proof was actually generated against.
+let testPoqChain*: PoqChainContext =
+  # Arbitrary epoch-frozen chain values. Only the real-verifier tests
+  # need values a proof was actually generated against.
   PoqChainContext(
     polLedgerAged: frFromBytesLE([byte 21]).get,
     polEpochNonce: frFromBytesLE([byte 22]).get,

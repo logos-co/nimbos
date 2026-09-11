@@ -49,7 +49,7 @@ proc seedBlendTarget(): BlendTarget =
     0, 1,
     [(providerId: providerId, zkId: declaration.zkId),
      (providerId: mkProvider(8), zkId: frFromBytesLE([byte 9]).get)],
-    frFromBytesLE([byte 5]).get, testBlendLotteryParams, testPoqChain()).rewards
+    frFromBytesLE([byte 5]).get, testBlendLotteryParams, testPoqChain).rewards
   BlendTarget(registry: registry, declId: declId, providerId: providerId)
 
 proc mkTargetActivity(target: BlendTarget, nonce: Nonce = 1): ActiveMessage =

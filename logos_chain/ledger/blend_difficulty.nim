@@ -49,7 +49,10 @@ const
   # ~2^490, so all controller arithmetic runs in 512 bits.
   FieldModulus = StUint[512].fromHex(
     "0x30644e72e131a029b85045b68181585d2833e84879b9709143e1f593f0000001")
+  FieldModulusMinusOne = FieldModulus - 1
   BLEND_DIFFICULTY_BASE = FieldModulus shr 19 ## threshold at reference load
+  Zero512 = stuint(0, 512)
+  One512 = stuint(1, 512)
 
 func recordBlock*(d: sink TxDensity, txsInBlock: uint64): TxDensity =
   ## Counts one applied block and its transactions into the open epoch.
@@ -88,14 +91,14 @@ let BlendDifficultyBaseFr* =
 
 func mulChecked(a, b: StUint[512]): Opt[StUint[512]] =
   if a.isZero or b.isZero:
-    return Opt.some(stuint(0, 512))
+    return Opt.some(Zero512)
   let r = a * b
   if r div a != b:
     return Opt.none(StUint[512])
   Opt.some(r)
 
 func powChecked(base: StUint[512], n: int): Opt[StUint[512]] =
-  var acc = stuint(1, 512)
+  var acc = One512
   for _ in 0 ..< n:
     acc = mulChecked(acc, base).valueOr:
       return Opt.none(StUint[512])
@@ -117,8 +120,8 @@ func integer_nth_root*(x: StUint[512], n: int): StUint[512] =
   if n == 1:
     return x
   var
-    lo = stuint(0, 512)
-    hi = stuint(1, 512) shl 256
+    lo = Zero512
+    hi = One512 shl 256
   while lo < hi - 1:
     let mid = (lo + hi) shr 1
     if powLeq(mid, n, x):
@@ -132,14 +135,18 @@ func compute_epoch_blend_difficulty*(
 ): FieldElement =
   ## Retargets the threshold from one closed epoch's load:
   ## `d = BASE / load^alpha`, clamped to `[previous / k, previous * k]`.
+  const
+    step = stuint(BLEND_MAX_STEP, 512)
+    targetTxsPerBlock = stuint(TARGET_TXS_PER_BLOCK, 512)
+    baseTerm = powChecked(BLEND_DIFFICULTY_BASE, BLEND_DAMPING_DEN).expect(
+      "BASE^b fits 512 bits")
   let
     prev = toU512(previous)
-    step = stuint(BLEND_MAX_STEP, 512)
     lo = prev div step
     # `prev` is below 2^254, so the product fits. The modulus cap is
     # necessary: an idle network would double past the modulus, and then
     # every ticket would satisfy the threshold.
-    hi = min(prev * step, FieldModulus - 1)
+    hi = min(prev * step, FieldModulusMinusOne)
   if load.txs == 0:
     # No load observed. Ease as far as this epoch's clamp allows.
     return fromU512(hi)
@@ -147,10 +154,7 @@ func compute_epoch_blend_difficulty*(
     # The load stays an exact ratio `num / den`. Only the final root is
     # floored, so the result is at most one unit from the exact value.
     num = stuint(load.txs, 512)
-    den = mulChecked(
-        stuint(TARGET_TXS_PER_BLOCK, 512), stuint(load.blocks, 512)).valueOr:
-      return fromU512(hi)
-    baseTerm = powChecked(BLEND_DIFFICULTY_BASE, BLEND_DAMPING_DEN).valueOr:
+    den = mulChecked(targetTxsPerBlock, stuint(load.blocks, 512)).valueOr:
       return fromU512(hi)
     denTerm = powChecked(den, BLEND_DAMPING_NUM).valueOr:
       return fromU512(hi)

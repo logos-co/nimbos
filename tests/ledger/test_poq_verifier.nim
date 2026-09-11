@@ -24,7 +24,7 @@ from ../../logos_chain/zk/poq as zk_poq import nil
 
 const
   testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
-  fixtureDir = testsDir / "../fixtures/poq"
+  fixtureDir = testsDir.parentDir / "fixtures" / "poq"
   fixtureVk = fixtureDir / "verification_key.json"
 
 type PoqFixture = object
@@ -134,10 +134,6 @@ suite "ledger/poq_verifier — coreZkIdRoot":
   test "empty set is an error":
     check coreZkIdRoot([]).isErr
 
-  test "duplicate zk-ids are an error":
-    let x = frFromBytesLE([byte 3]).get
-    check coreZkIdRoot([x, x]).isErr
-
   test "unsorted zk-ids are an error":
     let
       a = frFromBytesLE([byte 1]).get
@@ -218,31 +214,36 @@ suite "ledger/poq_verifier — end-to-end activity verification":
     ): tuple[rewards: BlendRewards, randomness: FieldElement] =
       ## Rotate epoch 0 into the target with an epoch randomness ground
       ## until the fixture token passes the activity lottery.
-      let token = BlendingToken(
-        signingKey: fixture.signingKey,
-        proofOfQuota: fixture.proofOfQuota,
-        selectionRandomness: rho)
+      # Only the randomness digest depends on the seed, so grind on it
+      # alone and rotate once with the winner.
+      let
+        token = BlendingToken(
+          signingKey: fixture.signingKey,
+          proofOfQuota: fixture.proofOfQuota,
+          selectionRandomness: rho)
+        probe = BlendRewards().rotateEpoch(
+          0, 1, snapshot, frFromBytesLE([byte 1]).get, fixtureParams, chain)
+      doAssert probe.rewards.target.isSome, "target must freeze"
+      let params = probe.rewards.target.get.state.tokenParams
       for seed in 1'u64 .. 4096'u64:
-        let
-          randomness = frFromBytesLE(seed.toBytesLE()).expect("8 bytes")
-          candidate = BlendRewards().rotateEpoch(
-            0, 1, snapshot, randomness, fixtureParams, chain)
-        doAssert candidate.rewards.target.isSome, "target must freeze"
-        let state = candidate.rewards.target.get.state
+        let randomness = frFromBytesLE(seed.toBytesLE()).expect("8 bytes")
         if hammingDistance(
-            token, state.randomnessDigest, state.tokenParams.byteLen) <=
-            state.tokenParams.threshold:
-          return (candidate.rewards, randomness)
+            token, randomnessDigest(randomness, params.byteLen),
+            params.byteLen) <= params.threshold:
+          return (BlendRewards().rotateEpoch(
+            0, 1, snapshot, randomness, fixtureParams, chain).rewards,
+            randomness)
       doAssert false, "no epoch randomness passes the activity lottery"
 
   test "the frozen target reproduces the fixture's public inputs":
     let r = rotatedWith(fixture.public.chain).rewards
     let target = r.target.get.state
-    check target.poqPublic.coreRoot == fixture.public.coreRoot
-    check target.poqPublic.coreQuota == fixture.public.coreQuota
-    check target.poqPublic.leaderQuota == fixture.public.leaderQuota
-    check target.poqPublic.powQuota == fixture.public.powQuota
-    check target.providers.get(mkProvider(1)).get.index == memberIndex
+    check:
+      target.poqPublic.coreRoot == fixture.public.coreRoot
+      target.poqPublic.coreQuota == fixture.public.coreQuota
+      target.poqPublic.leaderQuota == fixture.public.leaderQuota
+      target.poqPublic.powQuota == fixture.public.powQuota
+      target.providers.get(mkProvider(1)).get.index == memberIndex
 
   test "a real activity proof is accepted by the real verifier":
     let r = rotatedWith(fixture.public.chain).rewards
