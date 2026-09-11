@@ -21,9 +21,10 @@ import
   ./sync/syncer,
   ./zk/[circuits, pol, poc, poq, zksign]
 
-from ./chain/block_validation import validateBlock, validateMantleTx
+from ./chain/proposal import reconstructAndValidateBlock, ProposalValidationError
+from ./core/mantle/tx_validation import validateMantleTxStateless
 from ./core/mantle/tx_types import SignedMantleTx, ValidSignedMantleTx
-from ./core/types as coreTypes import Block, blockId
+from ./core/types as coreTypes import Block, blockId, Proposal
 from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
 from libp2p/peerid import PeerId
 from libp2p/protocols/pubsub/pubsub import ValidationResult
@@ -210,9 +211,6 @@ proc runOnSecondLoop(node: LBNode) {.async.} =
     let processingTime = finished - afterSleep
     trace "onSecond task completed", sleepTime, processingTime
 
-func connectedPeersCount(node: LBNode): int =
-  len(node.network.peerPool)
-
 func toValidationResult(err: BlockApplyError): ValidationResult =
   case err.kind
   of BlockApplyErrorKind.AlreadyApplied,
@@ -224,22 +222,32 @@ func toValidationResult(err: BlockApplyError): ValidationResult =
      BlockApplyErrorKind.StatelessTxRejected:
     ValidationResult.Reject
 
-proc handleGossipBlock(
-    node: LBNode, blk: Block, src: PeerId
+proc handleGossipProposal(
+    node: LBNode, proposal: Proposal, src: PeerId
 ): Future[ValidationResult] {.async: (raises: [CancelledError]).} =
-  trace "GossipSub handling received block",
-    blockId = byteutils.toHex(blockId(blk.header)),
-    slot = blk.header.slot,
+  trace "GossipSub handling received proposal",
+    blockId = byteutils.toHex(blockId(proposal.header)),
+    slot = proposal.header.slot,
     src = $src
 
-  if not validateBlock(blk):
-    debug "GossipSub rejected block: invalid structural validation",
-      blockId = byteutils.toHex(blockId(blk.header)), src = $src
+  let blk = reconstructAndValidateBlock(
+    proposal, node.processor.localTree, node.processor.ledger, node.processor.mempool
+  ).valueOr:
+    if error == ProposalValidationError.MissingReference:
+      debug "GossipSub cannot reconstruct block from proposal: missing tx in mempool",
+        blockId = byteutils.toHex(blockId(proposal.header)),
+        error = $error,
+        src = $src
+      return ValidationResult.Ignore
+    debug "GossipSub rejected invalid proposal",
+      blockId = byteutils.toHex(blockId(proposal.header)),
+      error = $error,
+      src = $src
     return ValidationResult.Reject
 
   let applyRes = await node.processor.addBlock(BlockSource.Gossip, blk)
   if applyRes.isOk():
-    debug "GossipSub accepted block into local tree",
+    debug "GossipSub accepted reconstructed block into local tree",
       blockId = byteutils.toHex(blockId(blk.header)),
       slot = blk.header.slot,
       src = $src
@@ -255,13 +263,12 @@ proc handleGossipTx(node: LBNode, tx: SignedMantleTx, src: PeerId): ValidationRe
     opCount = tx.tx.ops.len,
     src = $src
 
-  if not validateMantleTx(tx):
+  if validateMantleTxStateless(tx).isErr:
     debug "GossipSub rejected invalid mantle tx", src = $src
     return ValidationResult.Reject
 
-  if not node.processor.mempool.isNil:
-    let nowSlot = node.processor.currentWallclockSlot()
-    discard node.processor.mempool.add(ValidSignedMantleTx(tx), nowSlot)
+  let nowSlot = node.processor.currentWallclockSlot()
+  discard node.processor.mempool.add(ValidSignedMantleTx(tx), nowSlot)
 
   ValidationResult.Accept
 
@@ -271,9 +278,9 @@ proc installMessageValidators(node: LBNode): seq[string] =
   let blockTopic = node.deploymentSettings.cryptarchia.gossipsubProtocol
   if blockTopic.len > 0:
     node.network.addAsyncValidator(blockTopic) do (
-        blk: Block, src: PeerId
+        proposal: Proposal, src: PeerId
     ) -> Future[ValidationResult] {.async: (raises: [CancelledError]).} =
-      await handleGossipBlock(node, blk, src)
+      await handleGossipProposal(node, proposal, src)
     topics.add(blockTopic)
   else:
     warn "Cryptarchia block gossipsub protocol topic is empty, validator not installed"
