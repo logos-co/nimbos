@@ -19,7 +19,7 @@ import
   ../logos_chain/sync/helpers,
   ../../logos_chain/conf,
   ../../logos_chain/core/types,
-  ../../logos_chain/core/mantle/[operations, proofs, tx_types, tx_hashing],
+  ../../logos_chain/core/mantle/[tx_types, tx_hashing],
   ../../logos_chain/networking/[network, discovery, protocols],
   ../../logos_chain/chain/genesis,
   ../../logos_chain/node,
@@ -126,10 +126,13 @@ suite "P2P stack — bootstrap and discovery":
     check nodes.len == 1
     check nodes[0][0] == peerId
 
-  asyncTest "Bootstrap via trusted peer node":
+  asyncTest "After bootstrap: libp2p QUIC session stays up (decentralized DHT deferred)":
+    ## Peer pool admission still depends on Eth2-style protocol handshakes; we
+    ## assert libp2p-level connectivity from the bootstrap multiaddr path.
     let peers = await createBootstrapPeers()
     try:
       await peers.dialer.start()
+
       check waitUntil(peers.dialer.switch.isConnected(peers.listenerPeerId))
       await sleepAsync(50.milliseconds)
       check peers.dialer.switch.isConnected(peers.listenerPeerId)
@@ -233,6 +236,7 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
       )
       dialerNode = LBNode(
         network: peers.dialer,
+        chain: initTestChain(genesis),
         deploymentSettings: DeploymentSettings(
           mempool: MempoolDeploymentSettings(pubsubTopic: topic)
         )
@@ -244,10 +248,7 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
       check waitUntil(peers.dialer.switch.isConnected(peers.listenerPeerId))
       await sleepAsync(chronos.milliseconds(300))
 
-      let sampleTx = SignedMantleTx(
-        tx: MantleTx(ops: @[createTransferOp(TransferPayload(inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @[])))]),
-        opProofs: @[OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))]
-      )
+      let sampleTx = signedTxWithOps(1, 1)
 
       let sendRes = await peers.dialer.broadcast(topic, sampleTx)
       check sendRes.isOk
@@ -266,7 +267,7 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
       await peers.dialer.stop()
       await peers.listener.stop()
 
-  asyncTest "GossipSub: subscribes, broadcasts, and applies blocks":
+  asyncTest "GossipSub: subscribes, broadcasts, and applies proposals via local reconstruction":
     const topic = "/logos-blockchain/cryptarchia/1.0.0"
     let peers = await createBootstrapPeers()
     let
@@ -280,6 +281,7 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
       )
       dialerNode = LBNode(
         network: peers.dialer,
+        chain: initTestChain(genesis),
         deploymentSettings: DeploymentSettings(
           cryptarchia: CryptarchiaDeploymentSettings(gossipsubProtocol: topic)
         )
@@ -292,18 +294,35 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
       await sleepAsync(chronos.milliseconds(300))
 
       let sampleBlock = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [])
-
-      let sendRes = await peers.dialer.broadcast(topic, sampleBlock)
+      let sampleProposal = Proposal(
+        header: sampleBlock.header,
+        references: default(References),
+        signature: sampleBlock.signature
+      )
+      let sendRes = await peers.dialer.broadcast(topic, sampleProposal)
       check sendRes.isOk
 
       var received = false
       for _ in 0 ..< 100:
-        if listenerNode.chain.localTree.hasBlock(blockId(sampleBlock.header)):
+        if listenerNode.chain.localTree.hasBlock(blockId(sampleProposal.header)):
           received = true
           break
         await sleepAsync(chronos.milliseconds(25))
       check received
-      check listenerNode.chain.localTree.localTipId == blockId(sampleBlock.header)
+      check listenerNode.chain.localTree.localTipId == blockId(sampleProposal.header)
+
+      # Broadcast proposal referencing a missing transaction (not in listener's mempool)
+      var missingRefs: References
+      missingRefs[0] = mantleTxHash(minimalSignedTx().tx)
+      let missingBlock = childBlock(sampleProposal.header, blockId(sampleProposal.header), SlotNumber(2), [])
+      let missingProposal = Proposal(
+        header: missingBlock.header,
+        references: missingRefs,
+        signature: missingBlock.signature
+      )
+      check (await peers.dialer.broadcast(topic, missingProposal)).isOk
+      await sleepAsync(chronos.milliseconds(200))
+      check not listenerNode.chain.localTree.hasBlock(blockId(missingProposal.header))
     finally:
       await peers.dialer.stop()
       await peers.listener.stop()
