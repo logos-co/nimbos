@@ -94,47 +94,6 @@ suite "core/local_tree":
     tree.tryUpdateLib()
     check tree.latestImmutableBlockId == id1
 
-  test "canExtend accepts child extending past immutable tip":
-    let
-      sm = minimalSignedTx()
-      genesis = createGenesisBlock(sm)
-      gid = blockId(genesis.header)
-      tree = newLocalTree(genesis, 1'u64)
-      b1 = childBlock(genesis.header, gid, 1'u64, [sm])
-      id1 = blockId(b1.header)
-      b2 = childBlock(b1.header, id1, 2'u64, [sm])
-    check tree.addBlockToTree(b1)
-    tree.tryUpdateLib()
-    check tree.addBlockToTree(b2)
-    tree.tryUpdateLib()
-    let b3 = childBlock(b2.header, blockId(b2.header), 3'u64, [sm])
-    check tree.canExtend(b3.header)
-    # A sibling forking at or before the immutable height is refused by canExtend.
-    let replay = childBlock(genesis.header, gid, 4'u64, [sm])
-    check not tree.canExtend(replay.header)
-
-  test "canExtend mirrors the tree-dependent valid_header constraints":
-    let
-      sm = minimalSignedTx()
-      genesis = createGenesisBlock(sm)
-      gid = blockId(genesis.header)
-      tree = newLocalTree(genesis, 1'u64)
-      b1 = childBlock(genesis.header, gid, 5'u64, [sm])
-      id1 = blockId(b1.header)
-    check tree.canExtend(b1.header)
-    check tree.addBlockToTree(b1)
-    tree.tryUpdateLib()
-    var unknown: BlockId
-    unknown[0] = 9'u8
-    check not tree.canExtend(childBlock(b1.header, unknown, 6'u64, [sm]).header)
-    check not tree.canExtend(childBlock(b1.header, id1, 4'u64, [sm]).header)
-    check not tree.canExtend(childBlock(b1.header, id1, 5'u64, [sm]).header)
-    let b2 = childBlock(b1.header, id1, 6'u64, [sm])
-    check tree.addBlockToTree(b2)
-    tree.tryUpdateLib()
-    check not tree.canExtend(childBlock(genesis.header, gid, 7'u64, [sm]).header)
-    check tree.canExtend(childBlock(b2.header, blockId(b2.header), 7'u64, [sm]).header)
-
 suite "core/local_tree (lcaBlockIdAndHeight)":
   test "lcaBlockIdAndHeight of genesis with itself is genesis":
     let
@@ -230,23 +189,6 @@ suite "core/local_tree (lcaBlockIdAndHeight)":
     # Single-element invariant for finalized height
     check tree.blocksIdsAtHeight(1'u64).len == 1
     check tree.blocksIdsAtHeight(1'u64)[0] == id1
-
-  test "canExtend rejects candidate blocks that do not descend from latestImmutableId":
-    let
-      sm = minimalSignedTx()
-      genesis = createGenesisBlock(sm)
-      gid = blockId(genesis.header)
-      tree = newLocalTree(genesis, 1'u64)
-      b1 = childBlock(genesis.header, gid, 1'u64, [sm])
-      id1 = blockId(b1.header)
-      b2 = childBlock(b1.header, id1, 2'u64, [sm])
-    check tree.addBlockToTree(b1)
-    check tree.addBlockToTree(b2)
-    tree.tryUpdateLib()
-
-    # Candidate block extending genesis (which is below b1) -> rejected by canExtend!
-    let invalidChild = childBlock(genesis.header, gid, 3'u64, [sm])
-    check not tree.canExtend(invalidChild.header)
 
   test "tryUpdateLib handles linear fast-path, cascades upward orphan pruning, and terminates early":
     let

@@ -111,11 +111,8 @@ proc stop*(bp: BlockProcessor) {.async: (raises: []).} =
     return
   await bp.loopFut.cancelAndWait()
   bp.loopFut = nil
-  while bp.blockQueue.len > 0:
-    let entry = try:
-      bp.blockQueue.popFirstNoWait()
-    except AsyncQueueEmptyError:
-      raiseAssert "queue length checked above"
+  for entry in bp.blockQueue.items:
     entry.resfut.cancelSoon()
+  bp.blockQueue.clear()
 
 {.pop.}
