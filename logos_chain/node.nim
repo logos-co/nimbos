@@ -251,6 +251,9 @@ proc run*(node: LBNode, stopper: StopFuture) {.raises: [CatchableError].} =
   waitFor node.initializeNetworking()
 
   ProcessState.notifyRunning()
+  if ProcessState.stopIt(notice("Shutting down during startup", reason = it)):
+    node.stop()
+    return
 
   node.network.subscribe("/some/topic", TopicParams.init())
 
