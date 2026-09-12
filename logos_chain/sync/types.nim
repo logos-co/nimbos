@@ -85,7 +85,6 @@ type
 
 type
   IBDFailure* = object of CatchableError
-  InvalidBlock* = object of CatchableError
 
 const cryptarchiaSyncBincodeConfig* = BincodeConfig(
   byteOrder: LittleEndian,

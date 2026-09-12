@@ -57,6 +57,16 @@ func `$`*(e: BlockApplyError): string =
   of BlockApplyErrorKind.StatelessTxRejected: "stateless tx: " & $e.statelessError
   else: $e.kind
 
+func isRecoverable*(kind: BlockApplyErrorKind): bool =
+  ## True when the same block may still apply later without any change to it.
+  case kind
+  of BlockApplyErrorKind.AlreadyApplied, BlockApplyErrorKind.FutureSlot,
+      BlockApplyErrorKind.MissingParent:
+    true
+  of BlockApplyErrorKind.InvalidStructure, BlockApplyErrorKind.UnviableFork,
+      BlockApplyErrorKind.LedgerRejected, BlockApplyErrorKind.StatelessTxRejected:
+    false
+
 func ledgerConfig*(settings: DeploymentSettings): LedgerConfig =
   ## Epoch-machinery configuration from validated deployment settings
   ## (schedule arithmetic requires positive `security_param`, phases, `f`).
