@@ -7,7 +7,7 @@
 
 ## Blend proof-of-work difficulty: per-epoch transaction-load tracking and
 ## the retarget controller.
-## Spec: [Mantle §Blend Difficulty](https://github.com/logos-co/logos-lips/blob/22b84507f8ce0bb10f009ffbc5b2305649af6d21/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md#blend-difficulty)
+## Spec: [Proof of Work §Blend Difficulty](https://github.com/logos-co/logos-lips/blob/b7301a67b5364a8dbe719f8b67b96b7f198d0a13/docs/blockchain/raw/proof-of-work.md#blend-difficulty)
 ##
 ## The value is consensus state and a proof-of-quota public input. All
 ## arithmetic runs on canonical integer representatives, never on field
