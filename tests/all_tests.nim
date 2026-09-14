@@ -82,6 +82,11 @@ import # Unit test
   ./zk/test_poq,
   ./zk/test_pol_lottery,
   ./zk/test_zksign,
+  ./zk/test_poq,
+  ./zk/test_witness_gen,
+  ./zk/test_rapidsnark,
+  ./zk/test_prover,
+  ./zk/test_prover_interop,
   ./zk/groth16/test_vk_json,
   ./zk/groth16/test_verifier
 

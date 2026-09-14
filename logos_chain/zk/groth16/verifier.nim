@@ -28,7 +28,7 @@ const
   ProofBytesLen* = G1CompressedBytes + G2CompressedBytes + G1CompressedBytes
     ## On-wire compressed proof: `pi_a (G1) || pi_b (G2) || pi_c (G1)`.
 
-func sliceArr[N: static int](src: openArray[byte], offset: int): array[N, byte] =
+func sliceArr*[N: static int](src: openArray[byte], offset: int): array[N, byte] =
   result[0 ..< N] = src.toOpenArray(offset, offset + N - 1)
 
 proc verifyGroth16*(

@@ -6,15 +6,16 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## ZkSig ledger seam: VK singleton + `verify` against `[pks; msg]` public-input
-## vector + `zksignInput` builder that right-pads short pk lists. Prover-side
-## helpers land here when local signing goes live.
+## vector + `zksignInput` builder that right-pads short pk lists, plus the
+## prover-side witness input and its circuit JSON encoding.
 
 {.push raises: [], gcsafe.}
 
 import
-  std/algorithm,
+  std/[algorithm, json],
   stew/arrayops,
   ./[circuits, util],
+  ./groth16/snarkjs,
   ../core/crypto/types
 
 export util
@@ -23,6 +24,7 @@ const
   ZkSignMaxKeys* = 32
     ## Circuit-imposed hard cap on signers per proof. >32 → reject; 1..32 →
     ## right-pad with `ZeroSecretKeyPublicKey`.
+  ZkSignPublicSignals* = ZkSignMaxKeys + 1
 
 type
   ZkSignLoadError* = VkLoadError
@@ -33,12 +35,36 @@ type
     publicKeys*: array[ZkSignMaxKeys, FieldElement]
     msg*: FieldElement
 
+  ZkSignWitnessInput* = object
+    ## Prover-side circuit inputs. Unused key slots stay zero; the circuit
+    ## derives `ZeroSecretKeyPublicKey` for them.
+    secretKeys*: array[ZkSignMaxKeys, FieldElement]
+    msg*: FieldElement
+
+func toInputsJson*(input: ZkSignWitnessInput): string =
+  ## Witness-generator JSON: `{"msg": …, "secret_keys": [… × 32]}`.
+  $(%*{
+    "msg": frDecimal(input.msg),
+    "secret_keys": pathJson(input.secretKeys),
+  })
+
+func zksignVerifierInput*(
+    signals: openArray[FieldElement]
+): Result[ZkSignVerifierInput, cstring] =
+  ## Typed view of the 33 public signals a proof carries: `[pks[0..31], msg]`.
+  if signals.len != ZkSignPublicSignals:
+    return err("zksign: expected 33 public signals")
+  var input: ZkSignVerifierInput
+  input.publicKeys[0 ..< ZkSignMaxKeys] = signals.toOpenArray(0, ZkSignMaxKeys - 1)
+  input.msg = signals[ZkSignMaxKeys]
+  ok(input)
+
 # Singleton. See `util` for the threading / GC-safety contract.
 var zksignVk: Opt[VKey]
 
 proc loadVk*(circuitsDir: string): Result[VKey, ZkSignLoadError] =
   ## Read + parse `<circuitsDir>/signature/verification_key.json`.
-  loadVkFromPath(zksignVerificationKeyPath(circuitsDir))
+  loadVkFromPath(verificationKeyPath(circuitsDir, Circuit.Signature))
 
 proc initVk*(vk: VKey): Result[void, ZkSignLoadError] =
   ## Install the VK into the singleton. Reinitialisation returns

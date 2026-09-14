@@ -37,3 +37,12 @@ Prove with these inputs. Write `proof.json` in snarkjs shape. Write
 `public.json` as decimal strings. It must come back byte-identical.
 Copy `verification_key.json` from the bundle's `signature/` directory
 of the same release.
+
+## Nim prover
+
+nimbos now generates proofs in-process (`logos_chain/zk/prover.nim`,
+rapidsnark + the bundle witness archives). `tests/zk/test_witness_gen.nim`
+and `tests/zk/test_prover.nim` rebuild this fixture's public signals from
+the witness inputs above and verify fresh proofs against them. The committed
+`proof.json` stays as the reference-prover cross-check
+(`tests/zk/test_prover_interop.nim`).
