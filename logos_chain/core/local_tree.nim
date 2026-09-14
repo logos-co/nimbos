@@ -73,6 +73,11 @@ func latestImmutableHeight*(localTree: LocalTree): uint64 =
     return node.height
   0'u64
 
+func latestImmutableSlot*(localTree: LocalTree): SlotNumber =
+  localTree.blocksById.withValue(localTree.latestImmutableId, node):
+    return node.blk.header.slot
+  SlotNumber(0)
+
 proc pruneForks(localTree: LocalTree, fromNode: BlockNode,
     untilHeight: uint64, tipHeight: uint64): seq[BlockId] =
   var pruned: seq[BlockId]

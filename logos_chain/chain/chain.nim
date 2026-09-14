@@ -169,8 +169,13 @@ proc tryApplyBlock*(
   ## Full block ingestion in `valid_header` order.
   template hdr: auto = header(blk)
   let id = blockId(hdr)
-  if chain.ledger.hasState(id):
+  # The tree keeps applied blocks whose states were pruned below the LIB.
+  if chain.localTree.hasBlock(id):
     return err(BlockApplyError(kind: AlreadyApplied))
+  # Slots increase along a chain, so a block at or before the LIB slot cannot
+  # descend from the LIB. Holds without the parent, which pruning may remove.
+  if hdr.slot <= chain.localTree.latestImmutableSlot():
+    return err(BlockApplyError(kind: UnviableFork))
   if hdr.slot > chain.currentWallclockSlot():
     return err(BlockApplyError(kind: FutureSlot))
   let unverified = chain.mempool.unverifiedTxs(blk.txs)

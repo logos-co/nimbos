@@ -50,11 +50,11 @@ suite "chain/block_processor":
         b2 = childBlock(b1.header, blockId(b1.header), SlotNumber(2), [])
         f2 = bp.addBlock(BlockSource.Sync, b2)
         f1 = bp.addBlock(BlockSource.Sync, b1)
-      check bp.hasBlocks
+      check not f1.finished
+      check not f2.finished
       check (await f2).error.kind == BlockApplyErrorKind.MissingParent
       check (await f1).isOk
       check (await bp.addBlock(BlockSource.Sync, b2)).isOk
-      check not bp.hasBlocks
 
   asyncTest "loop yields to other tasks between blocks":
     withProcessor(chain):
@@ -71,18 +71,18 @@ suite "chain/block_processor":
       # `popFirst` on a non-empty queue returns a finished future, and `await`
       # on a finished future does not return to `poll`. Without the `idleAsync`
       # line the whole queue drains inside one callback and the ticker never
-      # runs while `hasBlocks` is true. With it, each poll pass promotes one
+      # runs while results are pending. With it, each poll pass promotes one
       # idler after due timers, so the ticker fires at least once per block
       # and in practice about every second poll pass. Expect a count near 23.
+      let futs = blocks.mapIt(bp.addBlock(BlockSource.Sync, it))
       var ticksWhileBusy = 0
       proc ticker() {.async: (raises: [CancelledError]).} =
         while true:
           await sleepAsync(0.milliseconds)
-          if bp.hasBlocks:
+          if not futs.allIt(it.finished):
             inc ticksWhileBusy
       let tickerFut = ticker()
 
-      let futs = blocks.mapIt(bp.addBlock(BlockSource.Sync, it))
       await allFutures(futs)
       await tickerFut.cancelAndWait()
       check futs.allIt(it.read().isOk)
@@ -105,9 +105,13 @@ suite "chain/block_processor":
       fakeParentId[0] = 7
       let
         orphan = childBlock(genesisBlk.header, fakeParentId, SlotNumber(1), [])
-        stale = childBlock(genesisBlk.header, gid, SlotNumber(0), [])
+        b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
+        # Same slot as its parent, but above the LIB slot so the fork gate
+        # does not fire first.
+        stale = childBlock(b1.header, blockId(b1.header), SlotNumber(1), [])
       check (await bp.addBlock(BlockSource.Sync, orphan)).error.kind ==
         BlockApplyErrorKind.MissingParent
+      check (await bp.addBlock(BlockSource.Sync, b1)).isOk
       check (await bp.addBlock(BlockSource.Sync, stale)).error.kind ==
         BlockApplyErrorKind.InvalidStructure
 

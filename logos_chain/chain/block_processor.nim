@@ -54,9 +54,6 @@ func localTree*(bp: BlockProcessor): LocalTree =
 func ledger*(bp: BlockProcessor): lent Ledger[BlockId] =
   bp.chain.ledger
 
-func hasBlocks*(bp: BlockProcessor): bool =
-  bp.blockQueue.len > 0
-
 func running*(bp: BlockProcessor): bool =
   bp.loopFut != nil and not bp.loopFut.finished
 
