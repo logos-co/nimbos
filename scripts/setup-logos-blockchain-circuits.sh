@@ -200,12 +200,13 @@ main() {
     print_info "logos-blockchain-circuits ${VERSION} is now installed at: $INSTALL_DIR"
     print_info "The following circuits are available:"
 
-    # Discover circuits by finding directories that contain a witness_generator
+    # Discover circuits by finding directories that ship a witness archive
+    # (lib<circuit>.a since v0.5.0; <circuit>.lib on Windows).
     for dir in "$INSTALL_DIR"/*/; do
         if [ -d "$dir" ]; then
             local circuit_name
             circuit_name=$(basename "$dir")
-            if [ -f "$dir/witness_generator" ]; then
+            if [ -f "$dir/lib$circuit_name.a" ] || [ -f "$dir/$circuit_name.lib" ]; then
                 echo "  • $circuit_name"
             fi
         fi

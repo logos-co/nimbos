@@ -21,30 +21,38 @@ const ExpectedCircuitsVersion* = "v0.5.6"
   ## committed test vectors against the new VK.
 
 type
+  Circuit* {.pure.} = enum
+    ## The four circom circuits the bundle ships.
+    Pol
+    Poq
+    Poc
+    Signature
+
   CircuitsBundleError* {.pure.} = enum
     BundleDirMissing
     VersionFileMissing
     VersionReadFailed
     VersionMismatch
 
+func dirName*(c: Circuit): string =
+  ## Bundle subdirectory of a circuit. The ZkSig circuit ships as `signature/`.
+  case c
+  of Circuit.Pol: "pol"
+  of Circuit.Poq: "poq"
+  of Circuit.Poc: "poc"
+  of Circuit.Signature: "signature"
+
 func circuitsVersionPath*(dir: string): string =
   dir / "VERSION"
 
-func polVerificationKeyPath*(dir: string): string =
-  dir / "pol" / "verification_key.json"
+func verificationKeyPath*(dir: string, c: Circuit): string =
+  dir / dirName(c) / "verification_key.json"
 
-# The bundle ships the ZkSig circuit under `signature/`.
-func zksignVerificationKeyPath*(dir: string): string =
-  dir / "signature" / "verification_key.json"
+func provingKeyPath*(dir: string, c: Circuit): string =
+  dir / dirName(c) / "proving_key.zkey"
 
-func pocVerificationKeyPath*(dir: string): string =
-  dir / "poc" / "verification_key.json"
-
-func poqVerificationKeyPath*(dir: string): string =
-  dir / "poq" / "verification_key.json"
-
-# Future per-circuit/per-artefact helpers (zkey, witness_generator)
-# land here as their provers ship.
+func witnessDatPath*(dir: string, c: Circuit): string =
+  dir / dirName(c) / "witness_generator.dat"
 
 proc verifyCircuitsVersion*(dir: string): Result[void, CircuitsBundleError] =
   ## Startup bundle health check.

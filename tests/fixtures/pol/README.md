@@ -27,3 +27,12 @@ Prove, then write `proof.json` in snarkjs shape and `public.json` as
 
 `tests/ledger/test_pol_verifier.nim` pins values from `public.json`,
 for example the slot. New witness inputs need those pins updated.
+
+## Nim prover
+
+nimbos now generates proofs in-process (`logos_chain/zk/prover.nim`,
+rapidsnark + the bundle witness archives). `tests/zk/test_witness_gen.nim`
+and `tests/zk/test_prover.nim` rebuild this fixture's public signals from
+the witness inputs above and verify fresh proofs against them. The committed
+`proof.json` stays as the reference-prover cross-check
+(`tests/zk/test_prover_interop.nim`).
