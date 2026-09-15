@@ -67,40 +67,39 @@ proc runBundledVerifier(c: Circuit, proofJson, publicJson: string): int =
   except OSError, IOError:
     -1
 
-when not defined(windows):
-  suite "zk/prover — interop with the reference toolchain":
-    for c in Circuit:
-      test "rapidsnark verifier accepts a Nim proof (" & $c & ")":
-        let (proofJson, publicJson) = proveJson(inputFor(c))
-        check accepts(verifyJson(proofJson, publicJson, vkText(c)))
-        let code = runBundledVerifier(c, proofJson, publicJson)
-        if code == -1:
-          skip()
-        else:
-          check code == 0
+suite "zk/prover — interop with the reference toolchain":
+  for c in Circuit:
+    test "rapidsnark verifier accepts a Nim proof (" & $c & ")":
+      let (proofJson, publicJson) = proveJson(inputFor(c))
+      check accepts(verifyJson(proofJson, publicJson, vkText(c)))
+      let code = runBundledVerifier(c, proofJson, publicJson)
+      if code == -1:
+        skip()
+      else:
+        check code == 0
 
-    test "rapidsnark verifier rejects tampered public signals":
-      let (proofJson, publicJson) =
-        proveJson(ProveInput(circuit: Circuit.Poc, pocInput: pocFixtureInput()))
-      var signals = publicJsonToInputs(publicJson).expect("public")
-      signals[1] = fr("12345")
-      check rejects(verifyJson(proofJson, signalsToPublicJson(signals), vkText(Circuit.Poc)))
+  test "rapidsnark verifier rejects tampered public signals":
+    let (proofJson, publicJson) =
+      proveJson(ProveInput(circuit: Circuit.Poc, pocInput: pocFixtureInput()))
+    var signals = publicJsonToInputs(publicJson).expect("public")
+    signals[1] = fr("12345")
+    check rejects(verifyJson(proofJson, signalsToPublicJson(signals), vkText(Circuit.Poc)))
 
-    test "committed reference proofs pass both verifiers":
-      installFixtureVks()
-      for c in [Circuit.Pol, Circuit.Poc, Circuit.Signature]:
-        let
-          proofJson = readText(fixtureDir(c) / "proof.json")
-          publicJson = readText(fixtureDir(c) / "public.json")
-        check accepts(verifyJson(proofJson, publicJson, vkText(c)))
-        let
-          bytes = proofJsonToBytes(proofJson).expect("bytes")
-          signals = publicJsonToInputs(publicJson).expect("public")
-        let accepted =
-          case c
-          of Circuit.Pol: pol.verify(bytes, polVerifierInput(signals).expect("9"))
-          of Circuit.Poc: poc.verify(bytes, pocVerifierInput(signals).expect("3"))
-          else: zksign.verify(bytes, zksignVerifierInput(signals).expect("33"))
-        check accepts(accepted)
+  test "committed reference proofs pass both verifiers":
+    installFixtureVks()
+    for c in [Circuit.Pol, Circuit.Poc, Circuit.Signature]:
+      let
+        proofJson = readText(fixtureDir(c) / "proof.json")
+        publicJson = readText(fixtureDir(c) / "public.json")
+      check accepts(verifyJson(proofJson, publicJson, vkText(c)))
+      let
+        bytes = proofJsonToBytes(proofJson).expect("bytes")
+        signals = publicJsonToInputs(publicJson).expect("public")
+      let accepted =
+        case c
+        of Circuit.Pol: pol.verify(bytes, polVerifierInput(signals).expect("9"))
+        of Circuit.Poc: poc.verify(bytes, pocVerifierInput(signals).expect("3"))
+        else: zksign.verify(bytes, zksignVerifierInput(signals).expect("33"))
+      check accepts(accepted)
 
 {.pop.}

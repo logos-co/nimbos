@@ -83,12 +83,19 @@ import # Unit test
   ./zk/test_pol_lottery,
   ./zk/test_zksign,
   ./zk/test_poq,
-  ./zk/test_witness_gen,
-  ./zk/test_rapidsnark,
-  ./zk/test_prover,
-  ./zk/test_prover_interop,
+  ./zk/test_merkle_path,
+  ./zk/test_wtns_helpers,
   ./zk/groth16/test_vk_json,
   ./zk/groth16/test_verifier
+
+when not defined(windows):
+  # Proving is out of scope on Windows; `witness_gen` and `rapidsnark` are
+  # stubs there and `Prover.new` reports `Unsupported`.
+  import
+    ./zk/test_witness_gen,
+    ./zk/test_rapidsnark,
+    ./zk/test_prover,
+    ./zk/test_prover_interop
 
 summarizeLongTests("AllTests")
 
