@@ -9,6 +9,8 @@
 ## generators (the PoL `nimbos_fixture_dump` test and the blend `quota/fixtures`
 ## module). Extracted mechanically from those sources; do not edit by hand.
 
+{.push raises: [].}
+
 const
   PolFixtureSlot* = 135'u64
   PolFixtureEpochNonce* = "510"
@@ -210,3 +212,5 @@ const
     false,
     false,
   ]
+
+{.pop.}

@@ -8,7 +8,11 @@
 ## Test-side alias of the production snarkjs JSON codec. Tests feed
 ## committed `proof.json` / `public.json` fixtures through it.
 
+{.push raises: [].}
+
 import
   ../../logos_chain/zk/groth16/snarkjs
 
 export snarkjs
+
+{.pop.}
