@@ -158,7 +158,7 @@ func reconstructBlock(
 
 func toProposalValidationError(err: BlockValidationError): ProposalValidationError =
   case err.kind
-  of BlockValidationErrorKind.TreeAdmissionRejected:
+  of BlockValidationErrorKind.MissingParent, BlockValidationErrorKind.UnviableFork:
     ProposalValidationError.TreeAdmissionRejected
   else:
     ProposalValidationError.InvalidBlockStructure

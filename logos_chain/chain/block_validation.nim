@@ -31,7 +31,8 @@ from ../core/mantle/tx_types import SignedMantleTx, ValidSignedMantleTx, byteLen
 type
   BlockValidationErrorKind* {.pure.} = enum
     InvalidBlockStructure
-    TreeAdmissionRejected
+    MissingParent      # parent id has no ledger state
+    UnviableFork       # parent known; at or behind the immutable ancestor
     HeaderRejected
     TransactionsRejected
     StatelessTxRejected
@@ -132,8 +133,16 @@ proc validateBlockAndStatelessTransactions*(
   if not validateBlockStructure(blk):
     return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))
 
-  if not ledger.hasState(blk.header.parentBlock) or not localTree.canExtend(blk.header):
-    return err(BlockValidationError(kind: BlockValidationErrorKind.TreeAdmissionRejected))
+  let parent = localTree.fetchHeader(blk.header.parentBlock).valueOr:
+    return err(BlockValidationError(kind: BlockValidationErrorKind.MissingParent))
+  if blk.header.slot <= parent.slot:
+    return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))
+  # The tree keeps ancestors below the LIB after their states are pruned, so
+  # the fork check must run before the state lookup to report UnviableFork.
+  if not localTree.isFutureDescendantOfImmutable(blk.header):
+    return err(BlockValidationError(kind: BlockValidationErrorKind.UnviableFork))
+  if not ledger.hasState(blk.header.parentBlock):
+    return err(BlockValidationError(kind: BlockValidationErrorKind.MissingParent))
 
   if not validateBlockHeader(blk):
     return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))

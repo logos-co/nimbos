@@ -11,14 +11,15 @@ import
   chronicles,
   chronos,
   libp2p/[switch, peerid, errors],
-  ../chain/chain,
+  ../chain/block_processor,
   ../process_state,
   ./[syncer_types, ibd_server, ibd_client, types]
 
 export syncer_types
 
-func init*(T: type Syncer, sw: Switch, chain: Chain, protocol: string): T =
-  T(sw: sw, chain: chain, chainSyncProtocol: protocol)
+func init*(
+    T: type Syncer, sw: Switch, processor: BlockProcessor, protocol: string): T =
+  T(sw: sw, processor: processor, chainSyncProtocol: protocol)
 
 proc runAtStartup(
     syncer: Syncer, peerProvider: Opt[PeerProvider]
@@ -46,6 +47,14 @@ proc start*(
     syncer: Syncer,
     peerProvider: Opt[PeerProvider] = Opt.none(PeerProvider),
 ) =
-  asyncSpawn syncer.runAtStartup(peerProvider)
+  doAssert syncer.ibdFut == nil, "syncer already started"
+  syncer.ibdFut = syncer.runAtStartup(peerProvider)
+
+proc stop*(syncer: Syncer) {.async: (raises: []).} =
+  ## Cancel the initial block download if it still runs.
+  if syncer.ibdFut == nil:
+    return
+  await syncer.ibdFut.cancelAndWait()
+  syncer.ibdFut = nil
 
 {.pop.}

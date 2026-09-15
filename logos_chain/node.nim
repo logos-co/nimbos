@@ -13,7 +13,7 @@ import
   bearssl/rand,
   metrics, metrics/chronos_httpserver,
   stew/byteutils,
-  ./chain/chain,
+  ./chain/block_processor,
   ./[conf, process_state],
   ./core/[types, utils],
   ./deployment/deployment_settings,
@@ -30,7 +30,7 @@ from std/random import randomize
 
 export
   osproc, chronos, presto, server, conf,
-  deployment_settings, network, utils, chain
+  deployment_settings, network, utils, block_processor
 
 logScope: topics = "logos_nd"
 
@@ -40,6 +40,7 @@ type
     netKeys*: NetKeyPair
     config*: LBNodeConf
     deploymentSettings*: DeploymentSettings
+    processor*: BlockProcessor
     syncer*: Syncer
     metricsServer*: Opt[MetricsHttpServerRef]
     shutdownEvent*: AsyncEvent
@@ -134,10 +135,12 @@ proc init*(
     error "Failed to initialize node", err = error
     return Opt.none(LBNode)
 
+  let processor = BlockProcessor.new(chain)
   var nodeSyncer: Syncer = nil
-  if chain.localTree != nil and deploymentSettings.network.chainSyncProtocolName.len > 0:
+  if processor.localTree != nil and
+      deploymentSettings.network.chainSyncProtocolName.len > 0:
     nodeSyncer = Syncer.init(
-      network.switch, chain, deploymentSettings.network.chainSyncProtocolName)
+      network.switch, processor, deploymentSettings.network.chainSyncProtocolName)
 
   if nodeSyncer != nil:
     info "Syncer configured at node startup",
@@ -145,13 +148,14 @@ proc init*(
       genesisBlockId = blockId(genesisBlock.header)
   else:
     debug "Syncer not configured at node startup",
-      hasLocalTree = chain.localTree != nil,
+      hasLocalTree = processor.localTree != nil,
       chainSyncProtocol = deploymentSettings.network.chainSyncProtocolName
 
   ok LBNode(
     network: network,
     config: config,
     deploymentSettings: deploymentSettings,
+    processor: processor,
     syncer: nodeSyncer,
     shutdownEvent: newAsyncEvent())
 
@@ -203,6 +207,11 @@ proc installMessageValidators(node: LBNode) =
   discard
 
 proc stop(node: LBNode) =
+  # The IBD task may be awaiting a queued result. Cancel it before the
+  # processor cancels that future, so the cancellation comes from its owner.
+  if node.syncer != nil:
+    waitFor node.syncer.stop()
+  waitFor node.processor.stop()
   try:
     waitFor node.network.stop()
   except CancelledError as exc:
@@ -238,9 +247,13 @@ type StopFuture = Future[void].Raising([CancelledError])
 proc run*(node: LBNode, stopper: StopFuture) {.raises: [CatchableError].} =
   ## Caller is responsible for installing REST handlers and starting the
   ## REST server before calling `run`.
+  node.processor.start()
   waitFor node.initializeNetworking()
 
   ProcessState.notifyRunning()
+  if ProcessState.stopIt(notice("Shutting down during startup", reason = it)):
+    node.stop()
+    return
 
   node.network.subscribe("/some/topic", TopicParams.init())
 

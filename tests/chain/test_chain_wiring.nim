@@ -151,7 +151,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
       r = chain.tryApplyBlock(orphan)
     check:
       r.isErr
-      r.error.kind == BlockApplyErrorKind.TreeRejected
+      r.error.kind == BlockApplyErrorKind.MissingParent
 
   test "tryApplyBlock removes block txs from mempool, re-adds on fork switch, and selects restored txs":
     var chain = initZeroFeeChain(ds)

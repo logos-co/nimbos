@@ -65,7 +65,8 @@ proc scheduleStop*(_: type ProcessState, source: cstring) =
   processState.store(ProcessState.Stopping)
 
 proc notifyRunning*(_: type ProcessState) =
-  processState.store(ProcessState.Running, moRelaxed)
+  var expected = ProcessState.Starting
+  discard processState.compareExchange(expected, ProcessState.Running, moRelaxed)
 
 proc setupStopHandlers*(_: type ProcessState) =
   ## Install signal handlers for SIGINT/SIGTERM such that the application

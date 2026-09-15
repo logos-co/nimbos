@@ -52,6 +52,20 @@ proc validate(genesis: Block, blk: Block): Result[BlockId, BlockValidationError]
   let ledger = Ledger[BlockId].init(blockId(genesis.header), default(LedgerState), default(LedgerConfig))
   validateBlockAndStatelessTransactions(blk, tree, ledger, blk.txs)
 
+proc treeWithLib(genesis: Block): tuple[tree: LocalTree, b1, b2: Block] =
+  ## Tree with security parameter 1 holding genesis, b1, b2, b3; the LIB is b2.
+  let
+    sm = minimalSignedTx()
+    tree = newLocalTree(genesis, 1'u64)
+    b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [sm])
+    b2 = childBlock(b1.header, blockId(b1.header), SlotNumber(2), [sm])
+    b3 = childBlock(b2.header, blockId(b2.header), SlotNumber(3), [sm])
+  for blk in [b1, b2, b3]:
+    check tree.addBlockToTree(blk)
+    tree.tryUpdateLib()
+  check tree.latestImmutableBlockId == blockId(b2.header)
+  (tree, b1, b2)
+
 proc childProposal(
     parentHdr: Header,
     parentId: BlockId,
@@ -218,7 +232,7 @@ suite "core/block_validation — multi-tier evaluation order":
     check res.isErr
     check res.error.kind == BlockValidationErrorKind.InvalidBlockStructure
 
-  test "Tier 1: rejects block when parent state is missing in ledger":
+  test "Tier 1: rejects block with unknown parent":
     let
       genesis = createGenesisBlock(minimalSignedTx())
       sm = minimalSignedTx()
@@ -226,17 +240,39 @@ suite "core/block_validation — multi-tier evaluation order":
       blk = childBlock(genesis.header, missingParentId, SlotNumber(1), [sm])
     let res = validate(genesis, blk)
     check res.isErr
-    check res.error.kind == BlockValidationErrorKind.TreeAdmissionRejected
+    check res.error.kind == BlockValidationErrorKind.MissingParent
 
   test "Tier 1: rejects block with non-advancing slot (slot <= parent.slot)":
     let
       genesis = createGenesisBlock(minimalSignedTx())
       sm = minimalSignedTx()
-      # Genesis is slot 0; child with slot 0 cannot extend tree
+      # Genesis is slot 0; a child at slot 0 does not advance
       blk = childBlock(genesis.header, blockId(genesis.header), SlotNumber(0), [sm])
     let res = validate(genesis, blk)
     check res.isErr
-    check res.error.kind == BlockValidationErrorKind.TreeAdmissionRejected
+    check res.error.kind == BlockValidationErrorKind.InvalidBlockStructure
+
+  test "Tier 1: rejects a block extending an ancestor below the LIB":
+    let
+      genesis = createGenesisBlock(minimalSignedTx())
+      (tree, b1, _) = treeWithLib(genesis)
+      ledger = Ledger[BlockId].init(
+        blockId(genesis.header), default(LedgerState), default(LedgerConfig))
+      # b1 is below the LIB with no ledger state, but the tree still holds it.
+      blk = childBlock(b1.header, blockId(b1.header), SlotNumber(4), [minimalSignedTx()])
+      res = validateBlockAndStatelessTransactions(blk, tree, ledger, blk.txs)
+    check res.isErr
+    check res.error.kind == BlockValidationErrorKind.UnviableFork
+
+  test "Tier 1: accepts a child of the LIB":
+    let
+      genesis = createGenesisBlock(minimalSignedTx())
+      (tree, _, b2) = treeWithLib(genesis)
+      blk = childBlock(b2.header, blockId(b2.header), SlotNumber(4), [minimalSignedTx()])
+    var ledger = Ledger[BlockId].init(
+      blockId(genesis.header), default(LedgerState), default(LedgerConfig))
+    ledger.commitUpdate(blockId(b2.header), default(LedgerState))
+    check validateBlockAndStatelessTransactions(blk, tree, ledger, blk.txs).isOk
 
   test "Tier 2: rejects block with empty leader key":
     let

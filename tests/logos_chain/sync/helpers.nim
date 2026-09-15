@@ -11,13 +11,14 @@ import
   std/sequtils,
   results,
   bincode,
+  libp2p/[switch, errors],
   stew/byteutils as byteutils,
   ../../testutil,
   ../../ledger/sdp/test_helpers,
-  ../../../logos_chain/chain/chain,
+  ../../../logos_chain/chain/[chain, block_processor],
   ../../../logos_chain/core/[types, local_tree],
   ../../../logos_chain/ledger/ledger,
-  ../../../logos_chain/sync/[framing, types, ibd_client, ibd_server]
+  ../../../logos_chain/sync/[framing, types, ibd_client, ibd_server, syncer]
 from ../../../logos_chain/core/mantle/primitives import SlotNumber
 from ../../../logos_chain/core/mantle/tx_types import SignedMantleTx, encodeSignedMantleTx
 from ../../ledger/test_helpers import testLedgerConfig
@@ -36,6 +37,57 @@ proc initTestChain*(genesis: Block): Chain =
     Ledger[BlockId].init(blockId(genesis.header), state, testLedgerConfig,
         mockVerifyLeaderProof),
     SlotConfig(genesisTime: 0, slotDurationSeconds: 1))
+
+proc startTestProcessor(chain: Chain): BlockProcessor =
+  let bp = BlockProcessor.new(chain)
+  bp.start()
+  bp
+
+proc mountTestServer*(
+    sw: Switch, chain: Chain, protocol = testChainSyncProtocol
+): Syncer {.raises: [LPError].} =
+  ## Syncer that only serves. Its processor loop does not run.
+  let syncer = Syncer.init(sw, BlockProcessor.new(chain), protocol)
+  mountCryptarchiaSyncHandler(syncer)
+  syncer
+
+template withProcessor*(chain: Chain, body: untyped) =
+  ## Running processor over `chain`, stopped after `body`.
+  let bp {.inject.} = startTestProcessor(chain)
+  try:
+    body
+  finally:
+    await bp.stop()
+
+template withClientSyncerOn*(sw: Switch, clientChain: Chain, body: untyped) =
+  ## Client syncer on the caller's switch, stopped with its processor after `body`.
+  let clientSyncer {.inject.} =
+    Syncer.init(sw, startTestProcessor(clientChain), testChainSyncProtocol)
+  try:
+    body
+  finally:
+    await clientSyncer.stop()
+    await clientSyncer.processor.stop()
+
+template withClientSyncer*(clientChain: Chain, body: untyped) =
+  ## One switch and a client syncer, stopped after `body`.
+  let client {.inject.} = await startQuicTestSwitch()
+  try:
+    withClientSyncerOn(client, clientChain):
+      body
+  finally:
+    await client.stop()
+
+template withSyncPair*(serverChain, clientChain: Chain, body: untyped) =
+  ## A serving switch and a connected client syncer, stopped after `body`.
+  let server {.inject.} = await startQuicTestSwitch()
+  discard mountTestServer(server, serverChain)
+  try:
+    withClientSyncer(clientChain):
+      await client.connect(server.peerInfo.peerId, server.peerInfo.addrs, forceDial = true)
+      body
+  finally:
+    await server.stop()
 
 proc extendChainAfterGenesis*(
     tree: LocalTree, genesis: Block, extraBlocks: int,

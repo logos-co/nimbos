@@ -73,6 +73,11 @@ func latestImmutableHeight*(localTree: LocalTree): uint64 =
     return node.height
   0'u64
 
+func latestImmutableSlot*(localTree: LocalTree): SlotNumber =
+  localTree.blocksById.withValue(localTree.latestImmutableId, node):
+    return node.blk.header.slot
+  SlotNumber(0)
+
 proc pruneForks(localTree: LocalTree, fromNode: BlockNode,
     untilHeight: uint64, tipHeight: uint64): seq[BlockId] =
   var pruned: seq[BlockId]
@@ -184,7 +189,8 @@ func isAncestor*(localTree: LocalTree, ancestor: BlockId,
       n = n.parent
   false
 
-func isFutureDescendantOfImmutable(localTree: LocalTree,
+# https://github.com/logos-co/logos-lips/blob/5587d1e5ca2964e38098cd18f81f0fbe19f51fd3/docs/blockchain/raw/cryptarchia-v1-protocol.md#L435-L436
+func isFutureDescendantOfImmutable*(localTree: LocalTree,
     header: Header): bool =
   ## Validates that an incoming block header descends from `latestImmutableId` and has candidate height > immutableHeight.
   let parentHeight = blockHeight(localTree, header.parentBlock).valueOr:
@@ -228,18 +234,9 @@ func lcaBlockIdAndHeight*(
       return Opt.none((BlockId, uint64))
   Opt.some((na.id, na.height))
 
-# https://github.com/logos-co/logos-lips/blob/d064449307d28a76b3555dc7b5064d15ee19d7f5/docs/blockchain/raw/cryptarchia-v1-protocol.md#block-header-validation
-func canExtend*(localTree: LocalTree, header: Header): bool =
-  if header.parentBlock.isZero:
-    return false
-  localTree.blocksById.withValue(header.parentBlock, parent):
-    return header.slot > parent.blk.header.slot and
-      isFutureDescendantOfImmutable(localTree, header)
-  false
-
 proc addBlockToTree*(localTree: LocalTree, blk: Block): bool =
-  ## Inserts a block the caller already passed through `canExtend`; only
-  ## duplicate ids and unknown parents are guarded here.
+  ## Inserts a header-validated block; only duplicate ids and unknown parents
+  ## are guarded here.
   let id = blockId(blk.header)
   if localTree.blocksById.hasKey(id):
     return false
