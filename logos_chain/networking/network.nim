@@ -607,7 +607,7 @@ proc new(T: type LBP2PNode,
 
   node
 
-proc startListening*(node: LBP2PNode) {.async.} =
+proc startListening*(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
   try:
     await node.switch.start()
   except LPError as exc:
@@ -1159,27 +1159,36 @@ proc addAsyncValidator*[MsgType](
 
   node.pubsub.addValidator(topic, execValidator)
 
-proc gossipEncode(msg: auto): seq[byte] =
+proc gossipEncode(msg: auto): Result[seq[byte], cstring] =
   let uncompressed = Bincode.encode(msg)
-  # This function only for messages we create. A message this large amounts to
-  # an internal logic error.
-  doAssert uncompressed.lenu64 <= MAX_PAYLOAD_SIZE
-  uncompressed
+  if uint64(uncompressed.len) > MAX_PAYLOAD_SIZE:
+    return err(cstring"Encoded gossip message exceeds MAX_PAYLOAD_SIZE")
+  ok(uncompressed)
 
 proc broadcast*(node: LBP2PNode, topic: string, msg: seq[byte]):
     Future[SendResult] {.async: (raises: [CancelledError]).} =
+  if uint64(msg.len) > MAX_PAYLOAD_SIZE:
+    warn "Gossip message exceeds MAX_PAYLOAD_SIZE", topic, msgLen = msg.len
+    return err("Gossip message exceeds MAX_PAYLOAD_SIZE")
+
   let peers = await node.pubsub.publish(topic, msg)
 
   if peers > 0:
     inc logos_p2p_gossip_messages_sent
     ok()
   else:
+    debug "No peers on libp2p topic to broadcast message", topic, msgLen = msg.len
     err("No peers on libp2p topic")
 
 proc broadcast*(node: LBP2PNode, topic: string, msg: auto):
     Future[SendResult] {.async: (raises: [CancelledError], raw: true).} =
   # Avoid {.async.} copies of message while broadcasting
-  broadcast(node, topic, gossipEncode(msg))
+  let encoded = gossipEncode(msg).valueOr:
+    warn "Failed to encode gossip message: exceeds MAX_PAYLOAD_SIZE", topic
+    let fut = newFuture[SendResult]("network.broadcast")
+    fut.complete(SendResult.err(error))
+    return fut
+  broadcast(node, topic, encoded)
 
 when defined(unittest) or defined(test):
   func outboundConnQueueLen*(node: LBP2PNode): int {.inline.} =
