@@ -14,6 +14,7 @@
 import
   std/[json, sequtils],
   json_serialization,
+  stew/assign2,
   constantine/math/io/io_fields,
   groth16/bn128,
   ./[utils, verifier]
@@ -49,9 +50,9 @@ func toCompressedBytes*(points: ProofPoints): array[ProofBytesLen, byte] =
     bBytes = unwrapComprG2(compressG2(points.b))
     cBytes = unwrapComprG1(compressG1(points.c))
   var bytes: array[ProofBytesLen, byte]
-  bytes[0 ..< 32] = aBytes.toOpenArray(0, 31)
-  bytes[32 ..< 96] = bBytes.toOpenArray(0, 63)
-  bytes[96 ..< 128] = cBytes.toOpenArray(0, 31)
+  assign(bytes.toOpenArray(0, 31), aBytes)
+  assign(bytes.toOpenArray(32, 95), bBytes)
+  assign(bytes.toOpenArray(96, 127), cBytes)
   bytes
 
 proc publicJsonToInputs*(

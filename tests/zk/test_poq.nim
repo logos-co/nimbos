@@ -11,7 +11,7 @@
 import
   std/[os, strutils],
   unittest2,
-  stew/io2,
+  stew/[assign2, io2],
   ../../logos_chain/zk/poq,
   ../../logos_chain/zk/poseidon2/hasher,
   ./[helpers, snarkjs_helpers]
@@ -35,7 +35,7 @@ proc loadBranch(tag: string): BranchFixture =
     signals = publicJsonToInputs(publicText).expect("fixture public parses")
   doAssert bin.len == 160, "wire proof-of-quota is 160 bytes"
   var proofBytes: array[ProofBytesLen, byte]
-  proofBytes[0 ..< ProofBytesLen] = bin.toOpenArray(32, bin.high)
+  assign(proofBytes, bin.toOpenArray(32, bin.high))
   let nullifier = frFromBytesLE(bin.toOpenArray(0, 31)).expect(
     "fixture nullifier canonical")
   doAssert nullifier == signals[0],

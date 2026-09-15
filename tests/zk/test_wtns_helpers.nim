@@ -12,6 +12,7 @@
 {.used.}
 
 import
+  std/algorithm,
   unittest2,
   stew/endians2,
   ./wtns_helpers
@@ -43,8 +44,7 @@ suite "zk/wtns_helpers — wtns decoder":
   test "rejects a value at or above the field order":
     var bytes = header(1)
     bytes.setLen(76 + 32)
-    for i in 76 ..< 108:
-      bytes[i] = 0xff
+    bytes.toOpenArray(76, 107).fill(0xff)
     check decodeWtns(bytes).error == WtnsDecodeError.ValueOutOfRange
 
   test "decodes a single zero value":

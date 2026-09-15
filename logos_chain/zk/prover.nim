@@ -23,7 +23,7 @@
 import
   std/[atomics, os],
   chronos, chronos/threadsync, chronicles, taskpools,
-  stew/io2,
+  stew/[assign2, io2],
   groth16/sharedbuf,
   ./[circuits, poc, pol, poq, witness_gen, zksign],
   ./groth16/[rapidsnark, snarkjs],
@@ -164,7 +164,7 @@ proc proveTask(
       failure = ProveError.PublicDecode
       break work
     output[].proof = toCompressedBytes(points)
-    output[].publicSignals[0 ..< signals.len] = signals.toOpenArray(0, signals.high)
+    assign(output[].publicSignals.toOpenArray(0, signals.high), signals)
     output[].publicSignalCount = signals.len
     ok = true
 
