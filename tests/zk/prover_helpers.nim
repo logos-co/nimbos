@@ -24,8 +24,8 @@ export prover, helpers, prover_fixture_inputs, snarkjs_helpers, wtns_helpers
 
 const
   testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
-  testCircuitsDir* = testsDir / "../circuits-bundle" / ExpectedCircuitsVersion
-  fixturesDir = testsDir / "../fixtures"
+  testCircuitsDir* = testsDir.parentDir / "circuits-bundle" / ExpectedCircuitsVersion
+  fixturesDir = testsDir.parentDir / "fixtures"
   ZkSignFixtureMsg* =
     "4638531576864525781488466586415560847030933032030532999162151560076355183707"
     ## Message the committed zksign fixture signs with `sks = [1, 0 × 31]`.
