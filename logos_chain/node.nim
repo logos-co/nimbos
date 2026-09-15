@@ -107,11 +107,6 @@ proc init*(
       path = verificationKeyPath(circuitsDir, Circuit.Poq), err = $error
     return Opt.none(LBNode)
 
-  poq.loadAndInitVk(circuitsDir).isOkOr:
-    fatal "PoQ verification key install failed",
-      path = poqVerificationKeyPath(circuitsDir), err = $error
-    return Opt.none(LBNode)
-
   let chain = Chain.init(deploymentSettings).valueOr:
     fatal "Failed to initialize chain", err = error
     return Opt.none(LBNode)

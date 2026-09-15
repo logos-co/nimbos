@@ -82,7 +82,6 @@ import # Unit test
   ./zk/test_poq,
   ./zk/test_pol_lottery,
   ./zk/test_zksign,
-  ./zk/test_poq,
   ./zk/test_merkle_path,
   ./zk/test_wtns_helpers,
   ./zk/groth16/test_vk_json,
