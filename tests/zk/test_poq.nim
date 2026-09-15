@@ -9,39 +9,22 @@
 {.used.}
 
 import
-  std/[os, strutils, times],
+  std/[os, strutils],
   unittest2,
-  stew/io2,
+  stew/[assign2, io2],
   ../../logos_chain/zk/poq,
   ../../logos_chain/zk/poseidon2/hasher,
-  ./snarkjs_helpers
+  ./[helpers, snarkjs_helpers]
 
 const
   testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
   fixtureDir = testsDir.parentDir / "fixtures" / "poq"
   fixtureVk = fixtureDir / "verification_key.json"
 
-func toPoqInput(s: openArray[FieldElement]): PoqVerifierInput =
-  # Positional mapping from the public.json ordering to the typed input.
-  # Order is the 12-signal vector the proof-of-quota spec pins.
-  doAssert s.len == 12, "public.json must have exactly 12 entries for PoQ"
-  PoqVerifierInput(
-    keyNullifier: s[0],
-    coreQuota: s[1],
-    leaderQuota: s[2],
-    coreRoot: s[3],
-    powQuota: s[4],
-    polLedgerAged: s[5],
-    kPartOne: s[6],
-    kPartTwo: s[7],
-    powBlendDifficulty: s[8],
-    polEpochNonce: s[9],
-    polT0: s[10],
-    polT1: s[11])
+type BranchFixture =
+  tuple[proofBytes: array[ProofBytesLen, byte], input: PoqVerifierInput]
 
-proc loadBranch(
-    tag: string
-): tuple[proofBytes: array[ProofBytesLen, byte], input: PoqVerifierInput] =
+proc loadBranch(tag: string): BranchFixture =
   ## Split one wire fixture (`key_nullifier || compressed proof`) and its
   ## public signals.
   let
@@ -52,27 +35,12 @@ proc loadBranch(
     signals = publicJsonToInputs(publicText).expect("fixture public parses")
   doAssert bin.len == 160, "wire proof-of-quota is 160 bytes"
   var proofBytes: array[ProofBytesLen, byte]
-  proofBytes[0 ..< ProofBytesLen] = bin.toOpenArray(32, bin.high)
+  assign(proofBytes, bin.toOpenArray(32, bin.high))
   let nullifier = frFromBytesLE(bin.toOpenArray(0, 31)).expect(
     "fixture nullifier canonical")
   doAssert nullifier == signals[0],
     "wire nullifier must equal the first public signal"
-  (proofBytes, toPoqInput(signals))
-
-# Several tests share the core fixture. Load it once on first use.
-var coreCache: Opt[
-  tuple[proofBytes: array[ProofBytesLen, byte], input: PoqVerifierInput]]
-
-proc coreFixture(): tuple[
-    proofBytes: array[ProofBytesLen, byte], input: PoqVerifierInput] =
-  if coreCache.isNone:
-    coreCache = Opt.some(loadBranch("core"))
-  coreCache.get
-
-proc uniqueTmpDir(tag: string): string =
-  # Per-test unique subdir under the system temp dir. The OS cleans it
-  # up eventually. No teardown keeps test bodies focused on the assertion.
-  getTempDir() / ("nimbos_poq_" & tag & "_" & $epochTime())
+  (proofBytes, poqVerifierInput(signals).expect("12 signals"))
 
 suite "zk/poq — loadVk":
   test "rejects missing file":
@@ -123,7 +91,7 @@ suite "zk/poq — verify":
 
   test "rejects when VK singleton not installed":
     poq.resetVkForTesting()
-    let core = coreFixture()
+    let core = loadBranch("core")
     let r = verify(core.proofBytes, core.input)
     check r.error == VkNotLoaded
 
@@ -139,34 +107,31 @@ suite "zk/poq — verify":
   test "accepts every branch fixture — the verifier is branch-blind":
     # The three proofs use the three selector values. Nothing in the
     # public vector reveals which branch held.
-    let core = coreFixture()
-    check verify(core.proofBytes, core.input).get
+    let core = loadBranch("core")
+    check accepts(verify(core.proofBytes, core.input))
     for tag in ["leader", "pow"]:
       let branch = loadBranch(tag)
-      let r = verify(branch.proofBytes, branch.input)
-      check r.isOk and r.get
+      check accepts(verify(branch.proofBytes, branch.input))
 
   test "rejects swapped coreRoot/polLedgerAged (signal-order canary)":
     # These two are the signals whose positions the `public [...]` clause
     # of the circuit would order differently.
-    let core = coreFixture()
+    let core = loadBranch("core")
     var bad = core.input
     swap(bad.coreRoot, bad.polLedgerAged)
-    let r = verify(core.proofBytes, bad)
-    check r.isOk and not r.get
+    check rejects(verify(core.proofBytes, bad))
 
   test "rejects swapped quota signals":
-    let core = coreFixture()
+    let core = loadBranch("core")
     var bad = core.input
     swap(bad.coreQuota, bad.leaderQuota)
-    let r = verify(core.proofBytes, bad)
-    check r.isOk and not r.get
+    check rejects(verify(core.proofBytes, bad))
 
   test "rejects any single mutated public input":
     let
-      core = coreFixture()
+      core = loadBranch("core")
       mutated = frFromBytesLE([byte 0xAB]).get
-    for field in 0 ..< 12:
+    for field in 0 ..< PoqPublicSignals:
       var
         bad = core.input
         signals = [
@@ -175,14 +140,12 @@ suite "zk/poq — verify":
           addr bad.kPartOne, addr bad.kPartTwo, addr bad.powBlendDifficulty,
           addr bad.polEpochNonce, addr bad.polT0, addr bad.polT1]
       signals[field][] = mutated
-      let r = verify(core.proofBytes, bad)
-      check r.isOk and not r.get
+      check rejects(verify(core.proofBytes, bad))
 
   test "rejects mutated proof bytes":
-    let core = coreFixture()
+    let core = loadBranch("core")
     var bad = core.proofBytes
     bad[0] = bad[0] xor 0x01
-    let r = verify(bad, core.input)
-    check r.isOk and not r.get
+    check rejects(verify(bad, core.input))
 
 {.pop.}

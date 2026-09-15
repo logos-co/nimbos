@@ -91,3 +91,5 @@ plans/
 
 # Downloaded circuits bundle for tests (provisioned by `make circuits-install-test`).
 tests/circuits-bundle/
+# Downloaded rapidsnark libraries for tests (provisioned by `make rapidsnark-install-test`).
+tests/rapidsnark/

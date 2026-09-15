@@ -12,9 +12,10 @@
 {.push raises: [], gcsafe.}
 
 import
-  std/options,
   chronicles,
+  stew/assign2,
   groth16/[bn128, zkey_types],
+  ./utils,
   ../poseidon2/hasher
 
 from groth16/prover import Proof
@@ -28,8 +29,8 @@ const
   ProofBytesLen* = G1CompressedBytes + G2CompressedBytes + G1CompressedBytes
     ## On-wire compressed proof: `pi_a (G1) || pi_b (G2) || pi_c (G1)`.
 
-func sliceArr[N: static int](src: openArray[byte], offset: int): array[N, byte] =
-  result[0 ..< N] = src.toOpenArray(offset, offset + N - 1)
+func sliceArr*[N: static int](src: openArray[byte], offset: int): array[N, byte] =
+  assign(result, src.toOpenArray(offset, offset + N - 1))
 
 proc verifyGroth16*(
     vk: VKey,
@@ -43,15 +44,12 @@ proc verifyGroth16*(
     PiCOffset = G1CompressedBytes + G2CompressedBytes
 
   let
-    piAOpt = uncompressG1(
-      ComprG1(sliceArr[G1CompressedBytes](proofBytes, PiAOffset)))
-    piBOpt = uncompressG2(
-      ComprG2(sliceArr[G2CompressedBytes](proofBytes, PiBOffset)))
-    piCOpt = uncompressG1(
-      ComprG1(sliceArr[G1CompressedBytes](proofBytes, PiCOffset)))
-
-  if piAOpt.isNone or piBOpt.isNone or piCOpt.isNone:
-    return false
+    piA = decompress(ComprG1(sliceArr[G1CompressedBytes](proofBytes, PiAOffset))).valueOr:
+      return false
+    piB = decompress(ComprG2(sliceArr[G2CompressedBytes](proofBytes, PiBOffset))).valueOr:
+      return false
+    piC = decompress(ComprG1(sliceArr[G1CompressedBytes](proofBytes, PiCOffset))).valueOr:
+      return false
 
   # Snarkjs convention: IC[0] is the constant-1 variable; prepend `one`.
   var publicIO = newSeqOfCap[FieldElement](publicInputs.len + 1)
@@ -59,9 +57,9 @@ proc verifyGroth16*(
   add(publicIO,publicInputs)
 
   let proof = Proof(
-    pi_a: piAOpt.get,
-    pi_b: piBOpt.get,
-    pi_c: piCOpt.get,
+    pi_a: piA,
+    pi_b: piB,
+    pi_c: piC,
     publicIO: publicIO,
     curve: "bn128",
   )

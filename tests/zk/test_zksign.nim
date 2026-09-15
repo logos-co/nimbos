@@ -9,13 +9,13 @@
 {.used.}
 
 import
-  std/[os, sequtils, strutils, times],
+  std/[os, sequtils, strutils],
   unittest2,
   stew/io2,
   poseidon2/types,
   ../../logos_chain/core/crypto/types as crypto_types,
   ../../logos_chain/zk/[circuits, zksign],
-  ./snarkjs_helpers
+  ./[helpers, snarkjs_helpers]
 
 const
   testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
@@ -23,9 +23,6 @@ const
   fixtureVk = zksignFixtureDir / "verification_key.json"
   fixtureProof = zksignFixtureDir / "proof.json"
   fixturePublic = zksignFixtureDir / "public.json"
-
-proc uniqueTmpDir(tag: string): string =
-  getTempDir() / ("nimbos_zksign_" & tag & "_" & $epochTime())
 
 func seedFr(seed: byte): FieldElement =
   var b: array[32, byte]
@@ -39,14 +36,14 @@ suite "zk/zksign — loadVk":
 
   test "rejects garbage JSON":
     let dir = uniqueTmpDir("bad-vk")
-    let vkPath = zksignVerificationKeyPath(dir)
+    let vkPath = verificationKeyPath(dir, Circuit.Signature)
     check createPath(dir / "signature").isOk
     check io2.writeFile(vkPath, "not json {").isOk
     check loadVk(dir).error == VkInvalid
 
   test "rejects JSON with wrong protocol":
     let dir = uniqueTmpDir("wrong-proto-vk")
-    let vkPath = zksignVerificationKeyPath(dir)
+    let vkPath = verificationKeyPath(dir, Circuit.Signature)
     check createPath(dir / "signature").isOk
     check io2.writeFile(
       vkPath,
@@ -60,7 +57,7 @@ suite "zk/zksign — loadVk":
   test "accepts a canonical Groth16 VK":
     let
       dir = uniqueTmpDir("good-vk")
-      vkPath = zksignVerificationKeyPath(dir)
+      vkPath = verificationKeyPath(dir, Circuit.Signature)
       vkBytes = readAllChars(fixtureVk).valueOr:
         raiseAssert "zksign fixture VK unreadable"
     check createPath(dir / "signature").isOk
@@ -88,7 +85,7 @@ suite "zk/zksign — singleton lifecycle":
   test "loadAndInitVk composes load + init":
     let
       dir = uniqueTmpDir("compose-vk")
-      vkPath = zksignVerificationKeyPath(dir)
+      vkPath = verificationKeyPath(dir, Circuit.Signature)
       vkBytes = readAllChars(fixtureVk).valueOr:
         raiseAssert "zksign fixture VK unreadable"
     check createPath(dir / "signature").isOk
@@ -162,10 +159,7 @@ proc loadFixturePublic(): ZkSignVerifierInput =
       raiseAssert "zksign fixture public.json unreadable"
     inputs = publicJsonToInputs(publicText).valueOr:
       raiseAssert "zksign fixture public.json malformed"
-  doAssert inputs.len == ZkSignMaxKeys + 1,
-    "zksign fixture public.json must have exactly 33 entries"
-  result.msg = inputs[ZkSignMaxKeys]
-  result.publicKeys[0 ..< ZkSignMaxKeys] = inputs.toOpenArray(0, ZkSignMaxKeys - 1)
+  zksignVerifierInput(inputs).expect("zksign fixture public.json has 33 entries")
 
 suite "zk/zksign — verify against committed fixture":
   var
@@ -184,26 +178,22 @@ suite "zk/zksign — verify against committed fixture":
     input = loadFixturePublic()
 
   test "accepts canonical 1-key vector":
-    let r = verify(proofBytes, input)
-    check r.isOk and r.get
+    check accepts(verify(proofBytes, input))
 
   test "rejects bit-flipped proof byte":
     var bad = proofBytes
     bad[0] = bad[0] xor 0x01
-    let r = verify(bad, input)
-    check r.isOk and not r.get
+    check rejects(verify(bad, input))
 
   test "rejects mutated msg":
     var bad = input
     bad.msg = seedFr(0xCC)
-    let r = verify(proofBytes, bad)
-    check r.isOk and not r.get
+    check rejects(verify(proofBytes, bad))
 
   test "rejects swapped pk":
     var bad = input
     swap(bad.publicKeys[0], bad.publicKeys[1])
-    let r = verify(proofBytes, bad)
-    check r.isOk and not r.get
+    check rejects(verify(proofBytes, bad))
 
 suite "zk/zksign — ZeroSecretKeyPublicKey constant cross-check":
   test "padding slots 1..31 of the 1-key fixture all equal ZeroSecretKeyPublicKey":

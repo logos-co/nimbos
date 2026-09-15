@@ -5,66 +5,60 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-## Test-only parsers for snarkjs `proof.json` / `public.json` artefacts. Both
-## are produced by the snarkjs prover; our on-wire format for proofs is the
-## 128-byte compressed form, so production code never parses these JSONs.
-## Tests use them to feed canonical fixtures (logos-blockchain test resources)
-## through `verifyGroth16` and `pol.verify`.
+## Test-side snarkjs codec: the production module plus the directions only
+## tests need (wire bytes → points → JSON), for feeding committed fixtures
+## through the verifiers and Nim proofs through the reference toolchain.
 
 {.push raises: [].}
 
 import
-  json_serialization,
-  stew/io2,
+  std/[json, sequtils],
+  constantine/math/io/io_fields,
+  constantine/math/extension_fields/towers,
   groth16/bn128,
-  ../../logos_chain/zk/groth16/[utils, verifier]
+  ../../logos_chain/zk/groth16/snarkjs
 
-export utils, verifier
+export snarkjs
 
-type
-  ProofJson* = object
-    piA* {.serializedFieldName: "pi_a".}: JsonG1
-    piB* {.serializedFieldName: "pi_b".}: JsonG2
-    piC* {.serializedFieldName: "pi_c".}: JsonG1
-    protocol*: string
-
-SnarkjsJson.useDefaultSerializationFor(ProofJson)
+func proofBytesToPoints*(
+    bytes: array[ProofBytesLen, byte]): Result[ProofPoints, cstring] =
+  ## 128-byte wire proof → affine points (`err` on a point that does not
+  ## decompress).
+  let
+    a = decompress(ComprG1(sliceArr[32](bytes, 0))).valueOr:
+      return err("proof bytes do not decompress")
+    b = decompress(ComprG2(sliceArr[64](bytes, 32))).valueOr:
+      return err("proof bytes do not decompress")
+    c = decompress(ComprG1(sliceArr[32](bytes, 96))).valueOr:
+      return err("proof bytes do not decompress")
+  ok((a, b, c))
 
 proc proofJsonToBytes*(
     text: string): Result[array[ProofBytesLen, byte], JsonLoadError] =
-  ## Parse snarkjs proof.json → uncompressed G1/G2 → vendor `compressG1/G2`
-  ## → 128-byte on-wire form that `verifyGroth16` consumes.
-  let j =
-    try:
-      SnarkjsJson.decode(text, ProofJson)
-    except SerializationError, IOError:
-      return err(BadJson)
-  let
-    piA = ? decodeJsonG1(j.piA)
-    piB = ? decodeJsonG2(j.piB)
-    piC = ? decodeJsonG1(j.piC)
-  var bytes: array[ProofBytesLen, byte]
-  let
-    aBytes = unwrapComprG1(compressG1(piA))
-    bBytes = unwrapComprG2(compressG2(piB))
-    cBytes = unwrapComprG1(compressG1(piC))
-  bytes[0 ..< 32] = aBytes.toOpenArray(0, 31)
-  bytes[32 ..< 96] = bBytes.toOpenArray(0, 63)
-  bytes[96 ..< 128] = cBytes.toOpenArray(0, 31)
-  ok(bytes)
+  ## snarkjs `proof.json` → 128-byte on-wire form that `verifyGroth16` consumes.
+  ok(toCompressedBytes(? proofJsonToPoints(text)))
 
-proc publicJsonToInputs*(
-    text: string): Result[seq[FieldElement], JsonLoadError] =
-  ## Parse snarkjs public.json (flat array of decimal strings) → seq of scalar
-  ## field elements ready to pass to `verifyGroth16`.
-  let strs =
-    try:
-      SnarkjsJson.decode(text, seq[string])
-    except SerializationError, IOError:
-      return err(BadJson)
-  var inputs = newSeqOfCap[FieldElement](strs.len)
-  for s in strs:
-    inputs.add(? frFromDecimal(s))
-  ok(inputs)
+func g1Json(p: G1): JsonNode =
+  %[toDecimal(p.x), toDecimal(p.y), "1"]
+
+func g2Json(p: G2): JsonNode =
+  %[
+    [toDecimal(p.x.c0), toDecimal(p.x.c1)],
+    [toDecimal(p.y.c0), toDecimal(p.y.c1)],
+    ["1", "0"],
+  ]
+
+func pointsToProofJson*(points: ProofPoints): string =
+  ## Affine points → snarkjs `proof.json` text (as rapidsnark emits it).
+  $(%*{
+    "pi_a": g1Json(points.a),
+    "pi_b": g2Json(points.b),
+    "pi_c": g1Json(points.c),
+    "protocol": "groth16",
+  })
+
+func signalsToPublicJson*(signals: openArray[FieldElement]): string =
+  ## Field elements → snarkjs `public.json` text.
+  $(%signals.mapIt(toDecimal(it)))
 
 {.pop.}

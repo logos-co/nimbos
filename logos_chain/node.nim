@@ -19,7 +19,7 @@ import
   ./deployment/deployment_settings,
   ./networking/network,
   ./sync/syncer,
-  ./zk/[circuits, pol, poc, poq, zksign]
+  ./zk/[circuits, pol, poc, poq, prover, zksign]
 
 from ./core/types as coreTypes import Block, blockId
 from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
@@ -27,6 +27,7 @@ from libp2p/protocols/pubsub/gossipsub import
   TopicParams, init
 
 from std/random import randomize
+from taskpools import Taskpool, new, shutdown
 
 export
   osproc, chronos, presto, server, conf,
@@ -43,6 +44,9 @@ type
     syncer*: Syncer
     metricsServer*: Opt[MetricsHttpServerRef]
     shutdownEvent*: AsyncEvent
+    taskpool*: Taskpool
+    prover*: Prover
+      ## nil where the native prover libraries do not link (Windows).
 
 template rng*(node: LBNode): ref HmacDrbgContext =
   node.network.rng
@@ -84,22 +88,22 @@ proc init*(
 
   pol.loadAndInitVk(circuitsDir).isOkOr:
     fatal "PoL verification key install failed",
-      path = polVerificationKeyPath(circuitsDir), err = $error
+      path = verificationKeyPath(circuitsDir, Circuit.Pol), err = $error
     return Opt.none(LBNode)
 
   zksign.loadAndInitVk(circuitsDir).isOkOr:
     fatal "ZkSig verification key install failed",
-      path = zksignVerificationKeyPath(circuitsDir), err = $error
+      path = verificationKeyPath(circuitsDir, Circuit.Signature), err = $error
     return Opt.none(LBNode)
 
   poc.loadAndInitVk(circuitsDir).isOkOr:
     fatal "PoC verification key install failed",
-      path = pocVerificationKeyPath(circuitsDir), err = $error
+      path = verificationKeyPath(circuitsDir, Circuit.Poc), err = $error
     return Opt.none(LBNode)
 
   poq.loadAndInitVk(circuitsDir).isOkOr:
     fatal "PoQ verification key install failed",
-      path = poqVerificationKeyPath(circuitsDir), err = $error
+      path = verificationKeyPath(circuitsDir, Circuit.Poq), err = $error
     return Opt.none(LBNode)
 
   let chain = Chain.init(deploymentSettings).valueOr:
@@ -153,12 +157,35 @@ proc init*(
       hasLocalTree = chain.localTree != nil,
       chainSyncProtocol = deploymentSettings.network.chainSyncProtocolName
 
+  # Created last so every earlier failure path has nothing to release. The
+  # prover needs a second thread: its worker fires the signal the main thread
+  # waits on.
+  var taskpool =
+    try:
+      Taskpool.new(numThreads = max(2,
+        if config.numThreads == 0: osproc.countProcessors() else: config.numThreads))
+    except CatchableError as exc:
+      fatal "Failed to create taskpool", err = exc.msg
+      return Opt.none(LBNode)
+
+  let zkProver = Prover.new(circuitsDir, taskpool).valueOr:
+    when defined(windows):
+      warn "Proof generation unavailable on this platform; verification only",
+        dir = circuitsDir, err = $error
+      Prover(nil)
+    else:
+      fatal "Failed to initialize the Groth16 prover", dir = circuitsDir, err = $error
+      taskpool.shutdown()
+      return Opt.none(LBNode)
+
   ok LBNode(
     network: network,
     config: config,
     deploymentSettings: deploymentSettings,
     syncer: nodeSyncer,
-    shutdownEvent: newAsyncEvent())
+    shutdownEvent: newAsyncEvent(),
+    taskpool: taskpool,
+    prover: zkProver)
 
 when defined(windows):
   from winservice import reportServiceStatusSuccess
@@ -214,6 +241,11 @@ proc stop(node: LBNode) =
     warn "Couldn't stop network", msg = exc.msg
 
   waitFor node.metricsServer.stopMetricsServer()
+
+  # Drain in-flight tasks before the prover frees the buffers they read.
+  node.taskpool.shutdown()
+  if node.prover != nil:
+    node.prover.close()
 
 proc initializeNetworking(node: LBNode) {.async.} =
   node.installMessageValidators()

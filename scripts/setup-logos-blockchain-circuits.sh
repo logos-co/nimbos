@@ -127,15 +127,8 @@ download_release() {
     print_info "Downloading logos-blockchain-circuits ${VERSION} for ${platform}..."
     print_info "URL: $url"
 
-    # Build curl command with optional authentication.
-    # --retry 3 --retry-all-errors smooths over transient CI network blips.
-    local curl_cmd="curl -L --retry 3 --retry-all-errors"
-    if [ -n "$GITHUB_TOKEN" ]; then
-        curl_cmd="$curl_cmd --header 'authorization: Bearer ${GITHUB_TOKEN}'"
-    fi
-    curl_cmd="$curl_cmd -o ${temp_dir}/${artifact} $url"
-
-    if ! eval "$curl_cmd"; then
+    # -f: fail on HTTP errors instead of saving the error page.
+    if ! curl -fL --retry 3 --retry-all-errors -o "$temp_dir/$artifact" "$url"; then
         print_error "Failed to download release artifact"
         print_error "Please check that version ${VERSION} exists for platform ${platform}"
         print_error "Available releases: https://github.com/${REPO}/releases"
@@ -200,12 +193,13 @@ main() {
     print_info "logos-blockchain-circuits ${VERSION} is now installed at: $INSTALL_DIR"
     print_info "The following circuits are available:"
 
-    # Discover circuits by finding directories that contain a witness_generator
+    # Discover circuits by finding directories that ship a witness archive
+    # (lib<circuit>.a since v0.5.0; <circuit>.lib on Windows).
     for dir in "$INSTALL_DIR"/*/; do
         if [ -d "$dir" ]; then
             local circuit_name
             circuit_name=$(basename "$dir")
-            if [ -f "$dir/witness_generator" ]; then
+            if [ -f "$dir/lib$circuit_name.a" ] || [ -f "$dir/$circuit_name.lib" ]; then
                 echo "  • $circuit_name"
             fi
         fi
