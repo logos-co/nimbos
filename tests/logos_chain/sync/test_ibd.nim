@@ -66,8 +66,8 @@ suite "sync/initial_block_download (download blocks)":
       sm = minimalSignedTx()
       genesis = createGenesisBlock(sm)
       genesisWire = try:
-        serializeBlockToSeq(genesis, cryptarchiaSyncBincodeConfig)
-      except BincodeError, IOError:
+        encode(genesis, cryptarchiaSyncBincodeConfig)
+      except BincodeError:
         fail getCurrentExceptionMsg()
     let blks = decodeBlocksFromDownloadResponses(@[
       DownloadBlocksResponse(kind: dbrBlock, downloadedBlock: genesisWire),

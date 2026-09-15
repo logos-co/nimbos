@@ -36,10 +36,10 @@ proc sendGetTipRequest*(
   var wireReq: seq[byte]
   debug "IBD GetTip request", peer, protocol = syncer.chainSyncProtocol
   try:
-    wireReq = serializeRequestMessageToSeq(
+    wireReq = encode(
       RequestMessage(kind: rmGetTip), cryptarchiaSyncBincodeConfig)
     debug "IBD GetTip serialize ok", peer, requestBytes = wireReq.len
-  except BincodeError, IOError:
+  except BincodeError:
     debug "IBD GetTip serialize failed", peer, exc = getCurrentExceptionMsg()
     return Opt.none(GetTipResponse)
   var conn: Connection
@@ -61,7 +61,7 @@ proc sendGetTipRequest*(
       return Opt.none(GetTipResponse)
     debug "IBD GetTip read ok", peer, responseBytes = p.len
     try:
-      let resp = deserializeGetTipResponse(p, cryptarchiaSyncBincodeConfig)
+      let resp = decode(p, GetTipResponse, cryptarchiaSyncBincodeConfig)
       case resp.kind
       of gtrTip:
         debug "IBD GetTip deserialize ok",
@@ -109,7 +109,7 @@ func decodeBlocksFromDownloadResponses*(messages: seq[DownloadBlocksResponse]): 
       discard
     of dbrBlock:
       let blkOpt = try:
-        Opt.some(deserializeBlock(msg.downloadedBlock, cryptarchiaSyncBincodeConfig))
+        Opt.some(decode(msg.downloadedBlock, Block, cryptarchiaSyncBincodeConfig))
       except BincodeError:
         Opt.none(Block)
       let blk = blkOpt.valueOr:
@@ -130,12 +130,12 @@ proc sendDownloadBlocksRequest*(
     latestImmutable = sbyteutils.toHex(request.knownBlocks.latestImmutableBlock),
     additionalKnown = request.knownBlocks.additionalBlocks.len
   try:
-    wireReq = serializeRequestMessageToSeq(
+    wireReq = encode(
       RequestMessage(kind: rmDownloadBlocksRequest, downloadBlocksRequest: request),
       cryptarchiaSyncBincodeConfig,
     )
     debug "IBD download serialize ok", peer, requestBytes = wireReq.len
-  except BincodeError, IOError:
+  except BincodeError:
     debug "IBD download serialize failed", peer, exc = getCurrentExceptionMsg()
     return Opt.none(seq[Block])
   var conn: Connection
@@ -162,7 +162,7 @@ proc sendDownloadBlocksRequest*(
         responseBytes = inner.len,
         blockIndex = blks.len
       let msgOpt = try:
-        Opt.some(deserializeDownloadBlocksResponse(inner, cryptarchiaSyncBincodeConfig))
+        Opt.some(decode(inner, DownloadBlocksResponse, cryptarchiaSyncBincodeConfig))
       except BincodeError as exc:
         debug "IBD download response deserialize failed", peer, exc = exc.msg
         Opt.none(DownloadBlocksResponse)
@@ -181,7 +181,7 @@ proc sendDownloadBlocksRequest*(
         break
       of dbrBlock:
         let blkOpt = try:
-          Opt.some(deserializeBlock(msg.downloadedBlock, cryptarchiaSyncBincodeConfig))
+          Opt.some(decode(msg.downloadedBlock, Block, cryptarchiaSyncBincodeConfig))
         except BincodeError as exc:
           debug "IBD download block decode failed", peer, exc = exc.msg
           Opt.none(Block)

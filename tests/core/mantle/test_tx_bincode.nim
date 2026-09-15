@@ -11,7 +11,7 @@
 import
   ../../testutil,
   bincode,
-  ../../../logos_chain/core/mantle/[operations, proofs, tx_bincode, tx_types]
+  ../../../logos_chain/core/mantle/[operations, proofs, tx_types]
 
 const allOpcodes = [
   OpTransfer,
@@ -104,33 +104,33 @@ func signedTxWithAllOps(): SignedMantleTx =
     opProofs: proofs,
   )
 
-proc checkSignedMantleTxRoundtrip(signed: SignedMantleTx) {.raises: [BincodeError, IOError].} =
+proc checkSignedMantleTxRoundtrip(signed: SignedMantleTx) {.raises: [BincodeError].} =
   let
-    wire = serializeSignedMantleTxToSeq(signed)
-    back = deserializeSignedMantleTx(wire)
+    wire = encode(signed)
+    back = decode(wire, SignedMantleTx)
   checkSignedMantleTxEqual(signed, back)
 
 suite "core/mantle/tx_bincode":
-  test "serializeSignedMantleTxToSeq roundtrips deserializeSignedMantleTx (empty tx)":
+  test "encode roundtrips decode (empty tx)":
     let signed = SignedMantleTx(
       tx: MantleTx(ops: @[]),
       opProofs: @[],
     )
     checkSignedMantleTxRoundtrip(signed)
 
-  test "serializeSignedMantleTxToSeq roundtrips deserializeSignedMantleTx (all op kinds)":
+  test "encode roundtrips decode (all op kinds)":
     checkSignedMantleTxRoundtrip(signedTxWithAllOps())
 
-  test "deserializeSignedMantleTxAt reads one prefixed tx inside a longer buffer":
+  test "decodeAt reads one prefixed tx inside a longer buffer":
     let signed = signedTxWithAllOps()
     try:
-      let wire = serializeSignedMantleTxToSeq(signed)
+      let wire = encode(signed)
       var buf = wire
       buf.add @[0xFF'u8]
-      let (back, used) = deserializeSignedMantleTxAt(buf)
+      let (back, used) = decodeAt(buf, SignedMantleTx, standard())
       check used == wire.len
       checkSignedMantleTxEqual(signed, back)
-    except BincodeError, IOError:
+    except BincodeError:
       fail getCurrentExceptionMsg()
 
 {.pop.}
