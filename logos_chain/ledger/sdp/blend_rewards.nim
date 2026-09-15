@@ -236,14 +236,13 @@ func rotateEpoch*(
     for i, entry in byZkId:
       providers = providers.insert(
         entry.providerId, (entry.zkId, uint64(i)))
-    # No integer represents this quota, so no proof can be evaluated;
-    # forfeit like an undersized network instead of halting the node.
-    let quota = coreQuota(
+    let
+      # No integer represents this quota, so no proof can be evaluated;
+      # forfeit like an undersized network instead of halting the node.
+      quota = coreQuota(
         params.roundsPerEpoch, params.messageFrequencyPerRound,
         params.numBlendLayers, providerCount).valueOr:
-      return (next, minted)
-
-    let
+        return (next, minted)
       evaluation = tokenParams(
         quota, providerCount, params.activityThresholdSensitivity).valueOr:
         return (next, minted)
