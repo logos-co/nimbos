@@ -226,16 +226,17 @@ proc new*(
   ? checkArtefacts(circuitsDir)
   when defined(windows):
     return err(ProverInitError.Unsupported)
-  if pool.numThreads < 2:
-    return err(ProverInitError.PoolTooSmall)
-  let signal = ThreadSignalPtr.new().valueOr:
-    return err(ProverInitError.SignalCreateFailed)
-  let p = Prover(pool: pool, signal: signal, lock: newAsyncLock())
-  for c in Circuit:
-    loadKey(p.keys[c], circuitsDir, c).isOkOr:
-      p.close()
-      return err(error)
-  ok(p)
+  else:
+    if pool.numThreads < 2:
+      return err(ProverInitError.PoolTooSmall)
+    let signal = ThreadSignalPtr.new().valueOr:
+      return err(ProverInitError.SignalCreateFailed)
+    let p = Prover(pool: pool, signal: signal, lock: newAsyncLock())
+    for c in Circuit:
+      loadKey(p.keys[c], circuitsDir, c).isOkOr:
+        p.close()
+        return err(error)
+    ok(p)
 
 proc prove*(
     p: Prover, input: ProveInput
