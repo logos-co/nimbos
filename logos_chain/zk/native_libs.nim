@@ -23,7 +23,9 @@
 
 {.push raises: [], gcsafe.}
 
-import std/os
+import
+  std/os,
+  ./groth16/native_status
 
 const
   repoRoot = currentSourcePath.parentDir.parentDir.parentDir
@@ -66,7 +68,7 @@ when not defined(windows):
     Status* = object
       ## Returned by value (260 bytes).
       code*: StatusCode
-      message*: array[256, char]
+      message*: NativeMessage
 
     WitnessInput* = object
       dat*: Bytes    # `ConstBytes` in the header; the C side only reads it

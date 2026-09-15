@@ -34,7 +34,7 @@ export circuits, poc, pol, poq, zksign, CompressedGroth16Proof
 logScope: topics = "zk_prover"
 
 const MaxPublicSignals = ZkSignPublicSignals
-  # Largest public-signal count across circuits (zksign: 32 keys + msg).
+  ## Largest public-signal count across circuits (zksign: 32 keys + msg).
 
 type
   ProveInput* = object
@@ -90,25 +90,39 @@ type
     signal: ThreadSignalPtr
     lock: AsyncLock
 
-proc loadShared(path: string): Result[SharedBytes, IoErrorCode] =
-  let bytes = ? readAllBytes(path)
-  var shared = SharedBytes(len: bytes.len)
-  if bytes.len > 0:
-    shared.data = cast[ptr UncheckedArray[byte]](allocShared(bytes.len))
-    copyMem(shared.data, unsafeAddr bytes[0], bytes.len)
-  ok(shared)
-
 proc free(shared: var SharedBytes) =
   if shared.data != nil:
     deallocShared(shared.data)
     shared.data = nil
   shared.len = 0
 
+proc loadShared(path: string): Opt[SharedBytes] =
+  # Reads straight into the shared block: no transient Nim copy of the key.
+  let handle = openFile(path, {OpenFlags.Read}).valueOr:
+    return Opt.none(SharedBytes)
+  defer: discard closeFile(handle)
+  let size = getFileSize(handle).valueOr:
+    return Opt.none(SharedBytes)
+  var shared = SharedBytes(len: int(size))
+  if shared.len > 0:
+    shared.data = cast[ptr UncheckedArray[byte]](allocShared(shared.len))
+    var filled = 0
+    while filled < shared.len:
+      let n = readFile(handle, shared.data.toOpenArray(filled, shared.len - 1)).valueOr:
+        shared.free()
+        return Opt.none(SharedBytes)
+      if n == 0:
+        shared.free()
+        return Opt.none(SharedBytes)
+      filled += int(n)
+  Opt.some(shared)
+
 template toOpenArray(shared: SharedBytes): openArray[byte] =
   shared.data.toOpenArray(0, shared.len - 1)
 
 func signals*(output: ProveOutput): seq[FieldElement] =
-  ## The public signals the worker recorded, in circom order.
+  ## The public signals in circom order, as a fresh `seq`. Hot callers read
+  ## `publicSignals` up to `publicSignalCount` directly.
   output.publicSignals[0 ..< output.publicSignalCount]
 
 proc proveTask(
@@ -161,7 +175,7 @@ proc proveTask(
 
 proc spawnProveTask(p: Prover, input: ptr ProveInput, output: ptr ProveOutput) =
   # Kept out of the async proc: `spawn` inside an `{.async.}` body does not
-  # compile on Nim 2.0.
+  # compile.
   let key = addr p.keys[input[].circuit]
   p.pool.spawn proveTask(
     key[].rs, SharedBuf.view(key[].dat.toOpenArray), input, output, p.signal)
@@ -226,7 +240,10 @@ proc new*(
 proc prove*(
     p: Prover, input: ProveInput
 ): Future[Result[ProveOutput, ProveError]] {.async: (raises: [CancelledError]).} =
-  ## Generate a proof on a taskpool worker. Serialised per prover.
+  ## Generate a proof on a taskpool worker. Serialised per prover. A nil
+  ## prover (platforms without proving) reports `Unsupported`.
+  if p.isNil:
+    return err(ProveError.Unsupported)
   await p.lock.acquire()
   defer:
     try:

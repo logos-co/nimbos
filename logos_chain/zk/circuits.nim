@@ -28,7 +28,7 @@ type
     Poc
     Signature
 
-  CircuitsBundleError* {.pure.} = enum
+  BundleError* {.pure.} = enum
     BundleDirMissing
     VersionFileMissing
     VersionReadFailed
@@ -54,7 +54,7 @@ func provingKeyPath*(dir: string, c: Circuit): string =
 func witnessDatPath*(dir: string, c: Circuit): string =
   dir / dirName(c) / "witness_generator.dat"
 
-proc verifyCircuitsVersion*(dir: string): Result[void, CircuitsBundleError] =
+proc verifyCircuitsVersion*(dir: string): Result[void, BundleError] =
   ## Startup bundle health check.
   if not dirExists(dir):
     return err(BundleDirMissing)

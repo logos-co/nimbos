@@ -34,10 +34,11 @@ type
   WitnessGenFailure* = NativeFailure[WitnessGenError]
 
 when defined(windows):
+  # Proving is out of scope on Windows for now; the stub keeps the module and
+  # its tests compiling there.
   proc generateWitness*(
       circuit: Circuit, dat: openArray[byte], inputsJson: string
   ): Result[seq[byte], WitnessGenFailure] =
-    ## Stub: no witness archives link on this platform.
     err(WitnessGenFailure(kind: WitnessGenError.Unsupported))
 else:
   import ./native_libs
@@ -76,6 +77,8 @@ else:
     # A failed `malloc` reports Ok with an empty buffer.
     if output.data == nil or output.size == 0:
       return err(WitnessGenFailure(kind: WitnessGenError.EmptyOutput))
+    # Copied into Nim-owned memory so the caller needs no manual free. The
+    # extra copy is well under a millisecond against the proof that follows.
     var wtns = newSeq[byte](int(output.size))
     copyMem(addr wtns[0], output.data, wtns.len)
     cFree(output.data)

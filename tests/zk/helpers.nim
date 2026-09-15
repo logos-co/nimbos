@@ -10,7 +10,7 @@
 {.push raises: [].}
 
 import
-  std/[os, times],
+  std/[monotimes, os],
   results
 
 export results
@@ -18,7 +18,7 @@ export results
 proc uniqueTmpDir*(tag: string): string =
   ## Per-test unique directory under the system temp dir. Never removed;
   ## skipping teardown keeps test bodies focused on the assertion.
-  getTempDir() / ("nimbos_" & tag & "_" & $epochTime())
+  getTempDir() / ("nimbos_" & tag & "_" & $getMonoTime().ticks)
 
 func accepts*[E](r: Result[bool, E]): bool =
   ## A verifier result that is `ok(true)`.

@@ -36,8 +36,8 @@ type
     ## Plain handle to a rapidsnark prover object. Copies are non-owning;
     ## exactly one owner calls `destroy`.
     handle: pointer
-    proofBufSize: uint64
-    publicBufSize: uint64
+    proofBufSize: int
+    publicBufSize: int
 
   ProofJsonPair* = tuple[proofJson, publicJson: string]
 
@@ -45,10 +45,11 @@ func isNil*(p: RapidsnarkProver): bool =
   p.handle == nil
 
 when defined(windows):
+  # Proving is out of scope on Windows for now; the stubs keep the module and
+  # its tests compiling there (verification is unaffected).
   proc create*(
       T: type RapidsnarkProver, zkey: openArray[byte]
   ): Result[RapidsnarkProver, RapidsnarkFailure] =
-    ## Stub: no rapidsnark archive links on this platform.
     err(RapidsnarkFailure(kind: RapidsnarkError.Unsupported))
 
   proc destroy*(p: var RapidsnarkProver) =
@@ -66,35 +67,32 @@ when defined(windows):
 else:
   import ../native_libs
 
-  func failure(kind: RapidsnarkError, message: NativeMessage): RapidsnarkFailure =
-    RapidsnarkFailure(kind: kind, message: message)
-
   proc create*(
       T: type RapidsnarkProver, zkey: openArray[byte]
   ): Result[RapidsnarkProver, RapidsnarkFailure] =
     ## Parse the zkey once. rapidsnark keeps pointers into `zkey`, so pass a
     ## shared-heap buffer that stays at that address until `destroy`.
-    var message: NativeMessage
     if zkey.len == 0:
-      return err(failure(RapidsnarkError.CreateFailed, message))
+      return err(RapidsnarkFailure(kind: RapidsnarkError.CreateFailed))
     var
+      message: NativeMessage
       publicSize: culonglong
       proofSize: culonglong
       handle: pointer
     let zkeyPtr = unsafeAddr zkey[0]
     if groth16PublicSizeForZkeyBuf(
         zkeyPtr, culonglong(zkey.len), addr publicSize,
-        cast[cstring](addr message[0]), culonglong(MessageLen)) != ProverOk:
-      return err(failure(RapidsnarkError.CreateFailed, message))
+        cbuf(message), culonglong(MessageLen)) != ProverOk:
+      return err(RapidsnarkFailure(kind: RapidsnarkError.CreateFailed, message: message))
     groth16ProofSize(addr proofSize)
     if groth16ProverCreate(
         addr handle, zkeyPtr, culonglong(zkey.len),
-        cast[cstring](addr message[0]), culonglong(MessageLen)) != ProverOk:
-      return err(failure(RapidsnarkError.CreateFailed, message))
+        cbuf(message), culonglong(MessageLen)) != ProverOk:
+      return err(RapidsnarkFailure(kind: RapidsnarkError.CreateFailed, message: message))
     ok(RapidsnarkProver(
       handle: handle,
-      proofBufSize: uint64(proofSize),
-      publicBufSize: uint64(publicSize)))
+      proofBufSize: int(proofSize),
+      publicBufSize: int(publicSize)))
 
   proc destroy*(p: var RapidsnarkProver) =
     ## Release the prover object. Safe to call more than once.
@@ -114,7 +112,7 @@ else:
       p.handle, unsafeAddr wtns[0], culonglong(wtns.len),
       cstring(proofBuf), addr proofSize,
       cstring(publicBuf), addr publicSize,
-      cast[cstring](addr message[0]), culonglong(MessageLen))
+      cbuf(message), culonglong(MessageLen))
     if code == ProverOk:
       proofBuf.setLen(int(proofSize))
       publicBuf.setLen(int(publicSize))
@@ -130,22 +128,22 @@ else:
     ## Prove a `.wtns` buffer. Returns rapidsnark's proof JSON and
     ## public-signals JSON. Output strings are allocated on the calling
     ## thread. Not safe to call concurrently on one handle.
-    var message: NativeMessage
     if p.handle == nil or wtns.len == 0:
-      return err(failure(RapidsnarkError.ProveFailed, message))
+      return err(RapidsnarkFailure(kind: RapidsnarkError.ProveFailed))
     var
-      proofBuf = newString(int(p.proofBufSize) + 1)
-      publicBuf = newString(int(p.publicBufSize) + 1)
+      message: NativeMessage
+      proofBuf = newString(p.proofBufSize + 1)
+      publicBuf = newString(p.publicBufSize + 1)
       code = proveOnce(p, wtns, proofBuf, publicBuf, message)
     if code == ProverShortBuffer:
       code = proveOnce(p, wtns, proofBuf, publicBuf, message)
     if code == ProverOk:
-      return ok((proofBuf, publicBuf))
+      return ok((move(proofBuf), move(publicBuf)))
     let kind =
       if code == ProverInvalidWitnessLength: RapidsnarkError.InvalidWitnessLength
       elif code == ProverShortBuffer: RapidsnarkError.ShortBuffer
       else: RapidsnarkError.ProveFailed
-    err(failure(kind, message))
+    err(RapidsnarkFailure(kind: kind, message: message))
 
   proc verifyJson*(
       proofJson, publicJson, vkJson: string
@@ -155,12 +153,12 @@ else:
     var message: NativeMessage
     let code = groth16Verify(
       cstring(proofJson), cstring(publicJson), cstring(vkJson),
-      cast[cstring](addr message[0]), culong(MessageLen))
+      cbuf(message), culong(MessageLen))
     if code == VerifierValidProof:
       ok(true)
     elif code == VerifierInvalidProof:
       ok(false)
     else:
-      err(failure(RapidsnarkError.VerifyError, message))
+      err(RapidsnarkFailure(kind: RapidsnarkError.VerifyError, message: message))
 
 {.pop.}
