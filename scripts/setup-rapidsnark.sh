@@ -109,13 +109,8 @@ download_release() {
     print_info "Downloading rapidsnark ${VERSION} ($ASSET)..."
     print_info "URL: $url"
 
-    local curl_cmd="curl -L --retry 3 --retry-all-errors"
-    if [ -n "$GITHUB_TOKEN" ]; then
-        curl_cmd="$curl_cmd --header 'authorization: Bearer ${GITHUB_TOKEN}'"
-    fi
-    curl_cmd="$curl_cmd -o ${temp_dir}/${ASSET}.zip $url"
-
-    if ! eval "$curl_cmd"; then
+    # -f: fail on HTTP errors instead of saving the error page.
+    if ! curl -fL --retry 3 --retry-all-errors -o "$temp_dir/$ASSET.zip" "$url"; then
         print_error "Failed to download release archive"
         print_error "Please check that version ${VERSION} exists for this platform"
         rm -rf "$temp_dir"
@@ -131,8 +126,7 @@ download_release() {
         exit 1
     fi
 
-    # Archives extract to <ASSET>/{lib[,include,bin]}. Keep lib/ (and include/
-    # when present); bin/ is unused.
+    # Archives extract to <ASSET>/{lib,include,bin}; only lib/ (and include/) is kept.
     local src="${temp_dir}/x/${ASSET}"
     if [ ! -d "$src/lib" ]; then
         print_error "Archive has no lib/ directory: $src"

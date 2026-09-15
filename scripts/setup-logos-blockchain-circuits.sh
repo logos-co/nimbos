@@ -127,15 +127,8 @@ download_release() {
     print_info "Downloading logos-blockchain-circuits ${VERSION} for ${platform}..."
     print_info "URL: $url"
 
-    # Build curl command with optional authentication.
-    # --retry 3 --retry-all-errors smooths over transient CI network blips.
-    local curl_cmd="curl -L --retry 3 --retry-all-errors"
-    if [ -n "$GITHUB_TOKEN" ]; then
-        curl_cmd="$curl_cmd --header 'authorization: Bearer ${GITHUB_TOKEN}'"
-    fi
-    curl_cmd="$curl_cmd -o ${temp_dir}/${artifact} $url"
-
-    if ! eval "$curl_cmd"; then
+    # -f: fail on HTTP errors instead of saving the error page.
+    if ! curl -fL --retry 3 --retry-all-errors -o "$temp_dir/$artifact" "$url"; then
         print_error "Failed to download release artifact"
         print_error "Please check that version ${VERSION} exists for platform ${platform}"
         print_error "Available releases: https://github.com/${REPO}/releases"

@@ -21,6 +21,10 @@ type
     kind*: K
     message*: NativeMessage
 
+template cbuf*(message: var NativeMessage): cstring =
+  ## The buffer as the `char*` the C side writes into.
+  cast[cstring](addr message[0])
+
 func messageString*(message: NativeMessage): string =
   ## The NUL-terminated C message as a Nim string.
   var text: string
