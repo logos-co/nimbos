@@ -13,7 +13,7 @@
 
 import
   std/[algorithm, json],
-  stew/arrayops,
+  stew/[arrayops, assign2],
   ./[circuits, util],
   ./groth16/snarkjs,
   ../core/crypto/types
@@ -55,7 +55,7 @@ func zksignVerifierInput*(
   if signals.len != ZkSignPublicSignals:
     return err("zksign: expected 33 public signals")
   var input: ZkSignVerifierInput
-  input.publicKeys[0 ..< ZkSignMaxKeys] = signals.toOpenArray(0, ZkSignMaxKeys - 1)
+  assign(input.publicKeys, signals.toOpenArray(0, ZkSignMaxKeys - 1))
   input.msg = signals[ZkSignMaxKeys]
   ok(input)
 
@@ -102,7 +102,7 @@ proc verify*(
     let vk = zksignVk.valueOr:
       return err(VkNotLoaded)
     var inputs: array[ZkSignMaxKeys + 1, FieldElement]
-    inputs[0 ..< ZkSignMaxKeys] = input.publicKeys.toOpenArray(0, ZkSignMaxKeys - 1)
+    assign(inputs.toOpenArray(0, ZkSignMaxKeys - 1), input.publicKeys)
     inputs[ZkSignMaxKeys] = input.msg
     ok(verifyGroth16(vk, proof, inputs))
 
