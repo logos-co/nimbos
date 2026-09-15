@@ -46,7 +46,8 @@ suite "chain/proposal":
     state.feeMarket.executionBaseFee = 0
     state.feeMarket.storageGasPrice = 0
 
-    let (refs, count) = m.selectProposalReferences(state, testLedgerConfig, SlotNumber(10))
+    let (refs, count) = m.selectProposalReferences(
+      state, testLedgerConfig, SlotNumber(10), verifyPoq = acceptAllPoq)
     check count == 1
 
     # After selection, metrics are cached
@@ -74,14 +75,16 @@ suite "chain/proposal":
 
     # With byte limit allowing only 1 tx
     let (refs, count) = m.selectProposalReferences(
-      state, testLedgerConfig, SlotNumber(10), maxBytes = tx1Bytes + tx2Bytes - 1
+      state, testLedgerConfig, SlotNumber(10),
+      maxBytes = tx1Bytes + tx2Bytes - 1, verifyPoq = acceptAllPoq
     )
     check count == 1
     check refs[0] == mantleTxHash(tx1.tx)
 
     # With byte limit allowing both txs
     let (refsAll, countAll) = m.selectProposalReferences(
-      state, testLedgerConfig, SlotNumber(10), maxBytes = tx1Bytes + tx2Bytes
+      state, testLedgerConfig, SlotNumber(10),
+      maxBytes = tx1Bytes + tx2Bytes, verifyPoq = acceptAllPoq
     )
     check countAll == 2
 
@@ -110,7 +113,7 @@ suite "chain/proposal":
 
     let (refs, count) = m.selectProposalReferences(
       state, testLedgerConfig, SlotNumber(10),
-      maxBytes = initialTxBytes + tinyTxBytes,
+      maxBytes = initialTxBytes + tinyTxBytes, verifyPoq = acceptAllPoq,
     )
     # Search terminated after MaxConsecutiveCandidateMisses (10 misses), tinyTx was not evaluated
     check count == 1
@@ -141,7 +144,7 @@ suite "chain/proposal":
 
     let (refs, count) = m.selectProposalReferences(
       state, testLedgerConfig, SlotNumber(10),
-      maxBytes = initialTxBytes + tinyTxBytes,
+      maxBytes = initialTxBytes + tinyTxBytes, verifyPoq = acceptAllPoq,
     )
     # Search did not cut off (9 misses < 10), so tinyTx was evaluated and included
     check count == 2
@@ -167,7 +170,7 @@ suite "chain/proposal":
     check m.len == 1
 
     let (refs, count) = m.selectProposalReferences(
-      state, testLedgerConfig, SlotNumber(10),
+      state, testLedgerConfig, SlotNumber(10), verifyPoq = acceptAllPoq,
     )
     # Not selected because prerequisite condition is not yet satisfied
     check count == 0
@@ -251,7 +254,7 @@ suite "chain/proposal":
     check m.len == 1
 
     let (_, count) = m.selectProposalReferences(
-      state, testLedgerConfig, SlotNumber(10),
+      state, testLedgerConfig, SlotNumber(10), verifyPoq = acceptAllPoq,
     )
     # Transaction rejected from proposal
     check count == 0
@@ -284,6 +287,7 @@ suite "chain/proposal":
       parentBlock = gid,
       proofOfLeadership = pol,
       leaderSecKey = testTxKeyPair.seckey,
+      verifyPoq = acceptAllPoq,
     )
     check proposal.header.slot == SlotNumber(10)
     check proposal.header.parentBlock == gid

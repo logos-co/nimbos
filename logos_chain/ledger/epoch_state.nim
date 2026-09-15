@@ -12,6 +12,7 @@ import
   ../consensus/clock,
   ../zk/pol_lottery,
   ../zk/poseidon2/hasher,
+  ./blend_difficulty,
   ./block_density,
   ./stake_inference,
   ./types
@@ -19,7 +20,7 @@ import
 from stew/byteutils import toBytes
 from ../core/mantle/primitives import slotToFr
 
-export clock, types, hasher, block_density
+export clock, types, hasher, block_density, blend_difficulty
 
 type EpochState* = object
   ## The spec's Epoch State `(C_LEAD, η, D)` plus cached lottery coefficients.
@@ -29,6 +30,7 @@ type EpochState* = object
   totalStake*: uint64 ## D — inferred, density-adjusted
   lottery0*: FieldElement ## t₀ for `totalStake`
   lottery1*: FieldElement ## t₁ for `totalStake`
+  powBlendDifficulty*: FieldElement ## d_blend — per-epoch Blend PoW threshold
 
 let EpochNonceV1: FieldElement =
   # Nonce-chain domain separator, decoded once at module init; reading it
@@ -53,7 +55,7 @@ func withLottery(
     return err(UnsupportedLotteryF)
   ok(state.withLottery(totalStake, values))
 
-func genesisEpochState*(
+proc genesisEpochState*(
     epoch: EpochNumber,
     nonce: FieldElement,
     root: FieldElement,
@@ -61,8 +63,11 @@ func genesisEpochState*(
     f: NonNegativeRatio,
 ): Result[EpochState, LedgerError] =
   ## Seed state for epoch 0 (active) or epoch 1 (next) at chain start.
+  # Epochs 0 and 1 carry the base Blend difficulty. No complete input
+  # epoch exists for the retarget before epoch 2.
   EpochState(
-    epoch: epoch, nonce: nonce, agedUtxoRoot: root
+    epoch: epoch, nonce: nonce, agedUtxoRoot: root,
+    powBlendDifficulty: BlendDifficultyBaseFr
   ).withLottery(totalStake, f)
 
 proc accumulateNonce*(
@@ -98,8 +103,9 @@ type EpochTracker* = object
   activeEpoch*: EpochState ## governs the current epoch's lottery
   nextEpoch*: EpochState ## being chased/frozen for epoch + 1
   blockDensity*: BlockDensity
+  txDensity*: TxDensity ## per-epoch load feeding the Blend difficulty
 
-func genesisEpochTracker*(
+proc genesisEpochTracker*(
     nonce, root: FieldElement,
     totalStake: uint64,
     cfg: LedgerConfig,
@@ -133,6 +139,24 @@ func rotate(
   for _ in (t.activeEpoch.epoch + 1) ..< newEpoch:
     stake = total_stake_inference(
       stake, 0, period, cfg.learningRateFixed, fFixed)
+  # Blend difficulty chain: one epoch close per crossed epoch. A skipped
+  # epoch reads as no load and eases the threshold one clamp step.
+  # Epoch e+1's value derives from epoch e-1's closed load and epoch e's
+  # value. Both are final when the crossing applies, so this computation
+  # equals the freeze at the snapshot slot. Genesis seeding covers epochs
+  # 0 and 1. Every value computed here is for an epoch >= 2.
+  # The final crossing is peeled off the loop: `promotedDifficulty` is
+  # the loop's carry, and the last compute seeds the new next epoch.
+  var
+    density = t.txDensity
+    promotedDifficulty = t.nextEpoch.powBlendDifficulty
+  for _ in (t.activeEpoch.epoch + 1) ..< newEpoch:
+    density = density.closeEpoch()
+    promotedDifficulty = compute_epoch_blend_difficulty(
+      density.lastClosedOrEmpty(), promotedDifficulty)
+  density = density.closeEpoch()
+  let seedDifficulty = compute_epoch_blend_difficulty(
+    density.lastClosedOrEmpty(), promotedDifficulty)
   let
     values = lottery_constants(cfg.slotActivationCoeff, stake).valueOr:
       return err(UnsupportedLotteryF)
@@ -143,10 +167,13 @@ func rotate(
         EpochState(epoch: newEpoch, nonce: t.nonce, agedUtxoRoot: latestRoot)
   var next = t
   next.activeEpoch = promoted.withLottery(stake, values)
+  next.activeEpoch.powBlendDifficulty = promotedDifficulty
   next.nextEpoch = EpochState(
-    epoch: newEpoch + 1, nonce: t.nonce, agedUtxoRoot: latestRoot
+    epoch: newEpoch + 1, nonce: t.nonce, agedUtxoRoot: latestRoot,
+    powBlendDifficulty: seedDifficulty
   ).withLottery(stake, values)
   next.blockDensity = BlockDensity.init(newEpoch, cfg.epochSchedule)
+  next.txDensity = density
   ok(next)
 
 func advanceEpochs*(
@@ -177,5 +204,13 @@ proc recordBlock*(
   next.blockDensity = t.blockDensity.increment(slot)
   next.lastAppliedSlot = slot
   next
+
+func recordBlockTxs*(t: sink EpochTracker, txsInBlock: uint64): EpochTracker =
+  ## Counts one applied block's transactions into the epoch totals the
+  ## Blend difficulty retarget reads.
+  # Every Mantle transaction counts as one. Only a block that actually
+  # applies, contents included, belongs in the epoch's average.
+  t.txDensity = t.txDensity.recordBlock(txsInBlock)
+  t
 
 {.pop.}
