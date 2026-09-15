@@ -24,6 +24,7 @@ import
 from ./chain/proposal import reconstructAndValidateBlock, ProposalValidationError
 from ./core/mantle/tx_validation import validateMantleTxStateless
 from ./core/mantle/tx_types import SignedMantleTx, ValidSignedMantleTx
+from ./core/mantle/tx_hashing import mantleTxHash
 from ./core/types as coreTypes import Block, blockId, Proposal
 from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
 from libp2p/peerid import PeerId
@@ -252,7 +253,7 @@ func toValidationResult(err: BlockApplyError): ValidationResult =
      BlockApplyErrorKind.StatelessTxRejected:
     ValidationResult.Reject
 
-proc handleGossipProposal(
+proc handleGossipProposal*(
     node: LBNode, proposal: Proposal, src: PeerId
 ): Future[ValidationResult] {.async: (raises: [CancelledError]).} =
   trace "GossipSub handling received proposal",
@@ -283,12 +284,19 @@ proc handleGossipProposal(
       src = $src
     ValidationResult.Accept
   else:
-    trace "GossipSub handled block apply result",
-      blockId = byteutils.toHex(blockId(blk.header)),
-      err = applyRes.error.kind
+    if applyRes.error.kind == BlockApplyErrorKind.FutureSlot:
+      debug "GossipSub proposal rejected due to future slot (clock skew)",
+        blockId = byteutils.toHex(blockId(blk.header)),
+        blockSlot = blk.header.slot,
+        wallclockSlot = node.processor.currentWallclockSlot(),
+        src = $src
+    else:
+      trace "GossipSub handled block apply result",
+        blockId = byteutils.toHex(blockId(blk.header)),
+        err = applyRes.error.kind
     toValidationResult(applyRes.error)
 
-proc handleGossipTx(node: LBNode, tx: SignedMantleTx, src: PeerId): ValidationResult =
+proc handleGossipTx*(node: LBNode, tx: SignedMantleTx, src: PeerId): ValidationResult =
   trace "GossipSub handling received tx",
     opCount = tx.tx.ops.len,
     src = $src
@@ -298,7 +306,11 @@ proc handleGossipTx(node: LBNode, tx: SignedMantleTx, src: PeerId): ValidationRe
     return ValidationResult.Reject
 
   let nowSlot = node.processor.currentWallclockSlot()
-  discard node.processor.mempool.add(ValidSignedMantleTx(tx), nowSlot)
+  if not node.processor.mempool.add(ValidSignedMantleTx(tx), nowSlot):
+    trace "GossipSub ignored duplicate tx already in mempool",
+      txHash = byteutils.toHex(mantleTxHash(tx.tx)),
+      src = $src
+    return ValidationResult.Ignore
 
   ValidationResult.Accept
 
@@ -345,7 +357,7 @@ proc stop(node: LBNode) =
   if node.prover != nil:
     node.prover.close()
 
-proc initializeNetworking*(node: LBNode) {.async.} =
+proc initializeNetworking*(node: LBNode) {.async: (raises: [CancelledError]).} =
   let topics = node.installMessageValidators()
   for topic in topics:
     node.network.subscribe(topic, TopicParams.init())
