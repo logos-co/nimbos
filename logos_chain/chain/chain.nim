@@ -37,7 +37,8 @@ type
     AlreadyApplied
     FutureSlot
     InvalidStructure
-    TreeRejected
+    MissingParent
+    UnviableFork
     LedgerRejected
     StatelessTxRejected
 
@@ -55,6 +56,16 @@ func `$`*(e: BlockApplyError): string =
   of BlockApplyErrorKind.LedgerRejected: "ledger: " & $e.ledgerError
   of BlockApplyErrorKind.StatelessTxRejected: "stateless tx: " & $e.statelessError
   else: $e.kind
+
+func isRecoverable*(kind: BlockApplyErrorKind): bool =
+  ## True when the same block may still apply later without any change to it.
+  case kind
+  of BlockApplyErrorKind.AlreadyApplied, BlockApplyErrorKind.FutureSlot,
+      BlockApplyErrorKind.MissingParent:
+    true
+  of BlockApplyErrorKind.InvalidStructure, BlockApplyErrorKind.UnviableFork,
+      BlockApplyErrorKind.LedgerRejected, BlockApplyErrorKind.StatelessTxRejected:
+    false
 
 func ledgerConfig*(settings: DeploymentSettings): LedgerConfig =
   ## Epoch-machinery configuration from validated deployment settings
@@ -161,8 +172,13 @@ proc tryApplyBlock*(
   ## Full block ingestion in `valid_header` order.
   template hdr: auto = header(blk)
   let id = blockId(hdr)
-  if chain.ledger.hasState(id):
+  # The tree keeps applied blocks whose states were pruned below the LIB.
+  if chain.localTree.hasBlock(id):
     return err(BlockApplyError(kind: AlreadyApplied))
+  # Slots increase along a chain, so a block at or before the LIB slot cannot
+  # descend from the LIB. Holds without the parent, which pruning may remove.
+  if hdr.slot <= chain.localTree.latestImmutableSlot():
+    return err(BlockApplyError(kind: UnviableFork))
   if hdr.slot > chain.currentWallclockSlot():
     return err(BlockApplyError(kind: FutureSlot))
   let unverified = chain.mempool.unverifiedTxs(blk.txs)
@@ -170,8 +186,10 @@ proc tryApplyBlock*(
     case error.kind
     of BlockValidationErrorKind.InvalidBlockStructure:
       return err(BlockApplyError(kind: InvalidStructure))
-    of BlockValidationErrorKind.TreeAdmissionRejected:
-      return err(BlockApplyError(kind: TreeRejected))
+    of BlockValidationErrorKind.MissingParent:
+      return err(BlockApplyError(kind: MissingParent))
+    of BlockValidationErrorKind.UnviableFork:
+      return err(BlockApplyError(kind: UnviableFork))
     of BlockValidationErrorKind.HeaderRejected,
         BlockValidationErrorKind.TransactionsRejected:
       return err(BlockApplyError(kind: LedgerRejected, ledgerError: error.ledgerError))
@@ -180,7 +198,7 @@ proc tryApplyBlock*(
 
   let oldTip = chain.localTree.localTipId()
   if not chain.localTree.addBlockToTree(blk):
-    return err(BlockApplyError(kind: TreeRejected))
+    return err(BlockApplyError(kind: UnviableFork))
   chain.ledger.commitUpdate(prepared.id, prepared.state)
   let newTip = chain.localTree.localTipId()
 

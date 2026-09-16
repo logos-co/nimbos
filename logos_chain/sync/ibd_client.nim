@@ -16,7 +16,7 @@ import
   libp2p/[switch, peerid],
   libp2p/stream/connection,
   stew/byteutils as sbyteutils,
-  ../chain/chain,
+  ../chain/block_processor,
   ./[framing, syncer_types, types]
 
 from ../core/local_tree import
@@ -24,7 +24,7 @@ from ../core/local_tree import
 from ../core/types import Block, BlockId, blockId, header
 from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
 
-export types, chain, syncer_types
+export types, block_processor, syncer_types
 
 logScope:
   topics = "cryptarchia_ibd"
@@ -201,13 +201,12 @@ proc sendDownloadBlocksRequest*(
   finally:
     await noCancel conn.close()
 
-proc onBlock(syncer: Syncer, blk: Block) {.raises: [InvalidBlock].} =
-  syncer.chain.tryApplyBlock(blk).isOkOr:
-    if error.kind == BlockApplyErrorKind.AlreadyApplied:
-      debug "IBD: block already applied",
-        id = sbyteutils.toHex(blockId(header(blk)))
-      return
-    raise newException(InvalidBlock, "block rejected: " & $error)
+proc onBlock(
+    syncer: Syncer, blk: Block
+): Future[Result[void, BlockApplyError]] {.async: (raises: [CancelledError]).} =
+  let res = await syncer.processor.addBlock(BlockSource.Sync, blk)
+  res.isOkOr:
+    return res
   var leaderKeyBytes: array[EdPublicKeySize, byte]
   doAssert toBytes(header(blk).proofOfLeadership.leaderKey, leaderKeyBytes) == EdPublicKeySize
   info "IBD ingested block",
@@ -222,6 +221,7 @@ proc onBlock(syncer: Syncer, blk: Block) {.raises: [InvalidBlock].} =
     polProof = sbyteutils.toHex(header(blk).proofOfLeadership.proof),
     polLeaderKey = sbyteutils.toHex(leaderKeyBytes),
     blockSignature = sbyteutils.toHex(blk.signature.data)
+  res
 
 proc downloadBlocks(
     syncer: Syncer,
@@ -283,15 +283,25 @@ proc downloadBlocks(
     var targetReached = false
     for blk in blocks:
       latestDownloaded = Opt.some(blk)
-      try:
-        onBlock(syncer, blk)
-        debug "IBD: block ingest ok", peer, blockId = sbyteutils.toHex(blockId(blk.header))
-        if blockId(blk.header) == effectiveTarget.get:
-          targetReached = true
-          break
-      except InvalidBlock as exc:
-        debug "IBD: block ingest failed", peer, exc = exc.msg
-        return false
+      let id = blockId(blk.header)
+      (await onBlock(syncer, blk)).isOkOr:
+        # IBD streams blocks in parent order, so even a recoverable error
+        # means this peer's stream is unusable.
+        case error.kind
+        of BlockApplyErrorKind.AlreadyApplied:
+          debug "IBD: block already applied", peer, blockId = sbyteutils.toHex(id)
+        elif error.kind.isRecoverable:
+          debug "IBD: block deferred, cancelling download",
+            peer, blockId = sbyteutils.toHex(id), err = error.kind
+          return false
+        else:
+          warn "IBD: invalid block from peer, cancelling download",
+            peer, blockId = sbyteutils.toHex(id), err = $error
+          return false
+      debug "IBD: block ingest ok", peer, blockId = sbyteutils.toHex(id)
+      if id == effectiveTarget.get:
+        targetReached = true
+        break
 
     if targetReached:
       debug "IBD: target reached", peer, targetBlock = sbyteutils.toHex(effectiveTarget.get)
