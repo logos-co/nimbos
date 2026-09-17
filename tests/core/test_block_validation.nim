@@ -47,10 +47,10 @@ proc mkSizedTx(bytes: int): SignedMantleTx =
     opProofs: @[OpProof(kind: opfChannelInscribe, ed25519SigProof: sig)],
   )
 
-proc validate(genesis: Block, blk: Block): Result[BlockId, BlockValidationError] =
+proc validate(genesis: Block, blk: Block): Result[ValidBlock, BlockValidationError] =
   let tree = newLocalTree(genesis, 1'u64)
   let ledger = Ledger[BlockId].init(blockId(genesis.header), default(LedgerState), default(LedgerConfig))
-  validateBlockAndStatelessTransactions(blk, tree, ledger, blk.txs)
+  validateBlock(blk, tree, ledger, blk.txs)
 
 proc treeWithLib(genesis: Block): tuple[tree: LocalTree, b1, b2: Block] =
   ## Tree with security parameter 1 holding genesis, b1, b2, b3; the LIB is b2.
@@ -240,7 +240,7 @@ suite "core/block_validation — multi-tier evaluation order":
       blk = childBlock(genesis.header, missingParentId, SlotNumber(1), [sm])
     let res = validate(genesis, blk)
     check res.isErr
-    check res.error.kind == BlockValidationErrorKind.MissingParent
+    check res.error.kind == BlockValidationErrorKind.UnviableFork
 
   test "Tier 1: rejects block with non-advancing slot (slot <= parent.slot)":
     let
@@ -260,7 +260,7 @@ suite "core/block_validation — multi-tier evaluation order":
         blockId(genesis.header), default(LedgerState), default(LedgerConfig))
       # b1 is below the LIB with no ledger state, but the tree still holds it.
       blk = childBlock(b1.header, blockId(b1.header), SlotNumber(4), [minimalSignedTx()])
-      res = validateBlockAndStatelessTransactions(blk, tree, ledger, blk.txs)
+      res = validateBlock(blk, tree, ledger, blk.txs)
     check res.isErr
     check res.error.kind == BlockValidationErrorKind.UnviableFork
 
@@ -272,7 +272,7 @@ suite "core/block_validation — multi-tier evaluation order":
     var ledger = Ledger[BlockId].init(
       blockId(genesis.header), default(LedgerState), default(LedgerConfig))
     ledger.commitUpdate(blockId(b2.header), default(LedgerState))
-    check validateBlockAndStatelessTransactions(blk, tree, ledger, blk.txs).isOk
+    check validateBlock(blk, tree, ledger, blk.txs).isOk
 
   test "Tier 2: rejects block with empty leader key":
     let
@@ -363,7 +363,7 @@ suite "core/block_validation — multi-tier evaluation order":
     badProofTx.opProofs = @[defaultOpProofForOpcode(OpChannelInscribe)]
     check not mempool.isKnownValid(badProofTx)
 
-  test "validateBlockAndStatelessTransactions fast-paths with unverified txs":
+  test "validateBlock fast-paths with unverified txs":
     let
       sm = minimalSignedTx()
       genesis = createGenesisBlock(sm)
@@ -376,7 +376,7 @@ suite "core/block_validation — multi-tier evaluation order":
 
     let unverified = mempool.unverifiedTxs(blk.txs)
     check unverified.len == 0
-    check validateBlockAndStatelessTransactions(blk, tree, ledger, unverified).isOk
+    check validateBlock(blk, tree, ledger, unverified).isOk
 
   test "prepareBlockUpdate rejects stateful transaction failures":
     let
@@ -392,10 +392,9 @@ suite "core/block_validation — multi-tier evaluation order":
     # Non-zero base fee causes minimalSignedTx with 0 transfer balance to fail fee coverage
     state.feeMarket.executionBaseFee = 1000
     state.feeMarket.storageGasPrice = 1000
-    let
-      ledger = Ledger[BlockId].init(gid, state, testLedgerConfig, mockVerifyLeaderProof)
-      
-    let res = prepareBlockUpdate(blk, tree, ledger, [])
+    let ledger = Ledger[BlockId].init(gid, state, testLedgerConfig, mockVerifyLeaderProof)
+    let validBlk = validateBlock(blk, tree, ledger, []).expect("valid block")
+    let res = prepareBlockUpdate(validBlk, ledger)
     check res.isErr and res.error.kind == BlockValidationErrorKind.TransactionsRejected
 
 {.pop.}
