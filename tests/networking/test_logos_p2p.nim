@@ -234,11 +234,13 @@ proc initTestLBNode(
     ds.mempool.pubsubTopic = mempoolTopic
   if proposalTopic.len > 0:
     ds.cryptarchia.gossipsubProtocol = proposalTopic
+  let bp = BlockProcessor.new(initTestChain(genesis))
+  bp.start()
   LBNode(
     network: network,
     config: LBNodeConf(),
     deploymentSettings: ds,
-    chain: initTestChain(genesis),
+    processor: bp,
     shutdownEvent: newAsyncEvent()
   )
 
@@ -264,20 +266,22 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
 
       var received = false
       for _ in 0 ..< 100:
-        if listenerNode.chain.mempool.len > 0:
+        if listenerNode.processor.mempool.len > 0:
           received = true
           break
         await sleepAsync(chronos.milliseconds(25))
       check received
-      let txItem = listenerNode.chain.mempool.get(mantleTxHash(sampleTx.tx))
+      let txItem = listenerNode.processor.mempool.get(mantleTxHash(sampleTx.tx))
       check txItem.isOk
       check txItem.get.tx.ops.len == 1
 
       # Duplicate tx sent to handleGossipTx should return Ignore and not duplicate in mempool
       let dupRes = listenerNode.handleGossipTx(sampleTx, peers.dialer.switch.peerInfo.peerId)
       check dupRes == ValidationResult.Ignore
-      check listenerNode.chain.mempool.len == 1
+      check listenerNode.processor.mempool.len == 1
     finally:
+      await dialerNode.processor.stop()
+      await listenerNode.processor.stop()
       await peers.dialer.stop()
       await peers.listener.stop()
 
@@ -306,15 +310,15 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
 
       var received = false
       for _ in 0 ..< 100:
-        if listenerNode.chain.localTree.hasBlock(blockId(sampleProposal.header)):
+        if listenerNode.processor.localTree.hasBlock(blockId(sampleProposal.header)):
           received = true
           break
         await sleepAsync(chronos.milliseconds(25))
       check received
-      check listenerNode.chain.localTree.localTipId == blockId(sampleProposal.header)
+      check listenerNode.processor.localTree.localTipId == blockId(sampleProposal.header)
 
       # Verify reconstructed block content matches proposal
-      let reconstructedBlock = listenerNode.chain.localTree.getBlock(blockId(sampleProposal.header)).get()
+      let reconstructedBlock = listenerNode.processor.localTree.getBlock(blockId(sampleProposal.header)).get()
       check reconstructedBlock.header == sampleProposal.header
       check reconstructedBlock.signature == sampleProposal.signature
       check reconstructedBlock.txs.len == 0
@@ -330,8 +334,10 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
       )
       check (await peers.dialer.broadcast(topic, missingProposal)).isOk
       await sleepAsync(chronos.milliseconds(200))
-      check not listenerNode.chain.localTree.hasBlock(blockId(missingProposal.header))
+      check not listenerNode.processor.localTree.hasBlock(blockId(missingProposal.header))
     finally:
+      await dialerNode.processor.stop()
+      await listenerNode.processor.stop()
       await peers.dialer.stop()
       await peers.listener.stop()
 
