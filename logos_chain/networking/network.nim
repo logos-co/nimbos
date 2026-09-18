@@ -50,8 +50,7 @@ type
     proc(msg: T, src: PeerId): ValidationResult {.gcsafe, raises: [].}
 
   ValidationAsyncProc[T] =
-    proc(msg: T, src: PeerId): Future[ValidationResult] {.
-      async: (raises: [CancelledError]).}
+    proc(msg: T, src: PeerId): Future[ValidationResult] {.gcsafe, raises: [].}
 
   SeenItem = object
     peerId: PeerId

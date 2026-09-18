@@ -246,9 +246,10 @@ func toValidationResult(err: BlockApplyError): ValidationResult =
   case err.kind
   of BlockApplyErrorKind.AlreadyApplied,
      BlockApplyErrorKind.FutureSlot,
-     BlockApplyErrorKind.TreeRejected:
+     BlockApplyErrorKind.MissingParent:
     ValidationResult.Ignore
   of BlockApplyErrorKind.InvalidStructure,
+     BlockApplyErrorKind.UnviableFork,
      BlockApplyErrorKind.LedgerRejected,
      BlockApplyErrorKind.StatelessTxRejected:
     ValidationResult.Reject
@@ -321,8 +322,8 @@ proc installMessageValidators(node: LBNode): seq[string] =
   if blockTopic.len > 0:
     node.network.addAsyncValidator(blockTopic) do (
         proposal: Proposal, src: PeerId
-    ) -> Future[ValidationResult] {.async: (raises: [CancelledError]).} =
-      await handleGossipProposal(node, proposal, src)
+    ) -> Future[ValidationResult]:
+      handleGossipProposal(node, proposal, src)
     topics.add(blockTopic)
   else:
     warn "Cryptarchia block gossipsub protocol topic is empty, validator not installed"

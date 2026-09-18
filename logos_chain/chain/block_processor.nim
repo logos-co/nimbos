@@ -57,7 +57,7 @@ func ledger*(bp: BlockProcessor): lent Ledger[BlockId] =
 func mempool*(bp: BlockProcessor): Mempool =
   bp.chain.mempool
 
-func currentWallclockSlot*(bp: BlockProcessor): SlotNumber =
+proc currentWallclockSlot*(bp: BlockProcessor): SlotNumber =
   bp.chain.currentWallclockSlot()
 
 func running*(bp: BlockProcessor): bool =
