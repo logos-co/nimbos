@@ -27,11 +27,11 @@ template cbuf*(message: var NativeMessage): cstring =
 
 func messageString*(message: NativeMessage): string =
   ## The NUL-terminated C message as a Nim string.
-  var text: string
-  for c in message:
-    if c == '\0':
-      break
-    text.add(c)
-  text
+  var len = 0
+  while len < MessageLen and message[len] != '\0':
+    inc len
+  result = newStringUninit(len)
+  if len > 0:
+    copyMem(addr result[0], addr message[0], len)
 
 {.pop.}

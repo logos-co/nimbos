@@ -31,7 +31,7 @@ type
     EmptyOutput
     Unsupported
 
-  WitnessGenFailure* = NativeFailure[WitnessGenError]
+  WitnessGenFailure = NativeFailure[WitnessGenError]
 
 when defined(windows):
   # Proving is out of scope on Windows for now; the stub keeps the module and
@@ -62,7 +62,7 @@ else:
     var
       input = WitnessInput(
         dat: Bytes(
-          data: cast[ptr UncheckedArray[uint8]](unsafeAddr dat[0]),
+          data: cast[ptr UncheckedArray[uint8]](addr dat[0]),
           size: csize_t(dat.len)),
         inputsJson: cstring(inputsJson))
       output: Bytes    # C requires `data == NULL` on entry

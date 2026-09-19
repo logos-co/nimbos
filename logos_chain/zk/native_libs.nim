@@ -87,13 +87,16 @@ when not defined(windows):
     ## The witness buffer is `malloc`ed by the C side; `free_bytes` in
     ## `types.hpp` is `static inline` and cannot be linked.
 
-  # rapidsnark v0.0.8 `include/prover.h` and `include/verifier.h`.
+  # https://github.com/iden3/rapidsnark/blob/v0.0.8/src/prover.h
+  # https://github.com/iden3/rapidsnark/blob/v0.0.8/src/verifier.h
   const
     ProverOk* = 0.cint
+    ProverError* = 1.cint
     ProverShortBuffer* = 2.cint
     ProverInvalidWitnessLength* = 3.cint
     VerifierValidProof* = 0.cint
     VerifierInvalidProof* = 1.cint
+    VerifierError* = 2.cint
 
   proc groth16ProofSize*(size: ptr culonglong)
     {.importc: "groth16_proof_size", cdecl.}

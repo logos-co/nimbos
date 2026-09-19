@@ -30,7 +30,7 @@ type
     VerifyError
     Unsupported
 
-  RapidsnarkFailure* = NativeFailure[RapidsnarkError]
+  RapidsnarkFailure = NativeFailure[RapidsnarkError]
 
   RapidsnarkProver* = object
     ## Plain handle to a rapidsnark prover object. Copies are non-owning;
@@ -79,7 +79,7 @@ else:
       publicSize: culonglong
       proofSize: culonglong
       handle: pointer
-    let zkeyPtr = unsafeAddr zkey[0]
+    let zkeyPtr = addr zkey[0]
     if groth16PublicSizeForZkeyBuf(
         zkeyPtr, culonglong(zkey.len), addr publicSize,
         cbuf(message), culonglong(MessageLen)) != ProverOk:
@@ -109,7 +109,7 @@ else:
       proofSize = culonglong(proofBuf.len)
       publicSize = culonglong(publicBuf.len)
     let code = groth16ProverProve(
-      p.handle, unsafeAddr wtns[0], culonglong(wtns.len),
+      p.handle, addr wtns[0], culonglong(wtns.len),
       cstring(proofBuf), addr proofSize,
       cstring(publicBuf), addr publicSize,
       cbuf(message), culonglong(MessageLen))
