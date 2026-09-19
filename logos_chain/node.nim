@@ -25,7 +25,6 @@ from ./chain/proposal import reconstructBlock, ProposalValidationError
 from ./core/mantle/tx_validation import validateMantleTxStateless
 from ./core/mantle/tx_types import SignedMantleTx, ValidSignedMantleTx
 from ./core/mantle/tx_hashing import mantleTxHash
-from ./core/types as coreTypes import Block, blockId, Proposal
 from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
 from libp2p/peerid import PeerId
 from libp2p/protocols/pubsub/pubsub import ValidationResult
@@ -302,6 +301,16 @@ proc handleGossipTx*(node: LBNode, tx: SignedMantleTx, src: PeerId): ValidationR
   trace "GossipSub handling received tx",
     opCount = tx.tx.ops.len,
     src = $src
+
+  # Reject malformed payloads before hashing:
+  # 1. Enforces OpCount byte bounds (0 < ops.len <= 255) to prevent doAssert failure in encodeOps during mantleTxHash.
+  # 2. Ensures operations and opProofs counts match with zero allocations before running crypto verifications.
+  if tx.tx.ops.len == 0 or tx.tx.ops.len > int(high(uint8)) or tx.tx.ops.len != tx.opProofs.len:
+    debug "GossipSub rejected malformed tx (invalid op bounds or proof mismatch)",
+      opCount = tx.tx.ops.len,
+      proofCount = tx.opProofs.len,
+      src = $src
+    return ValidationResult.Reject
 
   let txHash = mantleTxHash(tx.tx)
   if txHash in node.processor.mempool:
