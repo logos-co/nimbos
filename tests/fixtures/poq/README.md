@@ -1,10 +1,7 @@
 # poq test fixtures
 
-nimbos ships only the proof-of-quota verifier — it has no Nim-side prover
-that could generate a proof on the fly during tests. These files are
-committed fixtures (reference-prover output) so the Nim verifier
-(`tests/zk/test_poq.nim`, `tests/ledger/test_poq_verifier.nim`) has
-something to verify against.
+Committed reference-prover output for the Nim proof-of-quota verifier
+tests (`tests/zk/test_poq.nim`, `tests/ledger/test_poq_verifier.nim`).
 
 One fixture per circuit branch. The three proofs use different selector
 values (core = 0, leader = 1, pow = 2); a verifier cannot tell them
@@ -62,9 +59,10 @@ same release.
 
 ## Nim prover
 
-nimbos now generates proofs in-process (`logos_chain/zk/prover.nim`,
+nimbos generates proofs in-process (`logos_chain/zk/prover.nim`,
 rapidsnark + the bundle witness archives). `tests/zk/test_witness_gen.nim`
-and `tests/zk/test_prover.nim` rebuild this fixture's public signals from
-the witness inputs above and verify fresh proofs against them. The committed
-`proof.json` stays as the reference-prover cross-check
-(`tests/zk/test_prover_interop.nim`).
+and `tests/zk/test_prover.nim` rebuild `public_core.json` from the
+core-branch witness inputs (`tests/zk/prover_helpers.nim`; `core_quota`
+15, key index 4) and verify a fresh core-branch proof against it. The leader and pow branches have
+committed proofs only. The `proof_<branch>.bin` files stay as the
+reference-prover cross-check.

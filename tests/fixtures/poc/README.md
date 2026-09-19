@@ -28,7 +28,7 @@ VK move with a release. Copy `verification_key.json` from the bundle's
 
 ## Nim prover
 
-nimbos now generates proofs in-process (`logos_chain/zk/prover.nim`,
+nimbos generates proofs in-process (`logos_chain/zk/prover.nim`,
 rapidsnark + the bundle witness archives). `tests/zk/test_witness_gen.nim`
 and `tests/zk/test_prover.nim` rebuild this fixture's public signals from
 the witness inputs above and verify fresh proofs against them. The committed
