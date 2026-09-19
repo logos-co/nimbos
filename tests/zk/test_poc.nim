@@ -21,14 +21,6 @@ const
   fixtureProof = testsDir / "../fixtures/poc/proof.json"
   fixturePublic = testsDir / "../fixtures/poc/public.json"
 
-func toPocInput(s: openArray[FieldElement]): PocVerifierInput =
-  doAssert s.len == 3, "public.json must have exactly 3 entries for PoC"
-  PocVerifierInput(
-    voucherNullifier: s[0],
-    mantleTxHashFr: s[1],
-    voucherRoot: s[2],
-  )
-
 suite "zk/poc — loadVk":
   test "rejects missing file":
     let r = loadVk(uniqueTmpDir("missing-vk"))
@@ -78,7 +70,7 @@ suite "zk/poc — verify":
     let inputsSeq = publicJsonToInputs(publicText).valueOr:
       check false
       return
-    input = toPocInput(inputsSeq)
+    input = pocVerifierInput(inputsSeq).expect("poc fixture public.json has 3 entries")
 
   test "rejects when VK singleton not installed":
     poc.resetVkForTesting()

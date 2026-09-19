@@ -21,22 +21,6 @@ const
   fixtureProof = testsDir / "../fixtures/pol/proof.json"
   fixturePublic = testsDir / "../fixtures/pol/public.json"
 
-func toPolInput(s: openArray[FieldElement]): PolVerifierInput =
-  # Positional mapping from the public.json ordering to the typed input.
-  # Order is the canonical 9-field spec from `pol/inputs.rs:127-138`.
-  doAssert s.len == 9, "public.json must have exactly 9 entries for PoL"
-  PolVerifierInput(
-    entropyContribution: s[0],
-    slotNumber: s[1],
-    epochNonce: s[2],
-    lottery0: s[3],
-    lottery1: s[4],
-    agedRoot: s[5],
-    latestRoot: s[6],
-    leaderPk1: s[7],
-    leaderPk2: s[8],
-  )
-
 suite "zk/pol — loadVk":
   test "rejects missing file":
     let r = loadVk(uniqueTmpDir("missing-vk"))
@@ -99,7 +83,7 @@ suite "zk/pol — verify":
     let inputsSeq = publicJsonToInputs(publicText).valueOr:
       check false
       return
-    input = toPolInput(inputsSeq)
+    input = polVerifierInput(inputsSeq).expect("pol fixture public.json has 9 entries")
 
   test "rejects when VK singleton not installed":
     pol.resetVkForTesting()

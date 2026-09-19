@@ -30,8 +30,11 @@ const
     "4638531576864525781488466586415560847030933032030532999162151560076355183707"
     ## Message the committed zksign fixture signs with `sks = [1, 0 × 31]`.
   PoqCoreFixtureQuota* = 15'u64
-    ## `core_quota` of the committed core-branch fixture. The key index the
-    ## fixture used is not recorded; `poqCoreFixtureIndex` recovers it.
+    ## `core_quota` of the committed core-branch fixture.
+  PoqCoreFixtureIndex* = 4'u64
+    ## The key index the fixture proof was made with. The circuit derives the
+    ## key nullifier from it, so we brute-forced 0..14 until the nullifier
+    ## matched `public_core.json`.
 
 func fr*(decimal: string): FieldElement =
   frFromDecimal(decimal).expect("fixture decimal is a field element")
@@ -136,21 +139,6 @@ proc witnessValues*(c: Circuit, json: string): seq[FieldElement] =
       raiseAssert "witness generation failed: " & $error.kind & " " &
         messageString(error.message)
   decodeWtns(wtns).expect("wtns decodes")
-
-var poqIndexCache: Opt[uint64]
-
-proc poqCoreFixtureIndex*(): uint64 =
-  ## The key index behind `public_core.json`: the one value below the quota
-  ## whose witness yields the fixture's key nullifier. Computed once.
-  if poqIndexCache.isNone:
-    let expected = fixtureSignals(Circuit.Poq)[0]
-    for index in 0'u64 ..< PoqCoreFixtureQuota:
-      let values = witnessValues(Circuit.Poq, toInputsJson(poqCoreFixtureInput(index)))
-      if values[1] == expected:
-        poqIndexCache = Opt.some(index)
-        break
-    doAssert poqIndexCache.isSome, "no key index reproduces the fixture nullifier"
-  poqIndexCache.get
 
 var
   sharedPool: Taskpool

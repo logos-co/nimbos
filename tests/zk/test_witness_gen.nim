@@ -55,7 +55,7 @@ suite "zk/witness_gen — reference vectors":
 
   test "poq: core-branch fixture reproduces public_core.json":
     let values = witnessValues(
-      Circuit.Poq, toInputsJson(poqCoreFixtureInput(poqCoreFixtureIndex())))
+      Circuit.Poq, toInputsJson(poqCoreFixtureInput(PoqCoreFixtureIndex)))
     check values.len == PoqVarsV056
     check signalsMatch(values, fixtureSignals(Circuit.Poq))
 

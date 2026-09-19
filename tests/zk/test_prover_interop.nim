@@ -27,7 +27,7 @@ proc inputFor(c: Circuit): ProveInput =
   case c
   of Circuit.Pol: ProveInput(circuit: Circuit.Pol, polInput: polFixtureInput())
   of Circuit.Poq:
-    ProveInput(circuit: Circuit.Poq, poqInput: poqCoreFixtureInput(poqCoreFixtureIndex()))
+    ProveInput(circuit: Circuit.Poq, poqInput: poqCoreFixtureInput(PoqCoreFixtureIndex))
   of Circuit.Poc: ProveInput(circuit: Circuit.Poc, pocInput: pocFixtureInput())
   of Circuit.Signature:
     ProveInput(circuit: Circuit.Signature, zksignInput: zksignFixtureInput())
