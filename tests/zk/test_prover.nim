@@ -53,7 +53,7 @@ suite "zk/prover — construction":
   test "Prover.new reports a missing witness data file":
     let dir = uniqueTmpDir("prover_no_dat")
     for c in Circuit:
-      check createPath(dir / dirName(c)).isOk
+      check createPath(dir / $c).isOk
       check io2.writeFile(provingKeyPath(dir, c), "x").isOk
     check Prover.new(dir, testPool()).error == ProverInitError.DatMissing
 
@@ -115,7 +115,7 @@ suite "zk/prover — prove and verify":
 
   test "poq (core branch)":
     let o = proveOk(ProveInput(
-      circuit: Circuit.Poq, poqInput: poqCoreFixtureInput(poqCoreFixtureIndex())))
+      circuit: Circuit.Poq, poqInput: poqCoreFixtureInput(PoqCoreFixtureIndex)))
     check o.publicSignalCount == PoqPublicSignals
     check o.signals == fixtureSignals(Circuit.Poq)
     let input = poqVerifierInput(o.signals).expect("12 signals")

@@ -24,10 +24,10 @@ suite "zk/circuits — path derivations":
     check circuitsVersionPath("/foo") == "/foo" / "VERSION"
 
   test "per-circuit artefact paths use the bundle directory names":
-    check dirName(Circuit.Pol) == "pol"
-    check dirName(Circuit.Poq) == "poq"
-    check dirName(Circuit.Poc) == "poc"
-    check dirName(Circuit.Signature) == "signature"
+    check $Circuit.Pol == "pol"
+    check $Circuit.Poq == "poq"
+    check $Circuit.Poc == "poc"
+    check $Circuit.Signature == "signature"
     check verificationKeyPath("/foo", Circuit.Signature) ==
       "/foo" / "signature" / "verification_key.json"
     check provingKeyPath("/foo", Circuit.Pol) == "/foo" / "pol" / "proving_key.zkey"

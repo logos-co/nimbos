@@ -22,11 +22,12 @@ const ExpectedCircuitsVersion* = "v0.5.6"
 
 type
   Circuit* {.pure.} = enum
-    ## The four circom circuits the bundle ships.
-    Pol
-    Poq
-    Poc
-    Signature
+    ## The four circom circuits the bundle ships. `$c` is the bundle
+    ## subdirectory; the ZkSig circuit ships as `signature/`.
+    Pol = "pol"
+    Poq = "poq"
+    Poc = "poc"
+    Signature = "signature"
 
   BundleError* {.pure.} = enum
     BundleDirMissing
@@ -34,25 +35,17 @@ type
     VersionReadFailed
     VersionMismatch
 
-func dirName*(c: Circuit): string =
-  ## Bundle subdirectory of a circuit. The ZkSig circuit ships as `signature/`.
-  case c
-  of Circuit.Pol: "pol"
-  of Circuit.Poq: "poq"
-  of Circuit.Poc: "poc"
-  of Circuit.Signature: "signature"
-
 func circuitsVersionPath*(dir: string): string =
   dir / "VERSION"
 
 func verificationKeyPath*(dir: string, c: Circuit): string =
-  dir / dirName(c) / "verification_key.json"
+  dir / $c / "verification_key.json"
 
 func provingKeyPath*(dir: string, c: Circuit): string =
-  dir / dirName(c) / "proving_key.zkey"
+  dir / $c / "proving_key.zkey"
 
 func witnessDatPath*(dir: string, c: Circuit): string =
-  dir / dirName(c) / "witness_generator.dat"
+  dir / $c / "witness_generator.dat"
 
 proc verifyCircuitsVersion*(dir: string): Result[void, BundleError] =
   ## Startup bundle health check.

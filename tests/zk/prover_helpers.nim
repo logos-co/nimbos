@@ -43,7 +43,7 @@ proc readText*(path: string): string =
   readAllChars(path).expect("text file readable: " & path)
 
 proc fixtureDir*(c: Circuit): string =
-  fixturesDir / (if c == Circuit.Signature: "zksign" else: dirName(c))
+  fixturesDir / (if c == Circuit.Signature: "zksign" else: $c)
 
 proc fixtureSignals*(c: Circuit): seq[FieldElement] =
   ## Public signals of the committed reference proof for `c`.
