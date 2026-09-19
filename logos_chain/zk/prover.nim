@@ -9,7 +9,7 @@
 ## FFI, proving through rapidsnark, then the 128-byte wire form.
 ##
 ## Proving runs on a taskpool worker so the chronos loop stays responsive.
-## Only plain values, views, pointers, and a thread signal cross the spawn;
+## Only plain values, pointers, and a thread signal cross the spawn;
 ## the caller preallocates the output on its async frame and the worker
 ## stores its status before firing the signal. Under refc nothing
 ## garbage-collected travels between threads.
@@ -24,7 +24,6 @@ import
   std/[atomics, os],
   chronos, chronos/threadsync, chronicles, taskpools,
   stew/[assign2, io2],
-  groth16/sharedbuf,
   ./[circuits, poc, pol, poq, witness_gen, zksign],
   ./groth16/[rapidsnark, snarkjs],
   ../core/crypto/types
@@ -71,7 +70,6 @@ type
 
   ProverKey = object
     zkey: SharedBytes   # rapidsnark keeps pointers into this buffer
-    dat: SharedBytes    # see witness_gen for the .dat pinning rule
     rs: RapidsnarkProver
 
   ProverInitError* {.pure.} = enum
@@ -80,8 +78,6 @@ type
     ProvingKeyMissing
     ProvingKeyReadFailed
     ProvingKeyInvalid
-    DatMissing
-    DatReadFailed
     Unsupported
 
   Prover* = ref object
@@ -127,7 +123,6 @@ func signals*(output: ProveOutput): seq[FieldElement] =
 
 proc proveTask(
     rs: RapidsnarkProver,
-    dat: SharedBuf[byte],
     input: ptr ProveInput,
     output: ptr ProveOutput,
     signal: ThreadSignalPtr) {.nimcall, gcsafe, raises: [].} =
@@ -150,7 +145,7 @@ proc proveTask(
       of Circuit.Poq: toInputsJson(input[].poqInput)
       of Circuit.Poc: toInputsJson(input[].pocInput)
       of Circuit.Signature: toInputsJson(input[].zksignInput)
-    let wtns = generateWitness(input[].circuit, dat.toOpenArray(), json).valueOr:
+    let wtns = generateWitness(input[].circuit, json).valueOr:
       failure =
         if error.kind == WitnessGenError.Unsupported: ProveError.Unsupported
         else: ProveError.WitnessGen
@@ -177,18 +172,13 @@ proc spawnProveTask(p: Prover, input: ptr ProveInput, output: ptr ProveOutput) =
   # Kept out of the async proc: `spawn` inside an `{.async.}` body does not
   # compile.
   let key = addr p.keys[input[].circuit]
-  p.pool.spawn proveTask(
-    key[].rs, SharedBuf.view(key[].dat.toOpenArray), input, output, p.signal)
+  p.pool.spawn proveTask(key[].rs, input, output, p.signal)
 
 proc loadKey(key: var ProverKey, circuitsDir: string, c: Circuit): Result[void, ProverInitError] =
   # Fills the slot in place: the rapidsnark object is created from the
   # buffer at its final address.
   key.zkey = loadShared(provingKeyPath(circuitsDir, c)).valueOr:
     return err(ProverInitError.ProvingKeyReadFailed)
-  key.dat = loadShared(witnessDatPath(circuitsDir, c)).valueOr:
-    return err(ProverInitError.DatReadFailed)
-  if key.dat.len == 0:
-    return err(ProverInitError.DatReadFailed)
   key.rs = RapidsnarkProver.create(key.zkey.toOpenArray).valueOr:
     if error.kind == RapidsnarkError.Unsupported:
       return err(ProverInitError.Unsupported)
@@ -202,8 +192,6 @@ proc checkArtefacts(circuitsDir: string): Result[void, ProverInitError] =
   for c in Circuit:
     if not fileExists(provingKeyPath(circuitsDir, c)):
       return err(ProverInitError.ProvingKeyMissing)
-    if not fileExists(witnessDatPath(circuitsDir, c)):
-      return err(ProverInitError.DatMissing)
   ok()
 
 proc close*(p: Prover) =
@@ -212,7 +200,6 @@ proc close*(p: Prover) =
   for c in Circuit:
     p.keys[c].rs.destroy()
     p.keys[c].zkey.free()
-    p.keys[c].dat.free()
   if p.signal != nil:
     discard p.signal.close()
     p.signal = nil

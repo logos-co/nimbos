@@ -25,9 +25,6 @@ const
   PocVarsV056 = 8293
   PoqVarsV056 = 20168
 
-proc datFor(c: Circuit): seq[byte] =
-  readBundleFile(witnessDatPath(testCircuitsDir, c))
-
 func signalsMatch(values: openArray[FieldElement], expected: seq[FieldElement]): bool =
   if values.len < expected.len + 1 or values[0] != one:
     return false
@@ -60,31 +57,24 @@ suite "zk/witness_gen — reference vectors":
     check signalsMatch(values, fixtureSignals(Circuit.Poq))
 
   test "poq: a key index at the quota is rejected by the circuit":
-    let r = generateWitness(Circuit.Poq, datFor(Circuit.Poq),
+    let r = generateWitness(Circuit.Poq,
       toInputsJson(poqCoreFixtureInput(PoqCoreFixtureQuota)))
     check r.isErr
 
 suite "zk/witness_gen — error mapping":
   test "missing signal → InvalidInput":
-    let r = generateWitness(Circuit.Signature, datFor(Circuit.Signature),
-      """{"msg": "1"}""")
+    let r = generateWitness(Circuit.Signature, """{"msg": "1"}""")
     check r.error.kind == WitnessGenError.InvalidInput
     check messageString(r.error.message).contains("inputs")
 
   test "malformed JSON → DynError":
-    let r = generateWitness(Circuit.Signature, datFor(Circuit.Signature), "{not json")
+    let r = generateWitness(Circuit.Signature, "{not json")
     check r.error.kind == WitnessGenError.DynError
 
   test "inputs of another circuit → DynError (unknown signal)":
-    # Correct .dat for the circuit; only the JSON is wrong. The C side
-    # throws "Signal not found" (printed, not returned), which maps to
-    # DynError.
-    let r = generateWitness(Circuit.Signature, datFor(Circuit.Signature),
-      toInputsJson(pocFixtureInput()))
+    # The C side throws "Signal not found" (printed, not returned), which
+    # maps to DynError.
+    let r = generateWitness(Circuit.Signature, toInputsJson(pocFixtureInput()))
     check r.error.kind == WitnessGenError.DynError
-
-  test "empty .dat → InvalidInput":
-    let r = generateWitness(Circuit.Signature, [], toInputsJson(zksignFixtureInput()))
-    check r.error.kind == WitnessGenError.InvalidInput
 
 {.pop.}

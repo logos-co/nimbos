@@ -29,7 +29,9 @@ import
 
 const
   repoRoot = currentSourcePath.parentDir.parentDir.parentDir
-  lbcRootDir {.strdefine.} = repoRoot / "build" / "circuits-bundle"
+  lbcRootDir* {.strdefine.} = repoRoot / "build" / "circuits-bundle"
+    ## Where the archives get linked from; `witness_gen` embeds its `.dat`
+    ## files from the same place.
   rapidsnarkDir {.strdefine.} = repoRoot / "build" / "rapidsnark"
 
 when not defined(windows):

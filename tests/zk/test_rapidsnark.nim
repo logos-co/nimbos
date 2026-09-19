@@ -19,7 +19,7 @@ import
   ./prover_helpers
 
 proc witnessBytes(c: Circuit, json: string): seq[byte] =
-  generateWitness(c, readBundleFile(witnessDatPath(testCircuitsDir, c)), json).valueOr:
+  generateWitness(c, json).valueOr:
     raiseAssert "witness generation failed: " & $error.kind
 
 suite "zk/groth16/rapidsnark — prover object":

@@ -7,8 +7,7 @@
 
 ## Shared fixtures for the prover-side suites: bundle artefacts, the witness
 ## inputs behind each committed reference proof, and one lazily created
-## `Prover` for the whole test binary. Each circuit is driven only with its
-## own `.dat` (see `witness_gen`).
+## `Prover` for the whole test binary.
 
 {.push raises: [].}
 
@@ -132,12 +131,10 @@ proc poqCoreFixtureInput*(index: uint64): PoqWitnessInput =
   input
 
 proc witnessValues*(c: Circuit, json: string): seq[FieldElement] =
-  ## Run the bundle witness generator for `c` with its own `.dat`.
-  let
-    dat = readBundleFile(witnessDatPath(testCircuitsDir, c))
-    wtns = generateWitness(c, dat, json).valueOr:
-      raiseAssert "witness generation failed: " & $error.kind & " " &
-        messageString(error.message)
+  ## Run the bundle witness generator for `c`.
+  let wtns = generateWitness(c, json).valueOr:
+    raiseAssert "witness generation failed: " & $error.kind & " " &
+      messageString(error.message)
   decodeWtns(wtns).expect("wtns decodes")
 
 var

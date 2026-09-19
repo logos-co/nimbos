@@ -6,13 +6,12 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## Circuit witness generation through the bundle's `lib<circuit>.a` FFI.
-## Input is the circuit's `.dat` bytes plus a JSON object of decimal strings;
-## output is the snarkjs `.wtns` container that rapidsnark consumes.
+## Input is a JSON object of decimal strings; output is the snarkjs `.wtns`
+## container that rapidsnark consumes.
 ##
-## The C side copies the first `.dat` it receives for a circuit into a
-## process-wide cache and ignores later ones, without a size check. Every
-## call for a circuit must therefore pass that circuit's own `.dat`; a wrong
-## one reads out of bounds and corrupts all later proofs for the circuit.
+## The `.dat` files are baked in at compile time from the same bundle we
+## link the archives from. The C side keeps the first `.dat` it sees for a
+## circuit and never checks its size, so it really has to be the right one.
 
 {.push raises: [], gcsafe.}
 
@@ -37,11 +36,29 @@ when defined(windows):
   # Proving is out of scope on Windows for now; the stub keeps the module and
   # its tests compiling there.
   proc generateWitness*(
-      circuit: Circuit, dat: openArray[byte], inputsJson: string
+      circuit: Circuit, inputsJson: string
   ): Result[seq[byte], WitnessGenFailure] =
     err(WitnessGenFailure(kind: WitnessGenError.Unsupported))
 else:
   import ./native_libs
+
+  const
+    polDat = staticRead(witnessDatPath(lbcRootDir, Circuit.Pol))
+    poqDat = staticRead(witnessDatPath(lbcRootDir, Circuit.Poq))
+    pocDat = staticRead(witnessDatPath(lbcRootDir, Circuit.Poc))
+    signatureDat = staticRead(witnessDatPath(lbcRootDir, Circuit.Signature))
+
+  template constBytes(s: static string): Bytes =
+    # cstring of a string literal points straight at the literal, so there's
+    # no copy and nothing for the GC to track. Fine to hand to a worker thread.
+    Bytes(data: cast[ptr UncheckedArray[uint8]](cstring(s)), size: csize_t(s.len))
+
+  func witnessData(circuit: Circuit): Bytes =
+    case circuit
+    of Circuit.Pol: constBytes(polDat)
+    of Circuit.Poq: constBytes(poqDat)
+    of Circuit.Poc: constBytes(pocDat)
+    of Circuit.Signature: constBytes(signatureDat)
 
   func toError(code: StatusCode): WitnessGenError =
     # Callers check `Ok` first; the branch exists only for exhaustiveness.
@@ -52,18 +69,13 @@ else:
     of StatusCode.Ok: WitnessGenError.DynError
 
   proc generateWitness*(
-      circuit: Circuit, dat: openArray[byte], inputsJson: string
+      circuit: Circuit, inputsJson: string
   ): Result[seq[byte], WitnessGenFailure] =
-    ## Run the circuit's witness generator. `dat` must be the circuit's own
-    ## `witness_generator.dat` bytes; `inputsJson` uses the circuit's input
-    ## names with every value as a decimal string.
-    if dat.len == 0:
-      return err(WitnessGenFailure(kind: WitnessGenError.InvalidInput))
+    ## Run the circuit's witness generator. `inputsJson` uses the circuit's
+    ## input names with every value as a decimal string.
     var
       input = WitnessInput(
-        dat: Bytes(
-          data: cast[ptr UncheckedArray[uint8]](addr dat[0]),
-          size: csize_t(dat.len)),
+        dat: witnessData(circuit),
         inputsJson: cstring(inputsJson))
       output: Bytes    # C requires `data == NULL` on entry
     let status =

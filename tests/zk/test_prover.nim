@@ -12,10 +12,9 @@
 {.used.}
 
 import
-  std/[os, times],
+  std/times,
   unittest2,
   chronos,
-  stew/io2,
   taskpools,
   ../../logos_chain/core/crypto/types,
   ./prover_helpers
@@ -49,13 +48,6 @@ suite "zk/prover — construction":
   test "Prover.new reports a missing proving key":
     let dir = uniqueTmpDir("prover_missing")
     check Prover.new(dir, testPool()).error == ProverInitError.ProvingKeyMissing
-
-  test "Prover.new reports a missing witness data file":
-    let dir = uniqueTmpDir("prover_no_dat")
-    for c in Circuit:
-      check createPath(dir / $c).isOk
-      check io2.writeFile(provingKeyPath(dir, c), "x").isOk
-    check Prover.new(dir, testPool()).error == ProverInitError.DatMissing
 
   test "close is idempotent and a closed prover refuses to prove":
     let p = Prover.new(testCircuitsDir, testPool()).expect("prover")
