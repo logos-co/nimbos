@@ -21,7 +21,7 @@ import
   ./sync/syncer,
   ./zk/[circuits, pol, poc, poq, prover, zksign]
 
-from ./chain/proposal import reconstructAndValidateBlock, ProposalValidationError
+from ./chain/proposal import reconstructBlock, ProposalValidationError
 from ./core/mantle/tx_validation import validateMantleTxStateless
 from ./core/mantle/tx_types import SignedMantleTx, ValidSignedMantleTx
 from ./core/mantle/tx_hashing import mantleTxHash
@@ -242,65 +242,73 @@ proc runOnSecondLoop(node: LBNode) {.async.} =
     let processingTime = finished - afterSleep
     trace "onSecond task completed", sleepTime, processingTime
 
-func toValidationResult(err: BlockApplyError): ValidationResult =
-  case err.kind
-  of BlockApplyErrorKind.AlreadyApplied,
-     BlockApplyErrorKind.FutureSlot,
-     BlockApplyErrorKind.MissingParent:
-    ValidationResult.Ignore
-  of BlockApplyErrorKind.InvalidStructure,
-     BlockApplyErrorKind.UnviableFork,
-     BlockApplyErrorKind.LedgerRejected,
-     BlockApplyErrorKind.StatelessTxRejected:
-    ValidationResult.Reject
-
-proc handleGossipProposal*(
+proc handleGossipProposal(
     node: LBNode, proposal: Proposal, src: PeerId
-): Future[ValidationResult] {.async: (raises: [CancelledError]).} =
+): ValidationResult =
   trace "GossipSub handling received proposal",
     blockId = byteutils.toHex(blockId(proposal.header)),
     slot = proposal.header.slot,
     src = $src
 
-  let blk = reconstructAndValidateBlock(
-    proposal, node.processor.localTree, node.processor.ledger, node.processor.mempool
+  let id = blockId(proposal.header)
+  if node.processor.localTree.hasBlock(id):
+    trace "GossipSub ignored already applied proposal",
+      blockId = byteutils.toHex(id), src = $src
+    return ValidationResult.Ignore
+
+  let nowSlot = node.processor.currentWallclockSlot()
+  if proposal.header.slot > nowSlot:
+    debug "GossipSub ignored future proposal (clock skew)",
+      blockId = byteutils.toHex(id), blockSlot = proposal.header.slot,
+      wallclockSlot = nowSlot, src = $src
+    return ValidationResult.Ignore
+
+  if proposal.header.slot <= node.processor.localTree.latestImmutableSlot():
+    debug "GossipSub ignored proposal at or behind immutable slot",
+      blockId = byteutils.toHex(id), src = $src
+    return ValidationResult.Ignore
+
+  if not node.processor.localTree.hasBlock(proposal.header.parentBlock):
+    debug "GossipSub ignored proposal with unknown parent",
+      blockId = byteutils.toHex(id),
+      parent = byteutils.toHex(proposal.header.parentBlock),
+      src = $src
+    return ValidationResult.Ignore
+
+  let blk = reconstructBlock(
+    proposal, node.processor.mempool
   ).valueOr:
     if error == ProposalValidationError.MissingReference:
       debug "GossipSub cannot reconstruct block from proposal: missing tx in mempool",
-        blockId = byteutils.toHex(blockId(proposal.header)),
+        blockId = byteutils.toHex(id),
         error = $error,
         src = $src
       return ValidationResult.Ignore
     debug "GossipSub rejected invalid proposal",
-      blockId = byteutils.toHex(blockId(proposal.header)),
+      blockId = byteutils.toHex(id),
       error = $error,
       src = $src
     return ValidationResult.Reject
 
-  let applyRes = await node.processor.addBlock(BlockSource.Gossip, blk)
-  if applyRes.isOk():
-    debug "GossipSub accepted reconstructed block into local tree",
-      blockId = byteutils.toHex(blockId(blk.header)),
-      slot = blk.header.slot,
-      src = $src
-    ValidationResult.Accept
-  else:
-    if applyRes.error.kind == BlockApplyErrorKind.FutureSlot:
-      debug "GossipSub proposal rejected due to future slot (clock skew)",
-        blockId = byteutils.toHex(blockId(blk.header)),
-        blockSlot = blk.header.slot,
-        wallclockSlot = node.processor.currentWallclockSlot(),
-        src = $src
-    else:
-      trace "GossipSub handled block apply result",
-        blockId = byteutils.toHex(blockId(blk.header)),
-        err = applyRes.error.kind
-    toValidationResult(applyRes.error)
+  discard node.processor.addBlock(BlockSource.Gossip, blk)
+
+  debug "GossipSub accepted reconstructed block into local tree",
+    blockId = byteutils.toHex(id),
+    slot = blk.header.slot,
+    src = $src
+  ValidationResult.Accept
 
 proc handleGossipTx*(node: LBNode, tx: SignedMantleTx, src: PeerId): ValidationResult =
   trace "GossipSub handling received tx",
     opCount = tx.tx.ops.len,
     src = $src
+
+  let txHash = mantleTxHash(tx.tx)
+  if txHash in node.processor.mempool:
+    trace "GossipSub ignored duplicate tx already in mempool",
+      txHash = byteutils.toHex(txHash),
+      src = $src
+    return ValidationResult.Ignore
 
   if validateMantleTxStateless(tx).isErr:
     debug "GossipSub rejected invalid mantle tx", src = $src
@@ -309,7 +317,7 @@ proc handleGossipTx*(node: LBNode, tx: SignedMantleTx, src: PeerId): ValidationR
   let nowSlot = node.processor.currentWallclockSlot()
   if not node.processor.mempool.add(ValidSignedMantleTx(tx), nowSlot):
     trace "GossipSub ignored duplicate tx already in mempool",
-      txHash = byteutils.toHex(mantleTxHash(tx.tx)),
+      txHash = byteutils.toHex(txHash),
       src = $src
     return ValidationResult.Ignore
 
@@ -320,9 +328,9 @@ proc installMessageValidators(node: LBNode): seq[string] =
 
   let blockTopic = node.deploymentSettings.cryptarchia.gossipsubProtocol
   if blockTopic.len > 0:
-    node.network.addAsyncValidator(blockTopic) do (
+    node.network.addValidator(blockTopic) do (
         proposal: Proposal, src: PeerId
-    ) -> Future[ValidationResult]:
+    ) -> ValidationResult:
       handleGossipProposal(node, proposal, src)
     topics.add(blockTopic)
   else:

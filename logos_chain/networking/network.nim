@@ -50,7 +50,8 @@ type
     proc(msg: T, src: PeerId): ValidationResult {.gcsafe, raises: [].}
 
   ValidationAsyncProc[T] =
-    proc(msg: T, src: PeerId): Future[ValidationResult] {.gcsafe, raises: [].}
+    proc(msg: T, src: PeerId): Future[ValidationResult] {.
+      async: (raises: [CancelledError]).}
 
   SeenItem = object
     peerId: PeerId
@@ -1158,12 +1159,6 @@ proc addAsyncValidator*[MsgType](
 
   node.pubsub.addValidator(topic, execValidator)
 
-proc gossipEncode(msg: auto): Result[seq[byte], cstring] =
-  let uncompressed = Bincode.encode(msg)
-  if uint64(uncompressed.len) > MAX_PAYLOAD_SIZE:
-    return err(cstring"Encoded gossip message exceeds MAX_PAYLOAD_SIZE")
-  ok(uncompressed)
-
 proc broadcast*(node: LBP2PNode, topic: string, msg: seq[byte]):
     Future[SendResult] {.async: (raises: [CancelledError]).} =
   if uint64(msg.len) > MAX_PAYLOAD_SIZE:
@@ -1182,12 +1177,7 @@ proc broadcast*(node: LBP2PNode, topic: string, msg: seq[byte]):
 proc broadcast*(node: LBP2PNode, topic: string, msg: auto):
     Future[SendResult] {.async: (raises: [CancelledError], raw: true).} =
   # Avoid {.async.} copies of message while broadcasting
-  let encoded = gossipEncode(msg).valueOr:
-    warn "Failed to encode gossip message: exceeds MAX_PAYLOAD_SIZE", topic
-    let fut = newFuture[SendResult]("network.broadcast")
-    fut.complete(SendResult.err(error))
-    return fut
-  broadcast(node, topic, encoded)
+  broadcast(node, topic, Bincode.encode(msg))
 
 when defined(unittest) or defined(test):
   func outboundConnQueueLen*(node: LBP2PNode): int {.inline.} =

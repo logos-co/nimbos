@@ -17,7 +17,7 @@ import
   ./[primitives, operations, proofs],
   ../crypto/types
 
-export primitives, operations, proofs, bincode
+export primitives, operations, proofs
 
 
 type

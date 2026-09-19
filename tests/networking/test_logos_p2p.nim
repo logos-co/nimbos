@@ -10,7 +10,7 @@
 
 import
   std/[sequtils, strutils],
-  chronos, chronicles,
+  chronos,
   chronos/unittest2/asynctests,
   libp2p/[switch, builders, multiaddress, peerid, peerstore],
   libp2p/protocols/connectivity/autonatv2/[types, client],
@@ -257,20 +257,13 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
       await dialerNode.initializeNetworking()
 
       check waitUntil(peers.dialer.switch.isConnected(peers.listenerPeerId))
-      await sleepAsync(chronos.milliseconds(300))
 
       let sampleTx = signedTxWithOps(1, 1)
 
-      let sendRes = await peers.dialer.broadcast(topic, sampleTx)
-      check sendRes.isOk
+      # Wait until GossipSub exchanges topic subscriptions and broadcast reaches listener
+      check waitUntil((await peers.dialer.broadcast(topic, sampleTx)).isOk)
+      check waitUntil(listenerNode.processor.mempool.len > 0)
 
-      var received = false
-      for _ in 0 ..< 100:
-        if listenerNode.processor.mempool.len > 0:
-          received = true
-          break
-        await sleepAsync(chronos.milliseconds(25))
-      check received
       let txItem = listenerNode.processor.mempool.get(mantleTxHash(sampleTx.tx))
       check txItem.isOk
       check txItem.get.tx.ops.len == 1
@@ -278,6 +271,20 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
       # Duplicate tx sent to handleGossipTx should return Ignore and not duplicate in mempool
       let dupRes = listenerNode.handleGossipTx(sampleTx, peers.dialer.switch.peerInfo.peerId)
       check dupRes == ValidationResult.Ignore
+      check listenerNode.processor.mempool.len == 1
+
+      # Malformed: Empty ops
+      let emptyTx = SignedMantleTx(tx: MantleTx(ops: @[]), opProofs: @[])
+      check listenerNode.handleGossipTx(emptyTx, peers.dialer.switch.peerInfo.peerId) == ValidationResult.Reject
+
+      # Malformed: Ops and proofs length mismatch
+      let mismatchTx = SignedMantleTx(tx: sampleTx.tx, opProofs: @[])
+      check listenerNode.handleGossipTx(mismatchTx, peers.dialer.switch.peerInfo.peerId) == ValidationResult.Reject
+
+      # Malformed / Invalid: Corrupt cryptographic signature on new tx
+      var corruptSigTx = signedTxWithOps(1, 999)
+      corruptSigTx.opProofs[0].ed25519SigProof.data[0] = 0xFF
+      check listenerNode.handleGossipTx(corruptSigTx, peers.dialer.switch.peerInfo.peerId) == ValidationResult.Reject
       check listenerNode.processor.mempool.len == 1
     finally:
       await dialerNode.processor.stop()
@@ -297,7 +304,6 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
       await dialerNode.initializeNetworking()
 
       check waitUntil(peers.dialer.switch.isConnected(peers.listenerPeerId))
-      await sleepAsync(chronos.milliseconds(300))
 
       let sampleBlock = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [])
       let sampleProposal = Proposal(
@@ -305,16 +311,10 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
         references: default(References),
         signature: sampleBlock.signature
       )
-      let sendRes = await peers.dialer.broadcast(topic, sampleProposal)
-      check sendRes.isOk
 
-      var received = false
-      for _ in 0 ..< 100:
-        if listenerNode.processor.localTree.hasBlock(blockId(sampleProposal.header)):
-          received = true
-          break
-        await sleepAsync(chronos.milliseconds(25))
-      check received
+      # Wait until GossipSub exchanges topic subscriptions and broadcast reaches listener
+      check waitUntil((await peers.dialer.broadcast(topic, sampleProposal)).isOk)
+      check waitUntil(listenerNode.processor.localTree.hasBlock(blockId(sampleProposal.header)))
       check listenerNode.processor.localTree.localTipId == blockId(sampleProposal.header)
 
       # Verify reconstructed block content matches proposal
@@ -332,9 +332,26 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
         references: missingRefs,
         signature: missingBlock.signature
       )
-      check (await peers.dialer.broadcast(topic, missingProposal)).isOk
-      await sleepAsync(chronos.milliseconds(200))
+      check waitUntil((await peers.dialer.broadcast(topic, missingProposal)).isOk)
+      # Wait a brief moment to ensure validation ran and rejected it without adding to localTree
+      await sleepAsync(chronos.milliseconds(100))
       check not listenerNode.processor.localTree.hasBlock(blockId(missingProposal.header))
+
+      # Malformed / Invalid: Proposal with unknown parent block
+      var unknownParentProposal = sampleProposal
+      unknownParentProposal.header.parentBlock[0] = 0xDE
+      unknownParentProposal.header.parentBlock[1] = 0xAD
+      unknownParentProposal.header.slot = SlotNumber(3)
+      check waitUntil((await peers.dialer.broadcast(topic, unknownParentProposal)).isOk)
+      await sleepAsync(chronos.milliseconds(100))
+      check not listenerNode.processor.localTree.hasBlock(blockId(unknownParentProposal.header))
+
+      # Malformed / Invalid: Proposal with future slot beyond wallclock
+      var futureProposal = sampleProposal
+      futureProposal.header.slot = listenerNode.processor.currentWallclockSlot() + SlotNumber(100)
+      check waitUntil((await peers.dialer.broadcast(topic, futureProposal)).isOk)
+      await sleepAsync(chronos.milliseconds(100))
+      check not listenerNode.processor.localTree.hasBlock(blockId(futureProposal.header))
     finally:
       await dialerNode.processor.stop()
       await listenerNode.processor.stop()
