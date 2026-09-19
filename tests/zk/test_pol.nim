@@ -9,38 +9,17 @@
 {.used.}
 
 import
-  std/[os, strutils, times],
+  std/[os, strutils],
   unittest2,
   stew/io2,
   ../../logos_chain/zk/pol,
-  ./snarkjs_helpers
+  ./[helpers, snarkjs_helpers]
 
 const
   testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
   fixtureVk = testsDir / "../fixtures/pol/verification_key.json"
   fixtureProof = testsDir / "../fixtures/pol/proof.json"
   fixturePublic = testsDir / "../fixtures/pol/public.json"
-
-func toPolInput(s: openArray[FieldElement]): PolVerifierInput =
-  # Positional mapping from the public.json ordering to the typed input.
-  # Order is the canonical 9-field spec from `pol/inputs.rs:127-138`.
-  doAssert s.len == 9, "public.json must have exactly 9 entries for PoL"
-  PolVerifierInput(
-    entropyContribution: s[0],
-    slotNumber: s[1],
-    epochNonce: s[2],
-    lottery0: s[3],
-    lottery1: s[4],
-    agedRoot: s[5],
-    latestRoot: s[6],
-    leaderPk1: s[7],
-    leaderPk2: s[8],
-  )
-
-proc uniqueTmpDir(tag: string): string =
-  # Per-test unique subdir under the system temp dir; OS cleans up eventually.
-  # No teardown — keeps test bodies focused on the assertion.
-  getTempDir() / ("nimbos_pol_" & tag & "_" & $epochTime())
 
 suite "zk/pol — loadVk":
   test "rejects missing file":
@@ -104,7 +83,7 @@ suite "zk/pol — verify":
     let inputsSeq = publicJsonToInputs(publicText).valueOr:
       check false
       return
-    input = toPolInput(inputsSeq)
+    input = polVerifierInput(inputsSeq).expect("pol fixture public.json has 9 entries")
 
   test "rejects when VK singleton not installed":
     pol.resetVkForTesting()
@@ -121,19 +100,16 @@ suite "zk/pol — verify":
     check pol.initVk(vk).error == VkAlreadyLoaded
 
   test "accepts canonical PoL test vector":
-    let r = verify(proofBytes, input)
-    check r.isOk and r.get
+    check accepts(verify(proofBytes, input))
 
   test "rejects swapped slot/epochNonce":
     var bad = input
     swap(bad.slotNumber, bad.epochNonce)
-    let r = verify(proofBytes, bad)
-    check r.isOk and not r.get
+    check rejects(verify(proofBytes, bad))
 
   test "rejects mutated entropyContribution":
     var bad = input
     bad.entropyContribution = input.slotNumber
-    let r = verify(proofBytes, bad)
-    check r.isOk and not r.get
+    check rejects(verify(proofBytes, bad))
 
 {.pop.}

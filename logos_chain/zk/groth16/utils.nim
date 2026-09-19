@@ -11,6 +11,7 @@
 {.push raises: [], gcsafe.}
 
 import
+  std/options,
   results,
   json_serialization,
   constantine/math/arithmetic,
@@ -88,5 +89,14 @@ func decodeJsonG2*(j: JsonG2): Result[G2, JsonLoadError] =
   if not checkSubgroupG2(x, y):
     return err(BadG2Point)
   ok(unsafeMkG2(x, y))
+
+func decompress*(c: ComprG1): Opt[G1] =
+  ## `Opt` view of the vendor decompression, which returns `std/options`.
+  let p = uncompressG1(c)
+  if p.isSome: Opt.some(p.get) else: Opt.none(G1)
+
+func decompress*(c: ComprG2): Opt[G2] =
+  let p = uncompressG2(c)
+  if p.isSome: Opt.some(p.get) else: Opt.none(G2)
 
 {.pop.}

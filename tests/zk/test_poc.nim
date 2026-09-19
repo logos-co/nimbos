@@ -9,28 +9,17 @@
 {.used.}
 
 import
-  std/[os, strutils, times],
+  std/[os, strutils],
   unittest2,
   stew/io2,
   ../../logos_chain/zk/poc,
-  ./snarkjs_helpers
+  ./[helpers, snarkjs_helpers]
 
 const
   testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
   fixtureVk = testsDir / "../fixtures/poc/verification_key.json"
   fixtureProof = testsDir / "../fixtures/poc/proof.json"
   fixturePublic = testsDir / "../fixtures/poc/public.json"
-
-func toPocInput(s: openArray[FieldElement]): PocVerifierInput =
-  doAssert s.len == 3, "public.json must have exactly 3 entries for PoC"
-  PocVerifierInput(
-    voucherNullifier: s[0],
-    mantleTxHashFr: s[1],
-    voucherRoot: s[2],
-  )
-
-proc uniqueTmpDir(tag: string): string =
-  getTempDir() / ("nimbos_poc_" & tag & "_" & $epochTime())
 
 suite "zk/poc — loadVk":
   test "rejects missing file":
@@ -81,7 +70,7 @@ suite "zk/poc — verify":
     let inputsSeq = publicJsonToInputs(publicText).valueOr:
       check false
       return
-    input = toPocInput(inputsSeq)
+    input = pocVerifierInput(inputsSeq).expect("poc fixture public.json has 3 entries")
 
   test "rejects when VK singleton not installed":
     poc.resetVkForTesting()
@@ -98,19 +87,16 @@ suite "zk/poc — verify":
     check poc.initVk(vk).error == VkAlreadyLoaded
 
   test "accepts canonical PoC test vector":
-    let r = verify(proofBytes, input)
-    check r.isOk and r.get
+    check accepts(verify(proofBytes, input))
 
   test "rejects swapped voucher root and nullifier":
     var bad = input
     swap(bad.voucherRoot, bad.voucherNullifier)
-    let r = verify(proofBytes, bad)
-    check r.isOk and not r.get
+    check rejects(verify(proofBytes, bad))
 
   test "rejects mutated mantle tx hash":
     var bad = input
     bad.mantleTxHashFr = input.voucherRoot
-    let r = verify(proofBytes, bad)
-    check r.isOk and not r.get
+    check rejects(verify(proofBytes, bad))
 
 {.pop.}

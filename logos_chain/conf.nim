@@ -8,7 +8,7 @@
 {.push raises: [], gcsafe.}
 
 import
-  std/[options, uri],
+  std/[options, strutils, uri],
   metrics,
   results,
   chronicles, chronicles/options as chroniclesOptions,
@@ -43,6 +43,13 @@ const
   defaultAdminListenAddressDesc* = $defaultAdminListenAddress
   ## Default ``--deployment-settings`` path (canonical cfgsync layout; run from repo root or override).
   defaultDeploymentSettingsPath* = "config/deployment-settings.yaml"
+  minThreadCount* = 2
+    ## The prover's worker fires the signal the main thread waits on.
+  maxThreadCount* = 255
+    ## taskpools keeps worker ids in a `uint8`; 0xFF marks an empty slot.
+
+type ThreadCount* = distinct Natural
+  ## Taskpool size. `0` selects one thread per CPU core.
 
 when defined(windows):
   {.pragma: windowsOnly.}
@@ -191,9 +198,9 @@ type
       name: "light-supernode" .}: bool
 
     numThreads* {.
-      defaultValue: 0,
+      defaultValue: ThreadCount(0),
       desc: "Number of worker threads (\"0\" = use as many threads as there are CPU cores available)"
-      name: "num-threads" .}: int
+      name: "num-threads" .}: ThreadCount
 
     # https://github.com/ethereum/execution-apis/blob/v1.0.0-beta.3/src/engine/authentication.md#key-distribution
     jwtSecret* {.
@@ -312,6 +319,29 @@ func parseCmdArg*(T: type Uri, input: string): T
 
 func completeCmdArg*(T: type Uri, input: string): seq[string] =
   return @[]
+
+func `==`*(a, b: ThreadCount): bool {.borrow.}
+func `$`*(t: ThreadCount): string {.borrow.}
+
+func init*(T: type ThreadCount, count: int): Result[ThreadCount, string] =
+  ## `0` or `minThreadCount .. maxThreadCount`, checked at config load.
+  if count != 0 and (count < minThreadCount or count > maxThreadCount):
+    return err("Invalid number of threads: " & $count & " (0 or " &
+      $minThreadCount & ".." & $maxThreadCount & ")")
+  ok(ThreadCount(count))
+
+func parseCmdArg*(T: type ThreadCount, input: string): T
+                 {.raises: [ValueError].} =
+  ThreadCount.init(parseInt(input)).valueOr:
+    raise newException(ValueError, error)
+
+func completeCmdArg*(T: type ThreadCount, input: string): seq[string] =
+  return @[]
+
+proc readValue*(r: var TomlReader, value: var ThreadCount)
+               {.raises: [SerializationError, IOError].} =
+  value = ThreadCount.init(r.parseInt(int)).valueOr:
+    raise newException(SerializationError, error)
 
 proc secretsDir*[Conf](config: Conf): string =
   string config.secretsDirFlag.get(InputDir(config.dataDir / "secrets"))
