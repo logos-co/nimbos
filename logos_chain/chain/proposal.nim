@@ -160,7 +160,7 @@ func reconstructBlock(
 
 func toProposalValidationError(err: BlockValidationError): ProposalValidationError =
   case err.kind
-  of BlockValidationErrorKind.MissingParent, BlockValidationErrorKind.UnviableFork:
+  of BlockValidationErrorKind.OrphanBlock, BlockValidationErrorKind.UnviableFork:
     ProposalValidationError.TreeAdmissionRejected
   else:
     ProposalValidationError.InvalidBlockStructure
@@ -170,14 +170,14 @@ proc reconstructAndValidateBlock*(
     localTree: LocalTree,
     ledger: Ledger[BlockId],
     mempool: Mempool
-): Result[Block, ProposalValidationError] =
+): Result[ValidBlock, ProposalValidationError] =
   ## Attempts block reconstruction from references, validates the reconstructed
   ## block against localTree and ledger admission rules (skipping stateless tx
-  ## checks as mempool txs are already valid), and returns the reconstructed Block.
+  ## checks as mempool txs are already valid), and returns the reconstructed ValidBlock.
   ## State transition (prepareBlockUpdate) is handled afterwards in the pipeline.
   let blk = ? reconstructBlock(proposal, mempool)
-  discard validateBlockAndStatelessTransactions(blk, localTree, ledger, []).valueOr:
+  let validBlk = validateBlock(blk, localTree, ledger, []).valueOr:
     return err(error.toProposalValidationError)
-  ok(blk)
+  ok(validBlk)
 
 {.pop.}

@@ -15,7 +15,7 @@ import
 from ./crypto/types as crypto_types import isZero
 from ./mantle/primitives import SlotNumber
 
-export types.Block, types.Header, types.BlockId
+export types.Block, types.Header, types.BlockId, types.ValidBlock
 
 type
   Tip* = object
@@ -190,25 +190,29 @@ func isAncestor*(localTree: LocalTree, ancestor: BlockId,
   false
 
 # https://github.com/logos-co/logos-lips/blob/5587d1e5ca2964e38098cd18f81f0fbe19f51fd3/docs/blockchain/raw/cryptarchia-v1-protocol.md#L435-L436
-func isFutureDescendantOfImmutable*(localTree: LocalTree,
-    header: Header): bool =
-  ## Validates that an incoming block header descends from `latestImmutableId` and has candidate height > immutableHeight.
-  let parentHeight = blockHeight(localTree, header.parentBlock).valueOr:
+func canDescendFromImmutable*(localTree: LocalTree, header: Header): bool =
+  ## Validates whether a block header can descend from the latest immutable block:
+  ## - For known parents: candidate height > immutable height and ancestry path to LIB.
+  ## - For unknown parents (orphans): slot feasibility (header.slot > immutableSlot).
+  if header.parentBlock.isZero:
     return false
-  let candidateHeight = parentHeight + 1'u64
-  if candidateHeight <= localTree.latestImmutableHeight():
+  if header.slot <= localTree.latestImmutableSlot():
     return false
-  let immId = localTree.latestImmutableId
-  if immId.isZero:
-    return true
-  var cur = header.parentBlock
-  while not cur.isZero:
-    if cur == immId:
-      return true
-    let parentHeader = fetchHeader(localTree, cur).valueOr:
+
+  localTree.blocksById.withValue(header.parentBlock, parentNode):
+    if parentNode[].height + 1'u64 <= localTree.latestImmutableHeight():
       return false
-    cur = parentHeader.parentBlock
-  false
+    let immId = localTree.latestImmutableId
+    if immId.isZero:
+      return true
+    var cur = parentNode[]
+    while cur != nil:
+      if cur.id == immId:
+        return true
+      cur = cur.parent
+    return false
+
+  true
 
 func lcaBlockIdAndHeight*(
     localTree: LocalTree, idA, idB: BlockId,
@@ -249,5 +253,15 @@ proc addBlockToTree*(localTree: LocalTree, blk: Block): bool =
         localTree.tipId = id
     return true
   false
+
+template addBlockToTree*(localTree: LocalTree, blk: ValidBlock): bool =
+  localTree.addBlockToTree(Block(blk))
+
+when defined(unittest) or defined(test):
+  proc `latestImmutableHeight=`*(localTree: LocalTree, height: uint64) =
+    localTree.blocksById.withValue(localTree.tipId, tip):
+      let node = ancestorAtHeight(tip[], height)
+      if node != nil:
+        localTree.latestImmutableId = node.id
 
 {.pop.}

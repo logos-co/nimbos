@@ -140,10 +140,8 @@ suite "chain/epoch wiring (devnet deployment settings)":
       r = chain.tryApplyBlock(b1)
     check r.isErr and r.error.kind == BlockApplyErrorKind.FutureSlot
 
-  test "tryApplyBlock rejects an unknown parent at tree admission":
-    var chain = Chain.init(ds, mockVerifyLeaderProof).valueOr:
-      check false
-      return
+  test "tryApplyBlock buffers an unknown parent into orphan pool":
+    var chain = initZeroFeeChain(ds)
     var fakeParent: BlockId
     fakeParent[0] = 7'u8
     let
@@ -152,7 +150,8 @@ suite "chain/epoch wiring (devnet deployment settings)":
       r = chain.tryApplyBlock(orphan)
     check:
       r.isErr
-      r.error.kind == BlockApplyErrorKind.MissingParent
+      r.error.kind == BlockApplyErrorKind.OrphanBuffered
+      chain.orphanPool.hasOrphan(blockId(orphan.header))
 
   test "tryApplyBlock removes block txs from mempool, re-adds on fork switch, and selects restored txs":
     var chain = initZeroFeeChain(ds)

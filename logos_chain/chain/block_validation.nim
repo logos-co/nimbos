@@ -24,18 +24,18 @@ export tx_validation.StatelessLedgerError
 
 from ../core/types import
   Block, Header, Proposal, References, createBlockRoot, ExpectedBedrockVersion,
-  MaxBlockSize, header, blockId, Hash32
+  MaxBlockSize, header, txs, blockId, Hash32, ValidBlock
 from ../core/mantle/primitives import MaxBlockTxs, SlotNumber
 from ../core/mantle/tx_types import SignedMantleTx, ValidSignedMantleTx, byteLen
 
 type
   BlockValidationErrorKind* {.pure.} = enum
     InvalidBlockStructure
-    MissingParent      # parent id has no ledger state
     UnviableFork       # parent known; at or behind the immutable ancestor
     HeaderRejected
     TransactionsRejected
     StatelessTxRejected
+    OrphanBlock
 
   BlockValidationError* = object
     case kind*: BlockValidationErrorKind
@@ -43,6 +43,8 @@ type
       ledgerError*: LedgerError
     of BlockValidationErrorKind.StatelessTxRejected:
       statelessError*: StatelessLedgerError
+    of BlockValidationErrorKind.OrphanBlock:
+      validBlock*: ValidBlock
     else:
       discard
 
@@ -117,12 +119,12 @@ proc validateStatelessTransactions(
 
   ok()
 
-proc validateBlockAndStatelessTransactions*(
+proc validateBlock*(
     blk: Block,
     localTree: LocalTree,
     ledger: Ledger[BlockId],
     txsToVerify: openArray[SignedMantleTx],
-): Result[BlockId, BlockValidationError] =
+): Result[ValidBlock, BlockValidationError] =
   ## Multi-tier block admission and stateless transaction validation:
   ## Tier 0: Structural & size bounds (~1 µs)
   ## Tier 1: Topology & parent existence in localTree/ledger (< 5 µs)
@@ -130,37 +132,40 @@ proc validateBlockAndStatelessTransactions*(
   ## Tier 3: Light-first stateless transaction validation on `txsToVerify` (0 - 5.2s).
   ## Only `txsToVerify` will be validated; if empty, all transactions are in the mempool
   ## thus no need to validate statelessly.
+  ##
+  ## If the block's parent is missing from the ledger, it is treated as an orphan.
+  ## Validation does not terminate early; Tier 2 (header signature/root) and Tier 3
+  ## (stateless transactions) are executed to ensure malformed blocks are rejected
+  ## before buffering. If all checks pass, `OrphanBlock` is returned.
   if not validateBlockStructure(blk):
     return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))
 
-  let parent = localTree.fetchHeader(blk.header.parentBlock).valueOr:
-    return err(BlockValidationError(kind: BlockValidationErrorKind.MissingParent))
-  if blk.header.slot <= parent.slot:
-    return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))
-  # The tree keeps ancestors below the LIB after their states are pruned, so
-  # the fork check must run before the state lookup to report UnviableFork.
-  if not localTree.isFutureDescendantOfImmutable(blk.header):
+  let isOrphan = not ledger.hasState(blk.header.parentBlock)
+  if not isOrphan:
+    let parentHdr = localTree.fetchHeader(blk.header.parentBlock).valueOr:
+      return err(BlockValidationError(kind: BlockValidationErrorKind.UnviableFork))
+    if blk.header.slot <= parentHdr.slot:
+      return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))
+
+  if not localTree.canDescendFromImmutable(blk.header):
     return err(BlockValidationError(kind: BlockValidationErrorKind.UnviableFork))
-  if not ledger.hasState(blk.header.parentBlock):
-    return err(BlockValidationError(kind: BlockValidationErrorKind.MissingParent))
 
   if not validateBlockHeader(blk):
     return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))
 
   ?validateStatelessTransactions(txsToVerify)
 
-  ok(blockId(blk.header))
+  if isOrphan:
+    return err(BlockValidationError(kind: BlockValidationErrorKind.OrphanBlock, validBlock: ValidBlock(blk)))
+
+  ok(ValidBlock(blk))
 
 proc prepareBlockUpdate*(
-    blk: Block,
-    localTree: LocalTree,
+    blk: ValidBlock,
     ledger: Ledger[BlockId],
-    txsToVerify: openArray[SignedMantleTx],
 ): Result[tuple[id: BlockId, state: LedgerState], BlockValidationError] =
-  ## Validates block admission, statelessly validates only `txsToVerify` (if empty,
-  ## all transactions are in the mempool thus no need to validate statelessly), and
-  ## executes state transitions via `ledger.prepareUpdate`.
-  let id = ?validateBlockAndStatelessTransactions(blk, localTree, ledger, txsToVerify)
+  ## Executes state transitions via `ledger.prepareUpdate` on a validated block.
+  let id = blockId(blk.header)
   template validTxs: untyped = cast[seq[ValidSignedMantleTx]](blk.txs)
 
   let prepared = ledger.prepareUpdate(
