@@ -85,7 +85,8 @@ import # Unit test
   ./zk/test_merkle_path,
   ./zk/test_wtns_helpers,
   ./zk/groth16/test_vk_json,
-  ./zk/groth16/test_verifier
+  ./zk/groth16/test_verifier,
+  ./zk/groth16/test_snarkjs
 
 when not defined(windows):
   # Proving is out of scope on Windows; `witness_gen` and `rapidsnark` are

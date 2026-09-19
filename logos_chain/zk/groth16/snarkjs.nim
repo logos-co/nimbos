@@ -15,7 +15,7 @@ import
   std/[json, sequtils],
   json_serialization,
   stew/assign2,
-  constantine/math/io/io_fields,
+  constantine/math/arithmetic,
   groth16/bn128,
   ./[utils, verifier]
 
@@ -70,7 +70,18 @@ proc publicJsonToInputs*(
 
 func frDecimal*(x: FieldElement): string =
   ## Circuit input encoding of a field element: its decimal string.
-  toDecimal(x)
+  # Fixed-length digit loop; only the leading-zero trim depends on the value.
+  const Digits = 77   # 2^254 < 10^77
+  var
+    big = x.toBig()
+    digits: array[Digits, char]
+  for i in countdown(Digits - 1, 0):
+    digits[i] = char(ord('0') + int(big.div10()))
+  var first = 0
+  while first < Digits - 1 and digits[first] == '0':
+    inc first
+  result = newStringUninit(Digits - first)
+  copyMem(addr result[0], addr digits[first], Digits - first)
 
 func pathJson*(path: openArray[FieldElement]): JsonNode =
   %path.mapIt(frDecimal(it))
