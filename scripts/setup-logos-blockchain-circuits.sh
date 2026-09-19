@@ -107,7 +107,8 @@ check_existing_installation() {
             echo
             if [[ ! $REPLY =~ ^[Yy]$ ]]; then
                 print_info "Installation cancelled."
-                exit 0
+                # Non-zero: a Makefile target must not link the old install.
+                exit 1
             fi
         fi
 
@@ -140,7 +141,8 @@ download_release() {
 
     print_info "Extracting to ${INSTALL_DIR}..."
     # XDG Base Directory Spec: newly created destination directory gets 0700.
-    mkdir -m 0700 -p "$INSTALL_DIR"
+    mkdir -p "$INSTALL_DIR"
+    chmod 0700 "$INSTALL_DIR"
 
     if ! tar -xzf "${temp_dir}/${artifact}" -C "$INSTALL_DIR" --strip-components=1; then
         print_error "Failed to extract archive"

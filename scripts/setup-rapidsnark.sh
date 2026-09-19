@@ -93,7 +93,8 @@ check_existing_installation() {
             echo
             if [[ ! $REPLY =~ ^[Yy]$ ]]; then
                 print_info "Installation cancelled."
-                exit 0
+                # Non-zero: a Makefile target must not link the old install.
+                exit 1
             fi
         fi
         print_info "Removing existing installation..."
@@ -119,7 +120,8 @@ download_release() {
     print_success "Download complete"
 
     print_info "Extracting to ${INSTALL_DIR}..."
-    mkdir -m 0700 -p "$INSTALL_DIR"
+    mkdir -p "$INSTALL_DIR"
+    chmod 0700 "$INSTALL_DIR"
     if ! unzip -qo "${temp_dir}/${ASSET}.zip" -d "${temp_dir}/x"; then
         print_error "Failed to extract archive"
         rm -rf "$temp_dir"

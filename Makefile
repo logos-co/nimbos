@@ -183,7 +183,9 @@ circuits-install: | build
 	else \
 		$(LBC_INSTALL_CMD) "$(LBC_INSTALL_DIR)"; \
 	fi
+ifneq ($(OS),Windows_NT)
 	@ln -sfn "$(LBC_INSTALL_DIR)" "$(LBC_LINK_DIR)"
+endif
 
 .PHONY: circuits-install-test
 circuits-install-test: | build
@@ -193,7 +195,9 @@ circuits-install-test: | build
 	else \
 		$(LBC_INSTALL_CMD) "$(LBC_TEST_INSTALL_DIR)"; \
 	fi
+ifneq ($(OS),Windows_NT)
 	@ln -sfn "$(LBC_TEST_INSTALL_DIR)" "$(LBC_LINK_DIR)"
+endif
 
 # rapidsnark prebuilt Groth16 prover libraries (the reference node links the
 # same archives through rust-rapidsnark). No Windows archive exists; the
