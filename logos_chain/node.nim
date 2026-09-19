@@ -8,7 +8,7 @@
 {.push raises: [], gcsafe.}
 
 import
-  std/osproc,
+  std/cpuinfo,
   chronos, chronicles, presto, presto/server,
   bearssl/rand,
   metrics, metrics/chronos_httpserver,
@@ -30,7 +30,7 @@ from std/random import randomize
 from taskpools import Taskpool, new, shutdown
 
 export
-  osproc, chronos, presto, server, conf,
+  chronos, presto, server, conf,
   deployment_settings, network, utils, block_processor
 
 logScope: topics = "logos_nd"
@@ -160,16 +160,19 @@ proc init*(
       hasLocalTree = processor.localTree != nil,
       chainSyncProtocol = deploymentSettings.network.chainSyncProtocolName
 
-  # Created last so every earlier failure path has nothing to release. The
-  # prover needs a second thread: its worker fires the signal the main thread
-  # waits on.
+  # Created last so every earlier failure path has nothing to release.
+  let numThreads =
+    if config.numThreads == ThreadCount(0):
+      max(minThreadCount, min(countProcessors(), maxThreadCount))
+    else:
+      int(config.numThreads)
   var taskpool =
     try:
-      Taskpool.new(numThreads = max(2,
-        if config.numThreads == 0: osproc.countProcessors() else: config.numThreads))
+      Taskpool.new(numThreads = numThreads)
     except CatchableError as exc:
       fatal "Failed to create taskpool", err = exc.msg
       return Opt.none(LBNode)
+  info "Threadpool started", numThreads
 
   let zkProver = Prover.new(circuitsDir, taskpool).valueOr:
     when defined(windows):
