@@ -10,15 +10,20 @@
 
 import
   std/[sequtils, strutils],
-  chronos,
+  chronos, chronicles,
   chronos/unittest2/asynctests,
   libp2p/[switch, builders, multiaddress, peerid, peerstore],
   libp2p/protocols/connectivity/autonatv2/[types, client],
   libp2p/protocols/pubsub/gossipsub,
   ../testutil,
+  ../logos_chain/sync/helpers,
   ../../logos_chain/conf,
+  ../../logos_chain/core/[types, local_tree],
   ../../logos_chain/core/mantle/[tx_types, tx_hashing],
-  ../../logos_chain/networking/[network, discovery, protocols, bincode]
+  ../../logos_chain/networking/[network, discovery, protocols],
+  ../../logos_chain/chain/genesis,
+  ../../logos_chain/node,
+  ../../logos_chain/deployment/deployment_settings
 
 from libp2p/protocols/connectivity/autonat/types import NetworkReachability
 
@@ -216,22 +221,125 @@ suite "P2P stack — NAT and AutoNAT v2":
       await peers.dialer.stop()
       await peers.listener.stop()
 
+proc initTestLBNode(
+    network: LBP2PNode,
+    genesis: Block,
+    mempoolTopic: string = "",
+    proposalTopic: string = "",
+): LBNode =
+  var ds = DeploymentSettings(
+    time: TimeDeploymentSettings(slotDuration: chronos.seconds(1))
+  )
+  if mempoolTopic.len > 0:
+    ds.mempool.pubsubTopic = mempoolTopic
+  if proposalTopic.len > 0:
+    ds.cryptarchia.gossipsubProtocol = proposalTopic
+  let bp = BlockProcessor.new(initTestChain(genesis))
+  bp.start()
+  LBNode(
+    network: network,
+    config: LBNodeConf(),
+    deploymentSettings: ds,
+    processor: bp,
+    shutdownEvent: newAsyncEvent()
+  )
+
 suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
-  test "GossipSub: subscribes and publishes /logos-blockchain/mempool/1.0.0 (mainnet)":
-    # TODO(logos-chain-networking): wire mainnet mempool topic and assert behavior
-    skip()
+  asyncTest "GossipSub: subscribes, broadcasts, and ingests transactions":
+    const topic = "/logos-blockchain/mempool/1.0.0"
+    let
+      peers = await createBootstrapPeers()
+      genesis = createGenesisBlock(minimalSignedTx())
+      listenerNode = initTestLBNode(peers.listener, genesis, mempoolTopic = topic)
+      dialerNode = initTestLBNode(peers.dialer, genesis, mempoolTopic = topic)
+    try:
+      await listenerNode.initializeNetworking()
+      await dialerNode.initializeNetworking()
 
-  test "GossipSub: subscribes and publishes /logos-blockchain/cryptarchia/1.0.0 (mainnet)":
-    # TODO(logos-chain-networking): wire mainnet cryptarchia topic and assert behavior
-    skip()
+      check waitUntil(peers.dialer.switch.isConnected(peers.listenerPeerId))
+      await sleepAsync(chronos.milliseconds(300))
 
-  test "GossipSub: subscribes and publishes /logos-blockchain-testnet/mempool/1.0.0 (testnet)":
-    # TODO(logos-chain-networking): wire testnet mempool topic and assert behavior
-    skip()
+      let sampleTx = signedTxWithOps(1, 1)
 
-  test "GossipSub: subscribes and publishes /logos-blockchain-testnet/cryptarchia/1.0.0 (testnet)":
-    # TODO(logos-chain-networking): wire testnet cryptarchia topic and assert behavior
-    skip()
+      let sendRes = await peers.dialer.broadcast(topic, sampleTx)
+      check sendRes.isOk
+
+      var received = false
+      for _ in 0 ..< 100:
+        if listenerNode.processor.mempool.len > 0:
+          received = true
+          break
+        await sleepAsync(chronos.milliseconds(25))
+      check received
+      let txItem = listenerNode.processor.mempool.get(mantleTxHash(sampleTx.tx))
+      check txItem.isOk
+      check txItem.get.tx.ops.len == 1
+
+      # Duplicate tx sent to handleGossipTx should return Ignore and not duplicate in mempool
+      let dupRes = listenerNode.handleGossipTx(sampleTx, peers.dialer.switch.peerInfo.peerId)
+      check dupRes == ValidationResult.Ignore
+      check listenerNode.processor.mempool.len == 1
+    finally:
+      await dialerNode.processor.stop()
+      await listenerNode.processor.stop()
+      await peers.dialer.stop()
+      await peers.listener.stop()
+
+  asyncTest "GossipSub: subscribes, broadcasts, and applies proposals via local reconstruction":
+    const topic = "/logos-blockchain/cryptarchia/1.0.0"
+    let peers = await createBootstrapPeers()
+    let
+      genesis = createGenesisBlock(minimalSignedTx())
+      listenerNode = initTestLBNode(peers.listener, genesis, proposalTopic = topic)
+      dialerNode = initTestLBNode(peers.dialer, genesis, proposalTopic = topic)
+    try:
+      await listenerNode.initializeNetworking()
+      await dialerNode.initializeNetworking()
+
+      check waitUntil(peers.dialer.switch.isConnected(peers.listenerPeerId))
+      await sleepAsync(chronos.milliseconds(300))
+
+      let sampleBlock = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [])
+      let sampleProposal = Proposal(
+        header: sampleBlock.header,
+        references: default(References),
+        signature: sampleBlock.signature
+      )
+      let sendRes = await peers.dialer.broadcast(topic, sampleProposal)
+      check sendRes.isOk
+
+      var received = false
+      for _ in 0 ..< 100:
+        if listenerNode.processor.localTree.hasBlock(blockId(sampleProposal.header)):
+          received = true
+          break
+        await sleepAsync(chronos.milliseconds(25))
+      check received
+      check listenerNode.processor.localTree.localTipId == blockId(sampleProposal.header)
+
+      # Verify reconstructed block content matches proposal
+      let reconstructedBlock = listenerNode.processor.localTree.getBlock(blockId(sampleProposal.header)).get()
+      check reconstructedBlock.header == sampleProposal.header
+      check reconstructedBlock.signature == sampleProposal.signature
+      check reconstructedBlock.txs.len == 0
+
+      # Broadcast proposal referencing a missing transaction (not in listener's mempool)
+      var missingRefs: References
+      missingRefs[0] = mantleTxHash(minimalSignedTx().tx)
+      let missingBlock = childBlock(sampleProposal.header, blockId(sampleProposal.header), SlotNumber(2), [])
+      let missingProposal = Proposal(
+        header: missingBlock.header,
+        references: missingRefs,
+        signature: missingBlock.signature
+      )
+      check (await peers.dialer.broadcast(topic, missingProposal)).isOk
+      await sleepAsync(chronos.milliseconds(200))
+      check not listenerNode.processor.localTree.hasBlock(blockId(missingProposal.header))
+    finally:
+      await dialerNode.processor.stop()
+      await listenerNode.processor.stop()
+      await peers.dialer.stop()
+      await peers.listener.stop()
 
 suite "P2P stack — on-the-wire encoding":
   test "Network Wire Format: payloads on negotiated streams follow Logos Chain wire format spec":
