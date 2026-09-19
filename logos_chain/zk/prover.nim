@@ -137,6 +137,11 @@ proc proveTask(
     ok = false
     failure = ProveError.ProverFailed
     message: NativeMessage
+  defer:
+    output[].error = failure
+    output[].message = message
+    output[].ok.store(ok)
+    discard signal.fireSync()
 
   block work:
     let json =
@@ -167,11 +172,6 @@ proc proveTask(
     assign(output[].publicSignals.toOpenArray(0, signals.high), signals)
     output[].publicSignalCount = signals.len
     ok = true
-
-  output[].error = failure
-  output[].message = message
-  output[].ok.store(ok)
-  discard signal.fireSync()
 
 proc spawnProveTask(p: Prover, input: ptr ProveInput, output: ptr ProveOutput) =
   # Kept out of the async proc: `spawn` inside an `{.async.}` body does not
@@ -258,11 +258,15 @@ proc prove*(
     inp = input
     output: ProveOutput
   p.spawnProveTask(addr inp, addr output)
-  # The task cannot be cancelled and must not outlive this frame.
+  # To support cancellation, we'd have to ensure the task we posted to taskpools
+  # exits early - since we're not doing that, block cancellation attempts
   try:
     await noCancel p.signal.wait()
   except AsyncError as exc:
-    raiseAssert "prover signal wait failed: " & exc.msg
+    # Since we initialized the signal, the OS or chronos is misbehaving. In any
+    # case, it would mean the task is still running which would cause a memory
+    # violation if we let it run - panic instead
+    raiseAssert "Could not wait for signal, was it initialized? " & exc.msg
 
   if not output.ok.load():
     debug "proof generation failed",
