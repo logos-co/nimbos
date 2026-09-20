@@ -56,6 +56,19 @@ func toStatelessLedgerError*(err: EncodingError): StatelessLedgerError =
      EncodingError.OpsCountExceeded:
     StatelessLedgerError.InvalidProof
 
+func toStatelessLedgerError*(err: DecodingError): StatelessLedgerError =
+  case err
+  of DecodingError.UnsupportedOpcode:
+    StatelessLedgerError.UnsupportedOp
+  of DecodingError.LocatorsCountExceeded:
+    StatelessLedgerError.TooManyLocators
+  of DecodingError.LocatorLengthExceeded, DecodingError.InvalidLocator:
+    StatelessLedgerError.InvalidLocator
+  of DecodingError.InvalidSigner:
+    StatelessLedgerError.InvalidChannelConfig
+  else:
+    StatelessLedgerError.InvalidProof
+
 func hasHeavyZkProof*(tx: SignedMantleTx): bool {.inline.} =
   tx.opProofs.anyIt(it.kind == opfLeaderClaim)
 

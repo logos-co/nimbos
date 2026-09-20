@@ -55,7 +55,11 @@ suite "core/crypto/types":
   test "encodeFieldElement round-trips canonical LE bytes":
     var bytes: array[32, byte]
     bytes[0] = 0x11'u8
-    check encodeFieldElement(decodeFieldElement(bytes)) == bytes
+    check encodeFieldElement(decodeFieldElement(bytes).get) == bytes
     check encodeHash32(bytes) == bytes
+
+  test "decode helpers return DecodingError on malformed input":
+    check decodeFieldElement([1'u8, 2'u8]).error == DecodingError.UnexpectedEnd
+    check decodeU32LeLenPrefixed([10'u8, 0'u8, 0'u8, 0'u8, 1'u8]).error == DecodingError.BufferExceeded
 
 {.pop.}

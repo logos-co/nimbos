@@ -267,156 +267,160 @@ func slotToFr*(slot: SlotNumber): FieldElement =
   ## little-endian zero-padded encoding.
   frFromBytesLE(encodeLe(uint64(slot))).get
 
-func decodeDeclarationId*(data: openArray[byte]): DeclarationId {.raises: [DecodingError].} =
+func decodeDeclarationId*(data: openArray[byte]): Result[DeclarationId, DecodingError] =
   decodeHash32(data)
 
-func decodeChannelId*(data: openArray[byte]): ChannelId {.raises: [DecodingError].} =
+func decodeChannelId*(data: openArray[byte]): Result[ChannelId, DecodingError] =
   decodeHash32(data)
 
-func decodeParent*(data: openArray[byte]): Parent {.raises: [DecodingError].} =
+func decodeParent*(data: openArray[byte]): Result[Parent, DecodingError] =
   decodeHash32(data)
 
-func decodeProviderId*(data: openArray[byte]): ProviderId {.raises: [DecodingError].} =
+func decodeProviderId*(data: openArray[byte]): Result[ProviderId, DecodingError] =
   decodeEd25519PublicKey(data)
 
-func decodeZkId*(data: openArray[byte]): ZkId {.raises: [DecodingError].} =
+func decodeZkId*(data: openArray[byte]): Result[ZkId, DecodingError] =
   decodeZkPublicKey(data)
 
-func decodeSigner*(data: openArray[byte]): Signer {.raises: [DecodingError].} =
+func decodeSigner*(data: openArray[byte]): Result[Signer, DecodingError] =
   decodeEd25519PublicKey(data)
 
-func decodeNoteId*(data: openArray[byte]): NoteId {.raises: [DecodingError].} =
+func decodeNoteId*(data: openArray[byte]): Result[NoteId, DecodingError] =
   decodeFieldElement(data)
 
-func decodeLockedNoteId*(data: openArray[byte]): LockedNoteId {.raises: [DecodingError].} =
+func decodeLockedNoteId*(data: openArray[byte]): Result[LockedNoteId, DecodingError] =
   decodeNoteId(data)
 
-func decodeRewardsRoot*(data: openArray[byte]): RewardsRoot {.raises: [DecodingError].} =
+func decodeRewardsRoot*(data: openArray[byte]): Result[RewardsRoot, DecodingError] =
   decodeFieldElement(data)
 
-func decodeVoucherNullifier*(data: openArray[byte]): VoucherNullifier {.raises: [DecodingError].} =
+func decodeVoucherNullifier*(data: openArray[byte]): Result[VoucherNullifier, DecodingError] =
   decodeFieldElement(data)
 
-func decodePublicKey*(data: openArray[byte]): PublicKey {.raises: [DecodingError].} =
+func decodePublicKey*(data: openArray[byte]): Result[PublicKey, DecodingError] =
   decodeZkPublicKey(data)
 
-func decodeOpcode*(data: openArray[byte]): Opcode {.raises: [DecodingError].} =
-  Opcode(decodeByte(data))
+func decodeOpcode*(data: openArray[byte]): Result[Opcode, DecodingError] =
+  let b = ?decodeByte(data)
+  ok(Opcode(b))
 
-func decodeOpCount*(data: openArray[byte]): OpCount {.raises: [DecodingError].} =
-  OpCount(decodeByte(data))
+func decodeOpCount*(data: openArray[byte]): Result[OpCount, DecodingError] =
+  let b = ?decodeByte(data)
+  ok(OpCount(b))
 
-func decodeValue*(data: openArray[byte]): Value {.raises: [DecodingError].} =
+func decodeValue*(data: openArray[byte]): Result[Value, DecodingError] =
   var pos = 0
-  let res = readLe[uint64](data, pos)
-  finishDecode(data, pos)
-  res
+  let res = ?readLe[uint64](data, pos)
+  ?finishDecode(data, pos)
+  ok(Value(res))
 
-func decodeAmount*(data: openArray[byte]): Amount {.raises: [DecodingError].} =
+func decodeAmount*(data: openArray[byte]): Result[Amount, DecodingError] =
   decodeValue(data)
 
-func decodeNonce*(data: openArray[byte]): Nonce {.raises: [DecodingError].} =
+func decodeNonce*(data: openArray[byte]): Result[Nonce, DecodingError] =
   decodeValue(data)
 
-func decodeMetadata*(data: openArray[byte]): Metadata {.raises: [DecodingError].} =
+func decodeMetadata*(data: openArray[byte]): Result[Metadata, DecodingError] =
   decodeU32LeLenPrefixed(data)
 
-func decodeInscription*(data: openArray[byte]): Inscription {.raises: [DecodingError].} =
+func decodeInscription*(data: openArray[byte]): Result[Inscription, DecodingError] =
   decodeU32LeLenPrefixed(data)
 
-func readServiceType*(data: openArray[byte], pos: var int): ServiceType {.raises: [DecodingError].} =
-  let b = readByte(data, pos)
+func readServiceType*(data: openArray[byte], pos: var int): Result[ServiceType, DecodingError] =
+  let b = ?readByte(data, pos)
   case b
   of byte(ord(ServiceType.bn)):
-    ServiceType.bn
+    ok(ServiceType.bn)
   else:
-    raise newException(DecodingError, "invalid ServiceType byte: " & $b)
+    err(DecodingError.InvalidServiceType)
 
-func decodeServiceType*(data: openArray[byte]): ServiceType {.raises: [DecodingError].} =
+func decodeServiceType*(data: openArray[byte]): Result[ServiceType, DecodingError] =
   var pos = 0
-  let res = readServiceType(data, pos)
-  finishDecode(data, pos)
-  res
+  let res = ?readServiceType(data, pos)
+  ?finishDecode(data, pos)
+  ok(res)
 
-func decodeLocatorCount*(data: openArray[byte]): byte {.raises: [DecodingError].} =
+func decodeLocatorCount*(data: openArray[byte]): Result[byte, DecodingError] =
   decodeByte(data)
 
-func readLocator*(data: openArray[byte], pos: var int): Locator {.raises: [DecodingError].} =
-  let raw = readU16LeLenPrefixed(data, pos)
+func readLocator*(data: openArray[byte], pos: var int): Result[Locator, DecodingError] =
+  let raw = ?readU16LeLenPrefixed(data, pos)
   if raw.len > MaxLocatorMultiaddrBytes:
-    raise newException(DecodingError, "Locator exceeds max multiaddr byte length")
-  MultiAddress.init(raw).valueOr:
-    raise newException(DecodingError, "invalid Locator multiaddr: " & error)
+    return err(DecodingError.LocatorLengthExceeded)
+  let ma = MultiAddress.init(raw).valueOr:
+    return err(DecodingError.InvalidLocator)
+  ok(ma)
 
-func decodeLocator*(data: openArray[byte]): Locator {.raises: [DecodingError].} =
+func decodeLocator*(data: openArray[byte]): Result[Locator, DecodingError] =
   var pos = 0
-  let res = readLocator(data, pos)
-  finishDecode(data, pos)
-  res
+  let res = ?readLocator(data, pos)
+  ?finishDecode(data, pos)
+  ok(res)
 
-func decodeSignatureCount*(data: openArray[byte]): SignatureCount {.raises: [DecodingError].} =
+func decodeSignatureCount*(data: openArray[byte]): Result[SignatureCount, DecodingError] =
   var pos = 0
-  let res = SignatureCount(readLe[uint16](data, pos))
-  finishDecode(data, pos)
-  res
+  let res = SignatureCount(?readLe[uint16](data, pos))
+  ?finishDecode(data, pos)
+  ok(res)
 
-func decodeChannelKeyIndex*(data: openArray[byte]): ChannelKeyIndex {.raises: [DecodingError].} =
+func decodeChannelKeyIndex*(data: openArray[byte]): Result[ChannelKeyIndex, DecodingError] =
   var pos = 0
-  let res = ChannelKeyIndex(readLe[uint16](data, pos))
-  finishDecode(data, pos)
-  res
+  let res = ChannelKeyIndex(?readLe[uint16](data, pos))
+  ?finishDecode(data, pos)
+  ok(res)
 
-func decodeKeyCount*(data: openArray[byte]): KeyCount {.raises: [DecodingError].} =
+func decodeKeyCount*(data: openArray[byte]): Result[KeyCount, DecodingError] =
   var pos = 0
-  let res = KeyCount(readLe[uint16](data, pos))
-  finishDecode(data, pos)
-  res
+  let res = KeyCount(?readLe[uint16](data, pos))
+  ?finishDecode(data, pos)
+  ok(res)
 
 
-func readNote*(data: openArray[byte], pos: var int): Note {.raises: [DecodingError].} =
-  let value = Value(readLe[uint64](data, pos))
-  let zkPublicKey = decodeFieldElementAt(data, pos)
-  Note(value: value, zkPublicKey: zkPublicKey)
+func readNote*(data: openArray[byte], pos: var int): Result[Note, DecodingError] =
+  let value = Value(?readLe[uint64](data, pos))
+  let zkPublicKey = ?decodeFieldElementAt(data, pos)
+  ok(Note(value: value, zkPublicKey: zkPublicKey))
 
-func readInputs*(data: openArray[byte], pos: var int): Inputs {.raises: [DecodingError].} =
-  let count = readByte(data, pos)
+func readInputs*(data: openArray[byte], pos: var int): Result[Inputs, DecodingError] =
+  let count = ?readByte(data, pos)
   var noteIds = newSeqOfCap[NoteId](count)
   for _ in 0 ..< int(count):
-    noteIds.add decodeFieldElementAt(data, pos)
-  Inputs(noteIds: noteIds)
+    noteIds.add ?decodeFieldElementAt(data, pos)
+  ok(Inputs(noteIds: noteIds))
 
-func readOutputs*(data: openArray[byte], pos: var int): Outputs {.raises: [DecodingError].} =
-  let count = readByte(data, pos)
+func readOutputs*(data: openArray[byte], pos: var int): Result[Outputs, DecodingError] =
+  let count = ?readByte(data, pos)
   var notes = newSeqOfCap[Note](count)
   for _ in 0 ..< int(count):
-    notes.add readNote(data, pos)
-  Outputs(notes: notes)
+    notes.add ?readNote(data, pos)
+  ok(Outputs(notes: notes))
 
-func decodeNote*(data: openArray[byte]): Note {.raises: [DecodingError].} =
+func decodeNote*(data: openArray[byte]): Result[Note, DecodingError] =
   var pos = 0
-  let res = readNote(data, pos)
-  finishDecode(data, pos)
-  res
+  let res = ?readNote(data, pos)
+  ?finishDecode(data, pos)
+  ok(res)
 
-func decodeInputCount*(data: openArray[byte]): byte {.raises: [DecodingError].} =
+func decodeInputCount*(data: openArray[byte]): Result[byte, DecodingError] =
   decodeByte(data)
 
-func decodeOutputCount*(data: openArray[byte]): byte {.raises: [DecodingError].} =
+func decodeOutputCount*(data: openArray[byte]): Result[byte, DecodingError] =
   decodeByte(data)
 
-func decodeInputs*(data: openArray[byte]): Inputs {.raises: [DecodingError].} =
+func decodeInputs*(data: openArray[byte]): Result[Inputs, DecodingError] =
   var pos = 0
-  let res = readInputs(data, pos)
-  finishDecode(data, pos)
-  res
+  let res = ?readInputs(data, pos)
+  ?finishDecode(data, pos)
+  ok(res)
 
-func decodeInputsNoteIds*(data: openArray[byte]): seq[NoteId] {.raises: [DecodingError].} =
-  decodeInputs(data).noteIds
+func decodeInputsNoteIds*(data: openArray[byte]): Result[seq[NoteId], DecodingError] =
+  let inputs = ?decodeInputs(data)
+  ok(inputs.noteIds)
 
-func decodeOutputs*(data: openArray[byte]): Outputs {.raises: [DecodingError].} =
+func decodeOutputs*(data: openArray[byte]): Result[Outputs, DecodingError] =
   var pos = 0
-  let res = readOutputs(data, pos)
-  finishDecode(data, pos)
-  res
+  let res = ?readOutputs(data, pos)
+  ?finishDecode(data, pos)
+  ok(res)
 
 {.pop.}

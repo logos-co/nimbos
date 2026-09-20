@@ -381,10 +381,11 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
 
 suite "P2P stack — on-the-wire encoding":
   test "Network Wire Format: payloads on negotiated streams follow Logos Chain wire format spec":
-    let tx = minimalSignedTx()
-    let encoded = encodeSignedMantleTx(tx).get
+    let
+      tx = minimalSignedTx()
+      encoded = encodeSignedMantleTx(tx).get
     check encoded.len > 0
-    let decoded = decodeSignedMantleTx(encoded)
+    let decoded = decodeSignedMantleTx(encoded).get
     check encodeSignedMantleTx(decoded).get == encodeSignedMantleTx(tx).get
     check mantleTxHash(decoded.tx).get == mantleTxHash(tx.tx).get
     check decoded.opProofs.len == tx.opProofs.len

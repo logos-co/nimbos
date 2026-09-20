@@ -46,30 +46,31 @@ suite "core/mantle/primitives":
     let
       v: Value = 0xAABB_CCDD_EEFF_0011'u64
       wire = @(encodeValue(v))
-    check decodeValue(wire) == v
+    check decodeValue(wire).get == v
 
   test "decodeMetadata roundtrips encodeMetadata":
     let
       m: Metadata = @[1'u8, 2'u8, 3'u8]
       wire = encodeMetadata(m).get
-    check decodeMetadata(wire) == m
+    check decodeMetadata(wire).get == m
 
   test "decodeOpcode roundtrips encodeOpcode":
     let wire = @[encodeOpcode(0x42'u8)]
-    check decodeOpcode(wire) == 0x42'u8
+    check decodeOpcode(wire).get == 0x42'u8
 
   test "encodeServiceType maps BN to wire byte 0":
     check encodeServiceType(ServiceType.bn) == 0'u8
     check encodeServiceType(ServiceType.bn) == byte(ord(ServiceType.bn))
 
   test "decodeServiceType roundtrips encodeServiceType":
-    check decodeServiceType(@[encodeServiceType(ServiceType.bn)]) == ServiceType.bn
+    check decodeServiceType(@[encodeServiceType(ServiceType.bn)]).get == ServiceType.bn
+    check decodeServiceType(@[99'u8]).error == DecodingError.InvalidServiceType
 
   test "decodeLocator roundtrips encodeLocator":
     let
       locator = MultiAddress.init("/ip4/127.0.0.1/udp/30303/quic-v1").tryGet()
       wire = encodeLocator(locator).get
-      back = decodeLocator(wire)
+      back = decodeLocator(wire).get
     check back.data() == locator.data()
 
   test "encodeInputs returns error on count overflow":

@@ -73,48 +73,51 @@ suite "core/mantle/proofs":
       OpProof(kind: opfChannelTransfer, channelTransferOpProof: proof)).get == encBytes
     check encodeOpProof(
       OpProof(kind: opfChannelConfig, channelConfigOpProof: proof)).get == encBytes
-    check decodeOpProof(encBytes, opfChannelTransfer).channelTransferOpProof == proof
+    check decodeOpProof(encBytes, opfChannelTransfer).get.channelTransferOpProof == proof
 
   test "encodeOpsProofs requires proofs length == op count":
-    let ops = @[
-      createTransferOp(TransferPayload(
-        inputs: Inputs(noteIds: @[]),
-        outputs: Outputs(notes: @[]),
-      )),
-      createSdpActiveOp(ActiveMessage(
-        declarationId: default(DeclarationId),
-        nonce: default(Nonce),
-        metadata: @[],
-      )),
-    ]
-    let proofs = @[
-      OpProof(kind: opfTransfer, transferProof: DefaultZkSignature),
-      OpProof(kind: opfSdpActive, sdpActiveProof: DefaultZkSignature),
-    ]
-    let encoded = encodeOpsProofs(ops, proofs).get
+    let
+      ops = @[
+        createTransferOp(TransferPayload(
+          inputs: Inputs(noteIds: @[]),
+          outputs: Outputs(notes: @[]),
+        )),
+        createSdpActiveOp(ActiveMessage(
+          declarationId: default(DeclarationId),
+          nonce: default(Nonce),
+          metadata: @[],
+        )),
+      ]
+      proofs = @[
+        OpProof(kind: opfTransfer, transferProof: DefaultZkSignature),
+        OpProof(kind: opfSdpActive, sdpActiveProof: DefaultZkSignature),
+      ]
+      encoded = encodeOpsProofs(ops, proofs).get
     check encoded.len == 128 + 128
 
   test "decodeOpsProofs roundtrips encodeOpsProofs":
-    let ops = @[
-      createTransferOp(TransferPayload(
-        inputs: Inputs(noteIds: @[]),
-        outputs: Outputs(notes: @[]),
-      )),
-      createSdpActiveOp(ActiveMessage(
-        declarationId: default(DeclarationId),
-        nonce: default(Nonce),
-        metadata: @[],
-      )),
-    ]
-    let proofs = @[
-      OpProof(kind: opfTransfer, transferProof: DefaultZkSignature),
-      OpProof(kind: opfSdpActive, sdpActiveProof: DefaultZkSignature),
-    ]
-    let wire = encodeOpsProofs(ops, proofs).get
-    let back = decodeOpsProofs(ops, wire)
+    let
+      ops = @[
+        createTransferOp(TransferPayload(
+          inputs: Inputs(noteIds: @[]),
+          outputs: Outputs(notes: @[]),
+        )),
+        createSdpActiveOp(ActiveMessage(
+          declarationId: default(DeclarationId),
+          nonce: default(Nonce),
+          metadata: @[],
+        )),
+      ]
+      proofs = @[
+        OpProof(kind: opfTransfer, transferProof: DefaultZkSignature),
+        OpProof(kind: opfSdpActive, sdpActiveProof: DefaultZkSignature),
+      ]
+      wire = encodeOpsProofs(ops, proofs).get
+      back = decodeOpsProofs(ops, wire).get
     check back.len == proofs.len
     check back[0].kind == proofs[0].kind
     check back[1].kind == proofs[1].kind
+    check decodeOpsProofs(ops, []).error == DecodingError.ProofCountMismatch
 
   test "encodeChannelMultiSigProof returns error on invalid signatures/indexes":
     let sig = DefaultEd25519Signature

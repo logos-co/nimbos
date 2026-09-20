@@ -19,7 +19,7 @@ suite "core/mantle/tx_types":
     let
       tx = MantleTx(ops: @[])
       wire = encodeMantleTx(tx).get
-      back = decodeMantleTx(wire)
+      back = decodeMantleTx(wire).get
     check back.ops.len == tx.ops.len
     check wire.len == 1
     check wire[0] == byte(0)
@@ -40,7 +40,7 @@ suite "core/mantle/tx_types":
         ],
       )
       wire = encodeSignedMantleTx(signed).get
-      back = decodeSignedMantleTx(wire)
+      back = decodeSignedMantleTx(wire).get
     check back.tx.ops.len == signed.tx.ops.len
     check back.opProofs.len == signed.opProofs.len
     check back.opProofs[0].kind == signed.opProofs[0].kind

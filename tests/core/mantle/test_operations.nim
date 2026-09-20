@@ -253,7 +253,7 @@ suite "core/mantle/operations":
         )),
       ]
       wire = encodeOps(ops).get
-      back = decodeOps(wire)
+      back = decodeOps(wire).get
     check back.len == 1
     check back[0].opcode == OpTransfer
     check back[0].payload.kind == Transfer
@@ -266,7 +266,7 @@ suite "core/mantle/operations":
         metadata: @[],
       )
       depWire = encodeChannelDeposit(depPayload).get
-      depBack = decodeChannelDeposit(depWire)
+      depBack = decodeChannelDeposit(depWire).get
     check depBack.channel == depPayload.channel
     check depBack.inputs == depPayload.inputs
     check depBack.metadata == depPayload.metadata
@@ -277,7 +277,7 @@ suite "core/mantle/operations":
         inputs: Inputs(noteIds: @[default(NoteId)]),
       )
       wdrWire = encodeChannelWithdraw(wdrPayload).get
-      wdrBack = decodeChannelWithdraw(wdrWire)
+      wdrBack = decodeChannelWithdraw(wdrWire).get
     check wdrBack.channel == wdrPayload.channel
     check wdrBack.inputs == wdrPayload.inputs
 
@@ -289,14 +289,14 @@ suite "core/mantle/operations":
         outputs: Outputs(notes: @[Note(value: 11, zkPublicKey: default(ZkPublicKey))]),
       )
       wire = encodeChannelTransfer(payload).get
-      back = decodeChannelTransfer(wire)
+      back = decodeChannelTransfer(wire).get
     check back.channel == payload.channel
     check back.inputs == payload.inputs
     check back.outputs == payload.outputs
 
     let
       encOp = encodeOp(createChannelTransferOp(payload)).get
-      opBack = decodeOp(encOp)
+      opBack = decodeOp(encOp).get
     check opBack.opcode == OpChannelTransfer
     check opBack.payload.kind == ChannelTransfer
     check opBack.payload.channelTransfer.outputs == payload.outputs
@@ -318,7 +318,7 @@ suite "core/mantle/operations":
     check wire.len == 32 + 2 + (256 * 32) + 4 + 4 + 2 + 2
     check wire[32] == 0'u8
     check wire[33] == 1'u8 # KeyCount 256 as UINT16 LE
-    let cfgBack = decodeChannelConfig(wire)
+    let cfgBack = decodeChannelConfig(wire).get
     check cfgBack.channel == cfgPayload.channel
     check cfgBack.keys.len == 256
     check cfgBack.postingTimeframe == cfgPayload.postingTimeframe
@@ -337,11 +337,14 @@ suite "core/mantle/operations":
         transferThreshold: 4'u16,
       ))
       wire = encodeOp(op).get
-      back = decodeOp(wire)
+      back = decodeOp(wire).get
     check back.opcode == OpChannelConfig
     check back.payload.kind == ChannelConfig
     check back.payload.channelConfig.keys.len == 1
     check back.payload.channelConfig.postingTimeframe == 1'u32
+
+  test "decodeOp returns UnsupportedOpcode on unknown opcode byte":
+    check decodeOp([250'u8]).error == DecodingError.UnsupportedOpcode
 
   test "encodeOps returns OpsCountExceeded when ops count exceeds 255":
     var largeOps: seq[Op]
