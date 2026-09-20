@@ -21,27 +21,15 @@ import
 
 export util, registry, state
 
-proc verifySdpDeclareProofs(
+func validateSdpDeclareState*(
     declaration: DeclarationMessage,
-    proof: ZkAndEd25519SigsProof,
-    txHash: ZkHash,
-    noteZkPublicKey: ZkPublicKey,
-): Result[void, LedgerError] =
-  verifyZkSig(proof.zkSig, txHash, @[noteZkPublicKey, declaration.zkId])
-
-proc validateSdpDeclare(
-    declaration: DeclarationMessage,
-    proof: ZkAndEd25519SigsProof,
-    txHash: ZkHash,
     minStake: MinStake,
     utxos: UtxoStore,
     channelNotes: ChannelNotes,
     state: SdpState,
-): Result[void, LedgerError] =
-  ## Stateful validation for SdpDeclare: collateral note existence, stake threshold,
-  ## and locked note zkSig verification.
-  ## Note: Structural locators and provider Ed25519 signature are verified
-  ## statelessly at ingress via `validateMantleTxStateless`.
+): Result[ZkPublicKey, LedgerError] =
+  ## State checks for SdpDeclare; returns the service note's public key for
+  ## the proof step.
   if lockedNoteHasService(state, declaration.lockedNoteId, declaration.serviceType):
     return err(LockedNoteServiceConflict)
 
@@ -50,9 +38,10 @@ proc validateSdpDeclare(
   if channelNotes.isChannelNote(declaration.lockedNoteId):
     return err(ChannelNoteSpend)
 
-  let utxo = utxos.get(declaration.lockedNoteId).valueOr:
-    return err(LockedNoteNotFound)
-  let note = utxo.note
+  let
+    utxo = utxos.get(declaration.lockedNoteId).valueOr:
+      return err(LockedNoteNotFound)
+    note = utxo.note
 
   if note.value < minStake.stakeThreshold:
     return err(InsufficientStake)
@@ -64,18 +53,14 @@ proc validateSdpDeclare(
   if hasProviderOrZkIdConflict(state, declaration.serviceType, declaration.providerId, declaration.zkId):
     return err(DuplicateProviderOrZkId)
 
-  ?verifySdpDeclareProofs(
-    declaration, proof, txHash, note.zkPublicKey,
-  )
-
-  ok()
+  ok(note.zkPublicKey)
 
 proc applySdpDeclare*(
     registry: sink SdpRegistry,
     declaration: DeclarationMessage,
     epoch: EpochNumber,
 ): Result[SdpRegistry, LedgerError] =
-  ## Mutation only; assumes validation passed (or genesis trusted the op).
+  ## Mutation only; assumes validation passed.
   if getParametersAt(registry, declaration.serviceType, epoch).isNone:
     return err(MissingServiceParameters)
   let declarationId = declarationId(declaration)
@@ -109,11 +94,12 @@ proc tryApplySdpDeclare*(
     channelNotes: ChannelNotes,
     epoch: EpochNumber,
 ): Result[SdpRegistry, LedgerError] =
-  let minStake = getMinStakeAt(registry, epoch).valueOr:
-    return err(MinStakeNotFound)
-  ?validateSdpDeclare(
-    declaration, proof, txHash, minStake, utxos, channelNotes, registry.state,
-  )
+  let
+    minStake = getMinStakeAt(registry, epoch).valueOr:
+      return err(MinStakeNotFound)
+    notePk = ?validateSdpDeclareState(
+      declaration, minStake, utxos, channelNotes, registry.state)
+  ?verifyZkSig(proof.zkSig, txHash, @[notePk, declaration.zkId])
   applySdpDeclare(registry, declaration, epoch)
 
 {.pop.}
