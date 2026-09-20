@@ -316,7 +316,8 @@ suite "core/block_validation — multi-tier evaluation order":
   test "validateProposal reconstructs block and validates it":
     let
       sm = minimalSignedTx()
-      genesis = createGenesisBlock(sm).get
+      valid = testGenesisTx()
+      genesis = createGenesisBlock(SignedMantleTx(valid)).get
       gid = blockId(genesis.header)
       proposal = childProposal(genesis.header, gid, SlotNumber(1), [sm])
     
@@ -327,7 +328,8 @@ suite "core/block_validation — multi-tier evaluation order":
   test "reconstructBlock rejects if referenced transaction is missing from mempool":
     let
       sm = minimalSignedTx()
-      genesis = createGenesisBlock(sm).get
+      valid = testGenesisTx()
+      genesis = createGenesisBlock(SignedMantleTx(valid)).get
       gid = blockId(genesis.header)
       proposal = childProposal(genesis.header, gid, SlotNumber(1), [sm])
       mempool = Mempool.init()
@@ -365,13 +367,14 @@ suite "core/block_validation — multi-tier evaluation order":
   test "prepareBlockUpdate rejects stateful transaction failures":
     let
       sm = minimalSignedTx()
-      genesis = createGenesisBlock(sm).get
+      valid = testGenesisTx()
+      genesis = createGenesisBlock(SignedMantleTx(valid)).get
       gid = blockId(genesis.header)
       tree = newLocalTree(genesis, 1'u64)
       blk = childBlock(genesis.header, gid, SlotNumber(1), [sm])
       
     var state = LedgerState.fromGenesis(
-        genesis.txs, default(FieldElement), testSdpRegistry(),
+        valid, default(FieldElement), testSdpRegistry(),
         testLedgerConfig).expect("genesis state")
     # Non-zero base fee causes minimalSignedTx with 0 transfer balance to fail fee coverage
     state.feeMarket.executionBaseFee = 1000

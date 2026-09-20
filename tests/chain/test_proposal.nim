@@ -39,9 +39,8 @@ suite "chain/proposal":
     check m.txs[hash1].byteSize.isNone
     check m.txs[hash1].execGas.isNone
 
-    let genesis = createGenesisBlock(signedTxWithOps(1, 0)).get
     var state = LedgerState.fromGenesis(
-      genesis.txs, default(FieldElement), testSdpRegistry(),
+      testGenesisTx(), default(FieldElement), testSdpRegistry(),
       testLedgerConfig).expect("genesis state")
     state.feeMarket.executionBaseFee = 0
     state.feeMarket.storageGasPrice = 0
@@ -63,9 +62,8 @@ suite "chain/proposal":
     check m.add(ValidSignedMantleTx(tx1), SlotNumber(1)).get == true
     check m.add(ValidSignedMantleTx(tx2), SlotNumber(2)).get == true
 
-    let genesis = createGenesisBlock(signedTxWithOps(1, 0)).get
     var state = LedgerState.fromGenesis(
-      genesis.txs, default(FieldElement), testSdpRegistry(),
+      testGenesisTx(), default(FieldElement), testSdpRegistry(),
       testLedgerConfig).expect("genesis state")
     state.feeMarket.executionBaseFee = 0
     state.feeMarket.storageGasPrice = 0
@@ -104,9 +102,8 @@ suite "chain/proposal":
     let tinyTxBytes = encodeSignedMantleTx(tinyTx).get.len
     check m.add(ValidSignedMantleTx(tinyTx), SlotNumber(1)).get == true
 
-    let genesis = createGenesisBlock(signedTxWithOps(1, 0)).get
     var state = LedgerState.fromGenesis(
-      genesis.txs, default(FieldElement), testSdpRegistry(),
+      testGenesisTx(), default(FieldElement), testSdpRegistry(),
       testLedgerConfig).expect("genesis state")
     state.feeMarket.executionBaseFee = 0
     state.feeMarket.storageGasPrice = 0
@@ -135,9 +132,8 @@ suite "chain/proposal":
     let tinyTxBytes = encodeSignedMantleTx(tinyTx).get.len
     check m.add(ValidSignedMantleTx(tinyTx), SlotNumber(1)).get == true
 
-    let genesis = createGenesisBlock(signedTxWithOps(1, 0)).get
     var state = LedgerState.fromGenesis(
-      genesis.txs, default(FieldElement), testSdpRegistry(),
+      testGenesisTx(), default(FieldElement), testSdpRegistry(),
       testLedgerConfig).expect("genesis state")
     state.feeMarket.executionBaseFee = 0
     state.feeMarket.storageGasPrice = 0
@@ -156,9 +152,8 @@ suite "chain/proposal":
       setupState: proc(s: var LedgerState) {.gcsafe, raises: [].} = nil,
   ) =
     var m = Mempool.init()
-    let genesis = createGenesisBlock(signedTxWithOps(1, 0)).get
     var state = LedgerState.fromGenesis(
-      genesis.txs, default(FieldElement), testSdpRegistry(),
+      testGenesisTx(), default(FieldElement), testSdpRegistry(),
       testLedgerConfig).expect("genesis state")
     state.feeMarket.executionBaseFee = 0
     state.feeMarket.storageGasPrice = 0
@@ -233,9 +228,8 @@ suite "chain/proposal":
   test "selectProposalReferences evicts transactions with permanent PermanentInvalidTxProof from mempool":
     check installZksignVk(zksignFixtureVk)
     var m = Mempool.init()
-    let genesis = createGenesisBlock(signedTxWithOps(1, 0)).get
     var state = LedgerState.fromGenesis(
-      genesis.txs, default(FieldElement), testSdpRegistry(),
+      testGenesisTx(), default(FieldElement), testSdpRegistry(),
       testLedgerConfig).expect("genesis state")
     state.feeMarket.executionBaseFee = 0
     state.feeMarket.storageGasPrice = 0
@@ -269,10 +263,12 @@ suite "chain/proposal":
     let tx = signedTxWithOps(1, 1)
     check m.add(ValidSignedMantleTx(tx), SlotNumber(1)).get == true
 
-    let genesis = createGenesisBlock(signedTxWithOps(1, 0)).get
-    let gid = blockId(genesis.header)
+    let
+      valid = testGenesisTx()
+      genesis = createGenesisBlock(SignedMantleTx(valid)).get
+      gid = blockId(genesis.header)
     var state = LedgerState.fromGenesis(
-      genesis.txs, default(FieldElement), testSdpRegistry(),
+      valid, default(FieldElement), testSdpRegistry(),
       testLedgerConfig).expect("genesis state")
     state.feeMarket.executionBaseFee = 0
     state.feeMarket.storageGasPrice = 0
@@ -307,7 +303,7 @@ suite "chain/proposal":
     check m.add(ValidSignedMantleTx(tx), SlotNumber(1)).get == true
     let genesis = createGenesisBlock(signedTxWithOps(1, 0)).get
     var state = LedgerState.fromGenesis(
-      genesis.txs, default(FieldElement), testSdpRegistry(),
+      testGenesisTx(), default(FieldElement), testSdpRegistry(),
       testLedgerConfig).expect("genesis state")
     state.feeMarket.executionBaseFee = 0
     state.feeMarket.storageGasPrice = 0

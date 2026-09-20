@@ -23,7 +23,7 @@ from ../../logos_chain/core/mantle/primitives import SlotNumber
 suite "chain/block_processor":
   setup:
     let
-      genesisBlk = createGenesisBlock(minimalSignedTx()).get
+      genesisBlk = createGenesisBlock(SignedMantleTx(testGenesisTx())).get
       gid = blockId(genesisBlk.header)
       chain = initTestChain(genesisBlk)
 
