@@ -34,7 +34,11 @@ type
     InvalidChannelConfig ## ChannelConfig has zero threshold or empty keys
     EmptyInputs ## Deposit/Withdraw/Transfer must consume at least one note
     VerifierNotInitialised ## per-circuit VK singleton wasn't installed at startup
-    TooManyOps ## Transaction operations count exceeds MantleMaxOps (255)
+    GenesisShape ## ops are not Transfer, ChannelInscribe, then SdpDeclare*
+    GenesisInscription ## the parameter inscription is not on the null channel from the null key
+    GenesisInputs ## the genesis Transfer consumes notes
+    TooManyOps ## more ops than the u8 wire count holds
+    TooManyOutputs ## more outputs than the u8 wire count holds
 
 export results, StatelessLedgerError
 
@@ -55,11 +59,29 @@ func toStatelessLedgerError*(err: EncodingError): StatelessLedgerError =
      EncodingError.MultiSigIndicesNonIncreasing,
      EncodingError.LengthExceeded, EncodingError.MetadataLengthExceeded,
      EncodingError.InscriptionLengthExceeded,
-     EncodingError.InputsCountExceeded, EncodingError.OutputsCountExceeded:
+     EncodingError.InputsCountExceeded:
     StatelessLedgerError.InvalidProof
+  of EncodingError.OutputsCountExceeded:
+    StatelessLedgerError.TooManyOutputs
 
 func hasHeavyZkProof*(tx: SignedMantleTx): bool {.inline.} =
   tx.opProofs.anyIt(it.kind == opfLeaderClaim)
+
+func assert_valid_output(notes: openArray[Note]): Result[void, StatelessLedgerError] =
+  ## Output Notes Validation: every value is non-zero.
+  if notes.anyIt(it.value == 0):
+    return err(StatelessLedgerError.ZeroValueNote)
+  ok()
+
+func validateLocators(decl: DeclarationMessage): Result[void, StatelessLedgerError] =
+  ## 1 to `MaxSdpLocators` entries, each a valid locator.
+  if decl.locators.len == 0:
+    return err(StatelessLedgerError.EmptyLocators)
+  if decl.locators.len > MaxSdpLocators:
+    return err(StatelessLedgerError.TooManyLocators)
+  if decl.locators.anyIt(not isValidLocator(it)):
+    return err(StatelessLedgerError.InvalidLocator)
+  ok()
 
 proc validateMantleTxStateless*(
     tx: SignedMantleTx,
@@ -84,10 +106,6 @@ proc validateMantleTxStateless*(
     if inputs.noteIds.anyIt(allInputs.containsOrIncl(it)):
       return err(StatelessLedgerError.DoubleSpend)
 
-  template checkOutputs(outputs: Outputs): untyped =
-    if outputs.notes.anyIt(it.value == 0):
-      return err(StatelessLedgerError.ZeroValueNote)
-
   # Phase 1: Structural, bounds, and payload shape checks
   for i in 0 ..< tx.tx.ops.len:
     template op: untyped = tx.tx.ops[i]
@@ -104,7 +122,7 @@ proc validateMantleTxStateless*(
     of Transfer:
       template t: untyped = op.payload.transfer
       checkInputs(t.inputs)
-      checkOutputs(t.outputs)
+      ?assert_valid_output(t.outputs.notes)
 
     of ChannelDeposit:
       checkInputs(op.payload.channelDeposit.inputs)
@@ -115,7 +133,7 @@ proc validateMantleTxStateless*(
     of ChannelTransfer:
       template ct: untyped = op.payload.channelTransfer
       checkInputs(ct.inputs)
-      checkOutputs(ct.outputs)
+      ?assert_valid_output(ct.outputs)
 
     of ChannelConfig:
       template cfg: untyped = op.payload.channelConfig
@@ -129,13 +147,7 @@ proc validateMantleTxStateless*(
       hasSigCrypto = true
 
     of SdpDeclare:
-      template decl: untyped = op.payload.sdpDeclare
-      if decl.locators.len == 0:
-        return err(StatelessLedgerError.EmptyLocators)
-      if decl.locators.len > MaxSdpLocators:
-        return err(StatelessLedgerError.TooManyLocators)
-      if decl.locators.anyIt(not isValidLocator(it)):
-        return err(StatelessLedgerError.InvalidLocator)
+      ?validateLocators(op.payload.sdpDeclare)
       hasSigCrypto = true
 
     of SdpWithdraw, SdpActive:
@@ -189,5 +201,38 @@ proc validateMantleTxStateless*(
         return err(StatelessLedgerError.InvalidProof)
 
   ok()
+
+func validateGenesisTxStateless*(
+    tx: SignedMantleTx): Result[ValidGenesisMantleTx, StatelessLedgerError] =
+  ## Every stateless genesis check: shape, wire bounds, proof kinds, the
+  ## inscription envelope, inputs, outputs and locators. No proof is verified.
+  template ops: untyped = tx.tx.ops
+  if ops.len < 2 or ops[0].payload.kind != Transfer or
+      ops[1].payload.kind != ChannelInscribe or
+      not ops.toOpenArray(2, ops.high).allIt(it.payload.kind == SdpDeclare):
+    return err(StatelessLedgerError.GenesisShape)
+  if ops.len > MantleMaxOps:
+    return err(StatelessLedgerError.TooManyOps)
+  template inscribe: untyped = ops[1].payload.channelInscribe
+  if inscribe.channelId != static(default(ChannelId)) or
+      inscribe.signer != DefaultEd25519PublicKey:
+    return err(StatelessLedgerError.GenesisInscription)
+  if tx.opProofs.len != ops.len:
+    return err(StatelessLedgerError.InvalidProof)
+  for i in 0 ..< ops.len:
+    template op: untyped = ops[i]
+    if not isSupportedOpcode(op.opcode) or op.opcode != opPayloadToOpcode(op.payload):
+      return err(StatelessLedgerError.UnsupportedOp)
+    if tx.opProofs[i].kind != expectedOpProofKindForOpcode(op.opcode):
+      return err(StatelessLedgerError.InvalidProof)
+  template transfer: untyped = ops[0].payload.transfer
+  if transfer.inputs.noteIds.len > 0:
+    return err(StatelessLedgerError.GenesisInputs)
+  if transfer.outputs.notes.len > int(high(byte)):
+    return err(StatelessLedgerError.TooManyOutputs)
+  ?assert_valid_output(transfer.outputs.notes)
+  for op in ops.toOpenArray(2, ops.high):
+    ?validateLocators(op.payload.sdpDeclare)
+  ok(ValidGenesisMantleTx(tx))
 
 {.pop.}

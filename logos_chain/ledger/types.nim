@@ -30,7 +30,6 @@ type
     PermanentInvalidTxProof ## Cryptographic proof permanently invalid (e.g. ZkSig Groth16, proof kind mismatch)
     InvalidTxProof ## Transaction proof verification failed against current state (e.g. channel multisig, SDP activity)
     BalanceOutOfRange ## balance math left the representable range
-    UnsupportedOp ## Op kind not yet wired in this ledger version
     InsufficientBalance ## not enough balance for the requested debit
     GasOverflow ## gas or fee arithmetic exceeded uint64
     TooMuchExecutionGas ## block's summed execution gas exceeds the per-block limit
@@ -67,7 +66,7 @@ type
     RewardsRootMismatch ## leader-claim rewards root ≠ ledger snapshot
     UnsupportedLotteryF ## no lottery constants registered for the configured `f`
     InvalidSlot ## header slot is not strictly greater than the parent state's
-    InputInGenesis ## genesis transfer consumes inputs; genesis may only mint
+    TotalStakeOverflow ## genesis stake sum exceeds uint64
 
   LeaderProofVerifier* = proc(
     proof: ProofOfLeadership, public: LeaderPublic

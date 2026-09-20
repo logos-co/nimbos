@@ -8,20 +8,23 @@
 {.push raises: [].}
 
 import
-  std/[net, times],
+  std/[net, sequtils, times],
   bearssl/rand,
   chronos,
   libp2p/[switch, builders, peerid, multiaddress],
   libp2p/crypto/rng,
   libp2p/crypto/ed25519/ed25519,
+  stew/[byteutils, endians2],
   testutils/markdown_reports,
   unittest2,
   ../logos_chain/conf,
   ../logos_chain/networking/network,
   ../logos_chain/core/[types, local_tree],
-  ../logos_chain/core/mantle/[operations, tx_types],
+  ../logos_chain/core/crypto/types,
+  ../logos_chain/core/mantle/[operations, tx_types, tx_validation, utxo],
   ../logos_chain/chain/genesis,
-  ../logos_chain/ledger/[pol_verifier, types]
+  ../logos_chain/ledger/[pol_verifier, types],
+  ./core/mantle/test_helpers
 
 from ../logos_chain/core/mantle/primitives import SlotNumber
 from std/algorithm import SortOrder, sort
@@ -188,6 +191,43 @@ func minimalSignedTx*(): SignedMantleTx =
     tx: MantleTx(ops: @[]),
     opProofs: @[],
   )
+
+func testZkPk*(): ZkPublicKey = mkZkPubKey(1)
+
+func testGenesisTx*(
+    outputs: openArray[Note] = [Note(value: 1000, zkPublicKey: testZkPk())],
+    declarations: openArray[DeclarationMessage] = [],
+    chainId = "test",
+    genesisTime = 0'u32,
+    epochNonce = default(FieldElement),
+): ValidGenesisMantleTx =
+  ## Spec-shaped genesis transaction: Transfer of `outputs`, the parameter
+  ## inscription, then one SdpDeclare per entry; placeholder proofs.
+  # Hand-encoded: no production encoder exists. `decodeCryptarchiaParameter`
+  # is the production counterpart; `test_genesis_validation.nim` asserts the
+  # round trip.
+  let
+    inscription =
+      @[byte chainId.len] & chainId.toBytes & @(toBytesLE(genesisTime)) &
+      @(encodeFieldElement(epochNonce))
+    ops = @[
+      createTransferOp(TransferPayload(
+        inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @outputs))),
+      createChannelInscribeOp(ChannelInscribePayload(
+        channelId: default(ChannelId), inscription: inscription,
+        parent: default(Parent), signer: DefaultEd25519PublicKey))] &
+      declarations.mapIt(createSdpDeclareOp(it))
+    proofs = ops.mapIt(defaultOpProofForOpcode(it.opcode))
+  validateGenesisTxStateless(
+    SignedMantleTx(tx: MantleTx(ops: ops), opProofs: proofs)
+  ).expect("spec-shaped genesis")
+
+func genesisNoteId*(tx: ValidGenesisMantleTx, index: int): NoteId =
+  ## NoteId of output `index` of the genesis Transfer.
+  template transfer: untyped = tx.tx.ops[0].payload.transfer
+  Utxo(
+    opId: opId(transfer), outputIndex: uint64(index),
+    note: transfer.outputs.notes[index]).id
 
 let testTxKeyPair* = block:
   var rngRef = new(HmacDrbgContext)

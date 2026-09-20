@@ -39,7 +39,7 @@ import # Unit test
   ./core/test_local_tree,
   ./consensus/test_clock,
   ./chain/test_genesis,
-  ./chain/test_genesis_params,
+  ./chain/test_genesis_validation,
   ./chain/test_devnet_genesis_mantle_tx,
   ./chain/test_chain_wiring,
   ./chain/test_proposal,

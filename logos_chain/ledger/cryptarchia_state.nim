@@ -68,8 +68,7 @@ func applyTransferState*(
   ## Pure state transition for a `TransferPayload`, removes inputs, inserts
   ## outputs, sums balance. No signature verify; the caller must run
   ## `zksign.verify` over the returned `pks` ++ tx hash.
-  ## Note: Assumes stateless transaction validation (`validateMantleTxStateless`)
-  ## has already verified non-empty inputs, no duplicate inputs, and non-zero output notes.
+  ## Note: Assumes stateless validation ran; inputs are empty only at genesis.
   var
     balance = Balance.zero
     pks = newSeqOfCap[ZkPublicKey](op.inputs.noteIds.len)
