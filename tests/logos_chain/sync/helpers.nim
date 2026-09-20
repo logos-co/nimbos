@@ -21,6 +21,7 @@ import
   ../../../logos_chain/sync/[framing, types, ibd_client, ibd_server, syncer]
 from ../../../logos_chain/core/mantle/primitives import SlotNumber
 from ../../../logos_chain/core/mantle/tx_types import SignedMantleTx, encodeSignedMantleTx
+from ../../../logos_chain/core/mantle/tx_validation import validateGenesisTxStateless
 from ../../ledger/test_helpers import testLedgerConfig
 
 const testChainSyncProtocol* = "/logos-blockchain-testnet-v0.1.2/chainsync/1.0.0"
@@ -32,10 +33,13 @@ proc initTestChain*(
 ): Chain =
   ## Chain over the genesis block's ledger state (epochs seeded under
   ## `testLedgerConfig`).
-  let state = LedgerState.fromGenesis(
-      genesis.txs, default(FieldElement), testSdpRegistry(),
-      testLedgerConfig).valueOr:
-    raiseAssert "initTestChain: " & $error
+  let
+    valid = validateGenesisTxStateless(genesis.txs[0]).valueOr:
+      raiseAssert "initTestChain: " & $error
+    state = LedgerState.fromGenesis(
+        valid, default(FieldElement), testSdpRegistry(),
+        testLedgerConfig).valueOr:
+      raiseAssert "initTestChain: " & $error
   Chain.init(
     genesis,
     Ledger[BlockId].init(blockId(genesis.header), state, testLedgerConfig,

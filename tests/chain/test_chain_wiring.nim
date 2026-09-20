@@ -22,6 +22,7 @@ import
   libp2p/crypto/ed25519/ed25519,
   ../testutil,
   ../../logos_chain/chain/[chain, proposal],
+  ../../logos_chain/core/mantle/tx_validation,
   ../../logos_chain/deployment/deployment_settings,
   ../../logos_chain/ledger/poq_verifier,
   ../../logos_chain/zk/poseidon2/hasher
@@ -62,7 +63,11 @@ suite "chain/epoch wiring (devnet deployment settings)":
 
   test "cryptarchiaParameter decodes the devnet ceremony values":
     let
-      param = ds.cryptarchia.genesisState.cryptarchiaParameter().valueOr:
+      valid = validateGenesisTxStateless(
+          ds.cryptarchia.genesisState.signedMantleTx).valueOr:
+        check false
+        return
+      param = cryptarchiaParameter(valid).valueOr:
         check false
         return
       # Nonce derived by the ceremony from its pinned entropy_sources input.
@@ -75,12 +80,16 @@ suite "chain/epoch wiring (devnet deployment settings)":
 
   test "fromGenesis builds a lottery-ready genesis state":
     let
-      param = ds.cryptarchia.genesisState.cryptarchiaParameter().valueOr:
+      valid = validateGenesisTxStateless(
+          ds.cryptarchia.genesisState.signedMantleTx).valueOr:
+        check false
+        return
+      param = cryptarchiaParameter(valid).valueOr:
         check false
         return
       cfg = ledgerConfig(ds)
       state = LedgerState.fromGenesis(
-        [ds.cryptarchia.genesisState.signedMantleTx], param.epochNonce,
+        valid, param.epochNonce,
         SdpRegistry.init(
           ds.cryptarchia.sdpConfig,
           blendRewardsParams(ds, cfg.epochSchedule.epochLength)), cfg).valueOr:
