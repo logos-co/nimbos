@@ -32,20 +32,20 @@ type
 type
   ChannelDepositPayload* = object
     channel*: ChannelId
-    inputs*: seq[NoteId]
+    inputs*: Inputs
     metadata*: Metadata
 
 
 type
   ChannelWithdrawPayload* = object
     channel*: ChannelId
-    inputs*: seq[NoteId]
+    inputs*: Inputs
 
 type
   ChannelTransferPayload* = object
     channel*: ChannelId
-    inputs*: seq[NoteId]
-    outputs*: seq[Note]
+    inputs*: Inputs
+    outputs*: Outputs
 
 
 type
@@ -185,100 +185,102 @@ func isSupportedOpcode*(opcode: Opcode): bool =
   else:
     false
 
-func defaultOpForOpcode*(opcode: Opcode): Op =
+func defaultOpForOpcode*(opcode: Opcode): Result[Op, EncodingError] =
   ## Canonical default/empty op payload for a given opcode.
   case opcode
   of OpTransfer:
-    createTransferOp(TransferPayload(
+    ok(createTransferOp(TransferPayload(
       inputs: Inputs(noteIds: @[]),
       outputs: Outputs(notes: @[]),
-    ))
+    )))
   of OpChannelInscribe:
-    createChannelInscribeOp(ChannelInscribePayload(
+    ok(createChannelInscribeOp(ChannelInscribePayload(
       channelId: default(ChannelId),
       inscription: @[],
       parent: default(Parent),
       signer: default(Signer),
-    ))
+    )))
   of OpChannelDeposit:
-    createChannelDepositOp(ChannelDepositPayload(
+    ok(createChannelDepositOp(ChannelDepositPayload(
       channel: default(ChannelId),
-      inputs: @[],
+      inputs: Inputs(noteIds: @[]),
       metadata: @[],
-    ))
+    )))
   of OpChannelWithdraw:
-    createChannelWithdrawOp(ChannelWithdrawPayload(
+    ok(createChannelWithdrawOp(ChannelWithdrawPayload(
       channel: default(ChannelId),
-      inputs: @[],
-    ))
+      inputs: Inputs(noteIds: @[]),
+    )))
   of OpChannelTransfer:
-    createChannelTransferOp(ChannelTransferPayload(
+    ok(createChannelTransferOp(ChannelTransferPayload(
       channel: default(ChannelId),
-      inputs: @[],
-      outputs: @[],
-    ))
+      inputs: Inputs(noteIds: @[]),
+      outputs: Outputs(notes: @[]),
+    )))
   of OpSdpDeclare:
-    createSdpDeclareOp(DeclarationMessage(
+    ok(createSdpDeclareOp(DeclarationMessage(
       serviceType: default(ServiceType),
       locators: @[],
       providerId: default(ProviderId),
       zkId: default(ZkId),
       lockedNoteId: default(LockedNoteId),
-    ))
+    )))
   of OpSdpWithdraw:
-    createSdpWithdrawOp(WithdrawMessage(
+    ok(createSdpWithdrawOp(WithdrawMessage(
       declarationId: default(DeclarationId),
       nonce: default(Nonce),
       lockedNoteId: default(LockedNoteId),
-    ))
+    )))
   of OpSdpActive:
-    createSdpActiveOp(ActiveMessage(
+    ok(createSdpActiveOp(ActiveMessage(
       declarationId: default(DeclarationId),
       nonce: default(Nonce),
       metadata: @[],
-    ))
+    )))
   of OpLeaderClaim:
-    createLeaderClaimOp(LeaderClaimPayload(
+    ok(createLeaderClaimOp(LeaderClaimPayload(
       rewardsRoot: default(RewardsRoot),
       voucherNullifier: default(VoucherNullifier),
       publicKey: default(ZkPublicKey),
-    ))
+    )))
   of OpChannelConfig:
-    createChannelConfigOp(ChannelConfigPayload(
+    ok(createChannelConfigOp(ChannelConfigPayload(
       channel: default(ChannelId),
       keys: @[],
       postingTimeframe: default(PostingTimeframe),
       postingTimeout: default(PostingTimeout),
       configurationThreshold: default(ConfigurationThreshold),
       transferThreshold: default(TransferThreshold),
-    ))
+    )))
   else:
-    doAssert false, "unknown opcode for default op: " & $opcode
-    default(Op)
+    err(EncodingError.UnsupportedOpcode)
 
-func encodeTransfer*(value: TransferPayload): seq[byte] =
+func encodeTransfer*(value: TransferPayload): Result[seq[byte], EncodingError] =
   ## Transfer = Inputs || Outputs
-  var res = encodeInputs(value.inputs)
-  res.add(encodeOutputs(value.outputs))
-  res
+  var res = ?encodeInputs(value.inputs)
+  let outs = ?encodeOutputs(value.outputs)
+  res.add(outs)
+  ok(res)
 
-func encodeSdpDeclare*(value: DeclarationMessage): seq[byte] =
+func encodeSdpDeclare*(value: DeclarationMessage): Result[seq[byte], EncodingError] =
   ## SDPDeclare = ServiceType LocatorCount *Locator ProviderId ZkId LockedNoteId
   var res = @[encodeServiceType(value.serviceType)]
-  res.add(encodeLocators(value.locators))
+  let locs = ?encodeLocators(value.locators)
+  res.add(locs)
   res.add(encodeProviderId(value.providerId))
   res.add(encodeZkId(value.zkId))
   res.add(encodeLockedNoteId(value.lockedNoteId))
-  res
+  ok(res)
 
-func declarationId*(declaration: DeclarationMessage): DeclarationId =
+func declarationId*(declaration: DeclarationMessage): Result[DeclarationId, EncodingError] =
   ## ``declaration_id``: wire ServiceType byte, ProviderId 32B, ZkId 32B,
   ## then wire locators (u8 count + u16-prefixed multiaddr bytes), blake2b256.
   var preimage = @[encodeServiceType(declaration.serviceType)]
   preimage.add(encodeProviderId(declaration.providerId))
   preimage.add(encodeZkId(declaration.zkId))
-  preimage.add(encodeLocators(declaration.locators))
-  blake2b256Hash(preimage)
+  let locs = ?encodeLocators(declaration.locators)
+  preimage.add(locs)
+  ok(blake2b256Hash(preimage))
 
 func encodeSdpWithdraw*(value: WithdrawMessage): array[72, byte] =
   ## SDPWithdraw = DeclarationId || Nonce || LockedNoteId
@@ -288,12 +290,13 @@ func encodeSdpWithdraw*(value: WithdrawMessage): array[72, byte] =
   res[40 ..< 72] = encodeLockedNoteId(value.lockedNoteId)
   res
 
-func encodeSdpActive*(value: ActiveMessage): seq[byte] =
+func encodeSdpActive*(value: ActiveMessage): Result[seq[byte], EncodingError] =
   ## SDPActive = DeclarationId || Nonce || Metadata
   var res = @(encodeDeclarationId(value.declarationId))
   res.add(encodeNonce(value.nonce))
-  res.add(encodeMetadata(value.metadata))
-  res
+  let meta = ?encodeMetadata(value.metadata)
+  res.add(meta)
+  ok(res)
 
 func encodeLeaderClaim*(value: LeaderClaimPayload): array[96, byte] =
   ## LeaderClaim = RewardsRoot || VoucherNullifier || PublicKey
@@ -303,31 +306,36 @@ func encodeLeaderClaim*(value: LeaderClaimPayload): array[96, byte] =
   res[64 ..< 96] = encodePublicKey(value.publicKey)
   res
 
-func encodeChannelWithdraw*(value: ChannelWithdrawPayload): seq[byte] =
+func encodeChannelWithdraw*(value: ChannelWithdrawPayload): Result[seq[byte], EncodingError] =
   ## ChannelWithdraw = ChannelId || Inputs
   var res = @(encodeChannelId(value.channel))
-  res.add(encodeInputs(value.inputs))
-  res
+  let ins = ?encodeInputs(value.inputs)
+  res.add(ins)
+  ok(res)
 
-func encodeChannelTransfer*(value: ChannelTransferPayload): seq[byte] =
+func encodeChannelTransfer*(value: ChannelTransferPayload): Result[seq[byte], EncodingError] =
   ## ChannelTransfer = ChannelId || Inputs || Outputs
   var res = @(encodeChannelId(value.channel))
-  res.add(encodeInputs(value.inputs))
-  res.add(encodeOutputs(Outputs(notes: value.outputs)))
-  res
+  let ins = ?encodeInputs(value.inputs)
+  res.add(ins)
+  let outs = ?encodeOutputs(value.outputs)
+  res.add(outs)
+  ok(res)
 
-func encodeChannelDeposit*(value: ChannelDepositPayload): seq[byte] =
+func encodeChannelDeposit*(value: ChannelDepositPayload): Result[seq[byte], EncodingError] =
   ## ChannelDeposit = ChannelId || Inputs || Metadata
   var res = @(encodeChannelId(value.channel))
-  res.add(encodeInputs(value.inputs))
-  res.add(encodeMetadata(value.metadata))
-  res
+  let ins = ?encodeInputs(value.inputs)
+  res.add(ins)
+  let meta = ?encodeMetadata(value.metadata)
+  res.add(meta)
+  ok(res)
 
-func encodeChannelConfig*(value: ChannelConfigPayload): seq[byte] =
+func encodeChannelConfig*(value: ChannelConfigPayload): Result[seq[byte], EncodingError] =
   ## ChannelConfig = ChannelId || KeyCount || *Signer || PostingTimeframe ||
   ##                 PostingTimeout || ConfigThreshold || TransferThreshold
-  doAssert value.keys.len <= int(high(uint16)),
-    "ChannelConfig: KeyCount exceeds UINT16 range"
+  if value.keys.len > int(high(uint16)):
+    return err(EncodingError.KeysCountExceeded)
   var res = @(encodeChannelId(value.channel))
   res.add(encodeKeyCount(KeyCount(value.keys.len)))
   for key in value.keys:
@@ -336,17 +344,18 @@ func encodeChannelConfig*(value: ChannelConfigPayload): seq[byte] =
   res.add(encodePostingTimeout(value.postingTimeout))
   res.add(encodeConfigurationThreshold(value.configurationThreshold))
   res.add(encodeTransferThreshold(value.transferThreshold))
-  res
+  ok(res)
 
-func encodeChannelInscribe*(value: ChannelInscribePayload): seq[byte] =
+func encodeChannelInscribe*(value: ChannelInscribePayload): Result[seq[byte], EncodingError] =
   ## ChannelInscribe = ChannelId || Inscription || Parent || Signer
   var res = @(encodeChannelId(value.channelId))
-  res.add(encodeInscription(value.inscription))
+  let insc = ?encodeInscription(value.inscription)
+  res.add(insc)
   res.add(encodeParent(value.parent))
   res.add(encodeSigner(value.signer))
-  res
+  ok(res)
 
-func encodeOpPayload*(payload: OpPayload): seq[byte] =
+func encodeOpPayload*(payload: OpPayload): Result[seq[byte], EncodingError] =
   ## OpPayload = Transfer /
   ##             ChannelInscribe /
   ##             ChannelDeposit /
@@ -371,28 +380,30 @@ func encodeOpPayload*(payload: OpPayload): seq[byte] =
   of SdpDeclare:
     encodeSdpDeclare(payload.sdpDeclare)
   of SdpWithdraw:
-    @(encodeSdpWithdraw(payload.sdpWithdraw))
+    ok(@(encodeSdpWithdraw(payload.sdpWithdraw)))
   of SdpActive:
     encodeSdpActive(payload.sdpActive)
   of LeaderClaim:
-    @(encodeLeaderClaim(payload.leaderClaim))
+    ok(@(encodeLeaderClaim(payload.leaderClaim)))
   of ChannelConfig:
     encodeChannelConfig(payload.channelConfig)
 
-func encodeOp*(op: Op): seq[byte] =
+func encodeOp*(op: Op): Result[seq[byte], EncodingError] =
   ## Op = Opcode || OpPayload
   var res = @[encodeOpcode(op.opcode)]
-  res.add(encodeOpPayload(op.payload))
-  res
+  let p = ?encodeOpPayload(op.payload)
+  res.add(p)
+  ok(res)
 
-func encodeOps*(ops: openArray[Op]): seq[byte] =
+func encodeOps*(ops: openArray[Op]): Result[seq[byte], EncodingError] =
   ## Ops = OpCount * Op
-  doAssert ops.len <= int(high(uint8)),
-    "Ops length exceeds OpCount byte range"
+  if ops.len > int(high(uint8)):
+    return err(EncodingError.OpsCountExceeded)
   var res = @[encodeOpCount(OpCount(uint8(ops.len)))]
   for op in ops:
-    res.add(encodeOp(op))
-  res
+    let enc = ?encodeOp(op)
+    res.add(enc)
+  ok(res)
 
 func byteLen*(payload: OpPayload): int =
   ## Exact wire byte length of an OpPayload without allocating buffers.
@@ -407,15 +418,15 @@ func byteLen*(payload: OpPayload): int =
       sizeof(Parent) + sizeof(Signer)
   of ChannelDeposit:
     template cd: untyped = payload.channelDeposit
-    sizeof(ChannelId) + sizeof(byte) + cd.inputs.len * sizeof(NoteId) +
+    sizeof(ChannelId) + sizeof(byte) + cd.inputs.noteIds.len * sizeof(NoteId) +
       sizeof(uint32) + cd.metadata.len
   of ChannelWithdraw:
     template cw: untyped = payload.channelWithdraw
-    sizeof(ChannelId) + sizeof(byte) + cw.inputs.len * sizeof(NoteId)
+    sizeof(ChannelId) + sizeof(byte) + cw.inputs.noteIds.len * sizeof(NoteId)
   of ChannelTransfer:
     template ct: untyped = payload.channelTransfer
-    sizeof(ChannelId) + sizeof(byte) + ct.inputs.len * sizeof(NoteId) +
-      sizeof(byte) + ct.outputs.len * (sizeof(Value) + sizeof(ZkPublicKey))
+    sizeof(ChannelId) + sizeof(byte) + ct.inputs.noteIds.len * sizeof(NoteId) +
+      sizeof(byte) + ct.outputs.notes.len * (sizeof(Value) + sizeof(ZkPublicKey))
   of ChannelConfig:
     template cfg: untyped = payload.channelConfig
     sizeof(ChannelId) + sizeof(KeyCount) + cfg.keys.len * sizeof(Ed25519PublicKey) +
@@ -519,7 +530,7 @@ func decodeChannelWithdraw*(data: openArray[byte]): ChannelWithdrawPayload {.rai
     channel = readFixed[32](data, pos)
     inputs = readInputs(data, pos)
   finishDecode(data, pos)
-  ChannelWithdrawPayload(channel: channel, inputs: inputs.noteIds)
+  ChannelWithdrawPayload(channel: channel, inputs: inputs)
 
 func decodeChannelTransfer*(data: openArray[byte]): ChannelTransferPayload {.raises: [DecodingError].} =
   var pos = 0
@@ -529,17 +540,15 @@ func decodeChannelTransfer*(data: openArray[byte]): ChannelTransferPayload {.rai
     outputs = readOutputs(data, pos)
   finishDecode(data, pos)
   ChannelTransferPayload(
-    channel: channel, inputs: inputs.noteIds, outputs: outputs.notes,
+    channel: channel, inputs: inputs, outputs: outputs,
   )
 
 func decodeChannelDeposit*(data: openArray[byte]): ChannelDepositPayload {.raises: [DecodingError].} =
   var pos = 0
-  let channel = readFixed[32](data, pos)
-  let count = readByte(data, pos)
-  var inputs = newSeqOfCap[NoteId](count)
-  for _ in 0 ..< int(count):
-    inputs.add decodeFieldElementAt(data, pos)
-  let metadata = readU32LeLenPrefixed(data, pos)
+  let
+    channel = readFixed[32](data, pos)
+    inputs = readInputs(data, pos)
+    metadata = readU32LeLenPrefixed(data, pos)
   finishDecode(data, pos)
   ChannelDepositPayload(channel: channel, inputs: inputs, metadata: metadata)
 
@@ -607,12 +616,10 @@ func readOpPayload*(data: openArray[byte], pos: var int, opcode: Opcode): OpPayl
       ),
     )
   of OpChannelDeposit:
-    let channel = readFixed[32](data, pos)
-    let count = readByte(data, pos)
-    var inputs = newSeqOfCap[NoteId](count)
-    for _ in 0 ..< int(count):
-      inputs.add decodeFieldElementAt(data, pos)
-    let metadata = readU32LeLenPrefixed(data, pos)
+    let
+      channel = readFixed[32](data, pos)
+      inputs = readInputs(data, pos)
+      metadata = readU32LeLenPrefixed(data, pos)
     OpPayload(
       kind: ChannelDeposit,
       channelDeposit: ChannelDepositPayload(channel: channel, inputs: inputs, metadata: metadata),
@@ -624,7 +631,7 @@ func readOpPayload*(data: openArray[byte], pos: var int, opcode: Opcode): OpPayl
     OpPayload(
       kind: ChannelWithdraw,
       channelWithdraw: ChannelWithdrawPayload(
-        channel: channel, inputs: inputs.noteIds,
+        channel: channel, inputs: inputs,
       ),
     )
   of OpChannelTransfer:
@@ -635,7 +642,7 @@ func readOpPayload*(data: openArray[byte], pos: var int, opcode: Opcode): OpPayl
     OpPayload(
       kind: ChannelTransfer,
       channelTransfer: ChannelTransferPayload(
-        channel: channel, inputs: inputs.noteIds, outputs: outputs.notes,
+        channel: channel, inputs: inputs, outputs: outputs,
       ),
     )
   of OpSdpDeclare:

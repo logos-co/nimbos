@@ -35,14 +35,14 @@ suite "MantleState.tryApplyChannelTransfer":
       out0 = mkNote(60, pkSeed = 5)
       out1 = mkNote(40, pkSeed = 6)
       op = ChannelTransferPayload(
-        channel: cid, inputs: @[note.id], outputs: @[out0, out1])
+        channel: cid, inputs: Inputs(noteIds: @[note.id]), outputs: Outputs(notes: @[out0, out1]))
       r = m.tryApplyChannelTransfer(
         cs, LockedNotes.init(), op, twoOfTwo(kp1, kp2, txHash), txHash)
     check r.isOk
     let
       (newMs, newCs) = r.get
-      expected0 = Utxo(opId: opId(op), outputIndex: 0, note: out0)
-      expected1 = Utxo(opId: opId(op), outputIndex: 1, note: out1)
+      expected0 = Utxo(opId: opId(op).get, outputIndex: 0, note: out0)
+      expected1 = Utxo(opId: opId(op).get, outputIndex: 1, note: out1)
     check newCs.len == 2
     check not newCs.utxos.contains(note.id)
     check newCs.utxos.get(expected0.id) == Opt.some(expected0)
@@ -58,7 +58,7 @@ suite "MantleState.tryApplyChannelTransfer":
       m = seedMantle(cid, [], [note])
       cs = CryptarchiaState.init([note])
       op = ChannelTransferPayload(
-        channel: cid, inputs: @[note.id], outputs: @[mkNote(101, pkSeed = 5)])
+        channel: cid, inputs: Inputs(noteIds: @[note.id]), outputs: Outputs(notes: @[mkNote(101, pkSeed = 5)]))
       r = m.tryApplyChannelTransfer(
         cs, LockedNotes.init(), op, ChannelMultiSigProof(), mkTxHash())
     check r.error == UnbalancedTransfer
@@ -70,7 +70,7 @@ suite "MantleState.tryApplyChannelTransfer":
       m = seedMantle(cid, [], [note])
       cs = CryptarchiaState.init([note])
       op = ChannelTransferPayload(
-        channel: cid, inputs: @[note.id], outputs: @[mkNote(99, pkSeed = 5)])
+        channel: cid, inputs: Inputs(noteIds: @[note.id]), outputs: Outputs(notes: @[mkNote(99, pkSeed = 5)]))
       r = m.tryApplyChannelTransfer(
         cs, LockedNotes.init(), op, ChannelMultiSigProof(), mkTxHash())
     check r.error == UnbalancedTransfer
@@ -82,8 +82,8 @@ suite "MantleState.tryApplyChannelTransfer":
       m = seedMantle(cid, [], [note])
       cs = CryptarchiaState.init([note])
       op = ChannelTransferPayload(
-        channel: cid, inputs: @[note.id],
-        outputs: @[mkNote(uint64.high, pkSeed = 5), mkNote(2, pkSeed = 6)])
+        channel: cid, inputs: Inputs(noteIds: @[note.id]),
+        outputs: Outputs(notes: @[mkNote(uint64.high, pkSeed = 5), mkNote(2, pkSeed = 6)]))
       r = m.tryApplyChannelTransfer(
         cs, LockedNotes.init(), op, ChannelMultiSigProof(), mkTxHash())
     check r.error == BalanceOutOfRange
@@ -95,8 +95,8 @@ suite "MantleState.tryApplyChannelTransfer":
       m = seedMantle(cid, [], [note])
       cs = CryptarchiaState.init([note])
       op = ChannelTransferPayload(
-        channel: mkChannelId(0xFF), inputs: @[note.id],
-        outputs: @[mkNote(100, pkSeed = 5)])
+        channel: mkChannelId(0xFF), inputs: Inputs(noteIds: @[note.id]),
+        outputs: Outputs(notes: @[mkNote(100, pkSeed = 5)]))
       r = m.tryApplyChannelTransfer(
         cs, LockedNotes.init(), op, ChannelMultiSigProof(), mkTxHash())
     check r.error == ChannelNotFound
@@ -108,7 +108,7 @@ suite "MantleState.tryApplyChannelTransfer":
       m = seedMantle(cid, [])
       cs = CryptarchiaState.init([note])
       op = ChannelTransferPayload(
-        channel: cid, inputs: @[note.id], outputs: @[mkNote(100, pkSeed = 5)])
+        channel: cid, inputs: Inputs(noteIds: @[note.id]), outputs: Outputs(notes: @[mkNote(100, pkSeed = 5)]))
       r = m.tryApplyChannelTransfer(
         cs, LockedNotes.init(), op, ChannelMultiSigProof(), mkTxHash())
     check r.error == NotAChannelNote
@@ -119,7 +119,7 @@ suite "MantleState.tryApplyChannelTransfer":
       note = mkUtxo(value = 100, pkSeed = 1)
       cs = CryptarchiaState.init([note])
       op = ChannelTransferPayload(
-        channel: cid, inputs: @[note.id], outputs: @[mkNote(100, pkSeed = 5)])
+        channel: cid, inputs: Inputs(noteIds: @[note.id]), outputs: Outputs(notes: @[mkNote(100, pkSeed = 5)]))
     var m = seedMantle(cid, [])
     m.channelNotes = seedChannelNotes([(note: note, channel: mkChannelId(0xB0))])
     let r = m.tryApplyChannelTransfer(
@@ -135,7 +135,7 @@ suite "MantleState.tryApplyChannelTransfer":
       m = seedMantle(cid, [], [note])
       cs = CryptarchiaState.init()
       op = ChannelTransferPayload(
-        channel: cid, inputs: @[note.id], outputs: @[mkNote(100, pkSeed = 5)])
+        channel: cid, inputs: Inputs(noteIds: @[note.id]), outputs: Outputs(notes: @[mkNote(100, pkSeed = 5)]))
       r = m.tryApplyChannelTransfer(
         cs, LockedNotes.init(), op, ChannelMultiSigProof(), mkTxHash())
     check r.error == InvalidNote
@@ -147,7 +147,7 @@ suite "MantleState.tryApplyChannelTransfer":
       m = seedMantle(cid, [], [note])
       cs = CryptarchiaState.init([note])
       op = ChannelTransferPayload(
-        channel: cid, inputs: @[note.id], outputs: @[mkNote(100, pkSeed = 5)])
+        channel: cid, inputs: Inputs(noteIds: @[note.id]), outputs: Outputs(notes: @[mkNote(100, pkSeed = 5)]))
       locked = LockedNotes.init().insert(note.id, initHashSet[DeclarationId]())
       r = m.tryApplyChannelTransfer(
         cs, locked, op, ChannelMultiSigProof(), mkTxHash())
@@ -164,7 +164,7 @@ suite "MantleState.tryApplyChannelTransfer":
       cs = CryptarchiaState.init([note])
       txHash = mkTxHash()
       op = ChannelTransferPayload(
-        channel: cid, inputs: @[note.id], outputs: @[mkNote(100, pkSeed = 5)])
+        channel: cid, inputs: Inputs(noteIds: @[note.id]), outputs: Outputs(notes: @[mkNote(100, pkSeed = 5)]))
       proof = ChannelMultiSigProof(
         signatures: @[sign(kp1.seckey, txHash)],
         indexes: @[ChannelKeyIndex(0)],
@@ -183,7 +183,7 @@ suite "MantleState.tryApplyChannelTransfer":
       cs = CryptarchiaState.init([note])
       txHash = mkTxHash()
       op = ChannelTransferPayload(
-        channel: cid, inputs: @[note.id], outputs: @[mkNote(100, pkSeed = 5)])
+        channel: cid, inputs: Inputs(noteIds: @[note.id]), outputs: Outputs(notes: @[mkNote(100, pkSeed = 5)]))
       proof = ChannelMultiSigProof(
         signatures: @[sign(kp1.seckey, txHash), sign(kp2.seckey, txHash)],
         indexes: @[ChannelKeyIndex(0), ChannelKeyIndex(99)],
@@ -202,7 +202,7 @@ suite "MantleState.tryApplyChannelTransfer":
       cs = CryptarchiaState.init([note])
       txHash = mkTxHash()
       op = ChannelTransferPayload(
-        channel: cid, inputs: @[note.id], outputs: @[mkNote(100, pkSeed = 5)])
+        channel: cid, inputs: Inputs(noteIds: @[note.id]), outputs: Outputs(notes: @[mkNote(100, pkSeed = 5)]))
       proof = ChannelMultiSigProof(
         signatures: @[
           sign(kp1.seckey, mkTxHash(seed = 0xEE)),
@@ -227,7 +227,7 @@ suite "MantleState.tryApplyChannelTransfer":
       m = seedMantle(cid, [kp1.pubkey, kp2.pubkey], [note])
       txHash = mkTxHash()
       op = ChannelTransferPayload(
-        channel: cid, inputs: @[note.id], outputs: @[mkNote(100, pkSeed = 5)])
+        channel: cid, inputs: Inputs(noteIds: @[note.id]), outputs: Outputs(notes: @[mkNote(100, pkSeed = 5)]))
       r = m.tryApplyChannelTransfer(
         cs, LockedNotes.init(), op, twoOfTwo(kp1, kp2, txHash), txHash)
     check r.isOk
@@ -241,12 +241,12 @@ suite "channel notes lifecycle":
       cid = mkChannelId(30)
       deposited = mkUtxo(value = 100, pkSeed = 1)
       depositOp = ChannelDepositPayload(
-        channel: cid, inputs: @[deposited.id], metadata: @[])
+        channel: cid, inputs: Inputs(noteIds: @[deposited.id]), metadata: @[])
       afterDeposit = applyChannelDeposit(
         ChannelNotes.init(), CryptarchiaState.init([deposited]), depositOp
       ).expect("deposit applies")
       channelNote = Utxo(
-        opId: opId(depositOp), outputIndex: 0, note: deposited.note)
+        opId: opId(depositOp).get, outputIndex: 0, note: deposited.note)
     check afterDeposit.channelNotes.isChannelNoteOf(channelNote.id, cid)
     check not afterDeposit.cs.utxos.contains(deposited.id)
 
@@ -254,19 +254,19 @@ suite "channel notes lifecycle":
     let
       reassigned = mkNote(100, pkSeed = 7)
       transferOp = ChannelTransferPayload(
-        channel: cid, inputs: @[channelNote.id], outputs: @[reassigned])
+        channel: cid, inputs: Inputs(noteIds: @[channelNote.id]), outputs: Outputs(notes: @[reassigned]))
       afterTransfer = applyChannelTransfer(
         afterDeposit.channelNotes, afterDeposit.cs, transferOp
       ).expect("transfer applies")
       transferred = Utxo(
-        opId: opId(transferOp), outputIndex: 0, note: reassigned)
+        opId: opId(transferOp).get, outputIndex: 0, note: reassigned)
     check afterTransfer.channelNotes.isChannelNoteOf(transferred.id, cid)
     check not afterTransfer.channelNotes.isChannelNote(channelNote.id)
 
     # Release it, then spend it as an ordinary note.
     let
       withdrawOp = ChannelWithdrawPayload(
-        channel: cid, inputs: @[transferred.id])
+        channel: cid, inputs: Inputs(noteIds: @[transferred.id]))
       afterWithdraw = applyChannelWithdraw(
         afterTransfer.channelNotes, withdrawOp).expect("withdraw applies")
       spend = TransferPayload(

@@ -343,7 +343,7 @@ suite "applyTransferState — chain":
 
     let
       s1 = r1.get.state
-      tx1OpId = opId(tx1)
+      tx1OpId = opId(tx1).get
       outUtxo0 =
         Utxo(opId: tx1OpId, outputIndex: 0, note: mkNote(60, pkSeed = 2))
       outUtxo1 =

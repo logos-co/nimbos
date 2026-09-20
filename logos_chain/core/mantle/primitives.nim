@@ -150,14 +150,12 @@ func encodeNonce*(value: Nonce): array[8, byte] =
   ## Nonce = UINT64
   encodeLe(value)
 
-func encodeMetadata*(value: Metadata): seq[byte] =
+func encodeMetadata*(value: Metadata): Result[seq[byte], EncodingError] =
   ## Metadata = UINT32 * BYTE
   ## Service-specific node activeness metadata.
-  doAssert value.len <= int(high(uint32)),
-    "Metadata length exceeds UINT32 range"
-  var res = @(encodeLe(uint32(value.len)))
-  res.add(value)
-  res
+  let enc = encodeU32LeLenPrefixed(value).valueOr:
+    return err(EncodingError.MetadataLengthExceeded)
+  ok(enc)
 
 func encodeSignatureCount*(value: SignatureCount): array[2, byte] =
   ## SignatureCount = UINT16
@@ -203,39 +201,31 @@ func encodeOutputCount*(value: byte): byte =
   ## OutputCount = Byte
   encodeByte(value)
 
-func encodeInputs*(value: Inputs): seq[byte] =
+func encodeInputs*(value: Inputs): Result[seq[byte], EncodingError] =
   ## Inputs = InputCount * NoteId
-  doAssert value.noteIds.len <= int(high(byte)),
-    "Inputs: InputCount exceeds Byte range"
-  var res: seq[byte]
+  if value.noteIds.len > int(high(byte)):
+    return err(EncodingError.InputsCountExceeded)
+  var res = newSeqOfCap[byte](1 + value.noteIds.len * 32)
   res.add(encodeInputCount(byte(value.noteIds.len)))
   for noteId in value.noteIds:
     res.add(encodeNoteId(noteId))
-  res
+  ok(res)
 
-func encodeInputs*(value: openArray[NoteId]): seq[byte] =
-  ## Inputs = InputCount * NoteId
-  doAssert value.len <= int(high(byte)),
-    "Inputs: InputCount exceeds Byte range"
-  var res: seq[byte]
-  res.add(encodeInputCount(byte(value.len)))
-  for noteId in value:
-    res.add(encodeNoteId(noteId))
-  res
-
-func encodeOutputs*(value: Outputs): seq[byte] =
+func encodeOutputs*(value: Outputs): Result[seq[byte], EncodingError] =
   ## Outputs = OutputCount * Note
-  doAssert value.notes.len <= int(high(byte)),
-    "Outputs: OutputCount exceeds Byte range"
-  var res: seq[byte]
+  if value.notes.len > int(high(byte)):
+    return err(EncodingError.OutputsCountExceeded)
+  var res = newSeqOfCap[byte](1 + value.notes.len * 40)
   res.add(encodeOutputCount(byte(value.notes.len)))
   for note in value.notes:
     res.add(encodeNote(note))
-  res
+  ok(res)
 
-func encodeInscription*(value: Inscription): seq[byte] =
+func encodeInscription*(value: Inscription): Result[seq[byte], EncodingError] =
   ## Inscription = UINT32 * BYTE
-  encodeU32LeLenPrefixed(value)
+  let enc = encodeU32LeLenPrefixed(value).valueOr:
+    return err(EncodingError.InscriptionLengthExceeded)
+  ok(enc)
 
 func encodeServiceType*(value: ServiceType): byte =
   ## Wire ``ServiceType`` = single byte (``ord``). Used by ``encodeSdpDeclare`` /
@@ -249,23 +239,28 @@ func encodeLocatorCount*(value: byte): byte =
   ## LocatorCount = Byte
   encodeByte(value)
 
-func encodeLocator*(value: Locator): seq[byte] =
+func encodeLocator*(value: Locator): Result[seq[byte], EncodingError] =
   ## Locator = 2Byte * BYTE ; Max 329 bytes, multiaddr format
   let locatorBytes = value.data().buffer
-  doAssert locatorBytes.len <= MaxLocatorMultiaddrBytes,
-    "Locator exceeds max multiaddr byte length"
-  encodeU16LeLenPrefixed(locatorBytes)
+  if locatorBytes.len > MaxLocatorMultiaddrBytes:
+    return err(EncodingError.LocatorLengthExceeded)
+  let enc = encodeU16LeLenPrefixed(locatorBytes).valueOr:
+    return err(EncodingError.LocatorLengthExceeded)
+  ok(enc)
 
 func byteLen*(locator: Locator): int =
   ## Exact wire byte length of a Locator: 2-byte prefix + multiaddr bytes.
   sizeof(uint16) + locator.data().buffer.len
 
-func encodeLocators*(locators: openArray[Locator]): seq[byte] =
+func encodeLocators*(locators: openArray[Locator]): Result[seq[byte], EncodingError] =
   ## Locators = LocatorCount *Locator
+  if locators.len > int(high(byte)):
+    return err(EncodingError.LocatorsCountExceeded)
   var res = @[encodeLocatorCount(byte(locators.len))]
   for locator in locators:
-    res.add(encodeLocator(locator))
-  res
+    let enc = ?encodeLocator(locator)
+    res.add(enc)
+  ok(res)
 
 func slotToFr*(slot: SlotNumber): FieldElement =
   ## Convert a ``SlotNumber`` to a BN254 field element via 8-byte

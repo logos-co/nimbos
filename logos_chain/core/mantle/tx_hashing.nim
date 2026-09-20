@@ -18,43 +18,52 @@ const
   MantleTxHashDomainTag = "MANTLE_TXHASH_V1"
   OperationIdV1DomainTag = "OPERATION_ID_V1"
 
-func mantleTxHash*(tx: MantleTx): Hash32 =
+func mantleTxHash*(tx: MantleTx): Result[Hash32, EncodingError] =
   ## mantle_txhash = Blake2b-256("MANTLE_TXHASH_V1" || encode_mantle_tx(tx))
-  blake2b256Hash(MantleTxHashDomainTag, encodeMantleTx(tx))
+  let encoded = ?encodeMantleTx(tx)
+  ok(blake2b256Hash(MantleTxHashDomainTag, encoded))
 
-func opId*(op: TransferPayload): Hash32 =
+func opId*(op: TransferPayload): Result[Hash32, EncodingError] =
   ## op_id = Blake2b-256("OPERATION_ID_V1" || encode_op_bytes(op))
-  blake2b256Hash(OperationIdV1DomainTag, encodeTransfer(op))
+  let encoded = ?encodeTransfer(op)
+  ok(blake2b256Hash(OperationIdV1DomainTag, encoded))
 
-func opId*(op: DeclarationMessage): Hash32 =
+func opId*(op: DeclarationMessage): Result[Hash32, EncodingError] =
   ## op_id = Blake2b-256("OPERATION_ID_V1" || encode_op_bytes(op))
-  blake2b256Hash(OperationIdV1DomainTag, encodeSdpDeclare(op))
+  let encoded = ?encodeSdpDeclare(op)
+  ok(blake2b256Hash(OperationIdV1DomainTag, encoded))
 
 func opId*(op: WithdrawMessage): Hash32 =
   ## op_id = Blake2b-256("OPERATION_ID_V1" || encode_op_bytes(op))
   blake2b256Hash(OperationIdV1DomainTag, @(encodeSdpWithdraw(op)))
 
-func opId*(op: ActiveMessage): Hash32 =
+func opId*(op: ActiveMessage): Result[Hash32, EncodingError] =
   ## op_id = Blake2b-256("OPERATION_ID_V1" || encode_op_bytes(op))
-  blake2b256Hash(OperationIdV1DomainTag, encodeSdpActive(op))
+  let encoded = ?encodeSdpActive(op)
+  ok(blake2b256Hash(OperationIdV1DomainTag, encoded))
 
-func opId*(op: ChannelInscribePayload): Hash32 =
-  blake2b256Hash(OperationIdV1DomainTag, encodeChannelInscribe(op))
+func opId*(op: ChannelInscribePayload): Result[Hash32, EncodingError] =
+  let encoded = ?encodeChannelInscribe(op)
+  ok(blake2b256Hash(OperationIdV1DomainTag, encoded))
 
-func opId*(op: ChannelConfigPayload): Hash32 =
-  blake2b256Hash(OperationIdV1DomainTag, encodeChannelConfig(op))
+func opId*(op: ChannelConfigPayload): Result[Hash32, EncodingError] =
+  let encoded = ?encodeChannelConfig(op)
+  ok(blake2b256Hash(OperationIdV1DomainTag, encoded))
 
-func opId*(op: ChannelDepositPayload): Hash32 =
-  blake2b256Hash(OperationIdV1DomainTag, encodeChannelDeposit(op))
+func opId*(op: ChannelDepositPayload): Result[Hash32, EncodingError] =
+  let encoded = ?encodeChannelDeposit(op)
+  ok(blake2b256Hash(OperationIdV1DomainTag, encoded))
 
-func opId*(op: ChannelWithdrawPayload): Hash32 =
-  blake2b256Hash(OperationIdV1DomainTag, encodeChannelWithdraw(op))
+func opId*(op: ChannelWithdrawPayload): Result[Hash32, EncodingError] =
+  let encoded = ?encodeChannelWithdraw(op)
+  ok(blake2b256Hash(OperationIdV1DomainTag, encoded))
 
-func opId*(op: ChannelTransferPayload): Hash32 =
-  blake2b256Hash(OperationIdV1DomainTag, encodeChannelTransfer(op))
+func opId*(op: ChannelTransferPayload): Result[Hash32, EncodingError] =
+  let encoded = ?encodeChannelTransfer(op)
+  ok(blake2b256Hash(OperationIdV1DomainTag, encoded))
 
 func opId*(op: LeaderClaimPayload): Hash32 =
   ## op_id = Blake2b-256("OPERATION_ID_V1" || encode_op_bytes(op))
-  blake2b256Hash(OperationIdV1DomainTag, encodeLeaderClaim(op))
+  blake2b256Hash(OperationIdV1DomainTag, @(encodeLeaderClaim(op)))
 
 {.pop.}

@@ -66,7 +66,7 @@ suite "devnet genesis mantle_tx block root":
       smt = signedMantleTxFromDevnetFixture(text).valueOr:
         check false
         return
-      blockRoot = createBlockRoot([smt])
+      blockRoot = createBlockRoot([smt]).get
       dsText = readAllChars(deploymentSettingsPath).valueOr:
         check false
         return
@@ -75,11 +75,11 @@ suite "devnet genesis mantle_tx block root":
         return
       gstate = ds.cryptarchia.genesisState
       smtFromDeployment = gstate.signedMantleTx
-    check mantleTxHash(smt.tx) == mantleTxHash(smtFromDeployment.tx)
-    check blockRoot == createBlockRoot([smtFromDeployment])
+    check mantleTxHash(smt.tx).get == mantleTxHash(smtFromDeployment.tx).get
+    check blockRoot == createBlockRoot([smtFromDeployment]).get
     check toHex(blockRoot) == expectedDevnetGenesisBlockRoot
     check blockRoot == gstate.header.blockRoot
-    check blockRoot == mantleTxHash(smt.tx)
+    check blockRoot == mantleTxHash(smt.tx).get
 
   test "deployment genesis block id matches devnet header preimage":
     let
@@ -90,7 +90,7 @@ suite "devnet genesis mantle_tx block root":
         check false
         return
     check validateDeploymentSettings(ds).isOk
-    let gb = createGenesisBlock(ds.cryptarchia.genesisState.signedMantleTx)
+    let gb = createGenesisBlock(ds.cryptarchia.genesisState.signedMantleTx).get
     check toHex(gb.header.blockRoot) == expectedDevnetGenesisBlockRoot
     check toHex(blockId(gb.header)) == expectedDevnetGenesisBlockId
 
@@ -102,10 +102,10 @@ suite "devnet genesis mantle_tx block root":
       smt = signedMantleTxFromDevnetFixture(text).valueOr:
         check false
         return
-      txBytes = encodeMantleTx(smt.tx)
+      txBytes = encodeMantleTx(smt.tx).get
     check toHex(txBytes) == fixedGenesisTxBytesHex
     check txBytes == hexToSeqByte(fixedGenesisTxBytesHex)
     check toHex(blake2b256Hash(txBytes)) == expectedDevnetBlake2bMantleDigest
-    check toHex(mantleTxHash(smt.tx)) == expectedDevnetMantleTxHash
+    check toHex(mantleTxHash(smt.tx).get) == expectedDevnetMantleTxHash
 
 {.pop.}

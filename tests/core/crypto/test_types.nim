@@ -39,7 +39,7 @@ suite "core/crypto/types":
     check le[7] == 1'u8
 
   test "encodeU32LeLenPrefixed length then bytes":
-    let s = encodeU32LeLenPrefixed([9'u8, 8'u8, 7'u8])
+    let s = encodeU32LeLenPrefixed([9'u8, 8'u8, 7'u8]).get
     check s.len == 4 + 3
     check s[0] == 3'u8
     check s[4] == 9'u8
@@ -47,7 +47,7 @@ suite "core/crypto/types":
     check s[6] == 7'u8
 
   test "encodeU16LeLenPrefixed length then bytes":
-    let s = encodeU16LeLenPrefixed([0xAB'u8, 0xCD'u8])
+    let s = encodeU16LeLenPrefixed([0xAB'u8, 0xCD'u8]).get
     check s.len == 2 + 2
     check s[0] == 2'u8
     check s[2] == 0xAB'u8

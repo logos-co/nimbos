@@ -77,7 +77,7 @@ func cryptarchiaParameter*(
       return decodeCryptarchiaParameter(op.payload.channelInscribe)
   err(cstring"genesis tx has no null-channel inscription")
 
-func createGenesisHeader(genesisMantleTx: SignedMantleTx): Header =
+func createGenesisHeader(genesisMantleTx: SignedMantleTx): Result[Header, EncodingError] =
   ## Genesis header constructor using spec defaults:
   ## - parent block id = zero hash
   ## - slot = 0
@@ -95,9 +95,9 @@ func createGenesisHeader(genesisMantleTx: SignedMantleTx): Header =
     ),
   )
 
-func createGenesisBlock*(genesisMantleTx: SignedMantleTx): Block =
+func createGenesisBlock*(genesisMantleTx: SignedMantleTx): Result[Block, EncodingError] =
   ## GENESIS_BLOCK = (GENESIS_HEADER, GENESIS_SIGNATURE, [GENESIS_MANTLE_TX])
-  let genesisHeader = createGenesisHeader(genesisMantleTx)
-  initBlock(genesisHeader, DefaultEd25519Signature, [genesisMantleTx])
+  let genesisHeader = ?createGenesisHeader(genesisMantleTx)
+  ok(initBlock(genesisHeader, DefaultEd25519Signature, [genesisMantleTx]))
 
 {.pop.}

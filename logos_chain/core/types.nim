@@ -11,7 +11,6 @@
 {.push raises: [], gcsafe.}
 
 import
-  std/sequtils,
   results,
   stew/[assign2, bitops2],
   bincode,
@@ -106,12 +105,16 @@ func createBlockRoot*(hashes: openArray[Hash32]): Hash32 =
 
   level[0]
 
-func createBlockRoot*(txs: openArray[SignedMantleTx]): Hash32 =
+func createBlockRoot*(txs: openArray[SignedMantleTx]): Result[Hash32, EncodingError] =
   if txs.len == 0:
-    return DefaultHash32
+    return ok(DefaultHash32)
   if txs.len == 1:
     return mantleTxHash(txs[0].tx)
-  createBlockRoot(txs.mapIt(mantleTxHash(it.tx)))
+  var hashes = newSeqOfCap[Hash32](txs.len)
+  for tx in txs:
+    let h = ?mantleTxHash(tx.tx)
+    hashes.add(h)
+  ok(createBlockRoot(hashes))
 
 func blockId*(header: Header): Hash32 =
   ## block_id(header) = hash(
@@ -185,15 +188,16 @@ func initHeader*(
     slot: SlotNumber,
     txs: openArray[SignedMantleTx],
     proofOfLeadership: ProofOfLeadership,
-): Header =
+): Result[Header, EncodingError] =
   ## Canonical constructor for block headers. Used during block import and validation, where the full transactions are available.
-  Header(
+  let root = ?createBlockRoot(txs)
+  ok(Header(
     bedrockVersion: bedrockVersion,
     parentBlock: parentBlock,
     slot: slot,
-    blockRoot: createBlockRoot(txs),
+    blockRoot: root,
     proofOfLeadership: proofOfLeadership,
-  )
+  ))
 
 func initProposal*(
     header: Header,

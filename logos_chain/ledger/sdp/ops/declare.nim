@@ -57,7 +57,8 @@ proc validateSdpDeclare(
   if note.value < minStake.stakeThreshold:
     return err(InsufficientStake)
 
-  let declarationId = declarationId(declaration)
+  let declarationId = declarationId(declaration).valueOr:
+    return err(error.toLedgerError)
   if declarationId in state.declarations:
     return err(DuplicateDeclaration)
 
@@ -78,7 +79,8 @@ proc applySdpDeclare*(
   ## Mutation only; assumes validation passed (or genesis trusted the op).
   if getParametersAt(registry, declaration.serviceType, epoch).isNone:
     return err(MissingServiceParameters)
-  let declarationId = declarationId(declaration)
+  let declarationId = declarationId(declaration).valueOr:
+    return err(error.toLedgerError)
   registry.state = insertDeclaration(
     addDeclarationToLockedNote(
       registry.state,

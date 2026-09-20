@@ -9,6 +9,7 @@
 {.used.}
 
 import
+  std/strutils,
   unittest2,
   libp2p/multiaddress,
   ../../../logos_chain/core/mantle/primitives
@@ -31,7 +32,7 @@ suite "core/mantle/primitives":
   test "encodeMetadata empty is length 0 u32 le":
     let
       m: Metadata = @[]
-      s = encodeMetadata(m)
+      s = encodeMetadata(m).get
     check s.len == 4
     check s[0] == 0'u8
     check s[1] == 0'u8
@@ -50,7 +51,7 @@ suite "core/mantle/primitives":
   test "decodeMetadata roundtrips encodeMetadata":
     let
       m: Metadata = @[1'u8, 2'u8, 3'u8]
-      wire = encodeMetadata(m)
+      wire = encodeMetadata(m).get
     check decodeMetadata(wire) == m
 
   test "decodeOpcode roundtrips encodeOpcode":
@@ -67,8 +68,32 @@ suite "core/mantle/primitives":
   test "decodeLocator roundtrips encodeLocator":
     let
       locator = MultiAddress.init("/ip4/127.0.0.1/udp/30303/quic-v1").tryGet()
-      wire = encodeLocator(locator)
+      wire = encodeLocator(locator).get
       back = decodeLocator(wire)
     check back.data() == locator.data()
+
+  test "encodeInputs returns error on count overflow":
+    var largeNotes: seq[NoteId]
+    for i in 0 .. 256:
+      largeNotes.add default(NoteId)
+    check encodeInputs(Inputs(noteIds: largeNotes)).error == EncodingError.InputsCountExceeded
+
+  test "encodeOutputs returns error on count overflow":
+    var largeNotes: seq[Note]
+    for i in 0 .. 256:
+      largeNotes.add default(Note)
+    check encodeOutputs(Outputs(notes: largeNotes)).error == EncodingError.OutputsCountExceeded
+
+  test "encodeLocators returns error on count overflow":
+    let loc = MultiAddress.init("/ip4/127.0.0.1/udp/30303/quic-v1").tryGet()
+    var largeLocs: seq[Locator]
+    for i in 0 .. 256:
+      largeLocs.add loc
+    check encodeLocators(largeLocs).error == EncodingError.LocatorsCountExceeded
+
+  test "encodeLocator returns error on length overflow":
+    let longStr = "/dns4/" & repeat("a", 200) & "/dns4/" & repeat("b", 150)
+    let longAddr = MultiAddress.init(longStr).tryGet()
+    check encodeLocator(longAddr).error == EncodingError.LocatorLengthExceeded
 
 {.pop.}

@@ -45,6 +45,22 @@ type
 
   DecodingError* = object of CatchableError
 
+  EncodingError* {.pure.} = enum
+    LengthExceeded
+    MetadataLengthExceeded
+    InscriptionLengthExceeded
+    LocatorLengthExceeded
+    InputsCountExceeded
+    OutputsCountExceeded
+    LocatorsCountExceeded
+    KeysCountExceeded
+    OpsCountExceeded
+    MultiSigCountExceeded
+    MultiSigSignaturesMismatch
+    ProofCountMismatch
+    ProofKindMismatch
+    UnsupportedOpcode
+
 deriveBincode(EdPublicKey)
 deriveBincode(EdSignature)
 
@@ -76,21 +92,21 @@ func encodeLe*[T: SomeUnsignedInt](value: T): array[sizeof(T), byte] =
 func encodeByte*(value: byte): byte =
   value
 
-func encodeU32LeLenPrefixed*(data: openArray[byte]): seq[byte] =
+func encodeU32LeLenPrefixed*(data: openArray[byte]): Result[seq[byte], EncodingError] =
   ## ``UINT32`` length (LE) then payload (Inscription, Metadata, …).
-  doAssert data.len <= int(high(uint32)),
-    "length-prefixed data exceeds UINT32 range"
+  if data.len > int(high(uint32)):
+    return err(EncodingError.LengthExceeded)
   var res = @(encodeLe(uint32(data.len)))
   res.add(data)
-  res
+  ok(res)
 
-func encodeU16LeLenPrefixed*(data: openArray[byte]): seq[byte] =
+func encodeU16LeLenPrefixed*(data: openArray[byte]): Result[seq[byte], EncodingError] =
   ## ``UINT16`` length (LE) then payload (e.g. single Locator).
-  doAssert data.len <= int(high(uint16)),
-    "length-prefixed data exceeds UINT16 range"
+  if data.len > int(high(uint16)):
+    return err(EncodingError.LengthExceeded)
   var res = @(encodeLe(uint16(data.len)))
   res.add(data)
-  res
+  ok(res)
 
 func encodeGroth16*(proof: CompressedGroth16Proof): CompressedGroth16Proof =
   ## Groth16 = 128BYTE (pi_a:32 || pi_b:64 || pi_c:32) — compressed on-wire layout.

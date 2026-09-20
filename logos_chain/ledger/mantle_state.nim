@@ -35,7 +35,7 @@ func tryApplyChannelInscribe*(
 ): Result[MantleState, LedgerError] =
   ## ChannelInscribe — validate-then-apply.
   ?validateChannelInscribe(ms.channels, op, blockSlot)
-  ms.channels = applyChannelInscribe(ms.channels, op, blockSlot)
+  ms.channels = ?applyChannelInscribe(ms.channels, op, blockSlot)
   ok(ms)
 
 func tryApplyChannelConfig*(
@@ -47,7 +47,7 @@ func tryApplyChannelConfig*(
 ): Result[MantleState, LedgerError] =
   ## ChannelConfig — validate-then-apply.
   ?validateChannelConfig(ms.channels, op, proof, txHash)
-  ms.channels = applyChannelConfig(ms.channels, op, blockSlot)
+  ms.channels = ?applyChannelConfig(ms.channels, op, blockSlot)
   ok(ms)
 
 proc tryApplyChannelDeposit*(

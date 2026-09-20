@@ -35,17 +35,18 @@ type
 template tx*(t: ValidSignedMantleTx): untyped = SignedMantleTx(t).tx
 template opProofs*(t: ValidSignedMantleTx): untyped = SignedMantleTx(t).opProofs
 
-func encodeMantleTx*(tx: MantleTx): seq[byte] =
+func encodeMantleTx*(tx: MantleTx): Result[seq[byte], EncodingError] =
   ## MantleTx = OpCount (u8) || *Op
   encodeOps(tx.ops)
 
-func encodeSignedMantleTx*(signedTx: SignedMantleTx): seq[byte] =
+func encodeSignedMantleTx*(signedTx: SignedMantleTx): Result[seq[byte], EncodingError] =
   ## SignedMantleTx = MantleTx || OpsProofs
-  var res = encodeMantleTx(signedTx.tx)
-  res.add(encodeOpsProofs(signedTx.tx.ops, signedTx.opProofs))
-  res
+  var res = ?encodeMantleTx(signedTx.tx)
+  let proofsBytes = ?encodeOpsProofs(signedTx.tx.ops, signedTx.opProofs)
+  res.add(proofsBytes)
+  ok(res)
 
-template encodeSignedMantleTx*(signedTx: ValidSignedMantleTx): seq[byte] =
+template encodeSignedMantleTx*(signedTx: ValidSignedMantleTx): Result[seq[byte], EncodingError] =
   encodeSignedMantleTx(SignedMantleTx(signedTx))
 
 func byteLen*(tx: MantleTx): int =
