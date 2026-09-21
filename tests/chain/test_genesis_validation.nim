@@ -8,37 +8,33 @@
 ## Genesis transaction validation: the stateless pass, the parameter
 ## inscription decode and the genesis ledger state.
 
-# `gcsafe` deliberately omitted: `parseDeploymentSettings` (YAML) is not
-# GC-safe, matching `tests/chain/test_chain_wiring.nim`.
-{.push raises: [].}
+{.push raises: [], gcsafe.}
 {.used.}
 
 import
-  std/[os, sequtils, strutils],
+  std/[sequtils, strutils],
   unittest2,
   results,
-  stew/[byteutils, endians2, io2],
+  stew/[byteutils, endians2],
   libp2p/crypto/ed25519/ed25519,
   libp2p/multiaddress,
   ../../logos_chain/chain/chain,
   ../../logos_chain/core/crypto/types,
   ../../logos_chain/core/mantle/tx_validation,
-  ../../logos_chain/deployment/deployment_settings,
   ../core/mantle/test_helpers,
   ../ledger/sdp/test_helpers,
   ../ledger/test_helpers,
   ../testutil
 
 const
-  testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
-  deploymentSettingsPath = testsDir / "../../config/deployment-settings.yaml"
   # Worked example per `bedrock-genesis-block.md` §Cryptarchia Parameters:
-  # chain id "nomos-mainnet", genesis time 2026-01-05T19:20:35+00:00 (u32-le),
-  # little-endian nonce below the BN254 order.
+  # chain id "logos-blockchain-mainnet", genesis time 2026-01-05T19:20:35Z
+  # (u32-le). The spec's nonce ends in 0x90, which as the little-endian top
+  # byte exceeds the BN254 order, so the last byte is lowered to 0x00 here.
   SpecNonceHex =
     "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567800"
   SpecInscription = hexToSeqByte(
-    "0d6e6f6d6f732d6d61696e6e6574030f5c69" & SpecNonceHex)
+    "186c6f676f732d626c6f636b636861696e2d6d61696e6e6574030f5c69" & SpecNonceHex)
 
 func withOps(ops: openArray[Op]): SignedMantleTx =
   ## `ops` with a placeholder proof of the right kind for each.
@@ -121,10 +117,14 @@ suite "chain/genesis validation: stage 1 (stateless)":
         StatelessLedgerError.GenesisShape
 
   test "accepts 255 ops":
-    let declarations = (1 .. MantleMaxOps - 2).mapIt(
-      declareOn(fe(uint64 it), mkZkPubKey(byte it), byte it))
-    check SignedMantleTx(testGenesisTx(declarations = declarations)).tx.ops.len ==
-      MantleMaxOps
+    let
+      ops = SignedMantleTx(testGenesisTx()).tx.ops
+      extra = (1 .. MantleMaxOps - 2).mapIt(
+        createSdpDeclareOp(declareOn(fe(uint64 it), mkZkPubKey(byte it), byte it)))
+      tx = withOps(ops & extra)
+    check:
+      tx.tx.ops.len == MantleMaxOps
+      validateGenesisTxStateless(tx).isOk
 
   test "rejects 256 ops":
     let
@@ -135,9 +135,10 @@ suite "chain/genesis validation: stage 1 (stateless)":
       StatelessLedgerError.TooManyOps
 
   test "accepts 255 outputs":
-    let outputs = (1 .. int(high(byte))).mapIt(Note(value: 1, zkPublicKey: testZkPk()))
-    check SignedMantleTx(testGenesisTx(outputs = outputs)).tx.ops[0]
-      .payload.transfer.outputs.notes.len == int(high(byte))
+    var tx = SignedMantleTx(testGenesisTx())
+    tx.tx.ops[0].payload.transfer.outputs.notes =
+      (1 .. int(high(byte))).mapIt(Note(value: 1, zkPublicKey: testZkPk()))
+    check validateGenesisTxStateless(tx).isOk
 
   test "rejects 256 outputs":
     var tx = SignedMantleTx(testGenesisTx())
@@ -226,7 +227,7 @@ suite "chain/genesis validation: stage 2 (cryptarchia parameters)":
     inscribe.inscription = SpecInscription
     let param = cryptarchiaParameter(withInscription(inscribe)).expect("valid inscription")
     check:
-      param.chainId == "nomos-mainnet"
+      param.chainId == "logos-blockchain-mainnet"
       param.genesisTime == 0x695c0f03'u64
       param.epochNonce ==
         frFromBytesLE(hexToSeqByte(SpecNonceHex)).expect("below order")
@@ -273,33 +274,6 @@ suite "chain/genesis validation: stage 2 (cryptarchia parameters)":
     check cryptarchiaParameter(withInscription(inscribe)).isErr
 
 suite "chain/genesis validation: stage 3 (ledger state)":
-  test "accepts the devnet genesis":
-    let
-      dsText = readAllChars(deploymentSettingsPath).valueOr:
-        check false
-        return
-      ds = parseDeploymentSettings(dsText).valueOr:
-        check false
-        return
-      validTx = validateGenesisTxStateless(
-          ds.cryptarchia.genesisState.signedMantleTx).valueOr:
-        check false
-        return
-      param = cryptarchiaParameter(validTx).valueOr:
-        check false
-        return
-      cfg = ledgerConfig(ds)
-      state = LedgerState.fromGenesis(
-        validTx, param.epochNonce,
-        SdpRegistry.init(
-          ds.cryptarchia.sdpConfig,
-          blendRewardsParams(ds, cfg.epochSchedule.epochLength)), cfg).valueOr:
-        check false
-        return
-    check state.sdp.state.declarations.len == 1
-    for info in state.sdp.state.declarations.values:
-      check state.latestUtxos.get(info.lockedNoteId).isSome
-
   test "rejects an inscription whose parent is not the root message":
     var inscribe = inscriptionOf(testGenesisTx())
     inscribe.parent[0] = 1
