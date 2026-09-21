@@ -42,6 +42,8 @@ func toPrettyString*(bytes: openArray[byte]): string =
   else:
     pretty
 
+# `std/unicode.validateUtf8` accepts overlong 3- and 4-byte forms, UTF-16
+# surrogates and code points above U+10FFFF, so it cannot gate wire data.
 func isUtf8*(s: openArray[byte]): bool =
   ## Strict UTF-8: no overlong form, no surrogate, nothing above U+10FFFF.
   var i = 0

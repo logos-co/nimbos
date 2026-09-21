@@ -106,6 +106,10 @@ suite "chain/epoch wiring (devnet deployment settings)":
       state.epochs.activeEpoch.lottery1 != default(FieldElement)
       state.epochs.blockDensity.periodStart == 0
       state.epochs.blockDensity.periodEnd == 3599
+      # One Blend provider, declared on a ceremony note the Transfer created.
+      state.sdp.state.declarations.len == 1
+    for info in state.sdp.state.declarations.values:
+      check state.latestUtxos.get(info.lockedNoteId).isSome
 
   test "Chain.init wires ledger, epoch state and clock from settings":
     let chain = Chain.init(ds, mockVerifyLeaderProof).valueOr:
