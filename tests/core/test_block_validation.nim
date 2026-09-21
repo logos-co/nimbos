@@ -50,7 +50,8 @@ proc mkSizedTx(bytes: int): SignedMantleTx =
 proc validate(genesis: Block, blk: Block): Result[ValidBlock, BlockValidationError] =
   let tree = newLocalTree(genesis, 1'u64)
   let ledger = Ledger[BlockId].init(blockId(genesis.header), default(LedgerState), default(LedgerConfig))
-  validateBlock(blk, tree, ledger, blk.txs)
+  let (validBlk, _) = ?validateBlock(blk, tree, ledger, blk.txs)
+  ok(validBlk)
 
 proc treeWithLib(genesis: Block): tuple[tree: LocalTree, b1, b2: Block] =
   ## Tree with security parameter 1 holding genesis, b1, b2, b3; the LIB is b2.
@@ -393,8 +394,22 @@ suite "core/block_validation — multi-tier evaluation order":
     state.feeMarket.executionBaseFee = 1000
     state.feeMarket.storageGasPrice = 1000
     let ledger = Ledger[BlockId].init(gid, state, testLedgerConfig, mockVerifyLeaderProof)
-    let validBlk = validateBlock(blk, tree, ledger, []).expect("valid block")
+    let (validBlk, _) = validateBlock(blk, tree, ledger, []).expect("valid block")
     let res = prepareBlockUpdate(validBlk, ledger)
     check res.isErr and res.error.kind == BlockValidationErrorKind.TransactionsRejected
+
+  test "Tier 1: validateBlock marks isOrphan as true for valid orphan block":
+    let
+      sm = minimalSignedTx()
+      genesis = createGenesisBlock(sm)
+      tree = newLocalTree(genesis, 1'u64)
+      ledger = Ledger[BlockId].init(blockId(genesis.header), default(LedgerState), default(LedgerConfig))
+      orphanParent = Hash32([1'u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+      blk = childBlock(genesis.header, orphanParent, SlotNumber(1), [sm])
+    let res = validateBlock(blk, tree, ledger, blk.txs)
+    check res.isOk
+    let (validBlk, isOrphan) = res.get
+    check isOrphan
+    check validBlk.header == blk.header
 
 {.pop.}

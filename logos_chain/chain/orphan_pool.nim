@@ -23,7 +23,6 @@ type
 
 const
   MaxOrphans* = 128
-  MaxOrphanSlotAge* = SlotNumber(2160)
 
 func len*(pool: OrphanPool): int =
   ## Returns the number of orphan blocks currently in the pool.
@@ -42,35 +41,6 @@ func getOrphan*(pool: OrphanPool, id: BlockId): Opt[ValidBlock] =
     return Opt.some(blk[])
   Opt.none(ValidBlock)
 
-proc removeOrphan*(pool: OrphanPool, id: BlockId): bool =
-  ## Removes a specific orphan by ID and cleans up its parent index entry.
-  ## Time: O(K) avg, where K is the number of siblings (K <= 2 in practice) | Space: O(1)
-  pool.byBlockId.withValue(id, blk):
-    let parentId = blk[].header.parentBlock
-    pool.byBlockId.del(id)
-
-    pool.byParentId.withValue(parentId, childList):
-      let idx = childList[].find(id)
-      if idx >= 0:
-        childList[].del(idx)
-      if childList[].len == 0:
-        pool.byParentId.del(parentId)
-    return true
-  false
-
-proc takeChildren*(pool: OrphanPool, parentId: BlockId): seq[ValidBlock] =
-  ## Extracts and removes all direct child blocks waiting on `parentId`.
-  ## Time: O(K) avg, where K is the number of direct children | Space: O(K)
-  var children: seq[ValidBlock]
-  pool.byParentId.withValue(parentId, list):
-    children = newSeqOfCap[ValidBlock](list[].len)
-    for cid in list[]:
-      pool.byBlockId.withValue(cid, childBlk):
-        children.add(move(childBlk[]))
-        pool.byBlockId.del(cid)
-    pool.byParentId.del(parentId)
-  children
-
 proc pruneDescendants*(pool: OrphanPool, rootId: BlockId) =
   ## Purges all descendant subtrees waiting on `rootId` via iterative BFS traversal.
   ## Time: O(M), where M is the number of descendant nodes | Space: O(M) for BFS queue
@@ -85,21 +55,44 @@ proc pruneDescendants*(pool: OrphanPool, rootId: BlockId) =
         queue.add(cid)
       pool.byParentId.del(parent)
 
-proc pruneStale*(pool: OrphanPool, currentSlot: SlotNumber) =
-  ## Evicts all orphans whose slot age exceeds `MaxOrphanSlotAge` (2160 slots).
-  ## Time: O(N) where N is pool size | Space: O(S) where S <= N is the number of stale nodes
-  if pool.byBlockId.len == 0 or currentSlot <= MaxOrphanSlotAge:
-    return
+proc removeOrphan*(pool: OrphanPool, id: BlockId) =
+  ## Removes a specific orphan by ID, cleans up its parent index entry,
+  ## and purges all descendant subtrees waiting on it.
+  ## Time: O(M) where M is descendant subtree size | Space: O(M) for BFS queue
+  pool.byBlockId.withValue(id, blk):
+    let parentId = blk[].header.parentBlock
+    pool.byBlockId.del(id)
 
-  let minSlot = currentSlot - MaxOrphanSlotAge
-  var staleIds: seq[BlockId]
-  for id, blk in pool.byBlockId:
-    if blk.header.slot < minSlot:
-      staleIds.add(id)
+    pool.byParentId.withValue(parentId, childList):
+      let idx = childList[].find(id)
+      if idx >= 0:
+        childList[].del(idx)
+      if childList[].len == 0:
+        pool.byParentId.del(parentId)
 
-  for id in staleIds:
-    if pool.removeOrphan(id):
-      pool.pruneDescendants(id)
+    pool.pruneDescendants(id)
+
+proc takeChildren*(pool: OrphanPool, parentId: BlockId): seq[ValidBlock] =
+  ## Extracts and removes all direct child blocks waiting on `parentId`.
+  ## Time: O(K) avg, where K is the number of direct children | Space: O(K)
+  var children: seq[ValidBlock]
+  pool.byParentId.withValue(parentId, list):
+    children = newSeqOfCap[ValidBlock](list[].len)
+    for cid in list[]:
+      pool.byBlockId.withValue(cid, childBlk):
+        children.add(move(childBlk[]))
+        pool.byBlockId.del(cid)
+    pool.byParentId.del(parentId)
+  children
+
+func compactQueue*(pool: OrphanPool) =
+  ## Rebuilds arrivalOrder deque to eliminate stale entries of removed orphans.
+  ## Time: O(Q) where Q is deque length | Space: O(N) where N is pool size
+  var cleanDeque = initDeque[BlockId](pool.byBlockId.len)
+  for id in pool.arrivalOrder:
+    if pool.byBlockId.hasKey(id):
+      cleanDeque.addLast(id)
+  pool.arrivalOrder = move(cleanDeque)
 
 proc pruneIncompatibleWithImmutable*(pool: OrphanPool, localTree: LocalTree) =
   ## Evicts orphans (and their descendant subtrees) that cannot possibly
@@ -114,32 +107,37 @@ proc pruneIncompatibleWithImmutable*(pool: OrphanPool, localTree: LocalTree) =
       invalidIds.add(id)
 
   for id in invalidIds:
-    if pool.removeOrphan(id):
-      pool.pruneDescendants(id)
+    pool.removeOrphan(id)
+
+  # removeOrphan deletes from byBlockId and byParentId but leaves stale entries in arrivalOrder
+  # (to avoid O(N) deque removals). Compact eagerly after bulk LIB pruning to keep arrivalOrder clean.
+  if invalidIds.len > 0:
+    pool.compactQueue()
 
 proc addOrphan*(
     pool: OrphanPool,
     blk: sink ValidBlock,
-    currentSlot: SlotNumber,
 ): bool =
-  ## Adds a validated orphan block to the pool, rejecting stale orphans,
-  ## proactively evicting stale orphans, and evicting the oldest orphan if capacity is reached.
+  ## Adds a validated orphan block to the pool, evicting the oldest orphan if capacity is reached.
+  ## Returns false if the block is already buffered (duplicate).
   ## Time: O(1) amortized | Space: O(1)
-  if currentSlot >= blk.header.slot and currentSlot - blk.header.slot > MaxOrphanSlotAge:
-    return false
-
   let id = blockId(blk.header)
   if pool.byBlockId.hasKey(id):
     return false
 
-  pool.pruneStale(currentSlot)
-
-  if pool.byBlockId.len >= MaxOrphans:
-    while pool.arrivalOrder.len > 0:
-      let oldestId = pool.arrivalOrder.popFirst()
-      if pool.removeOrphan(oldestId):
-        break
-  elif pool.arrivalOrder.len > MaxOrphans * 2:
+  # Eviction rule: FIFO arrival-order eviction in O(1) amortized time.
+  # When capacity (MaxOrphans) is reached, the oldest-buffered orphan is evicted.
+  # Trade-offs:
+  # 1. Simplicity & bounded memory vs. optimal chain weight: FIFO avoids expensive priority/weight
+  #    scoring on unlinked orphan trees while bounding memory and resisting burst spam.
+  # 2. Cascading purge: Evicting an ancestor block cascades (via removeOrphan -> pruneDescendants)
+  #    and drops all descendant subtrees waiting on it, since they can never be promoted without
+  #    their ancestor. This prevents dead orphan branches from lingering in the pool.
+  # 3. Lazy deque cleanup: Stale/already-resolved IDs are lazily skipped on pop during eviction,
+  #    with lazy head-draining when the deque exceeds 2 * MaxOrphans.
+  while pool.byBlockId.len >= MaxOrphans and pool.arrivalOrder.len > 0:
+    pool.removeOrphan(pool.arrivalOrder.popFirst())
+  if pool.arrivalOrder.len > MaxOrphans * 2:
     while pool.arrivalOrder.len > 0 and not pool.byBlockId.hasKey(pool.arrivalOrder.peekFirst()):
       discard pool.arrivalOrder.popFirst()
 

@@ -37,14 +37,14 @@ suite "chain/orphan_pool":
     )
     let bId = blockId(blk.header)
     let dupBlk = blk
-    check pool.addOrphan(blk, 1)
+    check pool.addOrphan(blk)
     check pool.len == 1
     check pool.hasOrphan(bId)
     check pool.getOrphan(bId).isSome
     check pool.getOrphan(bId).get().header.slot == 1
 
     # duplicate add returns false and does not change pool len
-    check not pool.addOrphan(dupBlk, 1)
+    check not pool.addOrphan(dupBlk)
     check pool.len == 1
 
   test "takeChildren removes and returns waiting children":
@@ -55,8 +55,8 @@ suite "chain/orphan_pool":
     let c1Id = blockId(child1.header)
     let c2Id = blockId(child2.header)
 
-    check pool.addOrphan(child1, child1.header.slot)
-    check pool.addOrphan(child2, child2.header.slot)
+    check pool.addOrphan(child1)
+    check pool.addOrphan(child2)
     check pool.len == 2
 
     let children = pool.takeChildren(parentId)
@@ -76,11 +76,11 @@ suite "chain/orphan_pool":
     let c1Id = blockId(child1.header)
     let c2Id = blockId(child2.header)
 
-    check pool.addOrphan(child1, child1.header.slot)
-    check pool.addOrphan(child2, child2.header.slot)
+    check pool.addOrphan(child1)
+    check pool.addOrphan(child2)
     check pool.len == 2
 
-    check pool.removeOrphan(c1Id)
+    pool.removeOrphan(c1Id)
     check pool.len == 1
     check not pool.hasOrphan(c1Id)
 
@@ -99,11 +99,11 @@ suite "chain/orphan_pool":
       blocks.add(blk)
 
     for i in 0 ..< MaxOrphans:
-      check pool.addOrphan(blocks[i], blocks[i].header.slot)
+      check pool.addOrphan(blocks[i])
     check pool.len == MaxOrphans
 
     # Adding the next block should evict the oldest (blocks[0])
-    check pool.addOrphan(blocks[MaxOrphans], blocks[MaxOrphans].header.slot)
+    check pool.addOrphan(blocks[MaxOrphans])
     check pool.len == MaxOrphans
     check not pool.hasOrphan(ids[0])
     check pool.hasOrphan(ids[1])
@@ -125,7 +125,7 @@ suite "chain/orphan_pool":
       blocks.add(blk)
 
     for i in 0 ..< MaxOrphans:
-      check pool.addOrphan(blocks[i], blocks[i].header.slot)
+      check pool.addOrphan(blocks[i])
     check pool.len == MaxOrphans
 
     # Resolve b1 and b2 (indices 0 and 1) via takeChildren (leaving their IDs in arrivalOrder lazily)
@@ -134,12 +134,12 @@ suite "chain/orphan_pool":
     check pool.len == MaxOrphans - 2
 
     # Add 2 more -> pool len becomes MaxOrphans
-    check pool.addOrphan(blocks[MaxOrphans], blocks[MaxOrphans].header.slot)
-    check pool.addOrphan(blocks[MaxOrphans + 1], blocks[MaxOrphans + 1].header.slot)
+    check pool.addOrphan(blocks[MaxOrphans])
+    check pool.addOrphan(blocks[MaxOrphans + 1])
     check pool.len == MaxOrphans
 
     # Add 1 more -> capacity reached; eviction must skip stale b1 and b2 from deque and evict b3 (index 2)
-    check pool.addOrphan(blocks[MaxOrphans + 2], blocks[MaxOrphans + 2].header.slot)
+    check pool.addOrphan(blocks[MaxOrphans + 2])
     check pool.len == MaxOrphans
     check not pool.hasOrphan(ids[2]) # b3 was evicted
     check pool.hasOrphan(ids[3])
@@ -158,15 +158,15 @@ suite "chain/orphan_pool":
     let b0Copy = blocks[0]
 
     for i in 0 ..< MaxOrphans:
-      check pool.addOrphan(blocks[i], blocks[i].header.slot)
+      check pool.addOrphan(blocks[i])
     check pool.len == MaxOrphans
 
     # blocks[MaxOrphans] evicts blocks[0]
-    check pool.addOrphan(blocks[MaxOrphans], blocks[MaxOrphans].header.slot)
+    check pool.addOrphan(blocks[MaxOrphans])
     check not pool.hasOrphan(ids[0])
 
     # Re-ingesting b0Copy should now succeed and evict blocks[1]
-    check pool.addOrphan(b0Copy, b0Copy.header.slot)
+    check pool.addOrphan(b0Copy)
     check pool.hasOrphan(ids[0])
     check not pool.hasOrphan(ids[1])
     check pool.hasOrphan(ids[MaxOrphans])
@@ -186,14 +186,14 @@ suite "chain/orphan_pool":
     let b3Id = blockId(b3.header)
     let b4Id = blockId(b4.header)
 
-    check pool.addOrphan(b1, b1.header.slot)
-    check pool.addOrphan(b2, b2.header.slot)
-    check pool.addOrphan(b3, b3.header.slot)
-    check pool.addOrphan(b4, b4.header.slot)
+    check pool.addOrphan(b1)
+    check pool.addOrphan(b2)
+    check pool.addOrphan(b3)
+    check pool.addOrphan(b4)
     check pool.len == 4
 
     # Remove one sibling explicitly
-    check pool.removeOrphan(b1Id)
+    pool.removeOrphan(b1Id)
     check pool.len == 3
     check not pool.hasOrphan(b1Id)
     check pool.hasOrphan(b2Id)
@@ -220,38 +220,12 @@ suite "chain/orphan_pool":
       for slot in 1 .. 3:
         let blk = ValidBlock(Block(header: Header(slot: uint64(round * 10 + slot), parentBlock: parent)))
         # addOrphan must ALWAYS succeed on novel blocks (never fail due to stale queue entries)
-        check pool.addOrphan(blk, blk.header.slot)
+        check pool.addOrphan(blk)
         # Capacity invariant strictly enforced
         check pool.len <= MaxOrphans
       if round mod 2 == 0:
         discard pool.takeChildren(parent)
         check pool.len <= MaxOrphans
-
-  test "pruneStale removes all orphans older than MaxOrphanSlotAge":
-    let pool = OrphanPool()
-    let p = exampleBlockId(1)
-    let b1 = ValidBlock(Block(header: Header(slot: 5, parentBlock: p)))
-    let b2 = ValidBlock(Block(header: Header(slot: 10, parentBlock: p)))
-    let b3 = ValidBlock(Block(header: Header(slot: 15, parentBlock: p)))
-    let b1Id = blockId(b1.header)
-    let b2Id = blockId(b2.header)
-    let b3Id = blockId(b3.header)
-
-    check pool.addOrphan(b1, b1.header.slot)
-    check pool.addOrphan(b2, b2.header.slot)
-    check pool.addOrphan(b3, b3.header.slot)
-    check pool.len == 3
-
-    # At currentSlot 2170, threshold is 2170 - 2160 = 10 (should prune b1 with slot 5)
-    pool.pruneStale(SlotNumber(2170))
-    check pool.len == 2
-    check not pool.hasOrphan(b1Id)
-    check pool.hasOrphan(b2Id)
-    check pool.hasOrphan(b3Id)
-
-    # At currentSlot 2180, threshold is 2180 - 2160 = 20 (should prune b2 and b3)
-    pool.pruneStale(SlotNumber(2180))
-    check pool.len == 0
 
   test "pruneIncompatibleWithImmutable removes orphans incompatible with advancing LIB":
     let pool = OrphanPool()
@@ -276,8 +250,8 @@ suite "chain/orphan_pool":
     let o2 = ValidBlock(Block(header: Header(slot: 3, parentBlock: exampleBlockId(99))))
     let o2Id = blockId(o2.header)
 
-    check pool.addOrphan(o1, o1.header.slot)
-    check pool.addOrphan(o2, o2.header.slot)
+    check pool.addOrphan(o1)
+    check pool.addOrphan(o2)
     check pool.len == 2
 
     pool.pruneIncompatibleWithImmutable(tree)
@@ -298,10 +272,10 @@ suite "chain/orphan_pool":
       unrelated = ValidBlock(Block(header: Header(slot: 2, parentBlock: exampleBlockId(99))))
       unrelatedId = blockId(unrelated.header)
 
-    check pool.addOrphan(c1, c1.header.slot)
-    check pool.addOrphan(d1, d1.header.slot)
-    check pool.addOrphan(d2, d2.header.slot)
-    check pool.addOrphan(unrelated, unrelated.header.slot)
+    check pool.addOrphan(c1)
+    check pool.addOrphan(d1)
+    check pool.addOrphan(d2)
+    check pool.addOrphan(unrelated)
     check pool.len == 4
 
     # Prune descendants of rootId (purges c1 -> d1 -> d2)
@@ -312,29 +286,24 @@ suite "chain/orphan_pool":
     check not pool.hasOrphan(d2Id)
     check pool.hasOrphan(unrelatedId)
 
-  test "addOrphan lazily evicts stale blocks and rejects stale additions":
+  test "compactQueue removes stale deque entries":
     let pool = OrphanPool()
-    let p = exampleBlockId(1)
-    let b1 = ValidBlock(Block(header: Header(slot: 5, parentBlock: p)))
-    let b2 = ValidBlock(Block(header: Header(slot: 10, parentBlock: p)))
+    let parent = exampleBlockId(1)
+    let b1 = ValidBlock(Block(header: Header(slot: 1, parentBlock: parent)))
+    let b2 = ValidBlock(Block(header: Header(slot: 2, parentBlock: parent)))
     let b1Id = blockId(b1.header)
     let b2Id = blockId(b2.header)
 
-    check pool.addOrphan(b1, b1.header.slot)
-    check pool.addOrphan(b2, b2.header.slot)
+    check pool.addOrphan(b1)
+    check pool.addOrphan(b2)
     check pool.len == 2
 
-    # Adding b3 with slot 2170: refSlot is 2170, stale threshold is 2170 - 2160 = 10
-    # b1 (slot 5) is pruned lazily, b2 (slot 10) and b3 (slot 2170) remain
-    let b3 = ValidBlock(Block(header: Header(slot: 2170, parentBlock: p)))
-    let b3Id = blockId(b3.header)
-    check pool.addOrphan(b3, b3.header.slot)
-    check pool.len == 2
+    # Remove b1 directly
+    pool.removeOrphan(b1Id)
+    check pool.len == 1
+
+    # Compacting queue purges b1 from arrivalOrder
+    pool.compactQueue()
+    check pool.len == 1
     check not pool.hasOrphan(b1Id)
     check pool.hasOrphan(b2Id)
-    check pool.hasOrphan(b3Id)
-
-    # Attempting to add a stale block directly at currentSlot 2170 is rejected (DOA)
-    let staleBlock = ValidBlock(Block(header: Header(slot: 8, parentBlock: p)))
-    check not pool.addOrphan(staleBlock, currentSlot = SlotNumber(2170))
-    check pool.len == 2

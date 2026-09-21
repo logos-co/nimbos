@@ -132,12 +132,12 @@ suite "chain/orphan_resolution":
     check chain.orphanPool.len == MaxOrphans
     check chain.orphanPool.hasOrphan(blockId(blocks[1].header))
 
-    # Ingest blocks[MaxOrphans + 1] (evicts oldest blocks[1])
+    # Ingest blocks[MaxOrphans + 1] (evicts oldest blocks[1] and purges its descendant chain)
     check chain.tryApplyBlock(blocks[MaxOrphans + 1]).error.kind == BlockApplyErrorKind.OrphanBuffered
-    check chain.orphanPool.len == MaxOrphans
     check not chain.orphanPool.hasOrphan(blockId(blocks[1].header))
-    check chain.orphanPool.hasOrphan(blockId(blocks[2].header))
+    check not chain.orphanPool.hasOrphan(blockId(blocks[2].header))
     check chain.orphanPool.hasOrphan(blockId(blocks[MaxOrphans + 1].header))
+    check chain.orphanPool.len == 1
 
   test "chain re-buffers evicted orphan and resolves cascade upon parent arrival":
     var (chain, genesis, gid) = setupChain()
@@ -154,22 +154,24 @@ suite "chain/orphan_resolution":
     for i in 1 .. MaxOrphans:
       check chain.tryApplyBlock(blocks[i]).error.kind == BlockApplyErrorKind.OrphanBuffered
 
-    # Ingest blocks[MaxOrphans + 1] (evicts blocks[1])
+    # Ingest blocks[MaxOrphans + 1] (evicts blocks[1] and purges descendant chain)
     check chain.tryApplyBlock(blocks[MaxOrphans + 1]).error.kind == BlockApplyErrorKind.OrphanBuffered
     check not chain.orphanPool.hasOrphan(blockId(blocks[1].header))
 
-    # Re-ingest blocks[1 .. MaxOrphans] in sequential order (evicting MaxOrphans + 1 and rotating pool)
-    for i in 1 .. MaxOrphans:
+    # Re-ingest blocks[1 .. MaxOrphans - 1] in sequential order (fitting within capacity alongside MaxOrphans + 1)
+    for i in 1 .. MaxOrphans - 1:
       check chain.tryApplyBlock(blocks[i]).error.kind == BlockApplyErrorKind.OrphanBuffered
     check chain.orphanPool.hasOrphan(blockId(blocks[1].header))
-    check not chain.orphanPool.hasOrphan(blockId(blocks[MaxOrphans + 1].header))
+    check chain.orphanPool.hasOrphan(blockId(blocks[MaxOrphans + 1].header))
+    check chain.orphanPool.len == MaxOrphans
 
-    # Ingest parent blocks[0] (child of genesis) -> cascade-promotes blocks[0 .. MaxOrphans]
+    # Ingest parent blocks[0] (child of genesis) -> cascade-promotes blocks[0 .. MaxOrphans - 1]
     check chain.tryApplyBlock(blocks[0]).isOk
-    for i in 0 .. MaxOrphans:
+    for i in 0 .. MaxOrphans - 1:
       check chain.localTree.hasBlock(blockId(blocks[i].header))
-    check chain.localTree.localTipId == blockId(blocks[MaxOrphans].header)
-    check chain.orphanPool.len == 0
+    check chain.localTree.localTipId == blockId(blocks[MaxOrphans - 1].header)
+    check chain.orphanPool.len == 1 # only blocks[MaxOrphans + 1] remains
+    check chain.orphanPool.hasOrphan(blockId(blocks[MaxOrphans + 1].header))
 
   test "sibling forks: promotes both competing child blocks when shared parent arrives":
     var (chain, genesis, gid) = setupChain()

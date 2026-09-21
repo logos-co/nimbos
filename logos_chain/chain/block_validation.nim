@@ -35,7 +35,6 @@ type
     HeaderRejected
     TransactionsRejected
     StatelessTxRejected
-    OrphanBlock
 
   BlockValidationError* = object
     case kind*: BlockValidationErrorKind
@@ -43,8 +42,6 @@ type
       ledgerError*: LedgerError
     of BlockValidationErrorKind.StatelessTxRejected:
       statelessError*: StatelessLedgerError
-    of BlockValidationErrorKind.OrphanBlock:
-      validBlock*: ValidBlock
     else:
       discard
 
@@ -124,7 +121,7 @@ proc validateBlock*(
     localTree: LocalTree,
     ledger: Ledger[BlockId],
     txsToVerify: openArray[SignedMantleTx],
-): Result[ValidBlock, BlockValidationError] =
+): Result[tuple[blk: ValidBlock, isOrphan: bool], BlockValidationError] =
   ## Multi-tier block admission and stateless transaction validation:
   ## Tier 0: Structural & size bounds (~1 µs)
   ## Tier 1: Topology & parent existence in localTree/ledger (< 5 µs)
@@ -136,7 +133,7 @@ proc validateBlock*(
   ## If the block's parent is missing from the ledger, it is treated as an orphan.
   ## Validation does not terminate early; Tier 2 (header signature/root) and Tier 3
   ## (stateless transactions) are executed to ensure malformed blocks are rejected
-  ## before buffering. If all checks pass, `OrphanBlock` is returned.
+  ## before buffering. If all checks pass, `isOrphan` is true.
   if not validateBlockStructure(blk):
     return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))
 
@@ -155,10 +152,7 @@ proc validateBlock*(
 
   ?validateStatelessTransactions(txsToVerify)
 
-  if isOrphan:
-    return err(BlockValidationError(kind: BlockValidationErrorKind.OrphanBlock, validBlock: ValidBlock(blk)))
-
-  ok(ValidBlock(blk))
+  ok((blk: ValidBlock(blk), isOrphan: isOrphan))
 
 proc prepareBlockUpdate*(
     blk: ValidBlock,

@@ -170,7 +170,7 @@ proc pruneStatesBeforeLib(chain: var Chain, newLibId, oldLibId: BlockId) =
       break
     curr = header(blk).parentBlock
 
-proc handleTipChange(chain: var Chain, oldTip, newTip: BlockId, currentSlot: SlotNumber) =
+proc handleTipChange(chain: var Chain, oldTip, newTip: BlockId) =
   if newTip == oldTip:
     return
   # Active tip advanced: handles both normal block extensions (lcaId == oldTip)
@@ -229,12 +229,8 @@ proc tryApplyBlock*(
   if hdr.slot > curSlot:
     return err(BlockApplyError(kind: FutureSlot))
   let unverified = chain.mempool.unverifiedTxs(blk.txs)
-  let validBlk = validateBlock(blk, chain.localTree, chain.ledger, unverified).valueOr:
+  let (validBlk, isOrphan) = validateBlock(blk, chain.localTree, chain.ledger, unverified).valueOr:
     case error.kind
-    of BlockValidationErrorKind.OrphanBlock:
-      if not chain.orphanPool.addOrphan(error.validBlock, curSlot):
-        return err(BlockApplyError(kind: OrphanAlreadyBuffered))
-      return err(BlockApplyError(kind: OrphanBuffered))
     of BlockValidationErrorKind.InvalidBlockStructure:
       return err(BlockApplyError(kind: InvalidStructure))
     of BlockValidationErrorKind.UnviableFork:
@@ -244,6 +240,11 @@ proc tryApplyBlock*(
       return err(BlockApplyError(kind: LedgerRejected, ledgerError: error.ledgerError))
     of BlockValidationErrorKind.StatelessTxRejected:
       return err(BlockApplyError(kind: StatelessTxRejected, statelessError: error.statelessError))
+
+  if isOrphan:
+    if not chain.orphanPool.addOrphan(validBlk):
+      return err(BlockApplyError(kind: OrphanAlreadyBuffered))
+    return err(BlockApplyError(kind: OrphanBuffered))
 
   let prepared = prepareBlockUpdate(validBlk, chain.ledger).valueOr:
     return err(BlockApplyError(kind: LedgerRejected, ledgerError: error.ledgerError))
@@ -255,7 +256,7 @@ proc tryApplyBlock*(
   chain.promoteOrphans(id)
 
   let newTip = chain.localTree.localTipId()
-  chain.handleTipChange(oldTip, newTip, curSlot)
+  chain.handleTipChange(oldTip, newTip)
 
   chain.mempool.pruneExpiredTxs(curSlot)
   ok()
