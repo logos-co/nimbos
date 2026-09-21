@@ -37,6 +37,7 @@ import # Unit test
   ./core/test_block_validation,
   ./core/test_mempool,
   ./core/test_local_tree,
+  ./core/test_utils,
   ./consensus/test_clock,
   ./chain/test_genesis,
   ./chain/test_genesis_validation,
