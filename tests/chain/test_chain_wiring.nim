@@ -63,11 +63,11 @@ suite "chain/epoch wiring (devnet deployment settings)":
 
   test "cryptarchiaParameter decodes the devnet ceremony values":
     let
-      valid = validateGenesisTxStateless(
+      validTx = validateGenesisTxStateless(
           ds.cryptarchia.genesisState.signedMantleTx).valueOr:
         check false
         return
-      param = cryptarchiaParameter(valid).valueOr:
+      param = cryptarchiaParameter(validTx).valueOr:
         check false
         return
       # Nonce derived by the ceremony from its pinned entropy_sources input.
@@ -80,16 +80,16 @@ suite "chain/epoch wiring (devnet deployment settings)":
 
   test "fromGenesis builds a lottery-ready genesis state":
     let
-      valid = validateGenesisTxStateless(
+      validTx = validateGenesisTxStateless(
           ds.cryptarchia.genesisState.signedMantleTx).valueOr:
         check false
         return
-      param = cryptarchiaParameter(valid).valueOr:
+      param = cryptarchiaParameter(validTx).valueOr:
         check false
         return
       cfg = ledgerConfig(ds)
       state = LedgerState.fromGenesis(
-        valid, param.epochNonce,
+        validTx, param.epochNonce,
         SdpRegistry.init(
           ds.cryptarchia.sdpConfig,
           blendRewardsParams(ds, cfg.epochSchedule.epochLength)), cfg).valueOr:

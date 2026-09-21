@@ -281,16 +281,16 @@ suite "chain/genesis validation: stage 3 (ledger state)":
       ds = parseDeploymentSettings(dsText).valueOr:
         check false
         return
-      valid = validateGenesisTxStateless(
+      validTx = validateGenesisTxStateless(
           ds.cryptarchia.genesisState.signedMantleTx).valueOr:
         check false
         return
-      param = cryptarchiaParameter(valid).valueOr:
+      param = cryptarchiaParameter(validTx).valueOr:
         check false
         return
       cfg = ledgerConfig(ds)
       state = LedgerState.fromGenesis(
-        valid, param.epochNonce,
+        validTx, param.epochNonce,
         SdpRegistry.init(
           ds.cryptarchia.sdpConfig,
           blendRewardsParams(ds, cfg.epochSchedule.epochLength)), cfg).valueOr:
