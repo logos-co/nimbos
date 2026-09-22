@@ -48,7 +48,7 @@ const
   maxThreadCount* = 255
     ## taskpools keeps worker ids in a `uint8`; 0xFF marks an empty slot.
 
-type ThreadCount* = distinct Natural
+type ThreadCount* = distinct int
   ## Taskpool size. `0` selects one thread per CPU core.
 
 when defined(windows):
