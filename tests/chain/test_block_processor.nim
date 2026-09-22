@@ -43,6 +43,15 @@ suite "chain/block_processor":
       let r = await bp.addBlock(BlockSource.Gossip, b1)
       check r.isErr and r.error.kind == BlockApplyErrorKind.AlreadyApplied
 
+  asyncTest "addBlock deduplicates in-flight blocks immediately":
+    withProcessor(chain):
+      let b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
+      let f1 = bp.addBlock(BlockSource.Sync, b1)
+      let f2 = bp.addBlock(BlockSource.Gossip, b1)
+      check f2.finished
+      check (await f2).error.kind == BlockApplyErrorKind.InFlight
+      check (await f1).isOk
+
   asyncTest "queue is FIFO":
     withProcessor(chain):
       let

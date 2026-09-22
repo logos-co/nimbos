@@ -10,6 +10,7 @@
 {.push raises: [], gcsafe.}
 
 import
+  std/sets,
   chronicles,
   chronos,
   results,
@@ -43,6 +44,7 @@ type
   BlockProcessor* = ref object
     chain: Chain
     blockQueue: AsyncQueue[BlockEntry]
+    inFlight: HashSet[BlockId]
     loopFut: Future[void].Raising([CancelledError])
 
 proc new*(T: type BlockProcessor, chain: sink Chain): T =
@@ -71,14 +73,27 @@ proc addBlock*(
   if not bp.running:
     resfut.cancelSoon()
     return resfut
+
+  let id = blockId(header(blk))
+  # Ingestion deduplication: check if already in-flight in the processing queue
+  if id in bp.inFlight:
+    resfut.complete(BlockApplyResult.err(BlockApplyError(kind: InFlight)))
+    return resfut
+
+  bp.inFlight.incl(id)
   try:
     bp.blockQueue.addLastNoWait(BlockEntry(
       blk: blk, src: src, resfut: resfut, queueTick: Moment.now()))
   except AsyncQueueFullError:
+    bp.inFlight.excl(id)
     raiseAssert "unbounded queue cannot be full"
   resfut
 
 proc processBlock(bp: BlockProcessor, entry: BlockEntry) =
+  let id = blockId(header(entry.blk))
+  defer:
+    bp.inFlight.excl(id)
+
   let
     startTick = Moment.now()
     res = bp.chain.tryApplyBlock(entry.blk)
@@ -86,11 +101,11 @@ proc processBlock(bp: BlockProcessor, entry: BlockEntry) =
     queueDur = startTick - entry.queueTick
   if res.isOk:
     debug "Block applied",
-      id = toHex(blockId(header(entry.blk))), slot = header(entry.blk).slot,
+      id = toHex(id), slot = header(entry.blk).slot,
       src = entry.src, queueDur, applyDur
   else:
     debug "Block rejected",
-      id = toHex(blockId(header(entry.blk))), slot = header(entry.blk).slot,
+      id = toHex(id), slot = header(entry.blk).slot,
       src = entry.src, queueDur, applyDur, err = res.error.kind
   entry.resfut.complete(res)
 
@@ -117,5 +132,6 @@ proc stop*(bp: BlockProcessor) {.async: (raises: []).} =
   for entry in bp.blockQueue.items:
     entry.resfut.cancelSoon()
   bp.blockQueue.clear()
+  bp.inFlight.clear()
 
 {.pop.}
