@@ -163,7 +163,7 @@ proc pruneStatesBeforeLib(chain: var Chain, newLibId, oldLibId: BlockId) =
     return
   var curr = header(newLib).parentBlock
   while not curr.isZero:
-    discard chain.ledger.pruneStateAt(curr)
+    chain.ledger.pruneStateAt(curr)
     if curr == oldLibId:
       break
     let blk = chain.localTree.getBlock(curr).valueOr:
@@ -186,13 +186,13 @@ proc handleTipChange(chain: var Chain, oldTip, newTip: BlockId) =
   let oldLibId = chain.localTree.latestImmutableBlockId()
   let prunedBlockIds = chain.localTree.tryUpdateLib()
   for prunedId in prunedBlockIds:
-    discard chain.ledger.pruneStateAt(prunedId)
+    chain.ledger.pruneStateAt(prunedId)
   let newLibId = chain.localTree.latestImmutableBlockId()
   if newLibId != oldLibId:
     chain.pruneStatesBeforeLib(newLibId, oldLibId)
     chain.orphanPool.pruneIncompatibleWithImmutable(chain.localTree)
 
-proc promoteOrphans*(chain: var Chain, rootId: BlockId) =
+proc promoteOrphans(chain: var Chain, rootId: BlockId) =
   ## Iteratively applies orphan descendants waiting on rootId using a FIFO queue.
   var queue = @[rootId]
   var idx = 0
