@@ -32,6 +32,17 @@ proc setupChain(
   c.ledger.commitUpdate(gid, s)
   (c, genesis, gid)
 
+proc syncApplyBlock(chain: var Chain, blk: Block): Result[void, BlockApplyError] =
+  var queue = (?chain.tryApplyBlock(blk)).toBePromotedBlocks
+  var idx = 0
+  while idx < queue.len:
+    let child = queue[idx]
+    inc idx
+    let res = chain.tryApplyAdmittedBlock(child)
+    if res.isOk:
+      queue.add(res.get().toBePromotedBlocks)
+  ok()
+
 suite "chain/orphan_resolution":
   test "buffers out-of-order block and promotes it when parent arrives":
     var (chain, genesis, gid) = setupChain()
@@ -56,7 +67,7 @@ suite "chain/orphan_resolution":
     check applyB2DupRes.error.kind == BlockApplyErrorKind.OrphanAlreadyBuffered
 
     # 2. Ingest parent B1
-    let applyB1Res = chain.tryApplyBlock(b1)
+    let applyB1Res = chain.syncApplyBlock(b1)
     check applyB1Res.isOk
 
     # 3. Both B1 and B2 should now be applied and promoted
@@ -87,7 +98,7 @@ suite "chain/orphan_resolution":
     check chain.orphanPool.len == 3
 
     # Ingest B1
-    check chain.tryApplyBlock(b1).isOk
+    check chain.syncApplyBlock(b1).isOk
 
     # All 4 blocks must be applied in order
     check chain.localTree.hasBlock(id1)
@@ -165,7 +176,7 @@ suite "chain/orphan_resolution":
     check chain.orphanPool.len == MaxOrphans
 
     # Ingest parent blocks[0] (child of genesis) -> cascade-promotes blocks[0 .. MaxOrphans - 1]
-    check chain.tryApplyBlock(blocks[0]).isOk
+    check chain.syncApplyBlock(blocks[0]).isOk
     for i in 0 .. MaxOrphans - 1:
       check chain.localTree.hasBlock(blockId(blocks[i].header))
     check chain.localTree.localTipId == blockId(blocks[MaxOrphans - 1].header)
@@ -192,7 +203,7 @@ suite "chain/orphan_resolution":
     check chain.orphanPool.hasOrphan(id2b)
 
     # Ingest parent B1 -> resolves both branches
-    check chain.tryApplyBlock(b1).isOk
+    check chain.syncApplyBlock(b1).isOk
     check chain.localTree.hasBlock(id1)
     check chain.localTree.hasBlock(id2a)
     check chain.localTree.hasBlock(id2b)
@@ -225,7 +236,7 @@ suite "chain/orphan_resolution":
     check chain.orphanPool.len == 4
 
     # Ingest root B1 -> all 4 orphan descendants across both branches are promoted
-    check chain.tryApplyBlock(b1).isOk
+    check chain.syncApplyBlock(b1).isOk
     check chain.localTree.hasBlock(id1)
     check chain.localTree.hasBlock(id2a)
     check chain.localTree.hasBlock(id3a)
@@ -256,7 +267,7 @@ suite "chain/orphan_resolution":
 
     # Ingest parent b1 -> triggers promotion of b2, which fails state validation.
     # Its descendants b3 and b4 must be pruned immediately.
-    check chain.tryApplyBlock(b1).isOk
+    check chain.syncApplyBlock(b1).isOk
     check chain.localTree.hasBlock(id1)
     check not chain.localTree.hasBlock(id2)
     check not chain.localTree.hasBlock(id3)
@@ -312,7 +323,7 @@ suite "chain/orphan_resolution":
     check chain.orphanPool.len == 1
 
     # When parent arrives, promotion runs stateless transaction validation and rejects the invalid orphan
-    let b1Res = chain.tryApplyBlock(b1)
+    let b1Res = chain.syncApplyBlock(b1)
     check b1Res.isOk
     check chain.localTree.localTipId == b1Id
     check chain.orphanPool.len == 0
@@ -346,7 +357,7 @@ suite "chain/orphan_resolution":
     check chain.orphanPool.len == 2
 
     # Ingest root b1 -> cascade promotes b2 and b3, triggering a reorg from a1 to b3
-    check chain.tryApplyBlock(b1).isOk
+    check chain.syncApplyBlock(b1).isOk
     check chain.localTree.localTipId == id3
     check chain.orphanPool.len == 0
     # txA from abandoned branch A is restored to mempool
