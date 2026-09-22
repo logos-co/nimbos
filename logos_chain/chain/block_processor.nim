@@ -17,7 +17,7 @@ import
   stew/byteutils,
   ./chain
 
-from ../core/types import Block, BlockId, blockId, header
+from ../core/types import Block, BlockId, AdmittedBlock, blockId, header
 
 export chain
 
@@ -35,11 +35,19 @@ type
   BlockApplyResult* = Result[void, BlockApplyError]
   BlockApplyFuture* = Future[BlockApplyResult].Raising([CancelledError])
 
+  BlockEntryKind = enum
+    RawIncoming
+    PromotedOrphan
+
   BlockEntry = ref object
-    blk: Block
-    src: BlockSource
-    resfut: BlockApplyFuture
     queueTick: Moment
+    case kind: BlockEntryKind
+    of RawIncoming:
+      blk: Block
+      src: BlockSource
+      resfut: BlockApplyFuture
+    of PromotedOrphan:
+      admittedBlk: AdmittedBlock
 
   BlockProcessor* = ref object
     chain: Chain
@@ -62,6 +70,9 @@ func mempool*(bp: BlockProcessor): Mempool =
 proc currentWallclockSlot*(bp: BlockProcessor): SlotNumber =
   bp.chain.currentWallclockSlot()
 
+func orphanPool*(bp: BlockProcessor): lent OrphanPool =
+  bp.chain.orphanPool
+
 func running*(bp: BlockProcessor): bool =
   bp.loopFut != nil and not bp.loopFut.finished
 
@@ -83,31 +94,68 @@ proc addBlock*(
   bp.inFlight.incl(id)
   try:
     bp.blockQueue.addLastNoWait(BlockEntry(
-      blk: blk, src: src, resfut: resfut, queueTick: Moment.now()))
+      kind: RawIncoming, blk: blk, src: src, resfut: resfut, queueTick: Moment.now()))
   except AsyncQueueFullError:
     bp.inFlight.excl(id)
     raiseAssert "unbounded queue cannot be full"
   resfut
 
+proc enqueueOrphanBlock(bp: BlockProcessor, child: AdmittedBlock) =
+  let childId = blockId(header(child))
+  if childId in bp.inFlight:
+    return
+  bp.inFlight.incl(childId)
+  try:
+    bp.blockQueue.addFirstNoWait(BlockEntry(
+      kind: PromotedOrphan,
+      queueTick: Moment.now(),
+      admittedBlk: child,
+    ))
+  except AsyncQueueFullError:
+    bp.inFlight.excl(childId)
+    raiseAssert "unbounded queue cannot be full"
+
 proc processBlock(bp: BlockProcessor, entry: BlockEntry) =
-  let id = blockId(header(entry.blk))
+  let id = case entry.kind
+    of RawIncoming: blockId(header(entry.blk))
+    of PromotedOrphan: blockId(header(entry.admittedBlk))
   defer:
     bp.inFlight.excl(id)
 
   let
     startTick = Moment.now()
-    res = bp.chain.tryApplyBlock(entry.blk)
+    res = case entry.kind
+      of RawIncoming: bp.chain.tryApplyBlock(entry.blk)
+      of PromotedOrphan: bp.chain.tryApplyAdmittedBlock(entry.admittedBlk)
     applyDur = Moment.now() - startTick
     queueDur = startTick - entry.queueTick
-  if res.isOk:
+
+  let (toBePromotedBlocks,) = res.valueOr:
+    case entry.kind
+    of RawIncoming:
+      debug "Block rejected",
+        id = toHex(id), slot = header(entry.blk).slot,
+        src = entry.src, queueDur, applyDur, err = error.kind
+      entry.resfut.complete(BlockApplyResult.err(error))
+    of PromotedOrphan:
+      debug "Promoted orphan rejected",
+        id = toHex(id), slot = header(entry.admittedBlk).slot,
+        queueDur, applyDur, err = error.kind
+    return
+
+  for child in toBePromotedBlocks:
+    bp.enqueueOrphanBlock(child)
+
+  case entry.kind
+  of RawIncoming:
     debug "Block applied",
       id = toHex(id), slot = header(entry.blk).slot,
       src = entry.src, queueDur, applyDur
-  else:
-    debug "Block rejected",
-      id = toHex(id), slot = header(entry.blk).slot,
-      src = entry.src, queueDur, applyDur, err = res.error.kind
-  entry.resfut.complete(res)
+    entry.resfut.complete(BlockApplyResult.ok())
+  of PromotedOrphan:
+    debug "Promoted orphan applied",
+      id = toHex(id), slot = header(entry.admittedBlk).slot,
+      queueDur, applyDur
 
 proc runQueueProcessingLoop(bp: BlockProcessor) {.async: (raises: [CancelledError]).} =
   while true:
@@ -130,7 +178,8 @@ proc stop*(bp: BlockProcessor) {.async: (raises: []).} =
   await bp.loopFut.cancelAndWait()
   bp.loopFut = nil
   for entry in bp.blockQueue.items:
-    entry.resfut.cancelSoon()
+    if entry.kind == RawIncoming:
+      entry.resfut.cancelSoon()
   bp.blockQueue.clear()
   bp.inFlight.clear()
 
