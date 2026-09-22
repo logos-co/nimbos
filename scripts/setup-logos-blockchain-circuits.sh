@@ -107,7 +107,8 @@ check_existing_installation() {
             echo
             if [[ ! $REPLY =~ ^[Yy]$ ]]; then
                 print_info "Installation cancelled."
-                exit 0
+                # Non-zero: a Makefile target must not link the old install.
+                exit 1
             fi
         fi
 
@@ -127,15 +128,8 @@ download_release() {
     print_info "Downloading logos-blockchain-circuits ${VERSION} for ${platform}..."
     print_info "URL: $url"
 
-    # Build curl command with optional authentication.
-    # --retry 3 --retry-all-errors smooths over transient CI network blips.
-    local curl_cmd="curl -L --retry 3 --retry-all-errors"
-    if [ -n "$GITHUB_TOKEN" ]; then
-        curl_cmd="$curl_cmd --header 'authorization: Bearer ${GITHUB_TOKEN}'"
-    fi
-    curl_cmd="$curl_cmd -o ${temp_dir}/${artifact} $url"
-
-    if ! eval "$curl_cmd"; then
+    # -f: fail on HTTP errors instead of saving the error page.
+    if ! curl -fL --retry 3 --retry-all-errors -o "$temp_dir/$artifact" "$url"; then
         print_error "Failed to download release artifact"
         print_error "Please check that version ${VERSION} exists for platform ${platform}"
         print_error "Available releases: https://github.com/${REPO}/releases"
@@ -147,7 +141,8 @@ download_release() {
 
     print_info "Extracting to ${INSTALL_DIR}..."
     # XDG Base Directory Spec: newly created destination directory gets 0700.
-    mkdir -m 0700 -p "$INSTALL_DIR"
+    mkdir -p "$INSTALL_DIR"
+    chmod 0700 "$INSTALL_DIR"
 
     if ! tar -xzf "${temp_dir}/${artifact}" -C "$INSTALL_DIR" --strip-components=1; then
         print_error "Failed to extract archive"
@@ -200,12 +195,13 @@ main() {
     print_info "logos-blockchain-circuits ${VERSION} is now installed at: $INSTALL_DIR"
     print_info "The following circuits are available:"
 
-    # Discover circuits by finding directories that contain a witness_generator
+    # Discover circuits by finding directories that ship a witness archive
+    # (lib<circuit>.a since v0.5.0; <circuit>.lib on Windows).
     for dir in "$INSTALL_DIR"/*/; do
         if [ -d "$dir" ]; then
             local circuit_name
             circuit_name=$(basename "$dir")
-            if [ -f "$dir/witness_generator" ]; then
+            if [ -f "$dir/lib$circuit_name.a" ] || [ -f "$dir/$circuit_name.lib" ]; then
                 echo "  • $circuit_name"
             fi
         fi

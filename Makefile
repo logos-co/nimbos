@@ -132,11 +132,13 @@ endif
 # user data dir otherwise. Tests stay self-contained.
 ifneq (,$(filter test all_tests,$(MAKECMDGOALS)))
 DEPS_CIRCUITS_INSTALL := circuits-install-test
+DEPS_RAPIDSNARK_INSTALL := rapidsnark-install-test
 else
 DEPS_CIRCUITS_INSTALL := circuits-install
+DEPS_RAPIDSNARK_INSTALL := rapidsnark-install
 endif
 
-deps: | deps-common nat-libs build/generate_makefile $(DEPS_CIRCUITS_INSTALL)
+deps: | deps-common nat-libs build/generate_makefile $(DEPS_CIRCUITS_INSTALL) $(DEPS_RAPIDSNARK_INSTALL)
 ifneq ($(USE_LIBBACKTRACE), 0)
 deps: | libbacktrace
 endif
@@ -167,23 +169,68 @@ endif
 endif
 LBC_TEST_INSTALL_DIR := $(CURDIR)/tests/circuits-bundle/$(LBC_VERSION)
 
+# The prover links the bundle's static archives at build time. The linker
+# never sees the install dir itself: the macOS data dir contains a space and
+# NIM_PARAMS / passL are unquoted. Each install target refreshes a space-free
+# symlink under build/ that logos_chain/zk/native_libs.nim points at.
+LBC_LINK_DIR := $(CURDIR)/build/circuits-bundle
+
 .PHONY: circuits-install
-circuits-install:
+circuits-install: | build
 	@if [ -f "$(LBC_INSTALL_DIR)/VERSION" ] && \
 	    [ "$$(cat "$(LBC_INSTALL_DIR)/VERSION")" = "$(LBC_VERSION)" ]; then \
 		echo "logos-blockchain-circuits $(LBC_VERSION) present at $(LBC_INSTALL_DIR)"; \
 	else \
 		$(LBC_INSTALL_CMD) "$(LBC_INSTALL_DIR)"; \
 	fi
+ifneq ($(OS),Windows_NT)
+	@ln -sfn "$(LBC_INSTALL_DIR)" "$(LBC_LINK_DIR)"
+endif
 
 .PHONY: circuits-install-test
-circuits-install-test:
+circuits-install-test: | build
 	@if [ -f "$(LBC_TEST_INSTALL_DIR)/VERSION" ] && \
 	    [ "$$(cat "$(LBC_TEST_INSTALL_DIR)/VERSION")" = "$(LBC_VERSION)" ]; then \
 		echo "logos-blockchain-circuits $(LBC_VERSION) present at $(LBC_TEST_INSTALL_DIR)"; \
 	else \
 		$(LBC_INSTALL_CMD) "$(LBC_TEST_INSTALL_DIR)"; \
 	fi
+ifneq ($(OS),Windows_NT)
+	@ln -sfn "$(LBC_TEST_INSTALL_DIR)" "$(LBC_LINK_DIR)"
+endif
+
+# rapidsnark prebuilt Groth16 prover libraries (the reference node links the
+# same archives through rust-rapidsnark). No Windows archive exists; the
+# prover compiles as a stub there and the install is skipped.
+RAPIDSNARK_VERSION := v0.0.8
+RAPIDSNARK_INSTALL_DIR := $(XDG_DATA_HOME)/rapidsnark/$(RAPIDSNARK_VERSION)
+RAPIDSNARK_TEST_INSTALL_DIR := $(CURDIR)/tests/rapidsnark/$(RAPIDSNARK_VERSION)
+RAPIDSNARK_LINK_DIR := $(CURDIR)/build/rapidsnark
+RAPIDSNARK_INSTALL_CMD := ./scripts/setup-rapidsnark.sh $(RAPIDSNARK_VERSION)
+
+.PHONY: rapidsnark-install
+rapidsnark-install: | build
+ifneq ($(OS),Windows_NT)
+	@if [ -f "$(RAPIDSNARK_INSTALL_DIR)/VERSION" ] && \
+	    [ "$$(cat "$(RAPIDSNARK_INSTALL_DIR)/VERSION")" = "$(RAPIDSNARK_VERSION)" ]; then \
+		echo "rapidsnark $(RAPIDSNARK_VERSION) present at $(RAPIDSNARK_INSTALL_DIR)"; \
+	else \
+		$(RAPIDSNARK_INSTALL_CMD) "$(RAPIDSNARK_INSTALL_DIR)"; \
+	fi
+	@ln -sfn "$(RAPIDSNARK_INSTALL_DIR)" "$(RAPIDSNARK_LINK_DIR)"
+endif
+
+.PHONY: rapidsnark-install-test
+rapidsnark-install-test: | build
+ifneq ($(OS),Windows_NT)
+	@if [ -f "$(RAPIDSNARK_TEST_INSTALL_DIR)/VERSION" ] && \
+	    [ "$$(cat "$(RAPIDSNARK_TEST_INSTALL_DIR)/VERSION")" = "$(RAPIDSNARK_VERSION)" ]; then \
+		echo "rapidsnark $(RAPIDSNARK_VERSION) present at $(RAPIDSNARK_TEST_INSTALL_DIR)"; \
+	else \
+		$(RAPIDSNARK_INSTALL_CMD) "$(RAPIDSNARK_TEST_INSTALL_DIR)"; \
+	fi
+	@ln -sfn "$(RAPIDSNARK_TEST_INSTALL_DIR)" "$(RAPIDSNARK_LINK_DIR)"
+endif
 
 #- deletes binaries that might need to be rebuilt after a Git pull
 update: | update-common
@@ -297,7 +344,9 @@ logos_chain_node: force_build_alone_tools
 
 .PHONY: logos-lib logos-headers logos-bindings
 
-# Build C static library from logos_c_bindings.nim into the c_bindings folder
+# Build C static library from logos_c_bindings.nim into the c_bindings folder.
+# A static library has no link step: consumers must add the circuit witness
+# archives and rapidsnark (see logos_chain/zk/native_libs.nim) themselves.
 logos-lib: | build deps
 	+ $(ENV_SCRIPT) $(NIMC) c $(NIM_PARAMS) \
 		--verbosity:2 \

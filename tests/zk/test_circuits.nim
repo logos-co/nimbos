@@ -9,44 +9,41 @@
 {.used.}
 
 import
-  std/[os, strutils, times],
+  std/[os, strutils],
   unittest2,
   stew/io2,
-  ../../logos_chain/zk/circuits
+  ../../logos_chain/zk/circuits,
+  ./helpers
 
 const testCircuitsDir = block:
   let testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
   testsDir / "../circuits-bundle" / ExpectedCircuitsVersion
 
-proc uniqueTmpDir(tag: string): string =
-  # Per-test unique subdir under the system temp dir; OS cleans up eventually.
-  # No teardown — keeps test bodies focused on the assertion.
-  getTempDir() / ("nimbos_circuits_" & tag & "_" & $epochTime())
-
 suite "zk/circuits — path derivations":
   test "circuitsVersionPath joins <dir>/VERSION":
     check circuitsVersionPath("/foo") == "/foo" / "VERSION"
 
-  test "polVerificationKeyPath joins <dir>/pol/verification_key.json":
-    check polVerificationKeyPath("/foo") == "/foo" / "pol" / "verification_key.json"
-
-  test "zksignVerificationKeyPath joins <dir>/signature/verification_key.json":
-    check zksignVerificationKeyPath("/foo") == "/foo" / "signature" / "verification_key.json"
-
-  test "pocVerificationKeyPath joins <dir>/poc/verification_key.json":
-    check pocVerificationKeyPath("/foo") == "/foo" / "poc" / "verification_key.json"
-
-  test "poqVerificationKeyPath joins <dir>/poq/verification_key.json":
-    check poqVerificationKeyPath("/foo") == "/foo" / "poq" / "verification_key.json"
+  test "per-circuit artefact paths use the bundle directory names":
+    check $Circuit.Pol == "pol"
+    check $Circuit.Poq == "poq"
+    check $Circuit.Poc == "poc"
+    check $Circuit.Signature == "signature"
+    check verificationKeyPath("/foo", Circuit.Signature) ==
+      "/foo" / "signature" / "verification_key.json"
+    check provingKeyPath("/foo", Circuit.Pol) == "/foo" / "pol" / "proving_key.zkey"
+    check witnessDatPath("/foo", Circuit.Poq) == "/foo" / "poq" / "witness_generator.dat"
 
 suite "zk/circuits — release bundle layout":
   test "verification key paths exist in logos-blockchain-circuits bundle":
     # Requires `make deps` / circuits-install-test (`tests/circuits-bundle/`).
     check verifyCircuitsVersion(testCircuitsDir).isOk
-    check fileExists(polVerificationKeyPath(testCircuitsDir))
-    check fileExists(zksignVerificationKeyPath(testCircuitsDir))
-    check fileExists(pocVerificationKeyPath(testCircuitsDir))
-    check fileExists(poqVerificationKeyPath(testCircuitsDir))
+    for c in Circuit:
+      check fileExists(verificationKeyPath(testCircuitsDir, c))
+
+  test "prover artefacts exist in the bundle":
+    for c in Circuit:
+      check fileExists(provingKeyPath(testCircuitsDir, c))
+      check fileExists(witnessDatPath(testCircuitsDir, c))
 
 suite "zk/circuits — verifyCircuitsVersion":
   test "rejects missing dir":

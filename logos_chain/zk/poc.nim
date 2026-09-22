@@ -5,15 +5,20 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-## Proof of Claim: VK singleton + `verify`. Prover-side helpers (zkey,
-## witness-gen) land here when leader-claim proving goes live.
+## Proof of Claim: VK singleton + `verify`, plus the prover-side witness
+## input and its circuit JSON encoding.
 
 {.push raises: [], gcsafe.}
 
 import
-  ./[circuits, util]
+  std/json,
+  ./[circuits, merkle_path, util],
+  ./groth16/snarkjs
 
-export util
+export util, merkle_path
+
+const
+  PocPublicSignals* = 3
 
 type
   PocLoadError* = VkLoadError
@@ -26,12 +31,40 @@ type
     mantleTxHashFr*: FieldElement
     voucherRoot*: FieldElement
 
+  PocWitnessInput* = object
+    ## Prover-side circuit inputs. The voucher path comes from `toCircuitPath`.
+    voucherRoot*: FieldElement
+    mantleTxHash*: FieldElement
+    secretVoucher*: FieldElement
+    voucherPath*: CircuitPath[TreeDepth]
+
+func toInputsJson*(input: PocWitnessInput): string =
+  ## Witness-generator JSON with the circuit's input names.
+  $(%*{
+    "voucher_root": frDecimal(input.voucherRoot),
+    "mantle_tx_hash": frDecimal(input.mantleTxHash),
+    "secret_voucher": frDecimal(input.secretVoucher),
+    "voucher_merkle_path": pathJson(input.voucherPath.siblings),
+    "voucher_merkle_path_selectors": selectorsJson(input.voucherPath.selectors),
+  })
+
+func pocVerifierInput*(
+    signals: openArray[FieldElement]
+): Result[PocVerifierInput, cstring] =
+  ## Typed view of the 3 public signals a proof carries.
+  if signals.len != PocPublicSignals:
+    return err("poc: expected 3 public signals")
+  ok(PocVerifierInput(
+    voucherNullifier: signals[0],
+    mantleTxHashFr: signals[1],
+    voucherRoot: signals[2]))
+
 # Singleton. See `util` for the threading / GC-safety contract.
 var pocVk: Opt[VKey]
 
 proc loadVk*(circuitsDir: string): Result[VKey, PocLoadError] =
   ## Read + parse `<circuitsDir>/poc/verification_key.json`.
-  loadVkFromPath(pocVerificationKeyPath(circuitsDir))
+  loadVkFromPath(verificationKeyPath(circuitsDir, Circuit.Poc))
 
 proc initVk*(vk: VKey): Result[void, PocLoadError] =
   ## Install the VK into the singleton. Reinitialisation returns

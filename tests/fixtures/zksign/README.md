@@ -1,13 +1,7 @@
 # zksign test fixtures
 
-nimbos ships only the zksign verifier — it has no Nim-side prover that
-could generate a proof on the fly during tests. These three files are
-committed fixtures (Rust-prover output) so the Nim verifier
-(`tests/zk/test_zksign.nim`, `tests/ledger/test_cryptarchia.nim`) has
-something to verify against.
-
-These can be removed in favour of in-test proof generation once a
-Nim-side zksign prover lands.
+Committed reference-prover output for the Nim zksign verifier tests
+(`tests/zk/test_zksign.nim`, `tests/ledger/test_cryptarchia.nim`).
 
 | File | Format |
 |---|---|
@@ -37,3 +31,12 @@ Prove with these inputs. Write `proof.json` in snarkjs shape. Write
 `public.json` as decimal strings. It must come back byte-identical.
 Copy `verification_key.json` from the bundle's `signature/` directory
 of the same release.
+
+## Nim prover
+
+nimbos generates proofs in-process (`logos_chain/zk/prover.nim`,
+rapidsnark + the bundle witness archives). `tests/zk/test_witness_gen.nim`
+and `tests/zk/test_prover.nim` rebuild this fixture's public signals from
+the witness inputs above and verify fresh proofs against them. The committed
+`proof.json` stays as the reference-prover cross-check
+(`tests/zk/test_prover_interop.nim`).
