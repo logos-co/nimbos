@@ -17,9 +17,9 @@ import
   ../deployment/deployment_settings,
   ../ledger/[ledger, stake_inference],
   ../mempool,
-  ./[block_validation, genesis]
+  ./[block_validation, genesis, orphan_pool]
 
-export genesis, local_tree, mempool, block_validation
+export genesis, local_tree, mempool, block_validation, orphan_pool
 export ledger except config
 
 const DefaultSecurityParam*: uint64 = 1'u64
@@ -32,15 +32,17 @@ type
     mempool*: Mempool
     slotConfig*: SlotConfig
     securityParam*: uint64
+    orphanPool*: OrphanPool
 
   BlockApplyErrorKind* {.pure.} = enum
     AlreadyApplied
     FutureSlot
     InvalidStructure
-    MissingParent
     UnviableFork
     LedgerRejected
     StatelessTxRejected
+    OrphanBuffered
+    OrphanAlreadyBuffered
 
   BlockApplyError* = object
     case kind*: BlockApplyErrorKind
@@ -61,7 +63,7 @@ func isRecoverable*(kind: BlockApplyErrorKind): bool =
   ## True when the same block may still apply later without any change to it.
   case kind
   of BlockApplyErrorKind.AlreadyApplied, BlockApplyErrorKind.FutureSlot,
-      BlockApplyErrorKind.MissingParent:
+      BlockApplyErrorKind.OrphanBuffered, BlockApplyErrorKind.OrphanAlreadyBuffered:
     true
   of BlockApplyErrorKind.InvalidStructure, BlockApplyErrorKind.UnviableFork,
       BlockApplyErrorKind.LedgerRejected, BlockApplyErrorKind.StatelessTxRejected:
@@ -98,6 +100,7 @@ func init*(
     mempool: Mempool.init(maxMempoolCapacity(secParam)),
     slotConfig: slotConfig,
     securityParam: secParam,
+    orphanPool: OrphanPool(),
   )
 
 proc init*(
@@ -160,16 +163,59 @@ proc pruneStatesBeforeLib(chain: var Chain, newLibId, oldLibId: BlockId) =
     return
   var curr = header(newLib).parentBlock
   while not curr.isZero:
-    discard chain.ledger.pruneStateAt(curr)
+    chain.ledger.pruneStateAt(curr)
     if curr == oldLibId:
       break
     let blk = chain.localTree.getBlock(curr).valueOr:
       break
     curr = header(blk).parentBlock
 
+proc handleTipChange(chain: var Chain, oldTip, newTip: BlockId) =
+  if newTip == oldTip:
+    return
+  # Active tip advanced: handles both normal block extensions (lcaId == oldTip)
+  # and multi-block fork reorganizations (lcaId == common ancestor).
+  let (lcaId, _) = chain.localTree.lcaBlockIdAndHeight(
+    oldTip, newTip
+  ).expect("LCA must exist between active tree tips")
+  # 1. readd before remove: if a transaction exists in both branches, readding first allows removing it next.
+  # 2. tryUpdateLib after mempool reorg: ensures fork pruning does not delete orphaned blocks before transactions are restored.
+  # 3. Prune fork states and canonical states older than the new immutable block (retaining latestImmutableId as anchor).
+  chain.readdBranchTxs(oldTip, lcaId)
+  chain.removeBranchTxs(newTip, lcaId)
+  let oldLibId = chain.localTree.latestImmutableBlockId()
+  let prunedBlockIds = chain.localTree.tryUpdateLib()
+  for prunedId in prunedBlockIds:
+    chain.ledger.pruneStateAt(prunedId)
+  let newLibId = chain.localTree.latestImmutableBlockId()
+  if newLibId != oldLibId:
+    chain.pruneStatesBeforeLib(newLibId, oldLibId)
+    chain.orphanPool.pruneIncompatibleWithImmutable(chain.localTree)
+
+proc promoteOrphans(chain: var Chain, rootId: BlockId) =
+  ## Iteratively applies orphan descendants waiting on rootId using a FIFO queue.
+  var queue = @[rootId]
+  var idx = 0
+  while idx < queue.len:
+    let parent = queue[idx]
+    inc idx
+    for child in chain.orphanPool.takeChildren(parent):
+      # Child block structure, header signature, and stateless txs were verified before buffering
+      if not chain.localTree.canDescendFromImmutable(child.header):
+        chain.orphanPool.pruneDescendants(blockId(child.header))
+        continue
+      let childPrep = prepareBlockUpdate(child, chain.ledger)
+      if childPrep.isOk and chain.localTree.addBlockToTree(child):
+        let prepared = childPrep.get()
+        chain.ledger.commitUpdate(prepared.id, prepared.state)
+        queue.add(prepared.id)
+      else:
+        chain.orphanPool.pruneDescendants(blockId(child.header))
+
 proc tryApplyBlock*(
     chain: var Chain, blk: Block): Result[void, BlockApplyError] =
-  ## Full block ingestion in `valid_header` order.
+  ## Full block ingestion in `valid_header` order, with automatic orphan buffering
+  ## and iterative cascading promotion of waiting descendants.
   template hdr: auto = header(blk)
   let id = blockId(hdr)
   # The tree keeps applied blocks whose states were pruned below the LIB.
@@ -179,15 +225,14 @@ proc tryApplyBlock*(
   # descend from the LIB. Holds without the parent, which pruning may remove.
   if hdr.slot <= chain.localTree.latestImmutableSlot():
     return err(BlockApplyError(kind: UnviableFork))
-  if hdr.slot > chain.currentWallclockSlot():
+  let curSlot = chain.currentWallclockSlot()
+  if hdr.slot > curSlot:
     return err(BlockApplyError(kind: FutureSlot))
   let unverified = chain.mempool.unverifiedTxs(blk.txs)
-  let prepared = prepareBlockUpdate(blk, chain.localTree, chain.ledger, unverified).valueOr:
+  let (validBlk, isOrphan) = validateBlock(blk, chain.localTree, chain.ledger, unverified).valueOr:
     case error.kind
     of BlockValidationErrorKind.InvalidBlockStructure:
       return err(BlockApplyError(kind: InvalidStructure))
-    of BlockValidationErrorKind.MissingParent:
-      return err(BlockApplyError(kind: MissingParent))
     of BlockValidationErrorKind.UnviableFork:
       return err(BlockApplyError(kind: UnviableFork))
     of BlockValidationErrorKind.HeaderRejected,
@@ -196,30 +241,24 @@ proc tryApplyBlock*(
     of BlockValidationErrorKind.StatelessTxRejected:
       return err(BlockApplyError(kind: StatelessTxRejected, statelessError: error.statelessError))
 
+  if isOrphan:
+    if not chain.orphanPool.addOrphan(validBlk):
+      return err(BlockApplyError(kind: OrphanAlreadyBuffered))
+    return err(BlockApplyError(kind: OrphanBuffered))
+
+  let prepared = prepareBlockUpdate(validBlk, chain.ledger).valueOr:
+    return err(BlockApplyError(kind: LedgerRejected, ledgerError: error.ledgerError))
+
   let oldTip = chain.localTree.localTipId()
   if not chain.localTree.addBlockToTree(blk):
     return err(BlockApplyError(kind: UnviableFork))
   chain.ledger.commitUpdate(prepared.id, prepared.state)
+  chain.promoteOrphans(id)
+
   let newTip = chain.localTree.localTipId()
+  chain.handleTipChange(oldTip, newTip)
 
-  if newTip != oldTip:
-    # Active tip advanced: handles both normal block extensions (lcaId == oldTip)
-    # and multi-block fork reorganizations (lcaId == common ancestor).
-    let (lcaId, _) = chain.localTree.lcaBlockIdAndHeight(
-      oldTip, newTip
-    ).expect("LCA must exist between active tree tips")
-    # 1. readd before remove: if a transaction exists in both branches, readding first allows removing it next.
-    # 2. tryUpdateLib after mempool reorg: ensures fork pruning does not delete orphaned blocks before transactions are restored.
-    # 3. Prune fork states and canonical states older than the new immutable block (retaining latestImmutableId as anchor).
-    chain.readdBranchTxs(oldTip, lcaId)
-    chain.removeBranchTxs(newTip, lcaId)
-    let oldLibId = chain.localTree.latestImmutableBlockId()
-    let prunedBlockIds = chain.localTree.tryUpdateLib()
-    for prunedId in prunedBlockIds:
-      discard chain.ledger.pruneStateAt(prunedId)
-    let newLibId = chain.localTree.latestImmutableBlockId()
-    if newLibId != oldLibId:
-      chain.pruneStatesBeforeLib(newLibId, oldLibId)
-
-  chain.mempool.pruneExpiredTxs(chain.currentWallclockSlot())
+  chain.mempool.pruneExpiredTxs(curSlot)
   ok()
+
+{.pop.}

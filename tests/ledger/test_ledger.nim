@@ -234,11 +234,12 @@ suite "Ledger[Id] map ops":
     check l.state(id2).isSome
     check l.state(id2).get.latestUtxos.len == 1
 
-  test "pruneStateAt removes existing, returns true; missing returns false":
+  test "pruneStateAt removes existing state; missing key is a safe no-op":
     var l = initLedger(mkId(0x01), mkState(@[]), testLedgerConfig)
-    check l.pruneStateAt(mkId(0x01)) == true
+    l.pruneStateAt(mkId(0x01))
     check l.state(mkId(0x01)).isNone
-    check l.pruneStateAt(mkId(0x99)) == false
+    l.pruneStateAt(mkId(0x99))
+    check l.state(mkId(0x99)).isNone
 
 suite "prepareUpdate — no-verify paths":
   test "parent missing → ParentNotFound":

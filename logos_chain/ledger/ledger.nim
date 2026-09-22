@@ -448,12 +448,8 @@ func commitUpdate*[Id](
   ## applied by `tryApplyHeader` when the state was prepared.
   l.states[id] = state
 
-func pruneStateAt*[Id](l: var Ledger[Id], id: Id): bool =
-  if id in l.states:
-    l.states.del(id)
-    true
-  else:
-    false
+func pruneStateAt*[Id](l: var Ledger[Id], id: Id) =
+  l.states.del(id)
 
 proc prepareUpdate*[Id](
     l: Ledger[Id],

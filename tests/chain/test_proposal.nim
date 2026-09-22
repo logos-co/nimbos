@@ -299,8 +299,40 @@ suite "chain/proposal":
     let ledger = Ledger[BlockId].init(gid, state, testLedgerConfig, mockVerifyLeaderProof)
     let reconstructedRes = reconstructAndValidateBlock(proposal, tree, ledger, m)
     check reconstructedRes.isOk
-    let blk = reconstructedRes.get()
+    let (blk, isOrphan) = reconstructedRes.get()
+    check not isOrphan
     check blk.txs.len == 1
     check mantleTxHash(blk.txs[0].tx) == mantleTxHash(tx.tx)
+
+  test "reconstructAndValidateBlock returns isOrphan == true for orphan proposal":
+    var m = Mempool.init()
+    let tx = signedTxWithOps(1, 1)
+    check m.add(ValidSignedMantleTx(tx), SlotNumber(1)) == true
+    let genesis = createGenesisBlock(signedTxWithOps(1, 0))
+    let tree = newLocalTree(genesis, 1'u64)
+    var state = LedgerState.fromGenesis(
+      genesis.txs, default(FieldElement), testSdpRegistry(),
+      testLedgerConfig).expect("genesis state")
+    state.feeMarket.executionBaseFee = 0
+    state.feeMarket.storageGasPrice = 0
+    let
+      ledger = Ledger[BlockId].init(blockId(genesis.header), state, testLedgerConfig, mockVerifyLeaderProof)
+      orphanParent = Hash32([1'u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+    var pol = default(ProofOfLeadership)
+    pol.leaderKey = testTxKeyPair.pubkey
+    let proposal = m.constructProposal(
+      tipLedgerState = state,
+      cfg = testLedgerConfig,
+      currentSlot = SlotNumber(10),
+      parentBlock = orphanParent,
+      proofOfLeadership = pol,
+      leaderSecKey = testTxKeyPair.seckey,
+      verifyPoq = acceptAllPoq,
+    )
+    let res = reconstructAndValidateBlock(proposal, tree, ledger, m)
+    check res.isOk
+    let (blk, isOrphan) = res.get
+    check isOrphan
+    check blk.header == proposal.header
 
 {.pop.}

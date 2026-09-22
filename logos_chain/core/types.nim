@@ -51,6 +51,10 @@ type
     signature*: Ed25519Signature
     txs*: seq[SignedMantleTx]
 
+  ValidBlock* = distinct Block
+    ## A ``Block`` that has successfully passed all structural, admission,
+    ## and stateless transaction verifications via ``validateBlock``.
+
   Proposal* = object
     header*: Header
     references*: References
@@ -66,6 +70,8 @@ deriveBincode(Block)
 deriveBincode(Proposal)
 
 template header*(blk: Block): auto = blk.header
+template header*(blk: ValidBlock): auto = Block(blk).header
+template txs*(blk: ValidBlock): auto = Block(blk).txs
 
 func hashPair*(left, right: Hash32): Hash32 =
   var pairBytes: array[64, byte]

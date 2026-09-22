@@ -52,9 +52,10 @@ suite "chain/block_processor":
         f1 = bp.addBlock(BlockSource.Sync, b1)
       check not f1.finished
       check not f2.finished
-      check (await f2).error.kind == BlockApplyErrorKind.MissingParent
+      check (await f2).error.kind == BlockApplyErrorKind.OrphanBuffered
       check (await f1).isOk
-      check (await bp.addBlock(BlockSource.Sync, b2)).isOk
+      check (await bp.addBlock(BlockSource.Sync, b2)).error.kind == BlockApplyErrorKind.AlreadyApplied
+      check bp.localTree.localTipId == blockId(b2.header)
 
   asyncTest "loop yields to other tasks between blocks":
     withProcessor(chain):
@@ -99,7 +100,7 @@ suite "chain/block_processor":
       check (await bp.addBlock(BlockSource.Sync, b1)).isOk
       check not bp.localTree.hasBlock(blockId(orphan.header))
 
-  asyncTest "error kinds: MissingParent and InvalidStructure":
+  asyncTest "error kinds: OrphanBuffered and InvalidStructure":
     withProcessor(chain):
       var fakeParentId: BlockId
       fakeParentId[0] = 7
@@ -110,7 +111,7 @@ suite "chain/block_processor":
         # does not fire first.
         stale = childBlock(b1.header, blockId(b1.header), SlotNumber(1), [])
       check (await bp.addBlock(BlockSource.Sync, orphan)).error.kind ==
-        BlockApplyErrorKind.MissingParent
+        BlockApplyErrorKind.OrphanBuffered
       check (await bp.addBlock(BlockSource.Sync, b1)).isOk
       check (await bp.addBlock(BlockSource.Sync, stale)).error.kind ==
         BlockApplyErrorKind.InvalidStructure

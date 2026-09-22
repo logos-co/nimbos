@@ -8,7 +8,7 @@
 {.push raises: [], gcsafe.}
 
 import
-  std/sequtils,
+  std/[sequtils, times],
   results,
   bincode,
   libp2p/[switch, errors],
@@ -25,7 +25,11 @@ from ../../ledger/test_helpers import testLedgerConfig
 
 const testChainSyncProtocol* = "/logos-blockchain-testnet-v0.1.2/chainsync/1.0.0"
 
-proc initTestChain*(genesis: Block): Chain =
+proc initTestChain*(
+    genesis: Block,
+    securityParam: uint64 = DefaultSecurityParam,
+    genesisTime: uint64 = uint64(max(getTime().toUnix() - 500, 0'i64)),
+): Chain =
   ## Chain over the genesis block's ledger state (epochs seeded under
   ## `testLedgerConfig`).
   let state = LedgerState.fromGenesis(
@@ -36,7 +40,8 @@ proc initTestChain*(genesis: Block): Chain =
     genesis,
     Ledger[BlockId].init(blockId(genesis.header), state, testLedgerConfig,
         mockVerifyLeaderProof),
-    SlotConfig(genesisTime: 0, slotDurationSeconds: 1))
+    SlotConfig(genesisTime: genesisTime, slotDurationSeconds: 1),
+    securityParam = securityParam)
 
 proc startTestProcessor(chain: Chain): BlockProcessor =
   let bp = BlockProcessor.new(chain)
