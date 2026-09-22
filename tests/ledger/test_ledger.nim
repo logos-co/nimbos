@@ -35,6 +35,18 @@ func initLedger(
 ): Ledger[TestId] =
   Ledger[TestId].init(id, state, config, leaderProofVerifier)
 
+proc prepareUpdateWithHeader[Id](
+    l: Ledger[Id],
+    id, parentId: Id,
+    slot: SlotNumber,
+    proof: ProofOfLeadership,
+    txs: openArray[ValidSignedMantleTx],
+): Result[tuple[id: Id, state: LedgerState], LedgerError] =
+  let parent = l.state(parentId).valueOr:
+    return err(ParentNotFound)
+  let afterHeader = ?parent.tryApplyHeader(slot, proof, l.config, l.leaderProofVerifier)
+  l.prepareUpdate(id, slot, afterHeader, txs)
+
 from ./test_helpers import testLedgerConfig
 
 const
@@ -245,7 +257,7 @@ suite "prepareUpdate — no-verify paths":
   test "parent missing → ParentNotFound":
     let
       l = initLedger(mkId(0x01), mkState(@[]), testLedgerConfig)
-      r = l.prepareUpdate(
+      r = l.prepareUpdateWithHeader(
         id = mkId(0x02),
         parentId = mkId(0xff),
         slot = 1'u64,
@@ -261,7 +273,7 @@ suite "prepareUpdate — no-verify paths":
       id0 = mkId(0x01)
       l = initLedger(id0, parent, testLedgerConfig)
       id1 = mkId(0x02)
-      r = l.prepareUpdate(
+      r = l.prepareUpdateWithHeader(
         id = id1,
         parentId = id0,
         slot = 1'u64,
@@ -426,7 +438,7 @@ when false:
       let
         input = mkUtxo(value = 100, pkSeed = 1)
         tx = mkTransferTx([input.id], [mkNote(100, pkSeed = 2)])
-        r = l.prepareUpdate(
+        r = l.prepareUpdateWithHeader(
           id = mkId(0x02),
           parentId = mkId(0x01),
           slot = 1'u64,
@@ -445,7 +457,7 @@ when false:
         input = mkUtxo(value = 100, pkSeed = 1)
         l = initLedger(mkId(0x01), mkState([input]), testLedgerConfig)
         tx = mkTransferTx([input.id], [mkNote(50, pkSeed = 2)]) # 100 in, 50 out
-        r = l.prepareUpdate(
+        r = l.prepareUpdateWithHeader(
           id = mkId(0x02),
           parentId = mkId(0x01),
           slot = 1'u64,
@@ -465,7 +477,7 @@ when false:
       let
         input1 = mkUtxo(value = 100, pkSeed = 1)
         tx1 = mkTransferTx([input1.id], [mkNote(100, pkSeed = 2)])
-        r1 = l.prepareUpdate(
+        r1 = l.prepareUpdateWithHeader(
           id = mkId(0x01),
           parentId = mkId(0x00),
           slot = 1'u64,
@@ -489,7 +501,7 @@ when false:
 
       let
         tx2 = mkTransferTx([utxoAfter1.id], [mkNote(100, pkSeed = 3)])
-        r2 = l.prepareUpdate(
+        r2 = l.prepareUpdateWithHeader(
           id = mkId(0x02),
           parentId = mkId(0x01),
           slot = 2'u64,
@@ -514,7 +526,7 @@ when false:
         tx3 = mkTransferTx(
           [utxoAfter2.id], [mkNote(60, pkSeed = 4), mkNote(40, pkSeed = 5)]
         )
-        r3 = l.prepareUpdate(
+        r3 = l.prepareUpdateWithHeader(
           id = mkId(0x03),
           parentId = mkId(0x02),
           slot = 3'u64,
@@ -588,7 +600,7 @@ suite "tryApplyTx — SDP":
     discard installTestDeclaration(parent.sdp, declaration, epoch = 1)
     let id0 = mkId(0x10)
     var l = initLedger(id0, parent, testLedgerConfig)
-    let r = l.prepareUpdate(
+    let r = l.prepareUpdateWithHeader(
       id = mkId(0x11),
       parentId = id0,
       slot = 1'u64,

@@ -36,6 +36,7 @@ type
 
   BlockApplyErrorKind* {.pure.} = enum
     AlreadyApplied
+    InFlight
     FutureSlot
     InvalidStructure
     UnviableFork
@@ -62,8 +63,9 @@ func `$`*(e: BlockApplyError): string =
 func isRecoverable*(kind: BlockApplyErrorKind): bool =
   ## True when the same block may still apply later without any change to it.
   case kind
-  of BlockApplyErrorKind.AlreadyApplied, BlockApplyErrorKind.FutureSlot,
-      BlockApplyErrorKind.OrphanBuffered, BlockApplyErrorKind.OrphanAlreadyBuffered:
+  of BlockApplyErrorKind.AlreadyApplied, BlockApplyErrorKind.InFlight,
+      BlockApplyErrorKind.FutureSlot, BlockApplyErrorKind.OrphanBuffered,
+      BlockApplyErrorKind.OrphanAlreadyBuffered:
     true
   of BlockApplyErrorKind.InvalidStructure, BlockApplyErrorKind.UnviableFork,
       BlockApplyErrorKind.LedgerRejected, BlockApplyErrorKind.StatelessTxRejected:
@@ -200,17 +202,28 @@ proc promoteOrphans(chain: var Chain, rootId: BlockId) =
     let parent = queue[idx]
     inc idx
     for child in chain.orphanPool.takeChildren(parent):
-      # Child block structure, header signature, and stateless txs were verified before buffering
+      let childId = blockId(child.header)
+      # Child block structure, header signature, and Merkle root were verified before buffering
       if not chain.localTree.canDescendFromImmutable(child.header):
-        chain.orphanPool.pruneDescendants(blockId(child.header))
+        chain.orphanPool.pruneDescendants(childId)
         continue
-      let childPrep = prepareBlockUpdate(child, chain.ledger)
-      if childPrep.isOk and chain.localTree.addBlockToTree(child):
-        let prepared = childPrep.get()
+
+      # Tier 3: Validate PoL against parent state and deferred stateless transactions
+      let unverified = chain.mempool.unverifiedTxs(child.txs)
+      let (validChild, headerState) = validatePolAndStatelessTransactions(child, chain.ledger, unverified).valueOr:
+        chain.orphanPool.pruneDescendants(childId)
+        continue
+
+      # Execute state transitions on the fully validated block using pre-validated headerState
+      let prepared = prepareBlockUpdate(validChild, chain.ledger, headerState).valueOr:
+        chain.orphanPool.pruneDescendants(childId)
+        continue
+
+      if chain.localTree.addBlockToTree(validChild):
         chain.ledger.commitUpdate(prepared.id, prepared.state)
         queue.add(prepared.id)
       else:
-        chain.orphanPool.pruneDescendants(blockId(child.header))
+        chain.orphanPool.pruneDescendants(childId)
 
 proc tryApplyBlock*(
     chain: var Chain, blk: Block): Result[void, BlockApplyError] =
@@ -228,8 +241,9 @@ proc tryApplyBlock*(
   let curSlot = chain.currentWallclockSlot()
   if hdr.slot > curSlot:
     return err(BlockApplyError(kind: FutureSlot))
-  let unverified = chain.mempool.unverifiedTxs(blk.txs)
-  let (validBlk, isOrphan) = validateBlock(blk, chain.localTree, chain.ledger, unverified).valueOr:
+
+  # Tiers 0-2: Structure, Topology Viability, Merkle Root, Header Signature
+  let (admittedBlk, isOrphan) = validateBlockHeaderAndTopology(blk, chain.localTree, chain.ledger).valueOr:
     case error.kind
     of BlockValidationErrorKind.InvalidBlockStructure:
       return err(BlockApplyError(kind: InvalidStructure))
@@ -242,15 +256,27 @@ proc tryApplyBlock*(
       return err(BlockApplyError(kind: StatelessTxRejected, statelessError: error.statelessError))
 
   if isOrphan:
-    if not chain.orphanPool.addOrphan(validBlk):
+    if not chain.orphanPool.addOrphan(admittedBlk):
       return err(BlockApplyError(kind: OrphanAlreadyBuffered))
     return err(BlockApplyError(kind: OrphanBuffered))
 
-  let prepared = prepareBlockUpdate(validBlk, chain.ledger).valueOr:
+  # Tier 3: PoL against parent state and stateless transaction validation
+  let unverified = chain.mempool.unverifiedTxs(admittedBlk.txs)
+  let (validBlk, headerState) = validatePolAndStatelessTransactions(admittedBlk, chain.ledger, unverified).valueOr:
+    case error.kind
+    of BlockValidationErrorKind.HeaderRejected,
+        BlockValidationErrorKind.TransactionsRejected:
+      return err(BlockApplyError(kind: LedgerRejected, ledgerError: error.ledgerError))
+    of BlockValidationErrorKind.StatelessTxRejected:
+      return err(BlockApplyError(kind: StatelessTxRejected, statelessError: error.statelessError))
+    else:
+      return err(BlockApplyError(kind: InvalidStructure))
+
+  let prepared = prepareBlockUpdate(validBlk, chain.ledger, headerState).valueOr:
     return err(BlockApplyError(kind: LedgerRejected, ledgerError: error.ledgerError))
 
   let oldTip = chain.localTree.localTipId()
-  if not chain.localTree.addBlockToTree(blk):
+  if not chain.localTree.addBlockToTree(validBlk):
     return err(BlockApplyError(kind: UnviableFork))
   chain.ledger.commitUpdate(prepared.id, prepared.state)
   chain.promoteOrphans(id)

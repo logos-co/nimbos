@@ -296,19 +296,28 @@ suite "chain/orphan_resolution":
     check chain.tryApplyBlock(uncommittedParent).error.kind == BlockApplyErrorKind.UnviableFork
     check chain.orphanPool.len == 0
 
-  test "orphan with invalid stateless transaction is rejected and not buffered":
-    var (chain, genesis, _) = setupChain()
+  test "orphan with invalid stateless transaction is buffered on ingestion and rejected during promotion":
+    var (chain, genesis, gid) = setupChain()
 
     var badTx = signedTxWithOps(1, 1)
     badTx.opProofs = @[] # MismatchedOpProofCount
 
-    let missingParentId = exampleBlockId(99)
-    let orphan = childBlock(genesis.header, missingParentId, SlotNumber(2), [badTx])
+    let b1 = childBlock(genesis.header, gid, SlotNumber(1), [])
+    let b1Id = blockId(b1.header)
+    let orphan = childBlock(b1.header, b1Id, SlotNumber(2), [badTx])
 
+    # Ingestion: orphan is buffered without expensive tx validation
     let applyRes = chain.tryApplyBlock(orphan)
     check applyRes.isErr
-    check applyRes.error.kind == BlockApplyErrorKind.StatelessTxRejected
+    check applyRes.error.kind == BlockApplyErrorKind.OrphanBuffered
+    check chain.orphanPool.len == 1
+
+    # When parent arrives, promotion runs stateless transaction validation and rejects the invalid orphan
+    let b1Res = chain.tryApplyBlock(b1)
+    check b1Res.isOk
+    check chain.localTree.localTipId == b1Id
     check chain.orphanPool.len == 0
+    check not chain.localTree.hasBlock(blockId(orphan.header))
 
   test "orphan cascade triggering a reorg restores mempool transactions from abandoned branch":
     var (chain, genesis, gid) = setupChain(securityParam = 1)

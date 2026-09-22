@@ -24,7 +24,7 @@ export tx_validation.StatelessLedgerError
 
 from ../core/types import
   Block, Header, Proposal, References, createBlockRoot, ExpectedBedrockVersion,
-  MaxBlockSize, header, txs, blockId, Hash32, ValidBlock
+  MaxBlockSize, header, txs, blockId, Hash32, ValidBlock, AdmittedBlock
 from ../core/mantle/primitives import MaxBlockTxs, SlotNumber
 from ../core/mantle/tx_types import SignedMantleTx, ValidSignedMantleTx, byteLen
 
@@ -116,24 +116,47 @@ proc validateStatelessTransactions(
 
   ok()
 
-proc validateBlock*(
+proc validatePolAndStatelessTransactions*(
+    blk: AdmittedBlock,
+    ledger: Ledger[BlockId],
+    txsToVerify: openArray[SignedMantleTx],
+): Result[tuple[validBlk: ValidBlock, headerState: LedgerState], BlockValidationError] =
+  ## Tier 3a: Verify PoL against parent state before touching any transactions
+  let parentState = ledger.state(blk.header.parentBlock).valueOr:
+    return err(BlockValidationError(
+      kind: BlockValidationErrorKind.HeaderRejected,
+      ledgerError: LedgerError.ParentNotFound,
+    ))
+
+  let afterHeader = parentState.tryApplyHeader(
+    blk.header.slot,
+    blk.header.proofOfLeadership,
+    ledger.config,
+    ledger.leaderProofVerifier,
+  ).valueOr:
+    return err(BlockValidationError(
+      kind: BlockValidationErrorKind.HeaderRejected,
+      ledgerError: error,
+    ))
+
+  # Tier 3b: Stateless transaction validation
+  ?validateStatelessTransactions(txsToVerify)
+
+  ok((validBlk: ValidBlock(Block(blk)), headerState: afterHeader))
+
+proc validateBlockHeaderAndTopology*(
     blk: Block,
     localTree: LocalTree,
     ledger: Ledger[BlockId],
-    txsToVerify: openArray[SignedMantleTx],
-): Result[tuple[blk: ValidBlock, isOrphan: bool], BlockValidationError] =
-  ## Multi-tier block admission and stateless transaction validation:
+): Result[tuple[admittedBlk: AdmittedBlock, isOrphan: bool], BlockValidationError] =
+  ## Multi-tier block admission and staged header/topology validation:
   ## Tier 0: Structural & size bounds (~1 µs)
   ## Tier 1: Topology & parent existence in localTree/ledger (< 5 µs)
-  ## Tier 2: Merkle root & Ed25519 signature verification (~1.9 ms)
-  ## Tier 3: Light-first stateless transaction validation on `txsToVerify` (0 - 5.2s).
-  ## Only `txsToVerify` will be validated; if empty, all transactions are in the mempool
-  ## thus no need to validate statelessly.
+  ## Tier 2a: Merkle root verification (~20 µs)
+  ## Tier 2b: Header Ed25519 signature verification (~0.8 ms)
   ##
-  ## If the block's parent is missing from the ledger, it is treated as an orphan.
-  ## Validation does not terminate early; Tier 2 (header signature/root) and Tier 3
-  ## (stateless transactions) are executed to ensure malformed blocks are rejected
-  ## before buffering. If all checks pass, `isOrphan` is true.
+  ## Returns ok((admittedBlk, isOrphan: true)) if the block is an orphan (parent state not yet in ledger),
+  ## or ok((admittedBlk, isOrphan: false)) if the parent state is present.
   if not validateBlockStructure(blk):
     return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))
 
@@ -150,24 +173,19 @@ proc validateBlock*(
   if not validateBlockHeader(blk):
     return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))
 
-  ?validateStatelessTransactions(txsToVerify)
-
-  ok((blk: ValidBlock(blk), isOrphan: isOrphan))
+  ok((admittedBlk: AdmittedBlock(blk), isOrphan: isOrphan))
 
 proc prepareBlockUpdate*(
     blk: ValidBlock,
     ledger: Ledger[BlockId],
+    headerState: LedgerState,
 ): Result[tuple[id: BlockId, state: LedgerState], BlockValidationError] =
   ## Executes state transitions via `ledger.prepareUpdate` on a validated block.
   let id = blockId(blk.header)
   template validTxs: untyped = cast[seq[ValidSignedMantleTx]](blk.txs)
 
   let prepared = ledger.prepareUpdate(
-    id,
-    blk.header.parentBlock,
-    blk.header.slot,
-    blk.header.proofOfLeadership,
-    validTxs,
+    id, blk.header.slot, headerState, validTxs
   ).valueOr:
     if error in {LedgerError.InvalidSlot, LedgerError.InvalidProofOfLeadership, LedgerError.ParentNotFound, LedgerError.UnsupportedLotteryF, LedgerError.VerifierNotInitialised}:
       return err(BlockValidationError(kind: BlockValidationErrorKind.HeaderRejected, ledgerError: error))

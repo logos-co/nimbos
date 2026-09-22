@@ -439,6 +439,12 @@ func hasState*[Id](l: Ledger[Id], id: Id): bool {.inline.} =
 func config*[Id](l: Ledger[Id]): lent LedgerConfig =
   l.config
 
+func leaderProofVerifier*[Id](l: Ledger[Id]): LeaderProofVerifier {.inline.} =
+  l.leaderProofVerifier
+
+func poqVerifier*[Id](l: Ledger[Id]): ProofOfQuotaVerifier {.inline.} =
+  l.poqVerifier
+
 func commitUpdate*[Id](
     l: var Ledger[Id],
     id: Id,
@@ -453,19 +459,13 @@ func pruneStateAt*[Id](l: var Ledger[Id], id: Id) =
 
 proc prepareUpdate*[Id](
     l: Ledger[Id],
-    id, parentId: Id,
+    id: Id,
     slot: SlotNumber,
-    proof: ProofOfLeadership,
+    headerState: sink LedgerState,
     txs: openArray[ValidSignedMantleTx],
 ): Result[tuple[id: Id, state: LedgerState], LedgerError] =
-  ## Validates a block's header + transactions against the parent state.
-  ## Caller invokes `commitUpdate` to install the result, or drops it to reject.
-  if parentId notin l.states:
-    return err(ParentNotFound)
-  let
-    parent = l.states.getOrDefault(parentId)
-    afterHeader = ?parent.tryApplyHeader(slot, proof, l.config, l.leaderProofVerifier)
-    afterTxs = ?afterHeader.tryApplyTxns(txs, slot, l.poqVerifier)
+  ## Applies transactions to a pre-validated headerState.
+  let afterTxs = ?headerState.tryApplyTxns(txs, slot, l.poqVerifier)
   ok((id: id, state: afterTxs))
 
 {.pop.}
