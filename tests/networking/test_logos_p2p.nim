@@ -355,7 +355,7 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
       )
       check waitUntil((await peers.dialer.broadcast(topic, missingProposal)).isOk)
       # Wait a brief moment to ensure validation ran and rejected it without adding to localTree
-      await sleepAsync(chronos.milliseconds(100))
+      await sleepAsync(chronos.milliseconds(25))
       check not listenerNode.processor.localTree.hasBlock(blockId(missingProposal.header))
 
       # Malformed / Invalid: Proposal with unknown parent block
@@ -364,14 +364,14 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
       unknownParentProposal.header.parentBlock[1] = 0xAD
       unknownParentProposal.header.slot = SlotNumber(3)
       check waitUntil((await peers.dialer.broadcast(topic, unknownParentProposal)).isOk)
-      await sleepAsync(chronos.milliseconds(100))
+      await sleepAsync(chronos.milliseconds(25))
       check not listenerNode.processor.localTree.hasBlock(blockId(unknownParentProposal.header))
 
       # Malformed / Invalid: Proposal with future slot beyond wallclock
       var futureProposal = sampleProposal
       futureProposal.header.slot = listenerNode.processor.currentWallclockSlot() + SlotNumber(100)
       check waitUntil((await peers.dialer.broadcast(topic, futureProposal)).isOk)
-      await sleepAsync(chronos.milliseconds(100))
+      await sleepAsync(chronos.milliseconds(25))
       check not listenerNode.processor.localTree.hasBlock(blockId(futureProposal.header))
     finally:
       await dialerNode.processor.stop()
