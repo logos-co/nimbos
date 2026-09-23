@@ -1102,6 +1102,8 @@ proc newValidationResultFuture(v: ValidationResult): Future[ValidationResult]
   res.complete(v)
   res
 
+const GossipBincodeConfig = standard().withLimit(MAX_PAYLOAD_SIZE)
+
 func addValidator*[MsgType](
     node: LBP2PNode,
     topic: string,
@@ -1118,7 +1120,7 @@ func addValidator*[MsgType](
 
     let res = if message.data.len > 0:
       try:
-        msgValidator(Bincode.decode(message.data, MsgType), message.fromPeer) # doesn't raise!
+        msgValidator(Bincode.decode(message.data, MsgType, GossipBincodeConfig), message.fromPeer) # doesn't raise!
       except SerializationError as e:
         debug "Error decoding gossip",
           topic, len = message.data.len, error = e.msg
@@ -1146,7 +1148,7 @@ proc addAsyncValidator*[MsgType](
 
     if message.data.len > 0:
       try:
-        msgValidator(Bincode.decode(message.data, MsgType), message.fromPeer) # doesn't raise!
+        msgValidator(Bincode.decode(message.data, MsgType, GossipBincodeConfig), message.fromPeer) # doesn't raise!
       except SerializationError as e:
         debug "Error decoding gossip",
           topic, len = message.data.len, error = e.msg
@@ -1177,7 +1179,7 @@ proc broadcast*(node: LBP2PNode, topic: string, msg: seq[byte]):
 proc broadcast*(node: LBP2PNode, topic: string, msg: auto):
     Future[SendResult] {.async: (raises: [CancelledError], raw: true).} =
   # Avoid {.async.} copies of message while broadcasting
-  broadcast(node, topic, Bincode.encode(msg))
+  broadcast(node, topic, Bincode.encode(msg, GossipBincodeConfig))
 
 when defined(unittest) or defined(test):
   func outboundConnQueueLen*(node: LBP2PNode): int {.inline.} =

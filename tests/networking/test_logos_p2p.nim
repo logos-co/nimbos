@@ -19,13 +19,14 @@ import
   ../logos_chain/sync/helpers,
   ../../logos_chain/conf,
   ../../logos_chain/core/[types, local_tree],
-  ../../logos_chain/core/mantle/[tx_types, tx_hashing],
+  ../../logos_chain/core/mantle/[operations, tx_types, tx_hashing],
   ../../logos_chain/networking/[network, discovery, protocols],
   ../../logos_chain/chain/genesis,
   ../../logos_chain/node,
   ../../logos_chain/deployment/deployment_settings
 
 from libp2p/protocols/connectivity/autonat/types import NetworkReachability
+from libp2p/crypto/ed25519/ed25519 import sign
 
 const autonatV2DialBackProto = $AutonatV2Codec.DialBack
 
@@ -268,24 +269,44 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
       check txItem.isOk
       check txItem.get.tx.ops.len == 1
 
-      # Duplicate tx sent to handleGossipTx should return Ignore and not duplicate in mempool
-      let dupRes = listenerNode.handleGossipTx(sampleTx, peers.dialer.switch.peerInfo.peerId)
+      # Duplicate tx sent to processTx should return Ignore and not duplicate in mempool
+      let dupRes = listenerNode.processor.processTx(sampleTx, peers.dialer.switch.peerInfo.peerId)
       check dupRes == ValidationResult.Ignore
       check listenerNode.processor.mempool.len == 1
 
       # Malformed: Empty ops
       let emptyTx = SignedMantleTx(tx: MantleTx(ops: @[]), opProofs: @[])
-      check listenerNode.handleGossipTx(emptyTx, peers.dialer.switch.peerInfo.peerId) == ValidationResult.Reject
+      check listenerNode.processor.processTx(emptyTx, peers.dialer.switch.peerInfo.peerId) == ValidationResult.Reject
 
       # Malformed: Ops and proofs length mismatch
       let mismatchTx = SignedMantleTx(tx: sampleTx.tx, opProofs: @[])
-      check listenerNode.handleGossipTx(mismatchTx, peers.dialer.switch.peerInfo.peerId) == ValidationResult.Reject
+      check listenerNode.processor.processTx(mismatchTx, peers.dialer.switch.peerInfo.peerId) == ValidationResult.Reject
 
       # Malformed / Invalid: Corrupt cryptographic signature on new tx
       var corruptSigTx = signedTxWithOps(1, 999)
       corruptSigTx.opProofs[0].ed25519SigProof.data[0] = 0xFF
-      check listenerNode.handleGossipTx(corruptSigTx, peers.dialer.switch.peerInfo.peerId) == ValidationResult.Reject
+      check listenerNode.processor.processTx(corruptSigTx, peers.dialer.switch.peerInfo.peerId) == ValidationResult.Reject
       check listenerNode.processor.mempool.len == 1
+
+      # Large tx (> 64 KiB) verifies GossipBincodeConfig handles messages exceeding default 64 KiB bincode limit
+      var largeCid: ChannelId
+      largeCid[0] = 77
+      let largePayload = ChannelInscribePayload(
+        channelId: largeCid,
+        inscription: newSeq[byte](70_000),
+        parent: default(Hash32),
+        signer: testTxKeyPair.pubkey,
+      )
+      let largeOp = createChannelInscribeOp(largePayload)
+      let largeMtx = MantleTx(ops: @[largeOp])
+      let largeSig = sign(testTxKeyPair.seckey, mantleTxHash(largeMtx))
+      let largeTx = SignedMantleTx(
+        tx: largeMtx,
+        opProofs: @[OpProof(kind: opfChannelInscribe, ed25519SigProof: largeSig)],
+      )
+      check largeTx.byteLen > 65536
+      check waitUntil((await peers.dialer.broadcast(topic, largeTx)).isOk)
+      check waitUntil(listenerNode.processor.mempool.len == 2)
     finally:
       await dialerNode.processor.stop()
       await listenerNode.processor.stop()

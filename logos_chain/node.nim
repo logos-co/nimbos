@@ -13,7 +13,7 @@ import
   bearssl/rand,
   metrics, metrics/chronos_httpserver,
   stew/byteutils,
-  ./chain/block_processor,
+  ./chain/[block_processor, gossip_processor],
   ./[conf, process_state],
   ./core/[types, utils],
   ./deployment/deployment_settings,
@@ -21,10 +21,7 @@ import
   ./sync/syncer,
   ./zk/[circuits, pol, poc, poq, prover, zksign]
 
-from ./chain/proposal import reconstructBlock, ProposalValidationError
-from ./core/mantle/tx_validation import validateMantleTxStateless
-from ./core/mantle/tx_types import SignedMantleTx, ValidSignedMantleTx
-from ./core/mantle/tx_hashing import mantleTxHash
+from ./core/mantle/tx_types import SignedMantleTx
 from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
 from libp2p/peerid import PeerId
 from libp2p/protocols/pubsub/pubsub import ValidationResult
@@ -36,7 +33,7 @@ from taskpools import Taskpool, new, shutdown
 
 export
   chronos, presto, server, conf,
-  deployment_settings, network, utils, block_processor
+  deployment_settings, network, utils, block_processor, gossip_processor
 
 logScope: topics = "logos_nd"
 
@@ -241,107 +238,15 @@ proc runOnSecondLoop(node: LBNode) {.async.} =
     let processingTime = finished - afterSleep
     trace "onSecond task completed", sleepTime, processingTime
 
-proc handleGossipProposal(
-    node: LBNode, proposal: Proposal, src: PeerId
-): ValidationResult =
-  trace "GossipSub handling received proposal",
-    blockId = byteutils.toHex(blockId(proposal.header)),
-    slot = proposal.header.slot,
-    src = $src
-
-  let id = blockId(proposal.header)
-  if node.processor.localTree.hasBlock(id):
-    trace "GossipSub ignored already applied proposal",
-      blockId = byteutils.toHex(id), src = $src
-    return ValidationResult.Ignore
-
-  let nowSlot = node.processor.currentWallclockSlot()
-  if proposal.header.slot > nowSlot:
-    debug "GossipSub ignored future proposal (clock skew)",
-      blockId = byteutils.toHex(id), blockSlot = proposal.header.slot,
-      wallclockSlot = nowSlot, src = $src
-    return ValidationResult.Ignore
-
-  if proposal.header.slot <= node.processor.localTree.latestImmutableSlot():
-    debug "GossipSub ignored proposal at or behind immutable slot",
-      blockId = byteutils.toHex(id), src = $src
-    return ValidationResult.Ignore
-
-  if not node.processor.localTree.hasBlock(proposal.header.parentBlock):
-    debug "GossipSub ignored proposal with unknown parent",
-      blockId = byteutils.toHex(id),
-      parent = byteutils.toHex(proposal.header.parentBlock),
-      src = $src
-    return ValidationResult.Ignore
-
-  let blk = reconstructBlock(
-    proposal, node.processor.mempool
-  ).valueOr:
-    if error == ProposalValidationError.MissingReference:
-      debug "GossipSub cannot reconstruct block from proposal: missing tx in mempool",
-        blockId = byteutils.toHex(id),
-        error = $error,
-        src = $src
-      return ValidationResult.Ignore
-    debug "GossipSub rejected invalid proposal",
-      blockId = byteutils.toHex(id),
-      error = $error,
-      src = $src
-    return ValidationResult.Reject
-
-  discard node.processor.addBlock(BlockSource.Gossip, blk)
-
-  debug "GossipSub accepted reconstructed block into local tree",
-    blockId = byteutils.toHex(id),
-    slot = blk.header.slot,
-    src = $src
-  ValidationResult.Accept
-
-proc handleGossipTx*(node: LBNode, tx: SignedMantleTx, src: PeerId): ValidationResult =
-  trace "GossipSub handling received tx",
-    opCount = tx.tx.ops.len,
-    src = $src
-
-  # Reject malformed payloads before hashing:
-  # 1. Enforces OpCount byte bounds (0 < ops.len <= 255) to prevent doAssert failure in encodeOps during mantleTxHash.
-  # 2. Ensures operations and opProofs counts match with zero allocations before running crypto verifications.
-  if tx.tx.ops.len == 0 or tx.tx.ops.len > int(high(uint8)) or tx.tx.ops.len != tx.opProofs.len:
-    debug "GossipSub rejected malformed tx (invalid op bounds or proof mismatch)",
-      opCount = tx.tx.ops.len,
-      proofCount = tx.opProofs.len,
-      src = $src
-    return ValidationResult.Reject
-
-  let txHash = mantleTxHash(tx.tx)
-  if txHash in node.processor.mempool:
-    trace "GossipSub ignored duplicate tx already in mempool",
-      txHash = byteutils.toHex(txHash),
-      src = $src
-    return ValidationResult.Ignore
-
-  if validateMantleTxStateless(tx).isErr:
-    debug "GossipSub rejected invalid mantle tx", src = $src
-    return ValidationResult.Reject
-
-  let nowSlot = node.processor.currentWallclockSlot()
-  if not node.processor.mempool.add(ValidSignedMantleTx(tx), nowSlot):
-    trace "GossipSub ignored duplicate tx already in mempool",
-      txHash = byteutils.toHex(txHash),
-      src = $src
-    return ValidationResult.Ignore
-
-  ValidationResult.Accept
-
-proc installMessageValidators(node: LBNode): seq[string] =
-  var topics: seq[string]
-
+proc installMessageValidators(node: LBNode) =
   let blockTopic = node.deploymentSettings.cryptarchia.gossipsubProtocol
   if blockTopic.len > 0:
     node.network.addValidator(blockTopic) do (
         proposal: Proposal, src: PeerId
     ) -> ValidationResult:
-      handleGossipProposal(node, proposal, src)
-    topics.add(blockTopic)
+      node.processor.processProposal(proposal, src)
+    node.network.subscribe(blockTopic, TopicParams.init())
+    debug "Subscribed to gossip topic", topic = blockTopic
   else:
     warn "Cryptarchia block gossipsub protocol topic is empty, validator not installed"
 
@@ -350,12 +255,11 @@ proc installMessageValidators(node: LBNode): seq[string] =
     node.network.addValidator(mempoolTopic) do (
         tx: SignedMantleTx, src: PeerId
     ) -> ValidationResult:
-      handleGossipTx(node, tx, src)
-    topics.add(mempoolTopic)
+      node.processor.processTx(tx, src)
+    node.network.subscribe(mempoolTopic, TopicParams.init())
+    debug "Subscribed to gossip topic", topic = mempoolTopic
   else:
     warn "Mempool pubsub topic is empty, validator not installed"
-
-  topics
 
 proc stop(node: LBNode) =
   # The IBD task may be awaiting a queued result. Cancel it before the
@@ -376,10 +280,7 @@ proc stop(node: LBNode) =
     node.prover.close()
 
 proc initializeNetworking*(node: LBNode) {.async: (raises: [CancelledError]).} =
-  let topics = node.installMessageValidators()
-  for topic in topics:
-    node.network.subscribe(topic, TopicParams.init())
-    debug "Subscribed to gossip topic", topic = topic
+  node.installMessageValidators()
 
   info "Listening to incoming network requests"
   await node.network.startListening()
