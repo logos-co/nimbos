@@ -15,13 +15,10 @@ import
   std/[deques, tables],
   chronicles,
   libp2p/crypto/ed25519/ed25519,
-  results,
-  ../core/[local_tree, types],
-  ../core/crypto/types,
+  ../core/types,
   ../core/mantle/[gas, primitives, tx_types],
   ../ledger/[balance, ledger, poq_verifier, types],
-  ../mempool,
-  ./block_validation
+  ../mempool
 
 const
   TxMaturitySlots* = 3'u64
@@ -30,8 +27,6 @@ const
 type
   ProposalValidationError* {.pure.} = enum
     MissingReference
-    InvalidBlockStructure
-    TreeAdmissionRejected
 
 proc selectProposalReferences*(
     m: Mempool,
@@ -138,7 +133,7 @@ proc constructProposal*(
   let sig = leaderSecKey.sign(blockId(h))
   initProposal(h, refs, sig)
 
-func reconstructBlock(
+func reconstructBlock*(
     proposal: Proposal,
     mempool: Mempool
 ): Result[Block, ProposalValidationError] =
@@ -157,27 +152,5 @@ func reconstructBlock(
     signature: proposal.signature,
     txs: txs
   ))
-
-func toProposalValidationError(err: BlockValidationError): ProposalValidationError =
-  case err.kind
-  of BlockValidationErrorKind.UnviableFork:
-    ProposalValidationError.TreeAdmissionRejected
-  else:
-    ProposalValidationError.InvalidBlockStructure
-
-proc reconstructAndValidateBlock*(
-    proposal: Proposal,
-    localTree: LocalTree,
-    ledger: Ledger[BlockId],
-    mempool: Mempool
-): Result[tuple[blk: ValidBlock, isOrphan: bool], ProposalValidationError] =
-  ## Attempts block reconstruction from references, validates the reconstructed
-  ## block against localTree and ledger admission rules (skipping stateless tx
-  ## checks as mempool txs are already valid), and returns the reconstructed (ValidBlock, isOrphan).
-  ## State transition (prepareBlockUpdate) is handled afterwards in the pipeline.
-  let blk = ? reconstructBlock(proposal, mempool)
-  let (validBlk, isOrphan) = validateBlock(blk, localTree, ledger, []).valueOr:
-    return err(error.toProposalValidationError)
-  ok((blk: validBlk, isOrphan: isOrphan))
 
 {.pop.}

@@ -13,6 +13,7 @@ import
 
   # Vendor / external libs
   bearssl/rand,
+  bincode,
   chronos, chronicles, chronicles/chronos_tools, metrics, results,
   stew/byteutils,
   libp2p/[switch, peerinfo, multiaddress, crypto/crypto, builders],
@@ -21,7 +22,7 @@ import
   libp2p/stream/connection,
 
   # Local networking modules
-  ./[bincode, discovery, protocols, peer_pool, peer_scores],
+  ./[discovery, protocols, peer_pool, peer_scores],
 
   # Logos chain core modules
   ../[version, conf]
@@ -38,6 +39,8 @@ type
   NetKeyPair* = crypto.KeyPair
   PublicKey = crypto.PublicKey
   PrivateKey = crypto.PrivateKey
+
+  SendResult* = Result[void, cstring]
 
   # TODO: This is here only to eradicate a compiler
   # warning about unused import (rpc/messages).
@@ -138,6 +141,9 @@ const
 # Metrics for tracking network activity
 declareCounter logos_p2p_gossip_messages_received,
   "Number of gossip messages received by this peer"
+
+declareCounter logos_p2p_gossip_messages_sent,
+  "Number of gossip messages sent by this peer"
 
 declareCounter logos_p2p_successful_dials,
   "Number of successfully dialed peers"
@@ -601,7 +607,7 @@ proc new(T: type LBP2PNode,
 
   node
 
-proc startListening*(node: LBP2PNode) {.async.} =
+proc startListening*(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
   try:
     await node.switch.start()
   except LPError as exc:
@@ -1096,6 +1102,8 @@ proc newValidationResultFuture(v: ValidationResult): Future[ValidationResult]
   res.complete(v)
   res
 
+const GossipBincodeConfig = standard().withLimit(MAX_PAYLOAD_SIZE)
+
 func addValidator*[MsgType](
     node: LBP2PNode,
     topic: string,
@@ -1112,7 +1120,7 @@ func addValidator*[MsgType](
 
     let res = if message.data.len > 0:
       try:
-        msgValidator(Bincode.decode(message.data, MsgType), message.fromPeer) # doesn't raise!
+        msgValidator(Bincode.decode(message.data, MsgType, GossipBincodeConfig), message.fromPeer) # doesn't raise!
       except SerializationError as e:
         debug "Error decoding gossip",
           topic, len = message.data.len, error = e.msg
@@ -1140,7 +1148,7 @@ proc addAsyncValidator*[MsgType](
 
     if message.data.len > 0:
       try:
-        msgValidator(Bincode.decode(message.data, MsgType), message.fromPeer) # doesn't raise!
+        msgValidator(Bincode.decode(message.data, MsgType, GossipBincodeConfig), message.fromPeer) # doesn't raise!
       except SerializationError as e:
         debug "Error decoding gossip",
           topic, len = message.data.len, error = e.msg
@@ -1152,6 +1160,26 @@ proc addAsyncValidator*[MsgType](
   node.validTopics.incl topic # Only allow subscription to validated topics
 
   node.pubsub.addValidator(topic, execValidator)
+
+proc broadcast*(node: LBP2PNode, topic: string, msg: seq[byte]):
+    Future[SendResult] {.async: (raises: [CancelledError]).} =
+  if uint64(msg.len) > MAX_PAYLOAD_SIZE:
+    warn "Gossip message exceeds MAX_PAYLOAD_SIZE", topic, msgLen = msg.len
+    return err("Gossip message exceeds MAX_PAYLOAD_SIZE")
+
+  let peers = await node.pubsub.publish(topic, msg)
+
+  if peers > 0:
+    inc logos_p2p_gossip_messages_sent
+    ok()
+  else:
+    debug "No peers on libp2p topic to broadcast message", topic, msgLen = msg.len
+    err("No peers on libp2p topic")
+
+proc broadcast*(node: LBP2PNode, topic: string, msg: auto):
+    Future[SendResult] {.async: (raises: [CancelledError], raw: true).} =
+  # Avoid {.async.} copies of message while broadcasting
+  broadcast(node, topic, Bincode.encode(msg, GossipBincodeConfig))
 
 when defined(unittest) or defined(test):
   func outboundConnQueueLen*(node: LBP2PNode): int {.inline.} =

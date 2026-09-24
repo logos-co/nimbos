@@ -54,6 +54,12 @@ func localTree*(bp: BlockProcessor): LocalTree =
 func ledger*(bp: BlockProcessor): lent Ledger[BlockId] =
   bp.chain.ledger
 
+func mempool*(bp: BlockProcessor): Mempool =
+  bp.chain.mempool
+
+proc currentWallclockSlot*(bp: BlockProcessor): SlotNumber =
+  bp.chain.currentWallclockSlot()
+
 func running*(bp: BlockProcessor): bool =
   bp.loopFut != nil and not bp.loopFut.finished
 

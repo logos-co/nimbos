@@ -13,12 +13,11 @@ import
   libp2p/crypto/ed25519/ed25519,
   unittest2,
   ../../logos_chain/chain/[genesis, proposal],
-  ../../logos_chain/core/[local_tree, types],
+  ../../logos_chain/core/types,
   ../../logos_chain/core/crypto/types,
-  ../../logos_chain/core/mantle/[operations, primitives, proofs, tx_types, utxo],
+  ../../logos_chain/core/mantle/[operations, primitives, proofs, tx_types],
   ../../logos_chain/ledger/ledger,
   ../../logos_chain/mempool,
-  ../../logos_chain/zk/poseidon2/hasher,
   ../core/mantle/test_helpers,
   ../ledger/[sdp/test_helpers, test_helpers],
   ../zk/zksign_helpers,
@@ -294,30 +293,24 @@ suite "chain/proposal":
     check proposal.header.proofOfLeadership.leaderKey == testTxKeyPair.pubkey
     check proposal.references[0] == mantleTxHash(tx.tx)
 
-    # Reconstruct and validate the proposal
-    let tree = newLocalTree(genesis, 1'u64)
-    let ledger = Ledger[BlockId].init(gid, state, testLedgerConfig, mockVerifyLeaderProof)
-    let reconstructedRes = reconstructAndValidateBlock(proposal, tree, ledger, m)
+    # Reconstruct the proposal
+    let reconstructedRes = reconstructBlock(proposal, m)
     check reconstructedRes.isOk
-    let (blk, isOrphan) = reconstructedRes.get()
-    check not isOrphan
+    let blk = reconstructedRes.get()
     check blk.txs.len == 1
     check mantleTxHash(blk.txs[0].tx) == mantleTxHash(tx.tx)
 
-  test "reconstructAndValidateBlock returns isOrphan == true for orphan proposal":
+  test "reconstructBlock reconstructs block for orphan proposal":
     var m = Mempool.init()
     let tx = signedTxWithOps(1, 1)
     check m.add(ValidSignedMantleTx(tx), SlotNumber(1)) == true
     let genesis = createGenesisBlock(signedTxWithOps(1, 0))
-    let tree = newLocalTree(genesis, 1'u64)
     var state = LedgerState.fromGenesis(
       genesis.txs, default(FieldElement), testSdpRegistry(),
       testLedgerConfig).expect("genesis state")
     state.feeMarket.executionBaseFee = 0
     state.feeMarket.storageGasPrice = 0
-    let
-      ledger = Ledger[BlockId].init(blockId(genesis.header), state, testLedgerConfig, mockVerifyLeaderProof)
-      orphanParent = Hash32([1'u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+    let orphanParent = Hash32([1'u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
     var pol = default(ProofOfLeadership)
     pol.leaderKey = testTxKeyPair.pubkey
     let proposal = m.constructProposal(
@@ -329,10 +322,9 @@ suite "chain/proposal":
       leaderSecKey = testTxKeyPair.seckey,
       verifyPoq = acceptAllPoq,
     )
-    let res = reconstructAndValidateBlock(proposal, tree, ledger, m)
+    let res = reconstructBlock(proposal, m)
     check res.isOk
-    let (blk, isOrphan) = res.get
-    check isOrphan
+    let blk = res.get
     check blk.header == proposal.header
 
 {.pop.}

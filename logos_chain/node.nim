@@ -13,7 +13,7 @@ import
   bearssl/rand,
   metrics, metrics/chronos_httpserver,
   stew/byteutils,
-  ./chain/block_processor,
+  ./chain/[block_processor, gossip_processor],
   ./[conf, process_state],
   ./core/[types, utils],
   ./deployment/deployment_settings,
@@ -21,8 +21,10 @@ import
   ./sync/syncer,
   ./zk/[circuits, pol, poc, poq, prover, zksign]
 
-from ./core/types as coreTypes import Block, blockId
+from ./core/mantle/tx_types import SignedMantleTx
 from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
+from libp2p/peerid import PeerId
+from libp2p/protocols/pubsub/pubsub import ValidationResult
 from libp2p/protocols/pubsub/gossipsub import
   TopicParams, init
 
@@ -31,7 +33,7 @@ from taskpools import Taskpool, new, shutdown
 
 export
   chronos, presto, server, conf,
-  deployment_settings, network, utils, block_processor
+  deployment_settings, network, utils, block_processor, gossip_processor
 
 logScope: topics = "logos_nd"
 
@@ -237,9 +239,27 @@ proc runOnSecondLoop(node: LBNode) {.async.} =
     trace "onSecond task completed", sleepTime, processingTime
 
 proc installMessageValidators(node: LBNode) =
-  # Placeholder — real validators will be installed once gossip topics
-  # and message types are defined for the Logos chain.
-  discard
+  let blockTopic = node.deploymentSettings.cryptarchia.gossipsubProtocol
+  if blockTopic.len > 0:
+    node.network.addValidator(blockTopic) do (
+        proposal: Proposal, src: PeerId
+    ) -> ValidationResult:
+      node.processor.processProposal(proposal, src)
+    node.network.subscribe(blockTopic, TopicParams.init())
+    debug "Subscribed to gossip topic", topic = blockTopic
+  else:
+    warn "Cryptarchia block gossipsub protocol topic is empty, validator not installed"
+
+  let mempoolTopic = node.deploymentSettings.mempool.pubsubTopic
+  if mempoolTopic.len > 0:
+    node.network.addValidator(mempoolTopic) do (
+        tx: SignedMantleTx, src: PeerId
+    ) -> ValidationResult:
+      node.processor.processTx(tx, src)
+    node.network.subscribe(mempoolTopic, TopicParams.init())
+    debug "Subscribed to gossip topic", topic = mempoolTopic
+  else:
+    warn "Mempool pubsub topic is empty, validator not installed"
 
 proc stop(node: LBNode) =
   # The IBD task may be awaiting a queued result. Cancel it before the
@@ -259,7 +279,7 @@ proc stop(node: LBNode) =
   if node.prover != nil:
     node.prover.close()
 
-proc initializeNetworking(node: LBNode) {.async.} =
+proc initializeNetworking*(node: LBNode) {.async: (raises: [CancelledError]).} =
   node.installMessageValidators()
 
   info "Listening to incoming network requests"
@@ -294,8 +314,6 @@ proc run*(node: LBNode, stopper: StopFuture) {.raises: [CatchableError].} =
   if ProcessState.stopIt(notice("Shutting down during startup", reason = it)):
     node.stop()
     return
-
-  node.network.subscribe("/some/topic", TopicParams.init())
 
   asyncSpawn runSlotLoop(node)
   asyncSpawn runOnSecondLoop(node)

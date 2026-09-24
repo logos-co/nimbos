@@ -317,40 +317,22 @@ suite "core/block_validation — multi-tier evaluation order":
       sm = minimalSignedTx()
       genesis = createGenesisBlock(sm)
       gid = blockId(genesis.header)
-      tree = newLocalTree(genesis, 1'u64)
       proposal = childProposal(genesis.header, gid, SlotNumber(1), [sm])
     
     var mempool = Mempool.init()
     check mempool.add(ValidSignedMantleTx(sm), SlotNumber(0))
-    
-    var state = LedgerState.fromGenesis(
-        genesis.txs, default(FieldElement), testSdpRegistry(),
-        testLedgerConfig).expect("genesis state")
-    state.feeMarket.executionBaseFee = 0
-    state.feeMarket.storageGasPrice = 0
-    let ledger = Ledger[BlockId].init(gid, state, testLedgerConfig, mockVerifyLeaderProof)
-      
-    check reconstructAndValidateBlock(proposal, tree, ledger, mempool).isOk
-    
+    check reconstructBlock(proposal, mempool).isOk
 
-  test "reconstructAndValidateBlock rejects if referenced transaction is missing from mempool":
+  test "reconstructBlock rejects if referenced transaction is missing from mempool":
     let
       sm = minimalSignedTx()
       genesis = createGenesisBlock(sm)
       gid = blockId(genesis.header)
-      tree = newLocalTree(genesis, 1'u64)
       proposal = childProposal(genesis.header, gid, SlotNumber(1), [sm])
-    var state = LedgerState.fromGenesis(
-        genesis.txs, default(FieldElement), testSdpRegistry(),
-        testLedgerConfig).expect("genesis state")
-    state.feeMarket.executionBaseFee = 0
-    state.feeMarket.storageGasPrice = 0
-    let
-      ledger = Ledger[BlockId].init(gid, state, testLedgerConfig, mockVerifyLeaderProof)
       mempool = Mempool.init()
       
-    let res = reconstructAndValidateBlock(proposal, tree, ledger, mempool)
-    check res.isErr and res.error == MissingReference
+    let res = reconstructBlock(proposal, mempool)
+    check res.isErr and res.error == ProposalValidationError.MissingReference
 
   test "mempool identifies known valid transactions":
     var mempool = Mempool.init()
