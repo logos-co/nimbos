@@ -10,6 +10,7 @@
 
 import
   unittest2,
+  ../testutil,
   ../../logos_chain/core/mantle/[tx_types, tx_hashing],
   ../../logos_chain/core/types
 
@@ -26,14 +27,14 @@ suite "core/types":
         bedrockVersion = testBedrockVersion,
         parentBlock = default(BlockId),
         slot = 0'u64,
-        txs = [SignedMantleTx(tx: tx, opProofs: @[])],
+        txHashes = openArray[Hash32]([]),
         proofOfLeadership = ProofOfLeadership(
           leaderVoucher: default(RewardVoucher),
           entropyContribution: default(ZkHash),
           proof: DefaultCompressedGroth16Proof,
           leaderKey: default(Ed25519PublicKey),
         ),
-      ).get
+      )
       b = initBlock(h, txs = [])
     check b.txs.len == 0
     check b.header.slot == 0'u64
@@ -41,18 +42,19 @@ suite "core/types":
   test "blockId returns 32-byte hash":
     let
       tx = MantleTx(ops: @[])
+      hx = mantleTxHash(tx).get
       h = initHeader(
         bedrockVersion = testBedrockVersion,
         parentBlock = default(BlockId),
         slot = 0'u64,
-        txs = [SignedMantleTx(tx: tx, opProofs: @[])],
+        txHashes = [hx],
         proofOfLeadership = ProofOfLeadership(
           leaderVoucher: default(RewardVoucher),
           entropyContribution: default(ZkHash),
           proof: DefaultCompressedGroth16Proof,
           leaderKey: default(Ed25519PublicKey),
         ),
-      ).get
+      )
       id = blockId(h)
     check id.len == 32
 
@@ -126,18 +128,19 @@ suite "core/types":
           outputs: Outputs(notes: @[]),
         )),
       )
+      hx = mantleTxHash(tx.tx).get
       h = initHeader(
         bedrockVersion = 1'u8,
         parentBlock = default(BlockId),
         slot = SlotNumber(100),
-        txs = [tx],
+        txHashes = [hx],
         proofOfLeadership = ProofOfLeadership(
           leaderVoucher: default(RewardVoucher),
           entropyContribution: default(ZkHash),
           proof: DefaultCompressedGroth16Proof,
           leaderKey: default(Ed25519PublicKey),
         ),
-      ).get
+      )
     check blockId(h) == blockId(h)
 
   test "createBlockRoot directly accepts list of hashes":
@@ -149,6 +152,7 @@ suite "core/types":
       hashes = [hA, hB]
     check createBlockRoot(hashes) == hashPair(hA, hB)
     check createBlockRoot([txA, txB]).get == createBlockRoot(hashes)
+    check createBlockRoot([ValidSignedMantleTx(signedTx: txA, hash: hA), ValidSignedMantleTx(signedTx: txB, hash: hB)]) == createBlockRoot(hashes)
     check createBlockRoot(openArray[Hash32]([])) == default(Hash32)
     check createBlockRoot([hA]) == hA
 
@@ -170,7 +174,7 @@ suite "core/types":
         leaderKey: default(Ed25519PublicKey),
       )
       hFromHashes = initHeader(1'u8, default(BlockId), SlotNumber(10), [hx], pol)
-      hFromTxs = initHeader(1'u8, default(BlockId), SlotNumber(10), [tx], pol).get
+      hFromTxs = initHeader(1'u8, default(BlockId), SlotNumber(10), [ValidSignedMantleTx(signedTx: tx, hash: hx)], pol)
     check hFromHashes == hFromTxs
 
   test "initHeader returns error for malformed tx":

@@ -26,7 +26,7 @@ from ../../ledger/test_helpers import testLedgerConfig
 const testChainSyncProtocol* = "/logos-blockchain-testnet-v0.1.2/chainsync/1.0.0"
 
 proc initTestChain*(
-    genesis: Block,
+    genesis: ValidBlock,
     securityParam: uint64 = DefaultSecurityParam,
     genesisTime: uint64 = uint64(max(getTime().toUnix() - 500, 0'i64)),
 ): Chain =
@@ -95,13 +95,13 @@ template withSyncPair*(serverChain, clientChain: Chain, body: untyped) =
     await server.stop()
 
 proc extendChainAfterGenesis*(
-    tree: LocalTree, genesis: Block, extraBlocks: int,
+    tree: LocalTree, genesis: ValidBlock, extraBlocks: int,
 ): BlockId =
   ## Add ``extraBlocks`` descendants on top of ``genesis``; return the tip id.
   var parentHdr = genesis.header
   var parentId = blockId(genesis.header)
   for slot in 1 .. extraBlocks:
-    let blk = childBlock(parentHdr, parentId, SlotNumber(slot.uint64), [])
+    let blk = childValidBlock(parentHdr, parentId, SlotNumber(slot.uint64), [])
     check tree.addBlockToTree(blk)
     parentHdr = blk.header
     parentId = blockId(blk.header)
@@ -190,7 +190,7 @@ proc downloadBlocksResponsesForRequest*(
     let blk = tree.getBlock(sendIds[i]).valueOr:
       fail "block not in tree"
     let innerWire = try:
-      encode(blk, cryptarchiaSyncBincodeConfig)
+      encode(blk.toBlock(), cryptarchiaSyncBincodeConfig)
     except BincodeError:
       fail getCurrentExceptionMsg()
     check innerWire.len > 0 and innerWire.len <= MaxBlockSize

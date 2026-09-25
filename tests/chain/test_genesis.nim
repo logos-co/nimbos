@@ -23,10 +23,10 @@ const deploymentSettingsPath = testsDir / "../../config/deployment-settings.yaml
 suite "chain/genesis":
   test "createGenesisBlock wraps a minimal signed mantle tx":
     let tx = MantleTx(ops: @[])
-    let sm = SignedMantleTx(tx: tx, opProofs: @[])
-    let h = createGenesisBlock(sm).get.header
-    let b = createGenesisBlock(sm).get
-    check h.blockRoot == createBlockRoot([sm]).get
+    let sm = ValidSignedMantleTx(signedTx: SignedMantleTx(tx: tx, opProofs: @[]), hash: mantleTxHash(tx).get)
+    let h = createGenesisBlock(sm).header
+    let b = createGenesisBlock(sm)
+    check h.blockRoot == createBlockRoot([sm])
     check b.txs.len == 1
     check b.header.bedrockVersion == GenesisBedrockVersion
     check b.txs[0].tx.ops.len == sm.tx.ops.len
@@ -42,7 +42,7 @@ suite "chain/genesis":
       ))]),
       opProofs: @[OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))]
     )
-    check createGenesisBlock(malformedTx).error == EncodingError.InputsCountExceeded
+    check mantleTxHash(malformedTx.tx).error == EncodingError.InputsCountExceeded
 
   test "createGenesisBlock builds expected header/envelope from deployment settings":
     let text = readAllChars(deploymentSettingsPath).valueOr:
@@ -53,7 +53,7 @@ suite "chain/genesis":
 
     let
       gstate = ds.cryptarchia.genesisState
-      genesisTx = gstate.signedMantleTx
+      genesisTx = gstate.vtx
       testChain = Chain.init(ds).valueOr:
         fail "Chain.init: " & $error
       gb = testChain.genesisBlock
@@ -67,7 +67,7 @@ suite "chain/genesis":
     check gb.header.bedrockVersion == GenesisBedrockVersion
     check gb.header.parentBlock == default(BlockId)
     check gb.header.slot == 0'u64
-    check gb.header.blockRoot == createBlockRoot([genesisTx]).get
+    check gb.header.blockRoot == createBlockRoot([genesisTx])
     check gb.header == gstate.header
     check gb.signature == gstate.blockSignature
 
@@ -80,8 +80,8 @@ suite "chain/genesis":
 
     let
       gstate = ds.cryptarchia.genesisState
-      fromTx = createGenesisBlock(gstate.signedMantleTx).get
-      fromState = initBlock(gstate.header, gstate.blockSignature, [gstate.signedMantleTx])
+      fromTx = createGenesisBlock(gstate.vtx)
+      fromState = initBlock(gstate.header, gstate.blockSignature, [gstate.vtx.signedTx])
 
     check fromTx.header == fromState.header
     check blockId(fromTx.header) == blockId(fromState.header)

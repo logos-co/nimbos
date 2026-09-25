@@ -11,6 +11,7 @@
 {.push raises: [], gcsafe.}
 
 import
+  std/sequtils,
   results,
   stew/[assign2, bitops2],
   bincode,
@@ -50,9 +51,12 @@ type
     signature*: Ed25519Signature
     txs*: seq[SignedMantleTx]
 
-  ValidBlock* = distinct Block
-    ## A ``Block`` that has successfully passed all structural, admission,
+  ValidBlock* = object
+    ## A block that has successfully passed all structural, admission,
     ## and stateless transaction verifications via ``validateBlock``.
+    header*: Header
+    signature*: Ed25519Signature
+    txs*: seq[ValidSignedMantleTx]
 
   Proposal* = object
     header*: Header
@@ -69,8 +73,8 @@ deriveBincode(Block)
 deriveBincode(Proposal)
 
 template header*(blk: Block): auto = blk.header
-template header*(blk: ValidBlock): auto = Block(blk).header
-template txs*(blk: ValidBlock): auto = Block(blk).txs
+template header*(blk: ValidBlock): auto = blk.header
+template txs*(blk: ValidBlock): auto = blk.txs
 
 func hashPair*(left, right: Hash32): Hash32 =
   var pairBytes: array[64, byte]
@@ -115,6 +119,9 @@ func createBlockRoot*(txs: openArray[SignedMantleTx]): Result[Hash32, EncodingEr
     let h = ?mantleTxHash(tx.tx)
     hashes.add(h)
   ok(createBlockRoot(hashes))
+
+func createBlockRoot*(txs: openArray[ValidSignedMantleTx]): Hash32 =
+  createBlockRoot(txs.mapIt(it.hash))
 
 func blockId*(header: Header): Hash32 =
   ## block_id(header) = hash(
@@ -186,10 +193,26 @@ func initHeader*(
     bedrockVersion: uint8,
     parentBlock: BlockId,
     slot: SlotNumber,
+    txs: openArray[ValidSignedMantleTx],
+    proofOfLeadership: ProofOfLeadership,
+): Header =
+  ## Canonical constructor for block headers with valid transactions.
+  Header(
+    bedrockVersion: bedrockVersion,
+    parentBlock: parentBlock,
+    slot: slot,
+    blockRoot: createBlockRoot(txs),
+    proofOfLeadership: proofOfLeadership,
+  )
+
+func initHeader*(
+    bedrockVersion: uint8,
+    parentBlock: BlockId,
+    slot: SlotNumber,
     txs: openArray[SignedMantleTx],
     proofOfLeadership: ProofOfLeadership,
 ): Result[Header, EncodingError] =
-  ## Canonical constructor for block headers. Used during block import and validation, where the full transactions are available.
+  ## Canonical constructor for block headers with raw signed transactions.
   let root = ?createBlockRoot(txs)
   ok(Header(
     bedrockVersion: bedrockVersion,
@@ -198,6 +221,14 @@ func initHeader*(
     blockRoot: root,
     proofOfLeadership: proofOfLeadership,
   ))
+
+func toBlock*(blk: ValidBlock): Block =
+  ## Converts a ValidBlock to a wire/storage Block with SignedMantleTx.
+  Block(
+    header: blk.header,
+    signature: blk.signature,
+    txs: blk.txs.mapIt(it.signedTx),
+  )
 
 func initProposal*(
     header: Header,

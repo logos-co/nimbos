@@ -28,7 +28,7 @@ const
 
 type
   GenesisState* = object
-    signedMantleTx*: SignedMantleTx
+    vtx*: ValidSignedMantleTx
     faucetZkPublicKey*: ZkPublicKey
     header*: Header
     blockSignature*: Ed25519Signature
@@ -71,13 +71,13 @@ func cryptarchiaParameter*(
     state: GenesisState): Result[CryptarchiaParameter, cstring] =
   ## Decode the Cryptarchia parameters from the genesis tx's null-channel
   ## inscription (root parent, zero signer).
-  for op in state.signedMantleTx.tx.ops:
+  for op in state.vtx.tx.ops:
     if op.payload.kind == OpPayloadTag.ChannelInscribe and
         op.payload.channelInscribe.channelId == static(default(ChannelId)):
       return decodeCryptarchiaParameter(op.payload.channelInscribe)
   err(cstring"genesis tx has no null-channel inscription")
 
-func createGenesisHeader(genesisMantleTx: SignedMantleTx): Result[Header, EncodingError] =
+func createGenesisHeader(genesisMantleTx: ValidSignedMantleTx): Header =
   ## Genesis header constructor using spec defaults:
   ## - parent block id = zero hash
   ## - slot = 0
@@ -95,9 +95,9 @@ func createGenesisHeader(genesisMantleTx: SignedMantleTx): Result[Header, Encodi
     ),
   )
 
-func createGenesisBlock*(genesisMantleTx: SignedMantleTx): Result[Block, EncodingError] =
+func createGenesisBlock*(genesisMantleTx: ValidSignedMantleTx): ValidBlock =
   ## GENESIS_BLOCK = (GENESIS_HEADER, GENESIS_SIGNATURE, [GENESIS_MANTLE_TX])
-  let genesisHeader = ?createGenesisHeader(genesisMantleTx)
-  ok(initBlock(genesisHeader, DefaultEd25519Signature, [genesisMantleTx]))
+  let genesisHeader = createGenesisHeader(genesisMantleTx)
+  ValidBlock(header: genesisHeader, signature: DefaultEd25519Signature, txs: @[genesisMantleTx])
 
 {.pop.}
