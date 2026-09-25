@@ -36,6 +36,7 @@ type
 
   BlockApplyErrorKind* {.pure.} = enum
     AlreadyApplied
+    InFlight
     FutureSlot
     InvalidStructure
     UnviableFork
@@ -62,8 +63,9 @@ func `$`*(e: BlockApplyError): string =
 func isRecoverable*(kind: BlockApplyErrorKind): bool =
   ## True when the same block may still apply later without any change to it.
   case kind
-  of BlockApplyErrorKind.AlreadyApplied, BlockApplyErrorKind.FutureSlot,
-      BlockApplyErrorKind.OrphanBuffered, BlockApplyErrorKind.OrphanAlreadyBuffered:
+  of BlockApplyErrorKind.AlreadyApplied, BlockApplyErrorKind.InFlight,
+      BlockApplyErrorKind.FutureSlot, BlockApplyErrorKind.OrphanBuffered,
+      BlockApplyErrorKind.OrphanAlreadyBuffered:
     true
   of BlockApplyErrorKind.InvalidStructure, BlockApplyErrorKind.UnviableFork,
       BlockApplyErrorKind.LedgerRejected, BlockApplyErrorKind.StatelessTxRejected:
@@ -192,31 +194,21 @@ proc handleTipChange(chain: var Chain, oldTip, newTip: BlockId) =
     chain.pruneStatesBeforeLib(newLibId, oldLibId)
     chain.orphanPool.pruneIncompatibleWithImmutable(chain.localTree)
 
-proc promoteOrphans(chain: var Chain, rootId: BlockId) =
-  ## Iteratively applies orphan descendants waiting on rootId using a FIFO queue.
-  var queue = @[rootId]
-  var idx = 0
-  while idx < queue.len:
-    let parent = queue[idx]
-    inc idx
-    for child in chain.orphanPool.takeChildren(parent):
-      # Child block structure, header signature, and stateless txs were verified before buffering
-      if not chain.localTree.canDescendFromImmutable(child.header):
-        chain.orphanPool.pruneDescendants(blockId(child.header))
-        continue
-      let childPrep = prepareBlockUpdate(child, chain.ledger)
-      if childPrep.isOk and chain.localTree.addBlockToTree(child):
-        let prepared = childPrep.get()
-        chain.ledger.commitUpdate(prepared.id, prepared.state)
-        queue.add(prepared.id)
-      else:
-        chain.orphanPool.pruneDescendants(blockId(child.header))
+func toBlockApplyError(err: BlockValidationError): BlockApplyError =
+  case err.kind
+  of BlockValidationErrorKind.InvalidBlockStructure:
+    BlockApplyError(kind: InvalidStructure)
+  of BlockValidationErrorKind.UnviableFork:
+    BlockApplyError(kind: UnviableFork)
+  of BlockValidationErrorKind.HeaderRejected,
+      BlockValidationErrorKind.TransactionsRejected:
+    BlockApplyError(kind: LedgerRejected, ledgerError: err.ledgerError)
+  of BlockValidationErrorKind.StatelessTxRejected:
+    BlockApplyError(kind: StatelessTxRejected, statelessError: err.statelessError)
 
-proc tryApplyBlock*(
-    chain: var Chain, blk: Block): Result[void, BlockApplyError] =
-  ## Full block ingestion in `valid_header` order, with automatic orphan buffering
-  ## and iterative cascading promotion of waiting descendants.
-  template hdr: auto = header(blk)
+func checkViability(
+    chain: Chain, hdr: Header, curSlot: SlotNumber
+): Result[BlockId, BlockApplyError] =
   let id = blockId(hdr)
   # The tree keeps applied blocks whose states were pruned below the LIB.
   if chain.localTree.hasBlock(id):
@@ -225,40 +217,62 @@ proc tryApplyBlock*(
   # descend from the LIB. Holds without the parent, which pruning may remove.
   if hdr.slot <= chain.localTree.latestImmutableSlot():
     return err(BlockApplyError(kind: UnviableFork))
-  let curSlot = chain.currentWallclockSlot()
   if hdr.slot > curSlot:
     return err(BlockApplyError(kind: FutureSlot))
-  let unverified = chain.mempool.unverifiedTxs(blk.txs)
-  let (validBlk, isOrphan) = validateBlock(blk, chain.localTree, chain.ledger, unverified).valueOr:
-    case error.kind
-    of BlockValidationErrorKind.InvalidBlockStructure:
-      return err(BlockApplyError(kind: InvalidStructure))
-    of BlockValidationErrorKind.UnviableFork:
-      return err(BlockApplyError(kind: UnviableFork))
-    of BlockValidationErrorKind.HeaderRejected,
-        BlockValidationErrorKind.TransactionsRejected:
-      return err(BlockApplyError(kind: LedgerRejected, ledgerError: error.ledgerError))
-    of BlockValidationErrorKind.StatelessTxRejected:
-      return err(BlockApplyError(kind: StatelessTxRejected, statelessError: error.statelessError))
+  ok(id)
 
-  if isOrphan:
-    if not chain.orphanPool.addOrphan(validBlk):
-      return err(BlockApplyError(kind: OrphanAlreadyBuffered))
-    return err(BlockApplyError(kind: OrphanBuffered))
+proc applyAdmittedBlock(
+    chain: var Chain,
+    admittedBlk: AdmittedBlock,
+    id: BlockId,
+    curSlot: SlotNumber,
+): Result[tuple[toBePromotedBlocks: seq[AdmittedBlock]], BlockApplyError] =
+  # Tier 3: PoL against parent state and stateless transaction validation
+  let unverified = chain.mempool.unverifiedTxs(admittedBlk.txs)
+  let (validBlk, headerState) = validatePolAndStatelessTransactions(admittedBlk, chain.ledger, unverified).valueOr:
+    chain.orphanPool.pruneDescendants(id)
+    return err(toBlockApplyError(error))
 
-  let prepared = prepareBlockUpdate(validBlk, chain.ledger).valueOr:
+  let prepared = prepareBlockUpdate(validBlk, chain.ledger, headerState).valueOr:
+    chain.orphanPool.pruneDescendants(id)
     return err(BlockApplyError(kind: LedgerRejected, ledgerError: error.ledgerError))
 
   let oldTip = chain.localTree.localTipId()
-  if not chain.localTree.addBlockToTree(blk):
+  if not chain.localTree.addBlockToTree(validBlk):
+    chain.orphanPool.pruneDescendants(id)
     return err(BlockApplyError(kind: UnviableFork))
   chain.ledger.commitUpdate(prepared.id, prepared.state)
-  chain.promoteOrphans(id)
-
   let newTip = chain.localTree.localTipId()
   chain.handleTipChange(oldTip, newTip)
-
   chain.mempool.pruneExpiredTxs(curSlot)
-  ok()
+  ok((toBePromotedBlocks: chain.orphanPool.takeChildren(id)))
+
+proc tryApplyAdmittedBlock*(
+    chain: var Chain,
+    admittedBlk: AdmittedBlock,
+): Result[tuple[toBePromotedBlocks: seq[AdmittedBlock]], BlockApplyError] =
+  let curSlot = chain.currentWallclockSlot()
+  let id = ?chain.checkViability(header(admittedBlk), curSlot)
+  chain.applyAdmittedBlock(admittedBlk, id, curSlot)
+
+proc tryApplyBlock*(
+    chain: var Chain,
+    blk: Block,
+): Result[tuple[toBePromotedBlocks: seq[AdmittedBlock]], BlockApplyError] =
+  ## Full block ingestion in `valid_header` order, with automatic orphan buffering.
+  ## Returns ready orphan child blocks on successful application.
+  let curSlot = chain.currentWallclockSlot()
+  let id = ?chain.checkViability(header(blk), curSlot)
+
+  # Tiers 0-2: Structure, Topology Viability, Merkle Root, Header Signature
+  let (admittedBlk, isOrphan) = validateBlockHeaderAndTopology(blk, chain.localTree, chain.ledger).valueOr:
+    return err(toBlockApplyError(error))
+
+  if isOrphan:
+    if not chain.orphanPool.addOrphan(admittedBlk):
+      return err(BlockApplyError(kind: OrphanAlreadyBuffered))
+    return err(BlockApplyError(kind: OrphanBuffered))
+
+  chain.applyAdmittedBlock(admittedBlk, id, curSlot)
 
 {.pop.}

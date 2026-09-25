@@ -43,6 +43,15 @@ suite "chain/block_processor":
       let r = await bp.addBlock(BlockSource.Gossip, b1)
       check r.isErr and r.error.kind == BlockApplyErrorKind.AlreadyApplied
 
+  asyncTest "addBlock deduplicates in-flight blocks immediately":
+    withProcessor(chain):
+      let b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
+      let f1 = bp.addBlock(BlockSource.Sync, b1)
+      let f2 = bp.addBlock(BlockSource.Gossip, b1)
+      check f2.finished
+      check (await f2).error.kind == BlockApplyErrorKind.InFlight
+      check (await f1).isOk
+
   asyncTest "queue is FIFO":
     withProcessor(chain):
       let
@@ -54,8 +63,85 @@ suite "chain/block_processor":
       check not f2.finished
       check (await f2).error.kind == BlockApplyErrorKind.OrphanBuffered
       check (await f1).isOk
-      check (await bp.addBlock(BlockSource.Sync, b2)).error.kind == BlockApplyErrorKind.AlreadyApplied
+      # b2 is promoted asynchronously across event-loop turns
+      while not bp.localTree.hasBlock(blockId(b2.header)):
+        await sleepAsync(1.milliseconds)
       check bp.localTree.localTipId == blockId(b2.header)
+      check (await bp.addBlock(BlockSource.Sync, b2)).error.kind == BlockApplyErrorKind.AlreadyApplied
+
+  asyncTest "orphan cascade yields cooperatively between each promoted orphan":
+    withProcessor(chain):
+      var
+        blocks = newSeqOfCap[Block](6)
+        parentHdr = genesisBlk.header
+        parentId = gid
+      for slot in 1 .. 6:
+        let blk = childBlock(parentHdr, parentId, SlotNumber(slot), [])
+        blocks.add blk
+        parentHdr = blk.header
+        parentId = blockId(blk.header)
+
+      # Buffer blocks 2..5 as orphans first
+      for i in 1 .. 5:
+        check (await bp.addBlock(BlockSource.Sync, blocks[i])).error.kind ==
+          BlockApplyErrorKind.OrphanBuffered
+      check bp.orphanPool.len == 5
+
+      # Start background ticker to count event loop yields
+      var ticksWhileBusy = 0
+      let lastId = blockId(blocks[5].header)
+      proc ticker() {.async: (raises: [CancelledError]).} =
+        while true:
+          await sleepAsync(0.milliseconds)
+          if not bp.localTree.hasBlock(lastId):
+            inc ticksWhileBusy
+      let tickerFut = ticker()
+
+      # Ingest parent block 0 -> triggers cascade promotion of blocks 1..5
+      check (await bp.addBlock(BlockSource.Sync, blocks[0])).isOk
+
+      # Wait for all orphans to be promoted
+      while not bp.localTree.hasBlock(lastId):
+        await sleepAsync(1.milliseconds)
+
+      await tickerFut.cancelAndWait()
+      for b in blocks:
+        check bp.localTree.hasBlock(blockId(b.header))
+      check bp.localTree.localTipId == lastId
+      check bp.orphanPool.len == 0
+      # Verify cooperative yielding occurred between orphan promotions
+      check ticksWhileBusy >= 4
+
+  asyncTest "failing promoted orphan prunes waiting descendants asynchronously":
+    withProcessor(chain):
+      let
+        b1 = childBlock(genesisBlk.header, gid, SlotNumber(2), [])
+        id1 = blockId(b1.header)
+        # b2 has slot 2 == parent slot 2 -> passes stateless checks, but fails on promotion
+        b2 = childBlock(b1.header, id1, SlotNumber(2), [])
+        id2 = blockId(b2.header)
+        b3 = childBlock(b2.header, id2, SlotNumber(3), [])
+        id3 = blockId(b3.header)
+        b4 = childBlock(b3.header, id3, SlotNumber(4), [])
+        id4 = blockId(b4.header)
+
+      # Buffer b4, b3, b2 as orphans
+      check (await bp.addBlock(BlockSource.Sync, b4)).error.kind == BlockApplyErrorKind.OrphanBuffered
+      check (await bp.addBlock(BlockSource.Sync, b3)).error.kind == BlockApplyErrorKind.OrphanBuffered
+      check (await bp.addBlock(BlockSource.Sync, b2)).error.kind == BlockApplyErrorKind.OrphanBuffered
+      check bp.orphanPool.len == 3
+
+      # Ingest parent b1 -> triggers promotion of b2 which fails and prunes b3, b4
+      check (await bp.addBlock(BlockSource.Sync, b1)).isOk
+
+      # Allow event loop to process the promoted orphan failure
+      await sleepAsync(10.milliseconds)
+
+      check bp.localTree.hasBlock(id1)
+      check not bp.localTree.hasBlock(id2)
+      check not bp.localTree.hasBlock(id3)
+      check not bp.localTree.hasBlock(id4)
+      check bp.orphanPool.len == 0
 
   asyncTest "loop yields to other tasks between blocks":
     withProcessor(chain):
