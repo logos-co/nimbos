@@ -11,6 +11,7 @@
 {.push raises: [], gcsafe.}
 
 import
+  std/sequtils,
   results,
   stew/[assign2, bitops2],
   bincode,
@@ -60,13 +61,24 @@ type
     uncleHeaders*: UncleHeaders
     txs*: BlockTxs
 
-  AdmittedBlock* = distinct Block
-    ## A ``Block`` that has successfully passed structural, topology,
+  AdmittedBlock* = object
+    ## A block that has successfully passed structural, topology,
     ## body root, and header signature verifications (Tiers 0–2).
+    ## Transactions at indices in ``unverifiedIndices`` have not yet
+    ## undergone stateless validation and are not valid yet.
+    header*: Header
+    signature*: Ed25519Signature
+    uncleHeaders*: UncleHeaders
+    txs*: seq[HashedSignedMantleTx]
+    unverifiedIndices*: seq[int]
 
-  ValidBlock* = distinct Block
-    ## A ``Block`` that has successfully passed structural and admission checks
-    ## (Tiers 0–2) and PoL/stateless transaction verifications (Tier 3).
+  ValidBlock* = object
+    ## A block that has successfully passed all structural, admission,
+    ## and stateless transaction verifications via ``validateBlock``.
+    header*: Header
+    signature*: Ed25519Signature
+    uncleHeaders*: UncleHeaders
+    txs*: seq[ValidSignedMantleTx]
 
   # Fields are in the canonical order of Block Construction 1.3.0, but the
   # wire is still bincode (u64 counts, fixed full-hash references, signature
@@ -90,10 +102,8 @@ deriveBincode(Block)
 deriveBincode(Proposal)
 
 template header*(blk: Block): auto = blk.header
-template header*(blk: AdmittedBlock): auto = Block(blk).header
-template header*(blk: ValidBlock): auto = Block(blk).header
-template txs*(blk: AdmittedBlock): auto = Block(blk).txs
-template txs*(blk: ValidBlock): auto = Block(blk).txs
+template header*(blk: AdmittedBlock): auto = blk.header
+template header*(blk: ValidBlock): auto = blk.header
 
 func hashPair*(left, right: Hash32): Hash32 =
   var pairBytes: array[64, byte]
@@ -151,18 +161,6 @@ func merkle_root*(hashes: openArray[Hash32]): Hash32 =
 
   level[0]
 
-func merkle_root*(txs: openArray[SignedMantleTx]): Result[Hash32, EncodingError] =
-  ## Merkle root over the hashes of `txs`.
-  if txs.len == 0:
-    return ok(DefaultHash32)
-  if txs.len == 1:
-    return mantleTxHash(txs[0].tx)
-  var hashes = newSeqOfCap[Hash32](txs.len)
-  for tx in txs:
-    let h = ?mantleTxHash(tx.tx)
-    hashes.add(h)
-  ok(merkle_root(hashes))
-
 func body_root*(uncles: openArray[SignedHeader], txRoot: Hash32): Hash32 =
   ## blake2b256("BODY_ROOT_V1" ‖ u8 uncle count ‖ 361-byte entries ‖ merkle root).
   ## Spec: [Cryptarchia Protocol v1.2.4, Block Header Validation](https://github.com/logos-co/logos-lips/blob/4deef612ce1ae1776167daf8779d4abae953201b/docs/blockchain/raw/cryptarchia-v1-protocol.md#block-header-validation)
@@ -185,10 +183,17 @@ func body_root(uncles: openArray[SignedHeader], txHashes: openArray[Hash32]): Ha
 
 func body_root*(
     uncles: openArray[SignedHeader],
-    txs: openArray[SignedMantleTx],
-): Result[Hash32, EncodingError] =
-  ## Body root over the uncle list and the transactions.
-  ok(body_root(uncles, ? merkle_root(txs)))
+    txs: openArray[HashedSignedMantleTx],
+): Hash32 =
+  ## Body root over the uncle list and the hashed transactions.
+  body_root(uncles, merkle_root(txs.mapIt(it.hash)))
+
+func body_root*(
+    uncles: openArray[SignedHeader],
+    txs: openArray[ValidSignedMantleTx],
+): Hash32 =
+  ## Body root over the uncle list and the valid transactions.
+  body_root(uncles, merkle_root(txs.mapIt(it.hash)))
 
 func blockId*(header: Header): Hash32 =
   ## block_id(header) = hash(
@@ -266,18 +271,26 @@ func initHeader*(
     parentBlock: BlockId,
     slot: SlotNumber,
     uncleHeaders: openArray[SignedHeader],
-    txs: openArray[SignedMantleTx],
+    txs: openArray[ValidSignedMantleTx],
     proofOfLeadership: ProofOfLeadership,
-): Result[Header, EncodingError] =
-  ## Header over full transactions; used for block import and genesis.
-  let root = ? body_root(uncleHeaders, txs)
-  ok(Header(
+): Header =
+  ## Header over valid transactions.
+  Header(
     bedrockVersion: bedrockVersion,
     parentBlock: parentBlock,
     slot: slot,
-    bodyRoot: root,
+    bodyRoot: body_root(uncleHeaders, txs),
     proofOfLeadership: proofOfLeadership,
-  ))
+  )
+
+func toBlock*(blk: ValidBlock): Block =
+  ## Converts a ValidBlock to a wire/storage Block with SignedMantleTx.
+  initBlock(
+    blk.header,
+    blk.signature,
+    blk.uncleHeaders.asSeq,
+    blk.txs.mapIt(it.signedTx),
+  )
 
 func initProposal*(
     header: Header,

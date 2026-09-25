@@ -69,14 +69,14 @@ func cryptarchiaParameter*(
   ## Decode the Cryptarchia parameters from the genesis inscription.
   decodeCryptarchiaParameter(tx.tx.ops[1].payload.channelInscribe.inscription)
 
-func createGenesisHeader(genesisMantleTx: SignedMantleTx): Result[Header, EncodingError] =
+func createGenesisHeader(validGenesisTx: ValidGenesisMantleTx): Header =
   ## Genesis header: zero parent, slot 0, no uncles, default proof of leadership.
   initHeader(
     bedrockVersion = GenesisBedrockVersion,
     parentBlock = DefaultBlockId,
     slot = 0'u64,
     uncleHeaders = [],
-    txs = [genesisMantleTx],
+    txs = [ValidSignedMantleTx(validGenesisTx)],
     proofOfLeadership = ProofOfLeadership(
       leaderVoucher: default(RewardVoucher),
       entropyContribution: default(ZkHash),
@@ -85,10 +85,15 @@ func createGenesisHeader(genesisMantleTx: SignedMantleTx): Result[Header, Encodi
     ),
   )
 
-func createGenesisBlock*(genesisMantleTx: SignedMantleTx): Result[Block, EncodingError] =
+func createGenesisBlock*(validGenesisTx: ValidGenesisMantleTx): ValidBlock =
   ## GENESIS_BLOCK = (GENESIS_HEADER, [GENESIS_MANTLE_TX]); the zero signature
   ## and the empty uncle list are implementation-defined, the spec sets neither.
-  let genesisHeader = ?createGenesisHeader(genesisMantleTx)
-  ok(initBlock(genesisHeader, DefaultEd25519Signature, [], [genesisMantleTx]))
+  let genesisHeader = createGenesisHeader(validGenesisTx)
+  ValidBlock(
+    header: genesisHeader,
+    signature: DefaultEd25519Signature,
+    uncleHeaders: default(UncleHeaders),
+    txs: @[ValidSignedMantleTx(validGenesisTx)],
+  )
 
 {.pop.}

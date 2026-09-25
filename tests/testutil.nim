@@ -85,10 +85,10 @@ proc summarizeLongTests*(name: string) =
   except IOError, OSError, ValueError:
     raiseAssert getCurrentExceptionMsg()
 
-const TestLoopbackIp* = parseIpAddress("127.0.0.1")
-const TestQuicAnyPort* = Port(0)
+const TestLoopbackIp = parseIpAddress("127.0.0.1")
+const TestQuicAnyPort = Port(0)
 
-template loopbackQuicMultiAddr*(port: Port): string =
+template loopbackQuicMultiAddr(port: Port): string =
   "/ip4/" & $TestLoopbackIp & "/udp/" & $port & "/quic-v1"
 
 template waitUntil*(cond: untyped, timeout: chronos.Duration = chronos.seconds(3)): bool =
@@ -193,6 +193,10 @@ func minimalSignedTx*(): SignedMantleTx =
     opProofs: @[],
   )
 
+func minimalValidSignedTx*(): ValidSignedMantleTx =
+  let stx = minimalSignedTx()
+  ValidSignedMantleTx(HashedSignedMantleTx(signedTx: stx, hash: mantleTxHash(stx.tx).expect("valid tx")))
+
 func testZkPk*(): ZkPublicKey = mkZkPubKey(1)
 
 func txWithPlaceholderProofs*(ops: openArray[Op]): SignedMantleTx =
@@ -207,7 +211,7 @@ func testGenesisTx*(
     chainId = "test",
     genesisTime = 0'u32,
     epochNonce = default(FieldElement),
-): ValidGenesisMantleTx =
+): SignedMantleTx =
   ## Spec-shaped genesis transaction: Transfer of `outputs`, the parameter
   ## inscription, then one SdpDeclare per entry; placeholder proofs.
   # Hand-encoded: no production encoder exists. `decodeCryptarchiaParameter`
@@ -224,7 +228,18 @@ func testGenesisTx*(
         channelId: default(ChannelId), inscription: inscription,
         parent: default(Parent), signer: DefaultEd25519PublicKey))] &
       declarations.mapIt(createSdpDeclareOp(it))
-  validateGenesisTxStateless(txWithPlaceholderProofs(ops)).expect("spec-shaped genesis")
+  txWithPlaceholderProofs(ops)
+
+func testValidGenesisTx*(
+    outputs: openArray[Note] = [Note(value: 1000, zkPublicKey: testZkPk())],
+    declarations: openArray[DeclarationMessage] = [],
+    chainId = "test",
+    genesisTime = 0'u32,
+    epochNonce = default(FieldElement),
+): ValidGenesisMantleTx =
+  validateGenesisTxStateless(testGenesisTx(
+    outputs, declarations, chainId, genesisTime, epochNonce
+  )).expect("spec-shaped genesis")
 
 func genesisNoteId*(tx: ValidGenesisMantleTx, index: int): NoteId =
   ## NoteId of output `index` of the genesis Transfer.
@@ -263,6 +278,10 @@ proc signedTxWithOps*(opsCount: int = 1, txIndex: int = 1): SignedMantleTx =
 
   SignedMantleTx(tx: mtx, opProofs: proofs)
 
+proc validSignedTxWithOps*(opsCount: int, txIndex: int): ValidSignedMantleTx =
+  let stx = signedTxWithOps(opsCount, txIndex)
+  ValidSignedMantleTx(HashedSignedMantleTx(signedTx: stx, hash: mantleTxHash(stx.tx).get))
+
 let testBlockKeyPair* = block:
   var rngRef = new(HmacDrbgContext)
   rngRef[] = HmacDrbgContext.init([9'u8])
@@ -284,11 +303,38 @@ proc childBlock*(
       parentBlock = parentId,
       slot = slot,
       uncleHeaders = uncleHeaders,
-      txs = txs,
+      txHashes = txs.mapIt(mantleTxHash(it.tx).get),
       proofOfLeadership = proofOfLeadership,
-    ).get
+    )
     sig = testBlockKeyPair.seckey.sign(blockId(h))
   initBlock(h, signature = sig, uncleHeaders = uncleHeaders, txs = txs)
+
+proc childValidBlock*(
+    parentHdr: Header,
+    parentId: BlockId,
+    slot: SlotNumber,
+    txs: openArray[ValidSignedMantleTx],
+    uncleHeaders: openArray[SignedHeader] = [],
+): ValidBlock =
+  var proofOfLeadership = parentHdr.proofOfLeadership
+  proofOfLeadership.leaderKey = testBlockKeyPair.pubkey
+
+  let
+    h = initHeader(
+      bedrockVersion = parentHdr.bedrockVersion,
+      parentBlock = parentId,
+      slot = slot,
+      uncleHeaders = uncleHeaders,
+      txs = txs,
+      proofOfLeadership = proofOfLeadership,
+    )
+    sig = testBlockKeyPair.seckey.sign(blockId(h))
+  ValidBlock(
+    header: h,
+    signature: sig,
+    uncleHeaders: UncleHeaders(@uncleHeaders),
+    txs: @txs,
+  )
 
 type BootstrapPeers* = object
   listener*, dialer*: LBP2PNode

@@ -26,7 +26,7 @@ const DefaultSecurityParam*: uint64 = 1'u64
 
 type
   Chain* = object
-    genesisBlock*: Block
+    genesisBlock*: ValidBlock
     localTree*: LocalTree
     ledger*: Ledger[BlockId]
     mempool*: Mempool
@@ -89,7 +89,7 @@ func ledgerConfig*(settings: DeploymentSettings): LedgerConfig =
 
 func init*(
     T: type Chain,
-    genesisBlock: Block,
+    genesisBlock: ValidBlock,
     ledger: Ledger[BlockId],
     slotConfig: SlotConfig,
     securityParam: uint64 = DefaultSecurityParam,
@@ -112,13 +112,13 @@ proc init*(
     poqVerifier: ProofOfQuotaVerifier = verifyProofOfQuota,
 ): Result[T, string] =
   let
-    validTx = validateGenesisTxStateless(
-        settings.cryptarchia.genesisState.signedMantleTx).valueOr:
+    validGenesisTx = validateGenesisTxStateless(
+      settings.cryptarchia.genesisState.signedMantleTx
+    ).valueOr:
       return err("chain: invalid genesis transaction: " & $error)
-    param = cryptarchiaParameter(validTx).valueOr:
+    param = cryptarchiaParameter(validGenesisTx).valueOr:
       return err("chain: " & $error)
-    genesisBlock = createGenesisBlock(SignedMantleTx(validTx)).valueOr:
-      return err("chain: genesis block encoding failed: " & $error)
+    genesisBlock = createGenesisBlock(validGenesisTx)
   # A stale body_root in the settings file must fail at start-up, not later.
   if genesisBlock.header != settings.cryptarchia.genesisState.header:
     return err(
@@ -129,7 +129,7 @@ proc init*(
       settings.cryptarchia.sdpConfig,
       blendRewardsParams(settings, cfg.epochSchedule.epochLength))
     genesisState = LedgerState.fromGenesis(
-        validTx, param.epochNonce, sdp, cfg).valueOr:
+        validGenesisTx, param.epochNonce, sdp, cfg).valueOr:
       return err("chain: failed to build the genesis state: " & $error)
   ok(T.init(
     genesisBlock,
@@ -153,8 +153,8 @@ proc readdBranchTxs(chain: var Chain, fromId, toId: BlockId) =
       warn "Missing block during reorg transaction re-addition",
           missingBlockId = curr, toId = toId
       break
-    for stx in b.txs:
-      discard chain.mempool.add(ValidSignedMantleTx(stx), nowSlot)
+    for vtx in b.txs:
+      discard chain.mempool.add(vtx, nowSlot)
     curr = header(b).parentBlock
 
 proc removeBranchTxs(chain: var Chain, fromId, toId: BlockId) =
@@ -234,15 +234,14 @@ func checkViability(
 
 proc applyAdmittedBlock(
     chain: var Chain,
-    admittedBlk: AdmittedBlock,
+    admittedBlk: sink AdmittedBlock,
     id: BlockId,
     curSlot: SlotNumber,
 ): Result[void, BlockApplyError] =
   # Tier 3: PoL against parent state and stateless transaction validation
   let
-    unverified = chain.mempool.unverifiedTxs(admittedBlk.txs.asSeq)
     (validBlk, headerState) = validatePolAndStatelessTransactions(
-      admittedBlk, chain.ledger, unverified
+      admittedBlk, chain.ledger
     ).valueOr:
       chain.orphanPool.pruneDescendants(id)
       return err(toBlockApplyError(error))
@@ -262,13 +261,19 @@ proc applyAdmittedBlock(
 
 proc tryApplyAdmittedBlock*(
     chain: var Chain,
-    admittedBlk: AdmittedBlock,
+    admittedBlk: sink AdmittedBlock,
 ): Result[void, BlockApplyError] =
   let
     curSlot = chain.currentWallclockSlot()
     id = chain.checkViability(header(admittedBlk), curSlot).valueOr:
       chain.orphanPool.pruneDescendants(blockId(header(admittedBlk)))
       return err(error)
+  # Re-check mempool for transactions that entered the pool while this block
+  # was buffered in the orphan pool, avoiding redundant stateless validation.
+  if admittedBlk.unverifiedIndices.len > 0 and chain.mempool != nil:
+    chain.mempool.updateUnverifiedIndices(
+      admittedBlk.txs, admittedBlk.unverifiedIndices
+    )
   chain.applyAdmittedBlock(admittedBlk, id, curSlot)
 
 proc tryApplyBlock*(
@@ -279,10 +284,15 @@ proc tryApplyBlock*(
   let
     curSlot = chain.currentWallclockSlot()
     id = ?chain.checkViability(header(blk), curSlot)
+    (htxs, unverified) = chain.mempool.classifyBlockTxs(blk.txs.asSeq).valueOr:
+      return err(BlockApplyError(
+        kind: StatelessTxRejected,
+        statelessError: toStatelessLedgerError(error),
+      ))
 
   # Tiers 0-2: Structure, Topology Viability, Body Root, Header Signature
   let (admittedBlk, isOrphan) = validateBlockHeaderAndTopology(
-    blk, chain.localTree, chain.ledger
+    blk, chain.localTree, chain.ledger, htxs, unverified
   ).valueOr:
     return err(toBlockApplyError(error))
 

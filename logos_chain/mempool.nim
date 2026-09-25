@@ -13,7 +13,7 @@
 {.push raises: [], gcsafe.}
 
 import
-  std/[deques, tables],
+  std/[deques, sequtils, tables],
   minilru,
   results,
   ./core/crypto/types,
@@ -22,7 +22,7 @@ import
 export results
 
 from ./core/mantle/primitives import MaxBlockTxs, SlotNumber
-from ./core/types import Block, items
+from ./core/types import ValidBlock
 
 const
   DefaultMempoolCapacity = 10_240
@@ -77,13 +77,13 @@ proc add*(
     m: Mempool,
     tx: sink ValidSignedMantleTx,
     currentSlot: SlotNumber,
-): Result[bool, EncodingError] =
+): bool =
   # Clamp to lastAddedSlot to preserve monotonic insertion order against minor clock skew/NTP slewing
   let effectiveSlot = max(currentSlot, m.lastAddedSlot)
 
-  let hash = ?mantleTxHash(tx.tx)
+  let hash = tx.hash
   if hash in m.txs:
-    return ok(false)
+    return false
 
   # If transaction is currently in grace cache, remove it from grace and promote to active txs
   m.graceCache.del(hash)
@@ -106,7 +106,7 @@ proc add*(
   )
   m.queue.addLast(hash)
   m.lastAddedSlot = effectiveSlot
-  ok(true)
+  true
 
 func contains*(m: Mempool, hash: Hash32): bool =
   ## Returns true if the transaction is in the active mempool or grace cache.
@@ -138,53 +138,72 @@ proc pruneExpiredTxs*(m: Mempool, currentSlot: SlotNumber) =
     else:
       break
 
-proc pruneBlockTxs*(m: Mempool, blk: Block) =
+proc pruneBlockTxs*(m: Mempool, blk: ValidBlock) =
   # TODO(mempool): Retain mined transactions in graceCache so concurrent or competing
   # fork proposals can resolve shared references during block reconstruction.
   # In a follow-up PR, replace this with an unfinalized canonical transaction index
   # (tip to LIB) to eliminate reliance on bounded LRU grace eviction under high mempool churn.
-  for stx in blk.txs:
-    let h = mantleTxHash(stx.tx).valueOr:
-      continue
-    m.remove(h, moveToGrace = true)
+  for vtx in blk.txs:
+    m.remove(vtx.hash, moveToGrace = true)
 
-func isKnownValid*(m: Mempool, tx: SignedMantleTx): bool =
+func isKnownValid*(m: Mempool, htx: HashedSignedMantleTx): bool =
   ## Light validation check: checks if transaction is present in the mempool
-  ## with identical cryptographic proofs.
+  ## with identical cryptographic proofs using precomputed txHash.
   ## Pre-checks (cheapest to most expensive):
   ## 1. Mempool existence & non-emptiness (< 1 ns)
   ## 2. Structural 1:1 proof count alignment (< 2 ns)
   ## 3. Opcode-to-proof kind matching (< 5 ns)
   ## Lookup & verification:
-  ## 4. mantleTxHash calculation & mempool lookup (~1 µs)
+  ## 4. Mempool lookup using precomputed txHash (~10 ns)
   ## 5. Proof equivalence memory comparison (~10-20 ns, requires poolTx from lookup)
   if m == nil or m.len == 0:
     return false
 
-  if tx.tx.ops.len != tx.opProofs.len:
+  if htx.tx.ops.len != htx.opProofs.len:
     return false
 
-  for i in 0 ..< tx.tx.ops.len:
-    let expectedKind = expectedOpProofKindForOpcode(tx.tx.ops[i].opcode).valueOr:
+  for i in 0 ..< htx.tx.ops.len:
+    let expectedKind = expectedOpProofKindForOpcode(htx.tx.ops[i].opcode).valueOr:
       return false
-    if tx.opProofs[i].kind != expectedKind:
+    if htx.opProofs[i].kind != expectedKind:
       return false
 
-  let hash = mantleTxHash(tx.tx).valueOr:
-    return false
-  let poolTx = m.get(hash).valueOr:
+  let poolTx = m.get(htx.hash).valueOr:
     return false
 
-  sameOpProofs(SignedMantleTx(poolTx).opProofs, tx.opProofs)
+  sameOpProofs(poolTx.opProofs, htx.opProofs)
 
-func unverifiedTxs*(m: Mempool, txs: openArray[SignedMantleTx]): seq[SignedMantleTx] =
-  ## Filters out transactions that are already verified in the mempool.
+func updateUnverifiedIndices*(
+    m: Mempool,
+    txs: openArray[HashedSignedMantleTx],
+    unverifiedIndices: var seq[int],
+) =
+  ## In-place filters out transaction indices that have since become known valid in the mempool.
   if m == nil or m.len == 0:
-    return @txs
-  var unverified: seq[SignedMantleTx]
-  for tx in txs:
-    if not m.isKnownValid(tx):
-      unverified.add(tx)
-  unverified
+    return
+  unverifiedIndices.keepItIf(not m.isKnownValid(txs[it]))
+
+func classifyBlockTxs*(
+    m: Mempool,
+    txs: openArray[SignedMantleTx],
+): Result[tuple[htxs: seq[HashedSignedMantleTx], unverifiedIndices: seq[int]], EncodingError] =
+  ## Classifies transactions against the mempool into an ordered sequence of
+  ## HashedSignedMantleTx with precomputed hashes and records the indices of
+  ## unverified transactions needing stateless validation.
+  var htxs = newSeqOfCap[HashedSignedMantleTx](txs.len)
+  var unverifiedIndices: seq[int]
+  if m == nil or m.len == 0:
+    for i in 0 ..< txs.len:
+      let h = ?mantleTxHash(txs[i].tx)
+      htxs.add(HashedSignedMantleTx(signedTx: txs[i], hash: h))
+      unverifiedIndices.add(i)
+    return ok((htxs, unverifiedIndices))
+  for i in 0 ..< txs.len:
+    let h = ?mantleTxHash(txs[i].tx)
+    let htx = HashedSignedMantleTx(signedTx: txs[i], hash: h)
+    htxs.add(htx)
+    if not m.isKnownValid(htx):
+      unverifiedIndices.add(i)
+  ok((htxs, unverifiedIndices))
 
 {.pop.}

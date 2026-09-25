@@ -28,7 +28,7 @@ template addBlock(
 suite "chain/block_processor":
   setup:
     let
-      genesisBlk = createGenesisBlock(SignedMantleTx(testGenesisTx())).get
+      genesisBlk = createGenesisBlock(testValidGenesisTx())
       gid = blockId(genesisBlk.header)
       chain = initTestChain(genesisBlk)
 
@@ -318,7 +318,7 @@ suite "chain/block_processor":
       check not fRawB2.finished
 
       # 3. Buffer admitted copy of b2 in orphanPool before b1 finishes processing
-      let (admittedB2, isOrphan) = validateBlockHeaderAndTopology(b2, bp.localTree, bp.ledger).get()
+      let (admittedB2, isOrphan) = validateBlockHeaderAndTopology(b2, bp.localTree, bp.ledger, newSeq[HashedSignedMantleTx](), @[]).get()
       check isOrphan
       check chain.orphanPool.addOrphan(admittedB2)
 
@@ -347,7 +347,7 @@ suite "chain/block_processor":
       let fRawB2 = bp.addBlock(BlockSource.Sync, b2)
       check not fRawB2.finished
 
-      let (admittedB2, isOrphan) = validateBlockHeaderAndTopology(b2, bp.localTree, bp.ledger).get()
+      let (admittedB2, isOrphan) = validateBlockHeaderAndTopology(b2, bp.localTree, bp.ledger, newSeq[HashedSignedMantleTx](), @[]).get()
       check isOrphan
       check chain.orphanPool.addOrphan(admittedB2)
 

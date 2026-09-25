@@ -130,7 +130,7 @@ proc addBlock*(
 
 proc enqueueOrphanBlock(bp: BlockProcessor, child: AdmittedBlock) =
   let childId = blockId(header(child))
-  let key = inFlightKey(childId, Block(child).signature)
+  let key = inFlightKey(childId, child.signature)
   var stolenResfut = Opt.none(BlockApplyFuture)
 
   bp.inFlight.withValue(key, existing):
@@ -162,7 +162,7 @@ proc processBlock(bp: BlockProcessor, entry: BlockEntry) =
       (i, inFlightKey(i, entry.blk.signature))
     of BlockEntryKind.PromotedOrphan:
       let i = blockId(header(entry.admittedBlk))
-      (i, inFlightKey(i, Block(entry.admittedBlk).signature))
+      (i, inFlightKey(i, entry.admittedBlk.signature))
   defer:
     bp.inFlight.del(key)
 

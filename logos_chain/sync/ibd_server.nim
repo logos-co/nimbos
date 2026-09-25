@@ -155,7 +155,7 @@ proc serveDownloadBlocksRequest(
         targetBlock = sbyteutils.toHex(req.targetBlock)
       return
     let innerWire = try:
-      encode(blk, cryptarchiaSyncBincodeConfig)
+      encode(blk.toBlock(), cryptarchiaSyncBincodeConfig)
     except BincodeError:
       @[]
     if innerWire.len == 0:

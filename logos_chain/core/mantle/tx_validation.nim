@@ -92,13 +92,16 @@ func validateLocators(decl: DeclarationMessage): Result[void, StatelessLedgerErr
   ok()
 
 proc validateMantleTxStateless*(
-    tx: SignedMantleTx,
+    htx: HashedSignedMantleTx,
     verifyProof: ProofOfClaimVerifier = verifyProofOfClaim,
-): Result[void, StatelessLedgerError] =
+): Result[ValidSignedMantleTx, StatelessLedgerError] =
   ## Stateless transaction validation staged strictly by ascending cost:
   ## Phase 1: Structural, bounds, and payload shape checks (~10 ns)
-  ## Phase 2: Lazy txHash calculation & Ed25519 signature checks (~0.7 ms)
+  ## Phase 2: Ed25519 signature checks (~0.7 ms)
   ## Phase 3: Groth16 zk-SNARK proof verification (~1.13 ms)
+  template tx: untyped = htx.signedTx
+  template txHash: untyped = htx.hash
+
   if tx.tx.ops.len > MantleMaxOps:
     return err(StatelessLedgerError.TooManyOps)
   if tx.tx.ops.len != tx.opProofs.len:
@@ -159,51 +162,38 @@ proc validateMantleTxStateless*(
     of LeaderClaim:
       hasHeavyZk = true
 
-  if not hasSigCrypto and not hasHeavyZk:
-    return ok()
-
-  # Phase 2: Fast symmetric hashing & Ed25519 signatures
-  var txHash: Opt[ZkHash]
-  template getTxHash(): ZkHash =
-    txHash.valueOr:
-      let h = mantleTxHash(tx.tx).valueOr:
-        return err(error.toStatelessLedgerError)
-      txHash = Opt.some(h)
-      h
-
+  # Phase 2: Ed25519 signatures
   if hasSigCrypto:
     for i in 0 ..< tx.tx.ops.len:
       template op: untyped = tx.tx.ops[i]
       template proof: untyped = tx.opProofs[i]
       case op.payload.kind
       of ChannelInscribe:
-        if not verify(proof.ed25519SigProof, getTxHash(), op.payload.channelInscribe.signer):
+        if not verify(proof.ed25519SigProof, txHash, op.payload.channelInscribe.signer):
           return err(StatelessLedgerError.InvalidProof)
       of SdpDeclare:
-        if not verify(proof.declarationProof.ed25519Sig, getTxHash(), op.payload.sdpDeclare.providerId):
+        if not verify(proof.declarationProof.ed25519Sig, txHash, op.payload.sdpDeclare.providerId):
           return err(StatelessLedgerError.InvalidProof)
       else:
         discard
 
-  if not hasHeavyZk:
-    return ok()
-
   # Phase 3: Heavy Groth16 ZK proof verifications
-  if verifyProof == nil:
-    return err(StatelessLedgerError.VerifierNotInitialised)
+  if hasHeavyZk:
+    if verifyProof == nil:
+      return err(StatelessLedgerError.VerifierNotInitialised)
 
-  for i in 0 ..< tx.tx.ops.len:
-    template op: untyped = tx.tx.ops[i]
-    template proof: untyped = tx.opProofs[i]
-    if op.payload.kind == LeaderClaim:
-      template claim: untyped = op.payload.leaderClaim
-      let public = proofOfClaimPublic(claim, claim.rewardsRoot, getTxHash())
-      let verified = verifyProof(proof.proofOfClaimProof, public).valueOr:
-        return err(StatelessLedgerError.VerifierNotInitialised)
-      if not verified:
-        return err(StatelessLedgerError.InvalidProof)
+    for i in 0 ..< tx.tx.ops.len:
+      template op: untyped = tx.tx.ops[i]
+      template proof: untyped = tx.opProofs[i]
+      if op.payload.kind == LeaderClaim:
+        template claim: untyped = op.payload.leaderClaim
+        let public = proofOfClaimPublic(claim, claim.rewardsRoot, txHash)
+        let verified = verifyProof(proof.proofOfClaimProof, public).valueOr:
+          return err(StatelessLedgerError.VerifierNotInitialised)
+        if not verified:
+          return err(StatelessLedgerError.InvalidProof)
 
-  ok()
+  ok(ValidSignedMantleTx(htx))
 
 func validateGenesisTxStateless*(
     tx: SignedMantleTx): Result[ValidGenesisMantleTx, StatelessLedgerError] =
@@ -231,6 +221,8 @@ func validateGenesisTxStateless*(
   ?assert_valid_output(transfer.outputs.notes)
   for op in ops.toOpenArray(2, ops.high):
     ?validateLocators(op.payload.sdpDeclare)
-  ok(ValidGenesisMantleTx(tx))
+  let h = mantleTxHash(tx.tx).valueOr:
+    return err(toStatelessLedgerError(error))
+  ok(ValidGenesisMantleTx(ValidSignedMantleTx(HashedSignedMantleTx(signedTx: tx, hash: h))))
 
 {.pop.}

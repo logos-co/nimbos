@@ -50,7 +50,7 @@ proc processProposal*(
       blockId = idHex, error = $error, src
     return ValidationResult.Ignore
 
-  discard bp.addBlock(BlockSource.Gossip, blk, id)
+  discard bp.addBlock(BlockSource.Gossip, blk.toBlock(), id)
 
   debug "GossipSub accepted reconstructed block into local tree",
     blockId = idHex, slot = blk.header.slot, src
@@ -71,23 +71,21 @@ proc processTx*(
     debug "GossipSub rejected malformed tx (hashing failed)",
       error = $error, src
     return ValidationResult.Reject
-  let txHashHex = toHex(txHash)
+  let htx = HashedSignedMantleTx(signedTx: tx, hash: txHash)
+  let txHashHex = toHex(htx.hash)
 
-  if txHash in bp.mempool:
+  if htx.hash in bp.mempool:
     trace "GossipSub ignored duplicate tx already in mempool",
       txHash = txHashHex, src
     return ValidationResult.Ignore
 
-  if validateMantleTxStateless(tx).isErr:
+  let validTx = validateMantleTxStateless(htx).valueOr:
     debug "GossipSub rejected invalid mantle tx",
       txHash = txHashHex, src
     return ValidationResult.Reject
 
   let nowSlot = bp.currentWallclockSlot()
-  let added = bp.mempool.add(ValidSignedMantleTx(tx), nowSlot).valueOr:
-    debug "GossipSub rejected tx (mempool add failed)",
-      error = $error, src
-    return ValidationResult.Reject
+  let added = bp.mempool.add(validTx, nowSlot)
   if not added:
     trace "GossipSub ignored duplicate tx already in mempool",
       txHash = txHashHex, src
