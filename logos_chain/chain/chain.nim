@@ -26,7 +26,7 @@ const DefaultSecurityParam*: uint64 = 1'u64
 
 type
   Chain* = object
-    genesisBlock*: Block
+    genesisBlock*: ValidBlock
     localTree*: LocalTree
     ledger*: Ledger[BlockId]
     mempool*: Mempool
@@ -87,7 +87,7 @@ func ledgerConfig*(settings: DeploymentSettings): LedgerConfig =
 
 func init*(
     T: type Chain,
-    genesisBlock: Block,
+    genesisBlock: ValidBlock,
     ledger: Ledger[BlockId],
     slotConfig: SlotConfig,
     securityParam: uint64 = DefaultSecurityParam,
@@ -110,7 +110,7 @@ proc init*(
     poqVerifier: ProofOfQuotaVerifier = verifyProofOfQuota,
 ): Result[T, string] =
   let
-    genesisBlock = createGenesisBlock(settings.cryptarchia.genesisState.signedMantleTx)
+    genesisBlock = createGenesisBlock(settings.cryptarchia.genesisState.vtx)
     cfg = ledgerConfig(settings)
     sdp = SdpRegistry.init(
       settings.cryptarchia.sdpConfig,
@@ -142,8 +142,8 @@ proc readdBranchTxs(chain: var Chain, fromId, toId: BlockId) =
       warn "Missing block during reorg transaction re-addition",
           missingBlockId = curr, toId = toId
       break
-    for stx in b.txs:
-      discard chain.mempool.add(ValidSignedMantleTx(stx), nowSlot)
+    for vtx in b.txs:
+      discard chain.mempool.add(vtx, nowSlot)
     curr = header(b).parentBlock
 
 proc removeBranchTxs(chain: var Chain, fromId, toId: BlockId) =
@@ -228,8 +228,8 @@ proc tryApplyBlock*(
   let curSlot = chain.currentWallclockSlot()
   if hdr.slot > curSlot:
     return err(BlockApplyError(kind: FutureSlot))
-  let unverified = chain.mempool.unverifiedTxs(blk.txs)
-  let (validBlk, isOrphan) = validateBlock(blk, chain.localTree, chain.ledger, unverified).valueOr:
+  let (vtxs, unverified) = chain.mempool.classifyBlockTxs(blk.txs)
+  let (validBlk, isOrphan) = validateBlock(blk, chain.localTree, chain.ledger, vtxs, unverified).valueOr:
     case error.kind
     of BlockValidationErrorKind.InvalidBlockStructure:
       return err(BlockApplyError(kind: InvalidStructure))
@@ -250,7 +250,7 @@ proc tryApplyBlock*(
     return err(BlockApplyError(kind: LedgerRejected, ledgerError: error.ledgerError))
 
   let oldTip = chain.localTree.localTipId()
-  if not chain.localTree.addBlockToTree(blk):
+  if not chain.localTree.addBlockToTree(validBlk):
     return err(BlockApplyError(kind: UnviableFork))
   chain.ledger.commitUpdate(prepared.id, prepared.state)
   chain.promoteOrphans(id)

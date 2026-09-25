@@ -20,9 +20,9 @@ from ../../logos_chain/core/mantle/primitives import SlotNumber
 
 proc setupChain(
     securityParam: uint64 = 10'u64,
-): tuple[chain: Chain, genesis: Block, gid: BlockId] =
+): tuple[chain: Chain, genesis: ValidBlock, gid: BlockId] =
   let
-    sm = minimalSignedTx()
+    sm = minimalValidSignedTx()
     genesis = createGenesisBlock(sm)
     gid = blockId(genesis.header)
   var c = initTestChain(genesis, securityParam = securityParam)
@@ -116,7 +116,7 @@ suite "chain/orphan_resolution":
     check chain.orphanPool.len == 0
 
   test "chain respects MaxOrphans capacity limit and evicts oldest":
-    var (chain, genesis, gid) = setupChain()
+    var (chain, _, gid) = setupChain()
 
     var
       blocks: seq[Block]
@@ -140,7 +140,7 @@ suite "chain/orphan_resolution":
     check chain.orphanPool.len == 1
 
   test "chain re-buffers evicted orphan and resolves cascade upon parent arrival":
-    var (chain, genesis, gid) = setupChain()
+    var (chain, _, gid) = setupChain()
 
     var
       blocks: seq[Block]
@@ -299,11 +299,14 @@ suite "chain/orphan_resolution":
   test "orphan with invalid stateless transaction is rejected and not buffered":
     var (chain, genesis, _) = setupChain()
 
-    var badTx = signedTxWithOps(1, 1)
+    let baseTx = validSignedTxWithOps(1, 1)
+    var badTx = baseTx.signedTx
     badTx.opProofs = @[] # MismatchedOpProofCount
 
     let missingParentId = exampleBlockId(99)
-    let orphan = childBlock(genesis.header, missingParentId, SlotNumber(2), [badTx])
+    let orphan = childBlock(
+      genesis.header, missingParentId, SlotNumber(2),
+      [ValidSignedMantleTx(signedTx: badTx, hash: baseTx.hash)])
 
     let applyRes = chain.tryApplyBlock(orphan)
     check applyRes.isErr
@@ -313,8 +316,8 @@ suite "chain/orphan_resolution":
   test "orphan cascade triggering a reorg restores mempool transactions from abandoned branch":
     var (chain, genesis, gid) = setupChain(securityParam = 1)
 
-    let txA = minimalSignedTx()
-    check chain.mempool.add(ValidSignedMantleTx(txA), SlotNumber(1))
+    let txA = minimalValidSignedTx()
+    check chain.mempool.add(txA, SlotNumber(1))
     check chain.mempool.len == 1
 
     # Branch A: block a1 with txA

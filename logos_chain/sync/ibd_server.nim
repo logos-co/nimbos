@@ -21,8 +21,7 @@ import
 from ../core/local_tree import
   LocalTree, localTipId, lcaBlockIdAndHeight, hasBlock, getBlock, blockHeight,
   localTip
-from ../core/types import Block, BlockId
-from ../core/mantle/primitives import SlotNumber
+from ../core/types import BlockId
 
 logScope:
   topics = "cryptarchia_ibd"
@@ -156,7 +155,7 @@ proc serveDownloadBlocksRequest(
         targetBlock = sbyteutils.toHex(req.targetBlock)
       return
     let innerWire = try:
-      encode(blk, cryptarchiaSyncBincodeConfig)
+      encode(blk.toBlock(), cryptarchiaSyncBincodeConfig)
     except BincodeError:
       @[]
     if innerWire.len == 0:

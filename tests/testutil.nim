@@ -81,10 +81,10 @@ proc summarizeLongTests*(name: string) =
   except IOError, OSError, ValueError:
     raiseAssert getCurrentExceptionMsg()
 
-const TestLoopbackIp* = parseIpAddress("127.0.0.1")
-const TestQuicAnyPort* = Port(0)
+const TestLoopbackIp = parseIpAddress("127.0.0.1")
+const TestQuicAnyPort = Port(0)
 
-template loopbackQuicMultiAddr*(port: Port): string =
+template loopbackQuicMultiAddr(port: Port): string =
   "/ip4/" & $TestLoopbackIp & "/udp/" & $port & "/quic-v1"
 
 template waitUntil*(cond: untyped, timeout: chronos.Duration = chronos.seconds(3)): bool =
@@ -183,18 +183,19 @@ const
   DeadBootstrapAddress* =
     "/ip4/127.0.0.1/udp/59999/quic-v1/p2p/12D3KooWDpJ7As7BWAwRMfu1VU2WCqNjvq387JEYKDBj4kx6nXTN"
 
-func minimalSignedTx*(): SignedMantleTx =
-  SignedMantleTx(
+func minimalValidSignedTx*(): ValidSignedMantleTx =
+  let stx = SignedMantleTx(
     tx: MantleTx(ops: @[]),
     opProofs: @[],
   )
+  ValidSignedMantleTx(signedTx: stx, hash: mantleTxHash(stx.tx))
 
 let testTxKeyPair* = block:
   var rngRef = new(HmacDrbgContext)
   rngRef[] = HmacDrbgContext.init([8'u8])
   EdKeyPair.random(newBearSslRng(rngRef))
 
-proc signedTxWithOps*(opsCount: int = 1, txIndex: int = 1): SignedMantleTx =
+proc validSignedTxWithOps*(opsCount: int, txIndex: int): ValidSignedMantleTx =
   var ops: seq[Op]
   var proofs: seq[OpProof]
   for i in 0 ..< opsCount:
@@ -217,19 +218,20 @@ proc signedTxWithOps*(opsCount: int = 1, txIndex: int = 1): SignedMantleTx =
   for _ in 0 ..< opsCount:
     proofs.add(OpProof(kind: opfChannelInscribe, ed25519SigProof: sig))
 
-  SignedMantleTx(tx: mtx, opProofs: proofs)
+  let stx = SignedMantleTx(tx: mtx, opProofs: proofs)
+  ValidSignedMantleTx(signedTx: stx, hash: txHash)
 
 let testBlockKeyPair* = block:
   var rngRef = new(HmacDrbgContext)
   rngRef[] = HmacDrbgContext.init([9'u8])
   EdKeyPair.random(newBearSslRng(rngRef))
 
-proc childBlock*(
+proc childValidBlock*(
     parentHdr: Header,
     parentId: BlockId,
     slot: SlotNumber,
-    txs: openArray[SignedMantleTx],
-): Block =
+    txs: openArray[ValidSignedMantleTx],
+): ValidBlock =
   var proofOfLeadership = parentHdr.proofOfLeadership
   proofOfLeadership.leaderKey = testBlockKeyPair.pubkey
 
@@ -241,10 +243,15 @@ proc childBlock*(
     proofOfLeadership = proofOfLeadership,
   )
   let sig = testBlockKeyPair.seckey.sign(blockId(h))
-  initBlock(h, signature = sig, txs = txs)
+  ValidBlock(header: h, signature: sig, txs: @txs)
 
-func singleTxRefs*(hash: Hash32): References {.inline.} =
-  result[0] = hash
+proc childBlock*(
+    parentHdr: Header,
+    parentId: BlockId,
+    slot: SlotNumber,
+    txs: openArray[ValidSignedMantleTx],
+): Block =
+  childValidBlock(parentHdr, parentId, slot, txs).toBlock()
 
 type BootstrapPeers* = object
   listener*, dialer*: LBP2PNode

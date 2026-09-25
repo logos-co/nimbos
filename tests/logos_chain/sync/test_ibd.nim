@@ -27,7 +27,7 @@ template peerProvider(peers: varargs[PeerId]): PeerProvider =
 
 proc runLbp2pIbdSyncTest(extraBlocks: int) {.async.} =
   let
-    sm = minimalSignedTx()
+    sm = minimalValidSignedTx()
     genesis = createGenesisBlock(sm)
 
   var chainBootstrap = initTestChain(genesis)
@@ -59,10 +59,10 @@ proc runLbp2pIbdSyncTest(extraBlocks: int) {.async.} =
 suite "sync/initial_block_download (download blocks)":
   test "decodeBlocksFromDownloadResponses roundtrip (genesis wrapped in dbrBlock)":
     let
-      sm = minimalSignedTx()
+      sm = minimalValidSignedTx()
       genesis = createGenesisBlock(sm)
       genesisWire = try:
-        encode(genesis, cryptarchiaSyncBincodeConfig)
+        encode(genesis.toBlock(), cryptarchiaSyncBincodeConfig)
       except BincodeError:
         fail getCurrentExceptionMsg()
     let blks = decodeBlocksFromDownloadResponses(@[
@@ -73,11 +73,11 @@ suite "sync/initial_block_download (download blocks)":
 
   test "cappedDownloadPathBlockIds returns target block when path is one hop":
     let
-      sm = minimalSignedTx()
+      sm = minimalValidSignedTx()
       genesis = createGenesisBlock(sm)
       gid = blockId(genesis.header)
       tree = newLocalTree(genesis, 1'u64)
-      b1 = childBlock(genesis.header, gid, SlotNumber(1), [sm])
+      b1 = childValidBlock(genesis.header, gid, SlotNumber(1), [sm])
     check tree.addBlockToTree(b1)
     let
       b1id = blockId(b1.header)
@@ -91,7 +91,7 @@ suite "sync/initial_block_download (download blocks)":
 
   test "cappedDownloadPathBlockIds caps batch at MaxRequestBlocks":
     let
-      sm = minimalSignedTx()
+      sm = minimalValidSignedTx()
       genesis = createGenesisBlock(sm)
       tree = newLocalTree(genesis, 1'u64)
       tipId = extendChainAfterGenesis(tree, genesis, MaxRequestBlocks + 5)
@@ -105,11 +105,11 @@ suite "sync/initial_block_download (download blocks)":
 
   test "decodeBlocksFromDownloadResponses recovers blocks from handler-shaped response":
     let
-      sm = minimalSignedTx()
+      sm = minimalValidSignedTx()
       genesis = createGenesisBlock(sm)
       gid = blockId(genesis.header)
       tree = newLocalTree(genesis, 1'u64)
-      b1 = childBlock(genesis.header, gid, SlotNumber(1), [sm])
+      b1 = childValidBlock(genesis.header, gid, SlotNumber(1), [sm])
     check tree.addBlockToTree(b1)
     let req = DownloadBlocksRequest(
       targetBlock: blockId(b1.header),
@@ -123,10 +123,10 @@ suite "sync/initial_block_download (download blocks)":
 
   asyncTest "sendDownloadBlocksRequest round-trips over mounted sync handler":
     let
-      sm = minimalSignedTx()
+      sm = minimalValidSignedTx()
       genesis = createGenesisBlock(sm)
       gid = blockId(genesis.header)
-      b1 = childBlock(genesis.header, gid, SlotNumber(1), [sm])
+      b1 = childValidBlock(genesis.header, gid, SlotNumber(1), [sm])
       serverChain = initTestChain(genesis)
     check serverChain.localTree.addBlockToTree(b1)
     let
@@ -148,7 +148,7 @@ suite "sync/initial_block_download (download blocks)":
 suite "sync/initial_block_download (GetTip)":
   asyncTest "sendGetTipRequest round-trips over mounted sync handler":
     let
-      sm = minimalSignedTx()
+      sm = minimalValidSignedTx()
       genesis = createGenesisBlock(sm)
       serverChain = initTestChain(genesis)
     withSyncPair(serverChain, initTestChain(genesis)):
@@ -160,31 +160,31 @@ suite "sync/initial_block_download (GetTip)":
           height: serverChain.localTree.latestImmutableHeight,
         )
       check tipResp.kind == gtrTip
-      check tipResp.tipData == serverChain.localTree.localTip()
+      check tipResp.tipData == expected
 
 suite "sync/initial_block_download (IBD requester loop)":
   asyncTest "initialBlockDownload with no configured peers completes without raising":
-    let genesis = createGenesisBlock(minimalSignedTx())
+    let genesis = createGenesisBlock(minimalValidSignedTx())
     withClientSyncer(initTestChain(genesis)):
       await initialBlockDownload(clientSyncer, Opt.none(PeerProvider))
 
   asyncTest "initialBlockDownload when no configured peers are connected raises IBDFailure":
-    let genesis = createGenesisBlock(minimalSignedTx())
+    let genesis = createGenesisBlock(minimalValidSignedTx())
     withClientSyncer(initTestChain(genesis)):
       expect IBDFailure:
         await initialBlockDownload(clientSyncer, Opt.some(peerProvider()))
 
   asyncTest "initialBlockDownload succeeds when peer tip is already in local tree":
-    let genesis = createGenesisBlock(minimalSignedTx())
+    let genesis = createGenesisBlock(minimalValidSignedTx())
     withSyncPair(initTestChain(genesis), initTestChain(genesis)):
       await initialBlockDownload(clientSyncer, Opt.some(peerProvider(server.peerInfo.peerId)))
 
   asyncTest "initialBlockDownload raises when peer chain is taller but sync handler is not mounted":
     let
-      sm = minimalSignedTx()
+      sm = minimalValidSignedTx()
       genesis = createGenesisBlock(sm)
       gid = blockId(genesis.header)
-      b1 = childBlock(genesis.header, gid, SlotNumber(1), [sm])
+      b1 = childValidBlock(genesis.header, gid, SlotNumber(1), [sm])
       serverChain = initTestChain(genesis)
     check serverChain.localTree.addBlockToTree(b1)
     check serverChain.localTree.localTipId == blockId(b1.header)
@@ -200,10 +200,10 @@ suite "sync/initial_block_download (IBD requester loop)":
 
   asyncTest "initialBlockDownload succeeds when peer chain is taller and download sends blocks":
     let
-      sm = minimalSignedTx()
+      sm = minimalValidSignedTx()
       genesis = createGenesisBlock(sm)
       gid = blockId(genesis.header)
-      b1 = childBlock(genesis.header, gid, SlotNumber(1), [])
+      b1 = childValidBlock(genesis.header, gid, SlotNumber(1), [])
       b1id = blockId(b1.header)
       serverChain = initTestChain(genesis)
       clientChain = initTestChain(genesis)
@@ -216,10 +216,10 @@ suite "sync/initial_block_download (IBD requester loop)":
 
   asyncTest "initialBlockDownload fails over to secondary peer when primary peer fails":
     let
-      sm = minimalSignedTx()
+      sm = minimalValidSignedTx()
       genesis = createGenesisBlock(sm)
       gid = blockId(genesis.header)
-      b1 = childBlock(genesis.header, gid, SlotNumber(1), [])
+      b1 = childValidBlock(genesis.header, gid, SlotNumber(1), [])
       b1id = blockId(b1.header)
       serverChain2 = initTestChain(genesis)
       clientChain = initTestChain(genesis)

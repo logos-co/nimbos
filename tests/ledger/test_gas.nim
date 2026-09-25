@@ -34,22 +34,23 @@ func sentinelProof(): ProofOfLeadership =
   # verification — lets these tests drive the epoch pipeline without a VK.
   ProofOfLeadership()
 
+
 proc mkState(utxos: openArray[Utxo]): LedgerState =
   LedgerState.fromUtxos(
     utxos, default(FieldElement), testSdpRegistry(), testLedgerConfig
   ).expect("seed")
 
-proc mkFixtureTransferTx(input: Utxo): SignedMantleTx =
+proc mkFixtureTransferTx(input: Utxo): ValidSignedMantleTx =
   ## The exact tx shape the committed zksign fixture proof was generated for
   ## (input pk mkRealZkPubKey(1), value 100; one output of value 100).
   var tx = mkTransferTx(
     [input.id], [Note(value: 100, zkPublicKey: default(ZkPublicKey))])
-  tx.opProofs[0].transferProof = loadProof(transferProofPath)
+  tx.signedTx.opProofs[0].transferProof = loadProof(transferProofPath)
   tx
 
 proc mkInscribeTx(
     rng: ref HmacDrbgContext, channel: ChannelId
-): SignedMantleTx =
+): ValidSignedMantleTx =
   ## A single ChannelInscribe op that JIT-creates `channel`; signed with a
   ## fresh Ed25519 key over the real tx hash so it verifies in `tryApplyTx`.
   let
@@ -61,10 +62,11 @@ proc mkInscribeTx(
       signer: kp.pubkey))
     body = MantleTx(ops: @[op])
     txHash = mantleTxHash(body)
-  SignedMantleTx(
-    tx: body,
-    opProofs: @[OpProof(
-      kind: opfChannelInscribe, ed25519SigProof: sign(kp.seckey, txHash))])
+    stx = SignedMantleTx(
+      tx: body,
+      opProofs: @[OpProof(
+        kind: opfChannelInscribe, ed25519SigProof: sign(kp.seckey, txHash))])
+  ValidSignedMantleTx(signedTx: stx, hash: txHash)
 
 suite "gas: per-operation execution gas":
   test "each op kind against its Gas Determination constant":
@@ -265,10 +267,11 @@ suite "gas: tx execution gas and block limit":
         ],
       )
     var s = mkState(@[])
+    let vtx = ValidSignedMantleTx(signedTx: tx, hash: txHash)
     let r = s.tryApplyTx(
-      ValidSignedMantleTx(tx), epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
+      vtx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
     check r.isOk
-    let mf = s.mandatory_fees(ValidSignedMantleTx(tx))
+    let mf = s.mandatory_fees(vtx)
     check mf.isOk
     check mf.get.executionGas == Gas(112)
 
@@ -292,13 +295,13 @@ suite "gas: fee enforcement via committed transfer fixture":
     accept.feeMarket.executionBaseFee = 0
     accept.feeMarket.storageGasPrice = 0
     check accept.tryApplyTxns(
-      [ValidSignedMantleTx(mkFixtureTransferTx(input))], slot = 0'u64, verifyPoq = acceptAllPoq).isOk
+      [mkFixtureTransferTx(input)], slot = 0'u64, verifyPoq = acceptAllPoq).isOk
 
     var reject = mkState([input])
     reject.feeMarket.executionBaseFee = 0
     reject.feeMarket.storageGasPrice = 1 # storage cost > zero surplus
     let r = reject.tryApplyTxns(
-      [ValidSignedMantleTx(mkFixtureTransferTx(input))], slot = 0'u64, verifyPoq = acceptAllPoq)
+      [mkFixtureTransferTx(input)], slot = 0'u64, verifyPoq = acceptAllPoq)
     check r.error == InsufficientBalance
 
   test "prices come from ledger state, not the transaction":
@@ -309,13 +312,13 @@ suite "gas: fee enforcement via committed transfer fixture":
     sOk.feeMarket.executionBaseFee = 0
     sOk.feeMarket.storageGasPrice = 0
     check sOk.tryApplyTxns(
-      [ValidSignedMantleTx(mkFixtureTransferTx(input))], slot = 0'u64, verifyPoq = acceptAllPoq).isOk
+      [mkFixtureTransferTx(input)], slot = 0'u64, verifyPoq = acceptAllPoq).isOk
 
     var sBad = mkState([input])
     sBad.feeMarket.executionBaseFee = 10
     sBad.feeMarket.storageGasPrice = 0
     let r = sBad.tryApplyTxns(
-      [ValidSignedMantleTx(mkFixtureTransferTx(input))], slot = 0'u64, verifyPoq = acceptAllPoq)
+      [mkFixtureTransferTx(input)], slot = 0'u64, verifyPoq = acceptAllPoq)
     check r.error == InsufficientBalance
 
 suite "gas: fee comparison width":
@@ -339,9 +342,9 @@ suite "gas: storage accumulation and epoch rotation":
     s.feeMarket.storageGasPrice = 0
     let
       tx = mkInscribeTx(rng, mkChannelId(1))
-      encodedLen = Gas(encodeSignedMantleTx(tx).len)
+      encodedLen = Gas(encodeSignedMantleTx(tx.signedTx).len)
     s = s.tryApplyTxns(
-      [ValidSignedMantleTx(tx)], slot = 1'u64, verifyPoq = acceptAllPoq).expect("applied")
+      [tx], slot = 1'u64, verifyPoq = acceptAllPoq).expect("applied")
     check s.feeMarket.storageGasConsumedInEpoch == encodedLen
 
     s = s.tryApplyHeader(100, sentinelProof(), testLedgerConfig).expect("rotation")
@@ -366,7 +369,7 @@ suite "gas: storage accumulation and epoch rotation":
     var s = mkState(@[])
     s.feeMarket.executionBaseFee = 2
     s.feeMarket.storageGasPrice = 3
-    let mf = s.mandatory_fees(ValidSignedMantleTx(tx)).expect(
+    let mf = s.mandatory_fees(tx).expect(
       "mandatory_fees should return fee breakdown (totalCost, executionGas, storageGas) for signed mantle tx"
     )
     let expectedCost = (mf.executionGas * 2) + (mf.storageGas * 3)

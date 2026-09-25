@@ -20,7 +20,7 @@ from libp2p/crypto/ed25519/ed25519 import EdSignatureSize
 
 const cfg = cryptarchiaSyncBincodeConfig
 
-func sampleHeader(txs: openArray[SignedMantleTx]): Header =
+func sampleHeader(txs: openArray[ValidSignedMantleTx] = []): Header =
   initHeader(
     bedrockVersion = ExpectedBedrockVersion,
     parentBlock = default(BlockId),
@@ -57,8 +57,8 @@ suite "core/block bincode (cryptarchia sync)":
     for i in 0 ..< EdSignatureSize:
       sig.data[i] = byte(i)
     let
-      sm = minimalSignedTx()
-      blk = initBlock(sampleHeader([sm]), signature = sig, txs = [sm])
+      sm = minimalValidSignedTx()
+      blk = initBlock(sampleHeader([sm]), signature = sig, txs = [sm.signedTx])
     try:
       let back = roundtrip(blk)
       checkBlockEqual(back, blk)
@@ -68,7 +68,9 @@ suite "core/block bincode (cryptarchia sync)":
       fail getCurrentExceptionMsg()
 
   test "encode / decode roundtrip (genesis block)":
-    let genesis = createGenesisBlock(minimalSignedTx())
+    let
+      sm = minimalValidSignedTx()
+      genesis = createGenesisBlock(sm).toBlock()
     try:
       checkBlockEqual(roundtrip(genesis), genesis)
       check genesis.signature == DefaultEd25519Signature
@@ -77,12 +79,12 @@ suite "core/block bincode (cryptarchia sync)":
 
   test "bincode field order is header then signature then txs":
     let
-      sm = minimalSignedTx()
+      sm = minimalValidSignedTx()
       h = sampleHeader([sm])
     var sig: Ed25519Signature
     sig.data[0] = 0xAA'u8
     sig.data[1] = 0xBB'u8
-    let blk = initBlock(h, signature = sig, txs = [sm])
+    let blk = initBlock(h, signature = sig, txs = [sm.signedTx])
     try:
       let
         hdrWire = encode(h, cfg)
@@ -98,13 +100,13 @@ suite "core/block bincode (cryptarchia sync)":
 
   test "serialized block wire includes signature bytes in payload size":
     let
-      sm = minimalSignedTx()
+      sm = minimalValidSignedTx()
       h = sampleHeader([sm])
     try:
-      let withDefaultSig = encode(initBlock(h, txs = [sm]), cfg)
+      let withDefaultSig = encode(initBlock(h, txs = [sm.signedTx]), cfg)
       var sig: Ed25519Signature
       sig.data[0] = 0x55'u8
-      let withMarkedSig = encode(initBlock(h, signature = sig, txs = [sm]), cfg)
+      let withMarkedSig = encode(initBlock(h, signature = sig, txs = [sm.signedTx]), cfg)
       check withDefaultSig.len == withMarkedSig.len
       check withDefaultSig != withMarkedSig
       check withMarkedSig.len > EdSignatureSize
@@ -113,11 +115,11 @@ suite "core/block bincode (cryptarchia sync)":
 
   test "encode / decode roundtrip (Proposal)":
     let
-      sm = minimalSignedTx()
+      sm = minimalValidSignedTx()
       h = sampleHeader([sm])
     var proposal = new(Proposal)
     proposal.header = h
-    proposal.references[0] = mantleTxHash(sm.tx)
+    proposal.references[0] = sm.hash
     proposal.signature = DefaultEd25519Signature
     try:
       let serialized = encode(proposal[], cfg)

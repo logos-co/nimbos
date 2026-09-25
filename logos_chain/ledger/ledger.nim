@@ -18,7 +18,7 @@ import
     pol_verifier, poq_verifier, epoch_state, fee_market, block_rewards,
   ],
   ./sdp/[registry, ops],
-  ../core/mantle/[tx_types, tx_hashing, operations, proofs, gas],
+  ../core/mantle/[tx_types, operations, proofs, gas],
   ../core/types
 
 from ../core/crypto/types import ZkPublicKey
@@ -78,7 +78,7 @@ proc fromUtxos*(
 
 proc fromGenesis*(
     _: typedesc[LedgerState],
-    genesisTxs: openArray[SignedMantleTx],
+    genesisTxs: openArray[ValidSignedMantleTx],
     nonce: FieldElement,
     sdp: sink SdpRegistry,
     cfg: LedgerConfig,
@@ -231,7 +231,7 @@ proc tryApplyTx*(
   ## Note: Structural and cryptographic validation is guaranteed at compile-time
   ## via `ValidSignedMantleTx`.
   var balance = Balance.zero
-  let txHash = mantleTxHash(tx.tx)
+  let txHash = tx.hash
   for i in 0 ..< tx.tx.ops.len:
     let
       op = tx.tx.ops[i]

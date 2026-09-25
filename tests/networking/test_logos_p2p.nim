@@ -381,7 +381,7 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
 
 suite "P2P stack — on-the-wire encoding":
   test "Network Wire Format: payloads on negotiated streams follow Logos Chain wire format spec":
-    let tx = minimalSignedTx()
+    let tx = minimalValidSignedTx().signedTx
     let encoded = encodeSignedMantleTx(tx)
     check encoded.len > 0
     let decoded = decodeSignedMantleTx(encoded)

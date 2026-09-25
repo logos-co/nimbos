@@ -29,16 +29,17 @@ func genesisStateWith(
     parent = default(Parent),
     signer = default(Signer),
 ): GenesisState =
+  let stx = SignedMantleTx(
+    tx: MantleTx(ops: @[
+      Op(payload: OpPayload(
+        kind: OpPayloadTag.ChannelInscribe,
+        channelInscribe: ChannelInscribePayload(
+          channelId: channelId,
+          inscription: inscription,
+          parent: parent,
+          signer: signer)))]))
   GenesisState(
-    signedMantleTx: SignedMantleTx(
-      tx: MantleTx(ops: @[
-        Op(payload: OpPayload(
-          kind: OpPayloadTag.ChannelInscribe,
-          channelInscribe: ChannelInscribePayload(
-            channelId: channelId,
-            inscription: inscription,
-            parent: parent,
-            signer: signer)))])))
+    vtx: ValidSignedMantleTx(signedTx: stx, hash: mantleTxHash(stx.tx)))
 
 suite "chain/genesis cryptarchia parameters":
   test "decodes the spec worked example":

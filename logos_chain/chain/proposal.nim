@@ -136,21 +136,21 @@ proc constructProposal*(
 func reconstructBlock*(
     proposal: Proposal,
     mempool: Mempool
-): Result[Block, ProposalValidationError] =
+): Result[ValidBlock, ProposalValidationError] =
   ## Reconstructs the block from proposal references using the mempool (and internal grace cache).
   ## Returns error if any reference is missing or if we cannot retrieve it.
-  var txs: seq[SignedMantleTx]
+  var vtxs: seq[ValidSignedMantleTx]
   for r in proposal.references:
     if r.isZero():
       break
     let tx = mempool.get(r).valueOr:
       return err(ProposalValidationError.MissingReference)
-    txs.add(SignedMantleTx(tx))
+    vtxs.add(tx)
   
-  ok(Block(
+  ok(ValidBlock(
     header: proposal.header,
     signature: proposal.signature,
-    txs: txs
+    txs: vtxs,
   ))
 
 {.pop.}

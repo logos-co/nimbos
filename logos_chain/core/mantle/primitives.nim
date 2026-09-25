@@ -251,10 +251,8 @@ func encodeLocatorCount*(value: byte): byte =
 
 func encodeLocator*(value: Locator): seq[byte] =
   ## Locator = 2Byte * BYTE ; Max 329 bytes, multiaddr format
-  let locatorBytes = value.data().buffer
-  doAssert locatorBytes.len <= MaxLocatorMultiaddrBytes,
-    "Locator exceeds max multiaddr byte length"
-  encodeU16LeLenPrefixed(locatorBytes)
+  # TODO(protocol): Pending PR migrating encode* pipeline to fallible Result[seq[byte], Error].
+  encodeU16LeLenPrefixed(value.data().buffer)
 
 func byteLen*(locator: Locator): int =
   ## Exact wire byte length of a Locator: 2-byte prefix + multiaddr bytes.

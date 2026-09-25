@@ -10,6 +10,7 @@
 
 import
   unittest2,
+  ../testutil,
   ../../logos_chain/core/mantle/[tx_types, tx_hashing],
   ../../logos_chain/core/types
 
@@ -25,7 +26,7 @@ suite "core/types":
       bedrockVersion = testBedrockVersion,
       parentBlock = default(BlockId),
       slot = 0'u64,
-      txs = [SignedMantleTx(tx: tx, opProofs: @[])],
+      txHashes = [mantleTxHash(tx)],
       proofOfLeadership = ProofOfLeadership(
         leaderVoucher: default(RewardVoucher),
         entropyContribution: default(ZkHash),
@@ -43,7 +44,7 @@ suite "core/types":
       bedrockVersion = testBedrockVersion,
       parentBlock = default(BlockId),
       slot = 0'u64,
-      txs = [SignedMantleTx(tx: tx, opProofs: @[])],
+      txHashes = [mantleTxHash(tx)],
       proofOfLeadership = ProofOfLeadership(
         leaderVoucher: default(RewardVoucher),
         entropyContribution: default(ZkHash),
@@ -124,7 +125,7 @@ suite "core/types":
       bedrockVersion = 1'u8,
       parentBlock = default(BlockId),
       slot = SlotNumber(100),
-      txs = [tx],
+      txHashes = [mantleTxHash(tx.tx)],
       proofOfLeadership = ProofOfLeadership(
         leaderVoucher: default(RewardVoucher),
         entropyContribution: default(ZkHash),
@@ -142,7 +143,7 @@ suite "core/types":
 
     let hashes = [hA, hB]
     check createBlockRoot(hashes) == hashPair(hA, hB)
-    check createBlockRoot([txA, txB]) == createBlockRoot(hashes)
+    check createBlockRoot([ValidSignedMantleTx(signedTx: txA, hash: hA), ValidSignedMantleTx(signedTx: txB, hash: hB)]) == createBlockRoot(hashes)
     check createBlockRoot(openArray[Hash32]([])) == default(Hash32)
     check createBlockRoot([hA]) == hA
 
@@ -156,7 +157,7 @@ suite "core/types":
       leaderKey: default(Ed25519PublicKey),
     )
     let hFromHashes = initHeader(1'u8, default(BlockId), SlotNumber(10), [hx], pol)
-    let hFromTxs = initHeader(1'u8, default(BlockId), SlotNumber(10), [tx], pol)
+    let hFromTxs = initHeader(1'u8, default(BlockId), SlotNumber(10), [ValidSignedMantleTx(signedTx: tx, hash: hx)], pol)
     check hFromHashes == hFromTxs
 
   test "initProposal accepts References directly":
