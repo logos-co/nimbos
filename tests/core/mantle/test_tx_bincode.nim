@@ -133,7 +133,7 @@ suite "core/mantle/tx_bincode":
     except BincodeError:
       fail getCurrentExceptionMsg()
 
-  test "serializeSignedMantleTxToSeq raises BincodeError on invalid tx structure":
+  test "encode raises BincodeError on invalid tx structure":
     let badSigned = SignedMantleTx(
       tx: MantleTx(ops: @[
         createTransferOp(TransferPayload(inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @[])))
@@ -141,6 +141,6 @@ suite "core/mantle/tx_bincode":
       opProofs: @[] # Mismatch
     )
     expect BincodeError:
-      discard serializeSignedMantleTxToSeq(badSigned)
+      discard encode(badSigned)
 
 {.pop.}

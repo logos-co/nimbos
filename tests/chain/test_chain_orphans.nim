@@ -23,7 +23,7 @@ proc setupChain(
 ): tuple[chain: Chain, genesis: Block, gid: BlockId] =
   let
     sm = minimalSignedTx()
-    genesis = createGenesisBlock(sm)
+    genesis = createGenesisBlock(sm).get
     gid = blockId(genesis.header)
   var c = initTestChain(genesis, securityParam = securityParam)
   c.slotConfig.genesisTime = uint64(getTime().toUnix() - 500)
@@ -314,7 +314,7 @@ suite "chain/orphan_resolution":
     var (chain, genesis, gid) = setupChain(securityParam = 1)
 
     let txA = minimalSignedTx()
-    check chain.mempool.add(ValidSignedMantleTx(txA), SlotNumber(1))
+    check chain.mempool.add(ValidSignedMantleTx(txA), SlotNumber(1)).get
     check chain.mempool.len == 1
 
     # Branch A: block a1 with txA

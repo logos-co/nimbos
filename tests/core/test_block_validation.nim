@@ -384,7 +384,7 @@ suite "core/block_validation — multi-tier evaluation order":
   test "Tier 1: validateBlock marks isOrphan as true for valid orphan block":
     let
       sm = minimalSignedTx()
-      genesis = createGenesisBlock(sm)
+      genesis = createGenesisBlock(sm).get
       tree = newLocalTree(genesis, 1'u64)
       ledger = Ledger[BlockId].init(blockId(genesis.header), default(LedgerState), default(LedgerConfig))
       orphanParent = Hash32([1'u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])

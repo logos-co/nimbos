@@ -304,8 +304,8 @@ suite "chain/proposal":
   test "reconstructBlock reconstructs block for orphan proposal":
     var m = Mempool.init()
     let tx = signedTxWithOps(1, 1)
-    check m.add(ValidSignedMantleTx(tx), SlotNumber(1)) == true
-    let genesis = createGenesisBlock(signedTxWithOps(1, 0))
+    check m.add(ValidSignedMantleTx(tx), SlotNumber(1)).get == true
+    let genesis = createGenesisBlock(signedTxWithOps(1, 0)).get
     var state = LedgerState.fromGenesis(
       genesis.txs, default(FieldElement), testSdpRegistry(),
       testLedgerConfig).expect("genesis state")
