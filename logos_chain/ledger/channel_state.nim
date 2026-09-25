@@ -156,7 +156,7 @@ func applyChannelInscribe*(
     channels: ChannelStore,
     op: ChannelInscribePayload,
     blockSlot: SlotNumber,
-): ChannelStore =
+): Result[ChannelStore, LedgerError] =
   ## Mutation only; assumes `validateChannelInscribe` passed. JIT-creates
   ## the channel if absent, then advances sequencer + tipMessage + tipSlot.
   var chan = channels.get(op.channelId).valueOr:
@@ -164,9 +164,11 @@ func applyChannelInscribe*(
   let (newSeq, newStart) = round_robin(blockSlot, chan)
   chan.tipSequencer = newSeq
   chan.tipSequencerStartingSlot = newStart
-  chan.tipMessage = opId(op)
+  let tipMsg = opId(op).valueOr:
+    return err(error.toLedgerError)
+  chan.tipMessage = tipMsg
   chan.tipSlot = blockSlot
-  channels.insert(op.channelId, chan)
+  ok(channels.insert(op.channelId, chan))
 
 func validateChannelConfig*(
     channels: ChannelStore,
@@ -188,7 +190,7 @@ func applyChannelConfig*(
     channels: ChannelStore,
     op: ChannelConfigPayload,
     blockSlot: SlotNumber,
-): ChannelStore =
+): Result[ChannelStore, LedgerError] =
   ## Mutation only; assumes `validateChannelConfig` passed. Overwrites the
   ## channel's keys/thresholds/rotation, or JIT-creates with `op.keys`.
   var chan = channels.get(op.channel).valueOr:
@@ -201,8 +203,10 @@ func applyChannelConfig*(
   chan.postingTimeout = op.postingTimeout
   chan.transferThreshold = op.transferThreshold
   chan.tipSlot = blockSlot
-  chan.tipMessage = opId(op)
-  channels.insert(op.channel, chan)
+  let tipMsg = opId(op).valueOr:
+    return err(error.toLedgerError)
+  chan.tipMessage = tipMsg
+  ok(channels.insert(op.channel, chan))
 
 proc validateChannelDeposit*(
     channels: ChannelStore,
@@ -217,10 +221,10 @@ proc validateChannelDeposit*(
   if op.channel notin channels:
     return err(ChannelNotFound)
   ?assert_spendable(
-    channelNotes, cs.utxos, lockedNotes, op.inputs, Opt.none(ChannelId))
+    channelNotes, cs.utxos, lockedNotes, op.inputs.noteIds, Opt.none(ChannelId))
 
-  var pks = newSeqOfCap[ZkPublicKey](op.inputs.len)
-  for inputId in op.inputs:
+  var pks = newSeqOfCap[ZkPublicKey](op.inputs.noteIds.len)
+  for inputId in op.inputs.noteIds:
     let utxo = cs.utxos.get(inputId).valueOr:
       return err(InvalidNote) # unreachable: assert_spendable checked presence
     pks.add(utxo.note.zkPublicKey)
@@ -237,8 +241,9 @@ func applyChannelDeposit*(
   ## inputs and re-creates identical notes under the deposit's OpId.
   # The fresh NoteId resets ageing and blocks deposit replay.
   var notes = channelNotes
-  let depositOpId = opId(op)
-  for i, inputId in op.inputs:
+  let depositOpId = opId(op).valueOr:
+    return err(error.toLedgerError)
+  for i, inputId in op.inputs.noteIds:
     let (newStore, removedUtxo) = cs.utxos.remove(inputId).valueOr:
       return err(InvalidNote) # unreachable if validate passed
     let
@@ -261,7 +266,7 @@ func validateChannelWithdraw*(
   let chan = channels.get(op.channel).valueOr:
     return err(ChannelNotFound)
   ?assert_spendable(
-    channelNotes, cs.utxos, lockedNotes, op.inputs, Opt.some(op.channel))
+    channelNotes, cs.utxos, lockedNotes, op.inputs.noteIds, Opt.some(op.channel))
   ?verifyChannelMultiSig(
     proof, chan.accreditedKeys, chan.transferThreshold, txHash)
   ok()
@@ -273,7 +278,7 @@ func applyChannelWithdraw*(
   ## inputs; the UTXO set is untouched.
   # Notes keep their NoteId, value and ZkPublicKey, so ageing never resets.
   var notes = channelNotes
-  for inputId in op.inputs:
+  for inputId in op.inputs.noteIds:
     notes = ?notes.unregisterChannelNote(inputId, op.channel)
   ok(notes)
 
@@ -290,16 +295,16 @@ func validateChannelTransfer*(
   ## Note: Assumes non-zero output notes and non-empty/unique inputs are verified
   ## statelessly at ingress via `validateMantleTxStateless`.
   var outflow: TokenValue = 0
-  for outNote in op.outputs:
+  for outNote in op.outputs.notes:
     outflow = ?outflow.checkedAdd(outNote.value)
 
   let chan = channels.get(op.channel).valueOr:
     return err(ChannelNotFound)
   ?assert_spendable(
-    channelNotes, cs.utxos, lockedNotes, op.inputs, Opt.some(op.channel))
+    channelNotes, cs.utxos, lockedNotes, op.inputs.noteIds, Opt.some(op.channel))
 
   var inflow: TokenValue = 0
-  for inputId in op.inputs:
+  for inputId in op.inputs.noteIds:
     let utxo = cs.utxos.get(inputId).valueOr:
       return err(InvalidNote) # unreachable: assert_spendable checked presence
     inflow = ?inflow.checkedAdd(utxo.note.value)
@@ -318,14 +323,15 @@ func applyChannelTransfer*(
   ## Mutation only; assumes `validateChannelTransfer` passed. Reassigns the
   ## inputs' value to the outputs' keys, which stay owned by the channel.
   var notes = channelNotes
-  for inputId in op.inputs:
+  for inputId in op.inputs.noteIds:
     let (newStore, _) = cs.utxos.remove(inputId).valueOr:
       return err(InvalidNote) # unreachable if validate passed
     cs.utxos = newStore
     notes = ?notes.unregisterChannelNote(inputId, op.channel)
 
-  let transferOpId = opId(op)
-  for i, outNote in op.outputs:
+  let transferOpId = opId(op).valueOr:
+    return err(error.toLedgerError)
+  for i, outNote in op.outputs.notes:
     let
       u = Utxo(opId: transferOpId, outputIndex: uint64(i), note: outNote)
       uid = u.id

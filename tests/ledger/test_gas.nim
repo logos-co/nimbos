@@ -60,7 +60,7 @@ proc mkInscribeTx(
       parent: default(Hash32),
       signer: kp.pubkey))
     body = MantleTx(ops: @[op])
-    txHash = mantleTxHash(body)
+    txHash = mantleTxHash(body).get
   SignedMantleTx(
     tx: body,
     opProofs: @[OpProof(
@@ -69,22 +69,22 @@ proc mkInscribeTx(
 suite "gas: per-operation execution gas":
   test "each op kind against its Gas Determination constant":
     check:
-      execution_gas(defaultOpForOpcode(OpTransfer), 0) == Gas(590)
-      execution_gas(defaultOpForOpcode(OpChannelInscribe), 0) == Gas(56)
-      execution_gas(defaultOpForOpcode(OpChannelConfig), 1) == Gas(56)
-      execution_gas(defaultOpForOpcode(OpChannelDeposit), 0) == Gas(590)
-      execution_gas(defaultOpForOpcode(OpChannelWithdraw), 1) == Gas(56)
-      execution_gas(defaultOpForOpcode(OpChannelTransfer), 1) == Gas(56)
-      execution_gas(defaultOpForOpcode(OpSdpDeclare), 0) == Gas(646)
-      execution_gas(defaultOpForOpcode(OpSdpWithdraw), 0) == Gas(590)
-      execution_gas(defaultOpForOpcode(OpSdpActive), 0) == Gas(590)
-      execution_gas(defaultOpForOpcode(OpLeaderClaim), 0) == Gas(580)
+      execution_gas(defaultOpForOpcode(OpTransfer).get, 0) == Gas(590)
+      execution_gas(defaultOpForOpcode(OpChannelInscribe).get, 0) == Gas(56)
+      execution_gas(defaultOpForOpcode(OpChannelConfig).get, 1) == Gas(56)
+      execution_gas(defaultOpForOpcode(OpChannelDeposit).get, 0) == Gas(590)
+      execution_gas(defaultOpForOpcode(OpChannelWithdraw).get, 1) == Gas(56)
+      execution_gas(defaultOpForOpcode(OpChannelTransfer).get, 1) == Gas(56)
+      execution_gas(defaultOpForOpcode(OpSdpDeclare).get, 0) == Gas(646)
+      execution_gas(defaultOpForOpcode(OpSdpWithdraw).get, 0) == Gas(590)
+      execution_gas(defaultOpForOpcode(OpSdpActive).get, 0) == Gas(590)
+      execution_gas(defaultOpForOpcode(OpLeaderClaim).get, 0) == Gas(580)
 
   test "channel config/withdraw/transfer scale with the multisig threshold":
     let
-      cfg = defaultOpForOpcode(OpChannelConfig)
-      wdr = defaultOpForOpcode(OpChannelWithdraw)
-      trf = defaultOpForOpcode(OpChannelTransfer)
+      cfg = defaultOpForOpcode(OpChannelConfig).get
+      wdr = defaultOpForOpcode(OpChannelWithdraw).get
+      trf = defaultOpForOpcode(OpChannelTransfer).get
     check:
       execution_gas(cfg, 0) == Gas(0)
       execution_gas(cfg, 1) == Gas(56)
@@ -117,11 +117,11 @@ suite "gas: per-operation execution gas":
     check chan.transferThreshold == 3
     check execution_gas(
       createChannelWithdrawOp(
-        ChannelWithdrawPayload(channel: cid, inputs: @[])),
+        ChannelWithdrawPayload(channel: cid, inputs: Inputs(noteIds: @[]))),
       chan.transferThreshold) == Gas(168)
     check execution_gas(
       createChannelTransferOp(
-        ChannelTransferPayload(channel: cid, inputs: @[], outputs: @[])),
+        ChannelTransferPayload(channel: cid, inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @[]))),
       chan.transferThreshold) == Gas(168)
     # A channel that doesn't exist yet bills a zero multiplier — the same
     # just-in-time path a first ChannelConfig takes.
@@ -129,7 +129,7 @@ suite "gas: per-operation execution gas":
     check absent.transferThreshold == 0
     check execution_gas(
       createChannelTransferOp(
-        ChannelTransferPayload(channel: cid, inputs: @[], outputs: @[])),
+        ChannelTransferPayload(channel: cid, inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @[]))),
       absent.transferThreshold) == Gas(0)
 
 suite "gas: fee-market genesis state":
@@ -242,7 +242,7 @@ suite "gas: tx execution gas and block limit":
   test "tryApplyTx sums per-op execution gas over the tx":
     # Two transfer ops would sum to 1180; driven here with Ed25519-signable
     # channel-inscribe ops (56 each), since transfers need a prover fixture.
-    let transferOp = defaultOpForOpcode(OpTransfer)
+    let transferOp = defaultOpForOpcode(OpTransfer).get
     check execution_gas(transferOp, 0) + execution_gas(transferOp, 0) == Gas(1180)
 
     let
@@ -256,7 +256,7 @@ suite "gas: tx execution gas and block limit":
         channelId: mkChannelId(2), inscription: @[byte 0x02],
         parent: default(Hash32), signer: kp2.pubkey))
       body = MantleTx(ops: @[op1, op2])
-      txHash = mantleTxHash(body)
+      txHash = mantleTxHash(body).get
       tx = SignedMantleTx(
         tx: body,
         opProofs: @[
@@ -339,7 +339,7 @@ suite "gas: storage accumulation and epoch rotation":
     s.feeMarket.storageGasPrice = 0
     let
       tx = mkInscribeTx(rng, mkChannelId(1))
-      encodedLen = Gas(encodeSignedMantleTx(tx).len)
+      encodedLen = Gas(encodeSignedMantleTx(tx).get.len)
     s = s.tryApplyTxns(
       [ValidSignedMantleTx(tx)], slot = 1'u64, verifyPoq = acceptAllPoq).expect("applied")
     check s.feeMarket.storageGasConsumedInEpoch == encodedLen

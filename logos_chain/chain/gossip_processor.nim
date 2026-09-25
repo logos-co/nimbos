@@ -71,7 +71,10 @@ proc processTx*(
       opCount = tx.tx.ops.len, proofCount = tx.opProofs.len, src
     return ValidationResult.Reject
 
-  let txHash = mantleTxHash(tx.tx)
+  let txHash = mantleTxHash(tx.tx).valueOr:
+    debug "GossipSub rejected malformed tx (hashing failed)",
+      error = $error, src
+    return ValidationResult.Reject
   let txHashHex = toHex(txHash)
 
   if txHash in bp.mempool:
@@ -85,7 +88,11 @@ proc processTx*(
     return ValidationResult.Reject
 
   let nowSlot = bp.currentWallclockSlot()
-  if not bp.mempool.add(ValidSignedMantleTx(tx), nowSlot):
+  let added = bp.mempool.add(ValidSignedMantleTx(tx), nowSlot).valueOr:
+    debug "GossipSub rejected tx (mempool add failed)",
+      error = $error, src
+    return ValidationResult.Reject
+  if not added:
     trace "GossipSub ignored duplicate tx already in mempool",
       txHash = txHashHex, src
     return ValidationResult.Ignore

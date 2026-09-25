@@ -9,6 +9,7 @@
 {.used.}
 
 import
+  std/strutils,
   unittest2,
   libp2p/multiaddress,
   ../../../logos_chain/core/mantle/primitives
@@ -31,7 +32,7 @@ suite "core/mantle/primitives":
   test "encodeMetadata empty is length 0 u32 le":
     let
       m: Metadata = @[]
-      s = encodeMetadata(m)
+      s = encodeMetadata(m).get
     check s.len == 4
     check s[0] == 0'u8
     check s[1] == 0'u8
@@ -45,30 +46,55 @@ suite "core/mantle/primitives":
     let
       v: Value = 0xAABB_CCDD_EEFF_0011'u64
       wire = @(encodeValue(v))
-    check decodeValue(wire) == v
+    check decodeValue(wire).get == v
 
   test "decodeMetadata roundtrips encodeMetadata":
     let
       m: Metadata = @[1'u8, 2'u8, 3'u8]
-      wire = encodeMetadata(m)
-    check decodeMetadata(wire) == m
+      wire = encodeMetadata(m).get
+    check decodeMetadata(wire).get == m
 
   test "decodeOpcode roundtrips encodeOpcode":
     let wire = @[encodeOpcode(0x42'u8)]
-    check decodeOpcode(wire) == 0x42'u8
+    check decodeOpcode(wire).get == 0x42'u8
 
   test "encodeServiceType maps BN to wire byte 0":
     check encodeServiceType(ServiceType.bn) == 0'u8
     check encodeServiceType(ServiceType.bn) == byte(ord(ServiceType.bn))
 
   test "decodeServiceType roundtrips encodeServiceType":
-    check decodeServiceType(@[encodeServiceType(ServiceType.bn)]) == ServiceType.bn
+    check decodeServiceType(@[encodeServiceType(ServiceType.bn)]).get == ServiceType.bn
+    check decodeServiceType(@[99'u8]).error == DecodingError.InvalidServiceType
 
   test "decodeLocator roundtrips encodeLocator":
     let
       locator = MultiAddress.init("/ip4/127.0.0.1/udp/30303/quic-v1").tryGet()
-      wire = encodeLocator(locator)
-      back = decodeLocator(wire)
+      wire = encodeLocator(locator).get
+      back = decodeLocator(wire).get
     check back.data() == locator.data()
+
+  test "encodeInputs returns error on count overflow":
+    var largeNotes: seq[NoteId]
+    for i in 0 .. 256:
+      largeNotes.add default(NoteId)
+    check encodeInputs(Inputs(noteIds: largeNotes)).error == EncodingError.InputsCountExceeded
+
+  test "encodeOutputs returns error on count overflow":
+    var largeNotes: seq[Note]
+    for i in 0 .. 256:
+      largeNotes.add default(Note)
+    check encodeOutputs(Outputs(notes: largeNotes)).error == EncodingError.OutputsCountExceeded
+
+  test "encodeLocators returns error on count overflow":
+    let loc = MultiAddress.init("/ip4/127.0.0.1/udp/30303/quic-v1").tryGet()
+    var largeLocs: seq[Locator]
+    for i in 0 .. 256:
+      largeLocs.add loc
+    check encodeLocators(largeLocs).error == EncodingError.LocatorsCountExceeded
+
+  test "encodeLocator returns error on length overflow":
+    let longStr = "/dns4/" & repeat("a", 200) & "/dns4/" & repeat("b", 150)
+    let longAddr = MultiAddress.init(longStr).tryGet()
+    check encodeLocator(longAddr).error == EncodingError.LocatorLengthExceeded
 
 {.pop.}

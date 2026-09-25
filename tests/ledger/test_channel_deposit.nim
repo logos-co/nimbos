@@ -50,7 +50,7 @@ suite "validateChannelDeposit — structural checks (no VK)":
       cs = CryptarchiaState.init([input])
       op = ChannelDepositPayload(
         channel: mkChannelId(0xFF),
-        inputs: @[input.id],
+        inputs: Inputs(noteIds: @[input.id]),
         metadata: @[],
       )
       r = validateChannelDeposit(
@@ -65,7 +65,7 @@ suite "validateChannelDeposit — structural checks (no VK)":
       missing = mkUtxo(value = 1, pkSeed = 7)
       cs = CryptarchiaState.init()
       op = ChannelDepositPayload(
-        channel: cid, inputs: @[missing.id], metadata: @[],
+        channel: cid, inputs: Inputs(noteIds: @[missing.id]), metadata: @[],
       )
       r = validateChannelDeposit(
         chans, ChannelNotes.init(), cs, LockedNotes.init(), op,
@@ -79,7 +79,7 @@ suite "validateChannelDeposit — structural checks (no VK)":
       input = mkUtxo(value = 100, pkSeed = 1)
       cs = CryptarchiaState.init([input])
       op = ChannelDepositPayload(
-        channel: cid, inputs: @[input.id], metadata: @[],
+        channel: cid, inputs: Inputs(noteIds: @[input.id]), metadata: @[],
       )
       locked = LockedNotes.init().insert(input.id, initHashSet[DeclarationId]())
       r = validateChannelDeposit(
@@ -96,7 +96,7 @@ suite "validateChannelDeposit — structural checks (no VK)":
       notes = ChannelNotes.init().registerChannelNote(input.id, cid)
         .expect("fresh note")
       op = ChannelDepositPayload(
-        channel: cid, inputs: @[input.id], metadata: @[],
+        channel: cid, inputs: Inputs(noteIds: @[input.id]), metadata: @[],
       )
       r = validateChannelDeposit(
         chans, notes, cs, LockedNotes.init(), op,
@@ -111,14 +111,14 @@ suite "applyChannelDeposit — consume and re-create (no verify)":
       in1 = mkUtxo(value = 250, pkSeed = 2)
       cs = CryptarchiaState.init([in0, in1])
       op = ChannelDepositPayload(
-        channel: cid, inputs: @[in0.id, in1.id], metadata: @[],
+        channel: cid, inputs: Inputs(noteIds: @[in0.id, in1.id]), metadata: @[],
       )
       r = applyChannelDeposit(ChannelNotes.init(), cs, op)
     check r.isOk
     let
       (notes, newCs) = r.get
-      recreated0 = Utxo(opId: opId(op), outputIndex: 0, note: in0.note)
-      recreated1 = Utxo(opId: opId(op), outputIndex: 1, note: in1.note)
+      recreated0 = Utxo(opId: opId(op).get, outputIndex: 0, note: in0.note)
+      recreated1 = Utxo(opId: opId(op).get, outputIndex: 1, note: in1.note)
     check newCs.len == 2
     check not newCs.utxos.contains(in0.id)
     check not newCs.utxos.contains(in1.id)
@@ -137,13 +137,13 @@ suite "applyChannelDeposit — consume and re-create (no verify)":
       chans = mkChanStore(cid)
       cs = CryptarchiaState.init([input])
       depositOp = ChannelDepositPayload(
-        channel: cid, inputs: @[input.id], metadata: @[],
+        channel: cid, inputs: Inputs(noteIds: @[input.id]), metadata: @[],
       )
       deposited = applyChannelDeposit(ChannelNotes.init(), cs, depositOp)
         .expect("deposit applies")
-      channelNote = Utxo(opId: opId(depositOp), outputIndex: 0, note: input.note)
+      channelNote = Utxo(opId: opId(depositOp).get, outputIndex: 0, note: input.note)
       withdrawOp = ChannelWithdrawPayload(
-        channel: cid, inputs: @[channelNote.id])
+        channel: cid, inputs: Inputs(noteIds: @[channelNote.id]))
       released = applyChannelWithdraw(deposited.channelNotes, withdrawOp)
         .expect("owned by cid")
       replay = validateChannelDeposit(
@@ -161,7 +161,7 @@ suite "applyChannelDeposit — consume and re-create (no verify)":
         utxos: UtxoStore.init().insert(input.id, input).store, leader: leader,
       )
       op = ChannelDepositPayload(
-        channel: cid, inputs: @[input.id], metadata: @[],
+        channel: cid, inputs: Inputs(noteIds: @[input.id]), metadata: @[],
       )
       r = applyChannelDeposit(ChannelNotes.init(), cs, op)
     check r.isOk
@@ -176,7 +176,7 @@ suite "MantleState.tryApplyChannelDeposit — verify wrapper (fixture-driven)":
       input = mkUtxo(value = 100, pkSeed = 1)
       cs = CryptarchiaState.init([input])
       op = ChannelDepositPayload(
-        channel: cid, inputs: @[input.id], metadata: @[],
+        channel: cid, inputs: Inputs(noteIds: @[input.id]), metadata: @[],
       )
       r = m.tryApplyChannelDeposit(
         cs, LockedNotes.init(), op,
@@ -191,7 +191,7 @@ suite "MantleState.tryApplyChannelDeposit — verify wrapper (fixture-driven)":
       input = mkUtxo(value = 100, pkSeed = 1)
       cs = CryptarchiaState.init([input])
       op = ChannelDepositPayload(
-        channel: cid, inputs: @[input.id], metadata: @[],
+        channel: cid, inputs: Inputs(noteIds: @[input.id]), metadata: @[],
       )
       r = m.tryApplyChannelDeposit(
         cs, LockedNotes.init(), op,
@@ -208,13 +208,13 @@ suite "MantleState.tryApplyChannelDeposit — verify wrapper (fixture-driven)":
       input = mkUtxoWithPk(mkRealZkPubKey(1), value = 100)
       cs = CryptarchiaState.init([input])
       op = ChannelDepositPayload(
-        channel: cid, inputs: @[input.id], metadata: @[],
+        channel: cid, inputs: Inputs(noteIds: @[input.id]), metadata: @[],
       )
       r = m.tryApplyChannelDeposit(cs, LockedNotes.init(), op, sig, txHash)
     check r.isOk
     let
       (newMs, newCs) = r.get
-      recreated = Utxo(opId: opId(op), outputIndex: 0, note: input.note)
+      recreated = Utxo(opId: opId(op).get, outputIndex: 0, note: input.note)
     check newCs.len == 1
     check not newCs.utxos.contains(input.id)
     check newCs.utxos.get(recreated.id) == Opt.some(recreated)

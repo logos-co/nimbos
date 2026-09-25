@@ -111,7 +111,7 @@ proc fromGenesis*(
       of ChannelInscribe:
         # Envelope validity (null channel, root parent, zero signer) is
         # validated statelessly in `chain/genesis.nim` (`decodeCryptarchiaParameter`).
-        s.mantleLedger.channels = applyChannelInscribe(
+        s.mantleLedger.channels = ?applyChannelInscribe(
           s.mantleLedger.channels, op.payload.channelInscribe, 0)
       of SdpDeclare:
         s.sdp = ?applySdpDeclare(s.sdp, op.payload.sdpDeclare, genesisEpoch)
@@ -207,7 +207,9 @@ func opMultisigThreshold(op: Op, proof: OpProof): Result[uint16, LedgerError] =
   ## same tx create or update a channel before using it, and charges for the signatures
   ## actually verified by `verifyChannelMultiSig` in `channel_state.nim` (L92-L107) — if
   ## `proof.signatures.len != threshold`, the transaction will not be validated (`ThresholdUnmet`).
-  if proof.kind != expectedOpProofKindForOpcode(op.opcode):
+  let expectedKind = expectedOpProofKindForOpcode(op.opcode).valueOr:
+    return err(error.toLedgerError)
+  if proof.kind != expectedKind:
     return err(PermanentInvalidTxProof)
   case op.payload.kind
   of ChannelConfig:
@@ -231,7 +233,8 @@ proc tryApplyTx*(
   ## Note: Structural and cryptographic validation is guaranteed at compile-time
   ## via `ValidSignedMantleTx`.
   var balance = Balance.zero
-  let txHash = mantleTxHash(tx.tx)
+  let txHash = mantleTxHash(tx.tx).valueOr:
+    return err(error.toLedgerError)
   for i in 0 ..< tx.tx.ops.len:
     let
       op = tx.tx.ops[i]

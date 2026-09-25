@@ -28,7 +28,7 @@ template peerProvider(peers: varargs[PeerId]): PeerProvider =
 proc runLbp2pIbdSyncTest(extraBlocks: int) {.async.} =
   let
     sm = minimalSignedTx()
-    genesis = createGenesisBlock(sm)
+    genesis = createGenesisBlock(sm).get
 
   var chainBootstrap = initTestChain(genesis)
   let tipId = extendChainAfterGenesis(chainBootstrap.localTree, genesis, extraBlocks)
@@ -60,7 +60,7 @@ suite "sync/initial_block_download (download blocks)":
   test "decodeBlocksFromDownloadResponses roundtrip (genesis wrapped in dbrBlock)":
     let
       sm = minimalSignedTx()
-      genesis = createGenesisBlock(sm)
+      genesis = createGenesisBlock(sm).get
       genesisWire = try:
         encode(genesis, cryptarchiaSyncBincodeConfig)
       except BincodeError:
@@ -74,7 +74,7 @@ suite "sync/initial_block_download (download blocks)":
   test "cappedDownloadPathBlockIds returns target block when path is one hop":
     let
       sm = minimalSignedTx()
-      genesis = createGenesisBlock(sm)
+      genesis = createGenesisBlock(sm).get
       gid = blockId(genesis.header)
       tree = newLocalTree(genesis, 1'u64)
       b1 = childBlock(genesis.header, gid, SlotNumber(1), [sm])
@@ -92,7 +92,7 @@ suite "sync/initial_block_download (download blocks)":
   test "cappedDownloadPathBlockIds caps batch at MaxRequestBlocks":
     let
       sm = minimalSignedTx()
-      genesis = createGenesisBlock(sm)
+      genesis = createGenesisBlock(sm).get
       tree = newLocalTree(genesis, 1'u64)
       tipId = extendChainAfterGenesis(tree, genesis, MaxRequestBlocks + 5)
       req = DownloadBlocksRequest(
@@ -106,7 +106,7 @@ suite "sync/initial_block_download (download blocks)":
   test "decodeBlocksFromDownloadResponses recovers blocks from handler-shaped response":
     let
       sm = minimalSignedTx()
-      genesis = createGenesisBlock(sm)
+      genesis = createGenesisBlock(sm).get
       gid = blockId(genesis.header)
       tree = newLocalTree(genesis, 1'u64)
       b1 = childBlock(genesis.header, gid, SlotNumber(1), [sm])
@@ -124,7 +124,7 @@ suite "sync/initial_block_download (download blocks)":
   asyncTest "sendDownloadBlocksRequest round-trips over mounted sync handler":
     let
       sm = minimalSignedTx()
-      genesis = createGenesisBlock(sm)
+      genesis = createGenesisBlock(sm).get
       gid = blockId(genesis.header)
       b1 = childBlock(genesis.header, gid, SlotNumber(1), [sm])
       serverChain = initTestChain(genesis)
@@ -149,7 +149,7 @@ suite "sync/initial_block_download (GetTip)":
   asyncTest "sendGetTipRequest round-trips over mounted sync handler":
     let
       sm = minimalSignedTx()
-      genesis = createGenesisBlock(sm)
+      genesis = createGenesisBlock(sm).get
       serverChain = initTestChain(genesis)
     withSyncPair(serverChain, initTestChain(genesis)):
       let
@@ -164,25 +164,25 @@ suite "sync/initial_block_download (GetTip)":
 
 suite "sync/initial_block_download (IBD requester loop)":
   asyncTest "initialBlockDownload with no configured peers completes without raising":
-    let genesis = createGenesisBlock(minimalSignedTx())
+    let genesis = createGenesisBlock(minimalSignedTx()).get
     withClientSyncer(initTestChain(genesis)):
       await initialBlockDownload(clientSyncer, Opt.none(PeerProvider))
 
   asyncTest "initialBlockDownload when no configured peers are connected raises IBDFailure":
-    let genesis = createGenesisBlock(minimalSignedTx())
+    let genesis = createGenesisBlock(minimalSignedTx()).get
     withClientSyncer(initTestChain(genesis)):
       expect IBDFailure:
         await initialBlockDownload(clientSyncer, Opt.some(peerProvider()))
 
   asyncTest "initialBlockDownload succeeds when peer tip is already in local tree":
-    let genesis = createGenesisBlock(minimalSignedTx())
+    let genesis = createGenesisBlock(minimalSignedTx()).get
     withSyncPair(initTestChain(genesis), initTestChain(genesis)):
       await initialBlockDownload(clientSyncer, Opt.some(peerProvider(server.peerInfo.peerId)))
 
   asyncTest "initialBlockDownload raises when peer chain is taller but sync handler is not mounted":
     let
       sm = minimalSignedTx()
-      genesis = createGenesisBlock(sm)
+      genesis = createGenesisBlock(sm).get
       gid = blockId(genesis.header)
       b1 = childBlock(genesis.header, gid, SlotNumber(1), [sm])
       serverChain = initTestChain(genesis)
@@ -201,7 +201,7 @@ suite "sync/initial_block_download (IBD requester loop)":
   asyncTest "initialBlockDownload succeeds when peer chain is taller and download sends blocks":
     let
       sm = minimalSignedTx()
-      genesis = createGenesisBlock(sm)
+      genesis = createGenesisBlock(sm).get
       gid = blockId(genesis.header)
       b1 = childBlock(genesis.header, gid, SlotNumber(1), [])
       b1id = blockId(b1.header)
@@ -217,7 +217,7 @@ suite "sync/initial_block_download (IBD requester loop)":
   asyncTest "initialBlockDownload fails over to secondary peer when primary peer fails":
     let
       sm = minimalSignedTx()
-      genesis = createGenesisBlock(sm)
+      genesis = createGenesisBlock(sm).get
       gid = blockId(genesis.header)
       b1 = childBlock(genesis.header, gid, SlotNumber(1), [])
       b1id = blockId(b1.header)

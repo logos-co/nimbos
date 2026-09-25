@@ -122,67 +122,65 @@ func proofTypeForKind(kind: OpProofKind): ProofType =
   of opfLeaderClaim:
     ptProofOfClaim
 
-func defaultOpProofForOpcode*(opcode: Opcode): OpProof =
+func defaultOpProofForOpcode*(opcode: Opcode): Result[OpProof, EncodingError] =
   ## Canonical default/empty proof value for a given opcode.
   case opcode
   of OpTransfer:
-    OpProof(kind: opfTransfer, transferProof: DefaultZkSignature)
+    ok(OpProof(kind: opfTransfer, transferProof: DefaultZkSignature))
   of OpChannelInscribe:
-    OpProof(kind: opfChannelInscribe, ed25519SigProof: DefaultEd25519Signature)
+    ok(OpProof(kind: opfChannelInscribe, ed25519SigProof: DefaultEd25519Signature))
   of OpChannelDeposit:
-    OpProof(kind: opfChannelDeposit, channelDepositProof: DefaultZkSignature)
+    ok(OpProof(kind: opfChannelDeposit, channelDepositProof: DefaultZkSignature))
   of OpChannelWithdraw:
-    OpProof(
+    ok(OpProof(
       kind: opfChannelWithdraw,
       channelWithdrawOpProof: ChannelMultiSigProof(signatures: @[], indexes: @[]),
-    )
+    ))
   of OpChannelTransfer:
-    OpProof(
+    ok(OpProof(
       kind: opfChannelTransfer,
       channelTransferOpProof: ChannelMultiSigProof(signatures: @[], indexes: @[]),
-    )
+    ))
   of OpSdpDeclare:
-    OpProof(
+    ok(OpProof(
       kind: opfSdpDeclare,
       declarationProof: ZkAndEd25519SigsProof(
         zkSig: DefaultZkSignature,
         ed25519Sig: DefaultEd25519Signature,
       ),
-    )
+    ))
   of OpSdpWithdraw:
-    OpProof(kind: opfSdpWithdraw, sdpWithdrawProof: DefaultZkSignature)
+    ok(OpProof(kind: opfSdpWithdraw, sdpWithdrawProof: DefaultZkSignature))
   of OpSdpActive:
-    OpProof(kind: opfSdpActive, sdpActiveProof: DefaultZkSignature)
+    ok(OpProof(kind: opfSdpActive, sdpActiveProof: DefaultZkSignature))
   of OpLeaderClaim:
-    OpProof(kind: opfLeaderClaim, proofOfClaimProof: DefaultCompressedGroth16Proof)
+    ok(OpProof(kind: opfLeaderClaim, proofOfClaimProof: DefaultCompressedGroth16Proof))
   of OpChannelConfig:
-    OpProof(
+    ok(OpProof(
       kind: opfChannelConfig,
       channelConfigOpProof: ChannelMultiSigProof(signatures: @[], indexes: @[]),
-    )
+    ))
   else:
-    doAssert false, "unknown opcode for default op proof: " & $opcode
-    default(OpProof)
+    err(EncodingError.UnsupportedOpcode)
 
 func proofType*(proof: OpProof): ProofType =
   ## Proof family for a concrete proof value.
   proofTypeForKind(proof.kind)
 
-func expectedOpProofKindForOpcode*(opcode: Opcode): OpProofKind =
+func expectedOpProofKindForOpcode*(opcode: Opcode): Result[OpProofKind, EncodingError] =
   case opcode
-  of OpTransfer: opfTransfer
-  of OpChannelInscribe: opfChannelInscribe
-  of OpChannelDeposit: opfChannelDeposit
-  of OpChannelWithdraw: opfChannelWithdraw
-  of OpChannelTransfer: opfChannelTransfer
-  of OpSdpDeclare: opfSdpDeclare
-  of OpSdpWithdraw: opfSdpWithdraw
-  of OpSdpActive: opfSdpActive
-  of OpLeaderClaim: opfLeaderClaim
-  of OpChannelConfig: opfChannelConfig
+  of OpTransfer: ok(opfTransfer)
+  of OpChannelInscribe: ok(opfChannelInscribe)
+  of OpChannelDeposit: ok(opfChannelDeposit)
+  of OpChannelWithdraw: ok(opfChannelWithdraw)
+  of OpChannelTransfer: ok(opfChannelTransfer)
+  of OpSdpDeclare: ok(opfSdpDeclare)
+  of OpSdpWithdraw: ok(opfSdpWithdraw)
+  of OpSdpActive: ok(opfSdpActive)
+  of OpLeaderClaim: ok(opfLeaderClaim)
+  of OpChannelConfig: ok(opfChannelConfig)
   else:
-    doAssert false, "unknown opcode for OpProof expectation: " & $opcode
-    default(OpProofKind)
+    err(EncodingError.UnsupportedOpcode)
 
 func encodeProofOfClaimProof*(value: ProofOfClaimProof): array[128, byte] =
   ## ProofOfClaimProof = Groth16
@@ -216,15 +214,15 @@ func encodeZkAndEd25519SigsProof*(
 
 func encodeChannelMultiSigProof*(
   signatures: openArray[Ed25519Signature], indexes: openArray[ChannelKeyIndex]
-): seq[byte] =
+): Result[seq[byte], EncodingError] =
   ## ChannelMultiSigProof = SignatureCount * IndexedEd25519Signature
-  doAssert signatures.len == indexes.len,
-    "ChannelMultiSigProof: signatures and indexes length mismatch"
-  doAssert signatures.len <= int(high(uint16)),
-    "ChannelMultiSigProof: too many signatures for UINT16 SignatureCount"
+  if signatures.len != indexes.len:
+    return err(EncodingError.MultiSigSignaturesMismatch)
+  if signatures.len > int(high(uint16)):
+    return err(EncodingError.MultiSigCountExceeded)
   for i in 1 ..< indexes.len:
-    doAssert uint16(indexes[i - 1]) < uint16(indexes[i]),
-      "ChannelMultiSigProof: indexes must be strictly increasing (ordered, no duplicates)"
+    if uint16(indexes[i - 1]) >= uint16(indexes[i]):
+      return err(EncodingError.MultiSigSignaturesMismatch)
 
   var res: seq[byte]
   let countBytes = encodeSignatureCount(SignatureCount(uint16(signatures.len)))
@@ -233,9 +231,9 @@ func encodeChannelMultiSigProof*(
   for i in 0 ..< signatures.len:
     let indexedSig = encodeIndexedEd25519Signature(signatures[i], indexes[i])
     res.add(indexedSig)
-  res
+  ok(res)
 
-func encodeOpProof*(proof: OpProof): seq[byte] =
+func encodeOpProof*(proof: OpProof): Result[seq[byte], EncodingError] =
   ## OpProof =
   ##   Ed25519SigProof /
   ##   ZkSigProof /
@@ -249,17 +247,17 @@ func encodeOpProof*(proof: OpProof): seq[byte] =
   ##   SignatureCount * IndexedEd25519Signature
   case proof.kind
   of opfChannelInscribe:
-    @(encodeEd25519SigProof(proof.ed25519SigProof))
+    ok(@(encodeEd25519SigProof(proof.ed25519SigProof)))
   of opfTransfer:
-    @(encodeZkSigProof(proof.transferProof))
+    ok(@(encodeZkSigProof(proof.transferProof)))
   of opfSdpWithdraw:
-    @(encodeZkSigProof(proof.sdpWithdrawProof))
+    ok(@(encodeZkSigProof(proof.sdpWithdrawProof)))
   of opfSdpActive:
-    @(encodeZkSigProof(proof.sdpActiveProof))
+    ok(@(encodeZkSigProof(proof.sdpActiveProof)))
   of opfSdpDeclare:
-    @(encodeZkAndEd25519SigsProof(
+    ok(@(encodeZkAndEd25519SigsProof(
       proof.declarationProof.zkSig, proof.declarationProof.ed25519Sig
-    ))
+    )))
   of opfChannelWithdraw:
     encodeChannelMultiSigProof(
       proof.channelWithdrawOpProof.signatures, proof.channelWithdrawOpProof.indexes
@@ -269,13 +267,13 @@ func encodeOpProof*(proof: OpProof): seq[byte] =
       proof.channelTransferOpProof.signatures, proof.channelTransferOpProof.indexes
     )
   of opfLeaderClaim:
-    @(encodeProofOfClaimProof(proof.proofOfClaimProof))
+    ok(@(encodeProofOfClaimProof(proof.proofOfClaimProof)))
   of opfChannelConfig:
     encodeChannelMultiSigProof(
       proof.channelConfigOpProof.signatures, proof.channelConfigOpProof.indexes
     )
   of opfChannelDeposit:
-    @(encodeZkSigProof(proof.channelDepositProof))
+    ok(@(encodeZkSigProof(proof.channelDepositProof)))
 
 func byteLen*(proof: OpProof): int =
   ## Exact wire byte length of an OpProof without allocating buffers.
@@ -305,122 +303,134 @@ func byteLen*(proofs: openArray[OpProof]): int =
     total += byteLen(p)
   total
 
-func decodeProofOfClaimProof*(data: openArray[byte]): ProofOfClaimProof {.raises: [DecodingError].} =
+func decodeProofOfClaimProof*(data: openArray[byte]): Result[ProofOfClaimProof, DecodingError] =
   decodeGroth16(data)
 
 
-func readEd25519Signature(data: openArray[byte], pos: var int): Ed25519Signature {.raises: [DecodingError].} =
+func readEd25519Signature(data: openArray[byte], pos: var int): Result[Ed25519Signature, DecodingError] =
   var sig: Ed25519Signature
-  if not sig.init(readFixed[EdSignatureSize](data, pos)):
-    raise newException(DecodingError, "invalid Ed25519 signature bytes")
-  sig
+  let raw = ?readFixed[EdSignatureSize](data, pos)
+  if not sig.init(raw):
+    return err(DecodingError.InvalidSignature)
+  ok(sig)
 
-func readIndexedEd25519Signature(data: openArray[byte], pos: var int): (Ed25519Signature, ChannelKeyIndex) {.raises: [DecodingError].} =
-  let signature = readEd25519Signature(data, pos)
-  let index = ChannelKeyIndex(readLe[uint16](data, pos))
-  (signature, index)
+func readIndexedEd25519Signature(data: openArray[byte], pos: var int): Result[(Ed25519Signature, ChannelKeyIndex), DecodingError] =
+  let signature = ?readEd25519Signature(data, pos)
+  let index = ChannelKeyIndex(?readLe[uint16](data, pos))
+  ok((signature, index))
 
-func decodeEd25519SigProof*(data: openArray[byte]): Ed25519Signature {.raises: [DecodingError].} =
+func decodeEd25519SigProof*(data: openArray[byte]): Result[Ed25519Signature, DecodingError] =
   decodeEd25519Signature(data)
 
-func decodeZkSigProof*(data: openArray[byte]): ZkSignature {.raises: [DecodingError].} =
+func decodeZkSigProof*(data: openArray[byte]): Result[ZkSignature, DecodingError] =
   decodeZkSignature(data)
 
-func decodeZkAndEd25519SigsProof*(data: openArray[byte]): ZkAndEd25519SigsProof {.raises: [DecodingError].} =
+func decodeZkAndEd25519SigsProof*(data: openArray[byte]): Result[ZkAndEd25519SigsProof, DecodingError] =
   var pos = 0
-  let zkSig = readFixed[128](data, pos)
-  let ed25519Sig = readEd25519Signature(data, pos)
-  finishDecode(data, pos)
-  ZkAndEd25519SigsProof(zkSig: zkSig, ed25519Sig: ed25519Sig)
+  let zkSig = ?readFixed[128](data, pos)
+  let ed25519Sig = ?readEd25519Signature(data, pos)
+  ?finishDecode(data, pos)
+  ok(ZkAndEd25519SigsProof(zkSig: zkSig, ed25519Sig: ed25519Sig))
 
-func readChannelMultiSigProof(data: openArray[byte], pos: var int): ChannelMultiSigProof {.raises: [DecodingError].} =
-  let count = SignatureCount(readLe[uint16](data, pos))
+func readChannelMultiSigProof(data: openArray[byte], pos: var int): Result[ChannelMultiSigProof, DecodingError] =
+  let count = SignatureCount(?readLe[uint16](data, pos))
   var signatures = newSeqOfCap[Ed25519Signature](count)
   var indexes = newSeqOfCap[ChannelKeyIndex](count)
   var prevIndex = ChannelKeyIndex(0)
   var havePrev = false
   for _ in 0 ..< int(count):
-    let (signature, index) = readIndexedEd25519Signature(data, pos)
+    let (signature, index) = ?readIndexedEd25519Signature(data, pos)
     if havePrev and uint16(index) <= uint16(prevIndex):
-      raise newException(DecodingError, "ChannelMultiSigProof indexes not strictly increasing")
+      return err(DecodingError.MultiSigIndicesNonIncreasing)
     signatures.add signature
     indexes.add index
     prevIndex = index
     havePrev = true
-  ChannelMultiSigProof(signatures: signatures, indexes: indexes)
+  ok(ChannelMultiSigProof(signatures: signatures, indexes: indexes))
 
-func decodeChannelMultiSigProof*(data: openArray[byte]): ChannelMultiSigProof {.raises: [DecodingError].} =
+func decodeChannelMultiSigProof*(data: openArray[byte]): Result[ChannelMultiSigProof, DecodingError] =
   var pos = 0
-  let res = readChannelMultiSigProof(data, pos)
-  finishDecode(data, pos)
-  res
+  let res = ?readChannelMultiSigProof(data, pos)
+  ?finishDecode(data, pos)
+  ok(res)
 
-func readOpProof*(data: openArray[byte], pos: var int, kind: OpProofKind): OpProof {.raises: [DecodingError].} =
+func readOpProof*(data: openArray[byte], pos: var int, kind: OpProofKind): Result[OpProof, DecodingError] =
   case kind
   of opfChannelInscribe:
-    OpProof(kind: opfChannelInscribe, ed25519SigProof: readEd25519Signature(data, pos))
+    let sig = ?readEd25519Signature(data, pos)
+    ok(OpProof(kind: opfChannelInscribe, ed25519SigProof: sig))
   of opfTransfer:
-    OpProof(kind: opfTransfer, transferProof: readFixed[128](data, pos))
+    let proof = ?readFixed[128](data, pos)
+    ok(OpProof(kind: opfTransfer, transferProof: proof))
   of opfSdpWithdraw:
-    OpProof(kind: opfSdpWithdraw, sdpWithdrawProof: readFixed[128](data, pos))
+    let proof = ?readFixed[128](data, pos)
+    ok(OpProof(kind: opfSdpWithdraw, sdpWithdrawProof: proof))
   of opfSdpActive:
-    OpProof(kind: opfSdpActive, sdpActiveProof: readFixed[128](data, pos))
+    let proof = ?readFixed[128](data, pos)
+    ok(OpProof(kind: opfSdpActive, sdpActiveProof: proof))
   of opfSdpDeclare:
-    let zkSig = readFixed[128](data, pos)
-    let ed25519Sig = readEd25519Signature(data, pos)
-    OpProof(
+    let zkSig = ?readFixed[128](data, pos)
+    let ed25519Sig = ?readEd25519Signature(data, pos)
+    ok(OpProof(
       kind: opfSdpDeclare,
       declarationProof: ZkAndEd25519SigsProof(zkSig: zkSig, ed25519Sig: ed25519Sig),
-    )
+    ))
   of opfChannelWithdraw:
-    OpProof(
+    let proof = ?readChannelMultiSigProof(data, pos)
+    ok(OpProof(
       kind: opfChannelWithdraw,
-      channelWithdrawOpProof: readChannelMultiSigProof(data, pos),
-    )
+      channelWithdrawOpProof: proof,
+    ))
   of opfChannelTransfer:
-    OpProof(
+    let proof = ?readChannelMultiSigProof(data, pos)
+    ok(OpProof(
       kind: opfChannelTransfer,
-      channelTransferOpProof: readChannelMultiSigProof(data, pos),
-    )
+      channelTransferOpProof: proof,
+    ))
   of opfLeaderClaim:
-    OpProof(kind: opfLeaderClaim, proofOfClaimProof: readFixed[128](data, pos))
+    let proof = ?readFixed[128](data, pos)
+    ok(OpProof(kind: opfLeaderClaim, proofOfClaimProof: proof))
   of opfChannelConfig:
-    OpProof(
+    let proof = ?readChannelMultiSigProof(data, pos)
+    ok(OpProof(
       kind: opfChannelConfig,
-      channelConfigOpProof: readChannelMultiSigProof(data, pos),
-    )
+      channelConfigOpProof: proof,
+    ))
   of opfChannelDeposit:
-    OpProof(kind: opfChannelDeposit, channelDepositProof: readFixed[128](data, pos))
+    let proof = ?readFixed[128](data, pos)
+    ok(OpProof(kind: opfChannelDeposit, channelDepositProof: proof))
 
-func decodeOpProof*(data: openArray[byte], kind: OpProofKind): OpProof {.raises: [DecodingError].} =
+func decodeOpProof*(data: openArray[byte], kind: OpProofKind): Result[OpProof, DecodingError] =
   var pos = 0
-  let res = readOpProof(data, pos, kind)
-  finishDecode(data, pos)
-  res
+  let res = ?readOpProof(data, pos, kind)
+  ?finishDecode(data, pos)
+  ok(res)
 
-func encodeOpsProofs*(ops: openArray[Op], proofs: openArray[OpProof]): seq[byte] =
+func encodeOpsProofs*(ops: openArray[Op], proofs: openArray[OpProof]): Result[seq[byte], EncodingError] =
   ## OpsProofs = *OpProof
   ## 1. Length must equal OpCount.
   ## 2. type(OpProofs[i]) == ProofFor(Op[i]).
-  doAssert proofs.len == ops.len,
-    "OpsProofs length must equal OpCount"
+  if proofs.len != ops.len:
+    return err(EncodingError.ProofCountMismatch)
   var res: seq[byte]
   for i in 0 ..< proofs.len:
-    doAssert proofs[i].kind == expectedOpProofKindForOpcode(ops[i].opcode),
-      "OpProof variant does not match corresponding Op"
-    let encoded = encodeOpProof(proofs[i])
+    let expectedKind = ?expectedOpProofKindForOpcode(ops[i].opcode)
+    if proofs[i].kind != expectedKind:
+      return err(EncodingError.ProofKindMismatch)
+    let encoded = ?encodeOpProof(proofs[i])
     res.add(encoded)
-  res
+  ok(res)
 
-func decodeOpsProofs*(ops: openArray[Op], data: openArray[byte]): seq[OpProof] {.raises: [DecodingError].} =
+func decodeOpsProofs*(ops: openArray[Op], data: openArray[byte]): Result[seq[OpProof], DecodingError] =
   if ops.len > 0 and data.len == 0:
-    raise newException(DecodingError, "OpsProofs length must equal OpCount")
+    return err(DecodingError.ProofCountMismatch)
   var pos = 0
   var res = newSeqOfCap[OpProof](ops.len)
   for i in 0 ..< ops.len:
-    let kind = expectedOpProofKindForOpcode(ops[i].opcode)
-    res.add readOpProof(data, pos, kind)
-  finishDecode(data, pos)
-  res
+    let kind = expectedOpProofKindForOpcode(ops[i].opcode).valueOr:
+      return err(DecodingError.UnsupportedOpcode)
+    res.add ?readOpProof(data, pos, kind)
+  ?finishDecode(data, pos)
+  ok(res)
 
 {.pop.}

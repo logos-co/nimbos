@@ -97,8 +97,8 @@ func signedTxWithAllOps(): SignedMantleTx =
   var ops: seq[Op]
   var proofs: seq[OpProof]
   for opcode in allOpcodes:
-    ops.add defaultOpForOpcode(opcode)
-    proofs.add defaultOpProofForOpcode(opcode)
+    ops.add defaultOpForOpcode(opcode).get
+    proofs.add defaultOpProofForOpcode(opcode).get
   SignedMantleTx(
     tx: MantleTx(ops: ops),
     opProofs: proofs,
@@ -132,5 +132,15 @@ suite "core/mantle/tx_bincode":
       checkSignedMantleTxEqual(signed, back)
     except BincodeError:
       fail getCurrentExceptionMsg()
+
+  test "encode raises BincodeError on invalid tx structure":
+    let badSigned = SignedMantleTx(
+      tx: MantleTx(ops: @[
+        createTransferOp(TransferPayload(inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @[])))
+      ]),
+      opProofs: @[] # Mismatch
+    )
+    expect BincodeError:
+      discard encode(badSigned)
 
 {.pop.}

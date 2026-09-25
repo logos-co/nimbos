@@ -16,30 +16,31 @@ import
 
 suite "core/mantle/tx_types":
   test "decodeMantleTx roundtrips encodeMantleTx":
-    let tx = MantleTx(ops: @[])
-    let wire = encodeMantleTx(tx)
-    let back = decodeMantleTx(wire)
+    let
+      tx = MantleTx(ops: @[])
+      wire = encodeMantleTx(tx).get
+      back = decodeMantleTx(wire).get
     check back.ops.len == tx.ops.len
     check wire.len == 1
     check wire[0] == byte(0)
 
   test "decodeSignedMantleTx roundtrips encodeSignedMantleTx":
-    let signed = SignedMantleTx(
-      tx: MantleTx(
-        ops: @[
-          createTransferOp(TransferPayload(
-            inputs: Inputs(noteIds: @[]),
-            outputs: Outputs(notes: @[]),
-          )),
-        ],
-      ),
-      opProofs: @[
-        OpProof(kind: opfTransfer, transferProof: DefaultZkSignature),
-      ],
-    )
     let
-      wire = encodeSignedMantleTx(signed)
-      back = decodeSignedMantleTx(wire)
+      signed = SignedMantleTx(
+        tx: MantleTx(
+          ops: @[
+            createTransferOp(TransferPayload(
+              inputs: Inputs(noteIds: @[]),
+              outputs: Outputs(notes: @[]),
+            )),
+          ],
+        ),
+        opProofs: @[
+          OpProof(kind: opfTransfer, transferProof: DefaultZkSignature),
+        ],
+      )
+      wire = encodeSignedMantleTx(signed).get
+      back = decodeSignedMantleTx(wire).get
     check back.tx.ops.len == signed.tx.ops.len
     check back.opProofs.len == signed.opProofs.len
     check back.opProofs[0].kind == signed.opProofs[0].kind
@@ -70,17 +71,17 @@ suite "core/mantle/tx_types":
       # 3. ChannelDeposit
       txDepositEmpty = SignedMantleTx(
         tx: MantleTx(ops: @[createChannelDepositOp(ChannelDepositPayload(
-          channel: default(ChannelId), inputs: @[], metadata: @[]))]),
+          channel: default(ChannelId), inputs: Inputs(noteIds: @[]), metadata: @[]))]),
         opProofs: @[OpProof(kind: opfChannelDeposit, channelDepositProof: DefaultZkSignature)])
       txDepositPopulated = SignedMantleTx(
         tx: MantleTx(ops: @[createChannelDepositOp(ChannelDepositPayload(
-          channel: default(ChannelId), inputs: @[NoteId.default, NoteId.default], metadata: @[1'u8, 2, 3]))]),
+          channel: default(ChannelId), inputs: Inputs(noteIds: @[NoteId.default, NoteId.default]), metadata: @[1'u8, 2, 3]))]),
         opProofs: @[OpProof(kind: opfChannelDeposit, channelDepositProof: DefaultZkSignature)])
 
       # 4. ChannelWithdraw
       txWithdraw = SignedMantleTx(
         tx: MantleTx(ops: @[createChannelWithdrawOp(ChannelWithdrawPayload(
-          channel: default(ChannelId), inputs: @[NoteId.default]))]),
+          channel: default(ChannelId), inputs: Inputs(noteIds: @[NoteId.default])))]),
         opProofs: @[OpProof(kind: opfChannelWithdraw, channelWithdrawOpProof: ChannelMultiSigProof(
           signatures: @[DefaultEd25519Signature, DefaultEd25519Signature],
           indexes: @[ChannelKeyIndex(0), ChannelKeyIndex(1)]))])
@@ -88,8 +89,8 @@ suite "core/mantle/tx_types":
       # 5. ChannelTransfer
       txChannelTransfer = SignedMantleTx(
         tx: MantleTx(ops: @[createChannelTransferOp(ChannelTransferPayload(
-          channel: default(ChannelId), inputs: @[NoteId.default],
-          outputs: @[Note(value: 50, zkPublicKey: ZkPublicKey.default)]))]),
+          channel: default(ChannelId), inputs: Inputs(noteIds: @[NoteId.default]),
+          outputs: Outputs(notes: @[Note(value: 50, zkPublicKey: ZkPublicKey.default)])))]),
         opProofs: @[OpProof(kind: opfChannelTransfer, channelTransferOpProof: ChannelMultiSigProof(
           signatures: @[DefaultEd25519Signature], indexes: @[ChannelKeyIndex(0)]))])
 
@@ -153,7 +154,17 @@ suite "core/mantle/tx_types":
     ]
 
     for tx in allTxs:
-      check byteLen(tx) == encodeSignedMantleTx(tx).len
-      check byteLen(ValidSignedMantleTx(tx)) == encodeSignedMantleTx(tx).len
+      let enc = encodeSignedMantleTx(tx).get
+      check byteLen(tx) == enc.len
+      check byteLen(ValidSignedMantleTx(tx)) == enc.len
+
+  test "encodeSignedMantleTx returns error on proof count mismatch":
+    let tx = SignedMantleTx(
+      tx: MantleTx(ops: @[
+        createTransferOp(TransferPayload(inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @[])))
+      ]),
+      opProofs: @[]
+    )
+    check encodeSignedMantleTx(tx).error == EncodingError.ProofCountMismatch
 
 {.pop.}
