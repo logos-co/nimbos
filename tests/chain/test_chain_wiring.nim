@@ -22,9 +22,9 @@ import
   libp2p/crypto/ed25519/ed25519,
   ../testutil,
   ../../logos_chain/chain/[chain, proposal],
+  ../../logos_chain/core/mantle/tx_hashing,
   ../../logos_chain/deployment/deployment_settings,
-  ../../logos_chain/ledger/poq_verifier,
-  ../../logos_chain/zk/poseidon2/hasher
+  ../../logos_chain/ledger/poq_verifier
 
 const
   testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
@@ -80,7 +80,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
         return
       cfg = ledgerConfig(ds)
       state = LedgerState.fromGenesis(
-        [ds.cryptarchia.genesisState.signedMantleTx], param.epochNonce,
+        [ds.cryptarchia.genesisState.vtx], param.epochNonce,
         SdpRegistry.init(
           ds.cryptarchia.sdpConfig,
           blendRewardsParams(ds, cfg.epochSchedule.epochLength)), cfg).valueOr:
@@ -157,9 +157,9 @@ suite "chain/epoch wiring (devnet deployment settings)":
     var chain = initZeroFeeChain(ds)
 
     # 1. Add tx to mempool
-    let dummyTx = signedTxWithOps(1, 1)
-    let txHash = mantleTxHash(dummyTx.tx)
-    check chain.mempool.add(ValidSignedMantleTx(dummyTx), SlotNumber(0)) == true
+    let dummyTx = validSignedTxWithOps(1, 1)
+    let txHash = dummyTx.hash
+    check chain.mempool.add(dummyTx, SlotNumber(0)) == true
     check txHash in chain.mempool
 
     # 2. Ingest block b1 containing dummyTx
@@ -203,16 +203,16 @@ suite "chain/epoch wiring (devnet deployment settings)":
     var chain = initZeroFeeChain(ds)
 
     let gid = blockId(chain.genesisBlock.header)
-    let tx1 = signedTxWithOps(1, 101)
-    let tx2 = signedTxWithOps(1, 102)
-    let tx3 = signedTxWithOps(1, 103)
-    let h1 = mantleTxHash(tx1.tx)
-    let h2 = mantleTxHash(tx2.tx)
-    let h3 = mantleTxHash(tx3.tx)
+    let tx1 = validSignedTxWithOps(1, 101)
+    let tx2 = validSignedTxWithOps(1, 102)
+    let tx3 = validSignedTxWithOps(1, 103)
+    let h1 = tx1.hash
+    let h2 = tx2.hash
+    let h3 = tx3.hash
 
-    check chain.mempool.add(ValidSignedMantleTx(tx1), SlotNumber(0))
-    check chain.mempool.add(ValidSignedMantleTx(tx2), SlotNumber(0))
-    check chain.mempool.add(ValidSignedMantleTx(tx3), SlotNumber(0))
+    check chain.mempool.add(tx1, SlotNumber(0))
+    check chain.mempool.add(tx2, SlotNumber(0))
+    check chain.mempool.add(tx3, SlotNumber(0))
 
     # Branch A: Genesis -> A1 (contains tx1) -> A2 (contains tx2) (height 2)
     let a1 = childBlock(chain.genesisBlock.header, gid, SlotNumber(1), [tx1])
@@ -296,8 +296,8 @@ suite "chain/epoch wiring (devnet deployment settings)":
     chain.slotConfig.genesisTime = uint64(getTime().toUnix() - 7000)
 
     let gid = blockId(chain.genesisBlock.header)
-    let tx = signedTxWithOps(1, 101)
-    check chain.mempool.add(ValidSignedMantleTx(tx), SlotNumber(0))
+    let tx = validSignedTxWithOps(1, 101)
+    check chain.mempool.add(tx, SlotNumber(0))
 
     let tipState = chain.ledger.state(gid).get()
     check tipState.epochs.activeEpoch.epoch == 0
@@ -307,7 +307,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
       tipState, ledgerConfig(ds), SlotNumber(6500), verifyPoq = verifyProofOfQuota
     )
     check count == 1
-    check refs[0] == mantleTxHash(tx.tx)
+    check refs[0] == tx.hash
 
     # Verify that a block constructed from this proposal is valid and admitted to localTree & ledger
     let blk = childBlock(chain.genesisBlock.header, gid, SlotNumber(6500), [tx])
@@ -327,14 +327,17 @@ suite "chain/epoch wiring (devnet deployment settings)":
       return
     let
       gid = blockId(chain.genesisBlock.header)
+      badBody = MantleTx(ops: @[createTransferOp(TransferPayload(
+        inputs: Inputs(noteIds: @[]),
+        outputs: Outputs(notes: @[Note(value: 100, zkPublicKey: default(ZkPublicKey))]),
+      ))])
       badTx = SignedMantleTx(
-        tx: MantleTx(ops: @[createTransferOp(TransferPayload(
-          inputs: Inputs(noteIds: @[]),
-          outputs: Outputs(notes: @[Note(value: 100, zkPublicKey: default(ZkPublicKey))]),
-        ))]),
+        tx: badBody,
         opProofs: @[OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))],
       )
-      b1 = childBlock(chain.genesisBlock.header, gid, SlotNumber(1), [badTx])
+      b1 = childBlock(
+        chain.genesisBlock.header, gid, SlotNumber(1),
+        [ValidSignedMantleTx(signedTx: badTx, hash: mantleTxHash(badBody))])
       r = chain.tryApplyBlock(b1)
     check:
       r.isErr

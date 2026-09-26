@@ -16,7 +16,6 @@ import
   libp2p/peerid,
   libp2p/protocols/pubsub/pubsub,
   ./block_processor,
-  ./proposal,
   ../core/types,
   ../core/mantle/[tx_hashing, tx_types, tx_validation]
 
@@ -49,15 +48,10 @@ proc processProposal*(
       blockId = idHex, parent = toHex(proposal.header.parentBlock), src
     return ValidationResult.Ignore
 
-  let blk = reconstructBlock(proposal, bp.mempool).valueOr:
-    debug "GossipSub cannot reconstruct block from proposal: missing tx in mempool",
-      blockId = idHex, error = $error, src
-    return ValidationResult.Ignore
+  discard bp.addBlock(proposal)
 
-  discard bp.addBlock(BlockSource.Gossip, blk)
-
-  debug "GossipSub accepted reconstructed block into local tree",
-    blockId = idHex, slot = blk.header.slot, src
+  debug "GossipSub accepted proposal into block queue",
+    blockId = idHex, slot = proposal.header.slot, src
   ValidationResult.Accept
 
 proc processTx*(
@@ -79,13 +73,14 @@ proc processTx*(
       txHash = txHashHex, src
     return ValidationResult.Ignore
 
-  if validateMantleTxStateless(tx).isErr:
+  validateMantleTxStateless(tx, txHash).isOkOr:
     debug "GossipSub rejected invalid mantle tx",
-      txHash = txHashHex, src
+      txHash = txHashHex, error = $error, src
     return ValidationResult.Reject
 
   let nowSlot = bp.currentWallclockSlot()
-  if not bp.mempool.add(ValidSignedMantleTx(tx), nowSlot):
+  let validTx = ValidSignedMantleTx(signedTx: tx, hash: txHash)
+  if not bp.mempool.add(validTx, nowSlot):
     trace "GossipSub ignored duplicate tx already in mempool",
       txHash = txHashHex, src
     return ValidationResult.Ignore

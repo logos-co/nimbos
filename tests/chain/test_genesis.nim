@@ -22,7 +22,7 @@ const deploymentSettingsPath = testsDir / "../../config/deployment-settings.yaml
 suite "chain/genesis":
   test "createGenesisBlock wraps a minimal signed mantle tx":
     let tx = MantleTx(ops: @[])
-    let sm = SignedMantleTx(tx: tx, opProofs: @[])
+    let sm = ValidSignedMantleTx(signedTx: SignedMantleTx(tx: tx, opProofs: @[]), hash: mantleTxHash(tx))
     let h = createGenesisBlock(sm).header
     let b = createGenesisBlock(sm)
     check h.blockRoot == createBlockRoot([sm])
@@ -40,7 +40,7 @@ suite "chain/genesis":
 
     let
       gstate = ds.cryptarchia.genesisState
-      genesisTx = gstate.signedMantleTx
+      genesisTx = gstate.vtx
       testChain = Chain.init(ds).valueOr:
         fail "Chain.init: " & $error
       gb = testChain.genesisBlock
@@ -67,8 +67,8 @@ suite "chain/genesis":
 
     let
       gstate = ds.cryptarchia.genesisState
-      fromTx = createGenesisBlock(gstate.signedMantleTx)
-      fromState = initBlock(gstate.header, gstate.blockSignature, [gstate.signedMantleTx])
+      fromTx = createGenesisBlock(gstate.vtx)
+      fromState = initBlock(gstate.header, gstate.blockSignature, [gstate.vtx.signedTx])
 
     check fromTx.header == fromState.header
     check blockId(fromTx.header) == blockId(fromState.header)

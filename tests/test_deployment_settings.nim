@@ -214,7 +214,7 @@ suite "deployment-settings":
     check ds.network.kademliaProtocolName.len > 0
     check ds.mempool.pubsubTopic.startsWith("/")
     check ds.blend.common.numBlendLayers > 0
-    check ds.cryptarchia.genesisState.signedMantleTx.tx.ops.len > 0
+    check ds.cryptarchia.genesisState.vtx.tx.ops.len > 0
 
   test "deployment-settings: mantle_tx ops and ops_proofs are block sequences":
     let
@@ -373,7 +373,7 @@ suite "deployment-settings":
     check ds.blend.common.protocolName == "/stub/blend"
     check ds.time.slotDuration == 1.seconds
     check ds.cryptarchia.securityParam == 1
-    check ds.cryptarchia.genesisState.signedMantleTx.tx.ops.len == 2
+    check ds.cryptarchia.genesisState.vtx.tx.ops.len == 2
 
   test "validateDeploymentSettings: empty blend.common.protocol_name":
     let badYaml = deploymentSettingsBlendBlock.replace(

@@ -28,7 +28,7 @@ deriveBincode(Tip)
 type
   BlockNode = ref object
     id: BlockId
-    blk: Block
+    blk: ValidBlock
     parent: BlockNode
     height: uint64
 
@@ -52,7 +52,7 @@ func ancestorAtHeight(node: BlockNode, targetHeight: uint64): BlockNode =
     n = n.parent
   nil
 
-func newLocalTree*(genesisBlock: Block, securityParam: uint64): LocalTree =
+func newLocalTree*(genesisBlock: ValidBlock, securityParam: uint64): LocalTree =
   let gid = blockId(genesisBlock.header)
   let gn = BlockNode(id: gid, blk: genesisBlock, parent: nil, height: 0'u64)
   LocalTree(
@@ -158,10 +158,10 @@ func localTip*(localTree: LocalTree): Tip =
 func hasBlock*(localTree: LocalTree, blockId: BlockId): bool =
   localTree.blocksById.hasKey(blockId)
 
-func getBlock*(localTree: LocalTree, id: BlockId): Opt[Block] =
+func getBlock*(localTree: LocalTree, id: BlockId): Opt[ValidBlock] =
   localTree.blocksById.withValue(id, node):
     return Opt.some(node.blk)
-  Opt.none(Block)
+  Opt.none(ValidBlock)
 
 func blocksIdsAtHeight*(localTree: LocalTree, height: uint64): seq[BlockId] =
   ## Returns a sequence of block IDs admitted at the specified height.
@@ -238,7 +238,7 @@ func lcaBlockIdAndHeight*(
       return Opt.none((BlockId, uint64))
   Opt.some((na.id, na.height))
 
-proc addBlockToTree*(localTree: LocalTree, blk: Block): bool =
+proc addBlockToTree*(localTree: LocalTree, blk: ValidBlock): bool =
   ## Inserts a header-validated block; only duplicate ids and unknown parents
   ## are guarded here.
   let id = blockId(blk.header)
@@ -253,9 +253,6 @@ proc addBlockToTree*(localTree: LocalTree, blk: Block): bool =
         localTree.tipId = id
     return true
   false
-
-template addBlockToTree*(localTree: LocalTree, blk: ValidBlock): bool =
-  localTree.addBlockToTree(Block(blk))
 
 when defined(unittest) or defined(test):
   proc `latestImmutableHeight=`*(localTree: LocalTree, height: uint64) =

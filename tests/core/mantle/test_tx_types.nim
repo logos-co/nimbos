@@ -154,6 +154,6 @@ suite "core/mantle/tx_types":
 
     for tx in allTxs:
       check byteLen(tx) == encodeSignedMantleTx(tx).len
-      check byteLen(ValidSignedMantleTx(tx)) == encodeSignedMantleTx(tx).len
+      check byteLen(ValidSignedMantleTx(signedTx: tx, hash: default(Hash32))) == encodeSignedMantleTx(tx).len
 
 {.pop.}

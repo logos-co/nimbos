@@ -17,16 +17,16 @@ import
   ../deployment/deployment_settings,
   ../ledger/[ledger, stake_inference],
   ../mempool,
-  ./[block_validation, genesis, orphan_pool]
+  ./[block_validation, genesis, orphan_pool, proposal]
 
-export genesis, local_tree, mempool, block_validation, orphan_pool
+export genesis, local_tree, mempool, block_validation, orphan_pool, proposal
 export ledger except config
 
 const DefaultSecurityParam*: uint64 = 1'u64
 
 type
   Chain* = object
-    genesisBlock*: Block
+    genesisBlock*: ValidBlock
     localTree*: LocalTree
     ledger*: Ledger[BlockId]
     mempool*: Mempool
@@ -38,6 +38,7 @@ type
     AlreadyApplied
     FutureSlot
     InvalidStructure
+    MissingReference
     UnviableFork
     LedgerRejected
     StatelessTxRejected
@@ -63,7 +64,8 @@ func isRecoverable*(kind: BlockApplyErrorKind): bool =
   ## True when the same block may still apply later without any change to it.
   case kind
   of BlockApplyErrorKind.AlreadyApplied, BlockApplyErrorKind.FutureSlot,
-      BlockApplyErrorKind.OrphanBuffered, BlockApplyErrorKind.OrphanAlreadyBuffered:
+      BlockApplyErrorKind.OrphanBuffered, BlockApplyErrorKind.OrphanAlreadyBuffered,
+      BlockApplyErrorKind.MissingReference:
     true
   of BlockApplyErrorKind.InvalidStructure, BlockApplyErrorKind.UnviableFork,
       BlockApplyErrorKind.LedgerRejected, BlockApplyErrorKind.StatelessTxRejected:
@@ -87,7 +89,7 @@ func ledgerConfig*(settings: DeploymentSettings): LedgerConfig =
 
 func init*(
     T: type Chain,
-    genesisBlock: Block,
+    genesisBlock: ValidBlock,
     ledger: Ledger[BlockId],
     slotConfig: SlotConfig,
     securityParam: uint64 = DefaultSecurityParam,
@@ -110,7 +112,7 @@ proc init*(
     poqVerifier: ProofOfQuotaVerifier = verifyProofOfQuota,
 ): Result[T, string] =
   let
-    genesisBlock = createGenesisBlock(settings.cryptarchia.genesisState.signedMantleTx)
+    genesisBlock = createGenesisBlock(settings.cryptarchia.genesisState.vtx)
     cfg = ledgerConfig(settings)
     sdp = SdpRegistry.init(
       settings.cryptarchia.sdpConfig,
@@ -142,8 +144,8 @@ proc readdBranchTxs(chain: var Chain, fromId, toId: BlockId) =
       warn "Missing block during reorg transaction re-addition",
           missingBlockId = curr, toId = toId
       break
-    for stx in b.txs:
-      discard chain.mempool.add(ValidSignedMantleTx(stx), nowSlot)
+    for vtx in b.txs:
+      discard chain.mempool.add(vtx, nowSlot)
     curr = header(b).parentBlock
 
 proc removeBranchTxs(chain: var Chain, fromId, toId: BlockId) =
@@ -212,11 +214,22 @@ proc promoteOrphans(chain: var Chain, rootId: BlockId) =
       else:
         chain.orphanPool.pruneDescendants(blockId(child.header))
 
-proc tryApplyBlock*(
-    chain: var Chain, blk: Block): Result[void, BlockApplyError] =
-  ## Full block ingestion in `valid_header` order, with automatic orphan buffering
-  ## and iterative cascading promotion of waiting descendants.
-  template hdr: auto = header(blk)
+func toBlockApplyError(error: BlockValidationError): BlockApplyError =
+  case error.kind
+  of BlockValidationErrorKind.InvalidBlockStructure:
+    BlockApplyError(kind: InvalidStructure)
+  of BlockValidationErrorKind.UnviableFork:
+    BlockApplyError(kind: UnviableFork)
+  of BlockValidationErrorKind.HeaderRejected,
+      BlockValidationErrorKind.TransactionsRejected:
+    BlockApplyError(kind: LedgerRejected, ledgerError: error.ledgerError)
+  of BlockValidationErrorKind.StatelessTxRejected:
+    BlockApplyError(kind: StatelessTxRejected, statelessError: error.statelessError)
+
+proc validateAdmissionBounds*(
+    chain: Chain, hdr: Header, curSlot: SlotNumber): Result[BlockId, BlockApplyError] =
+  ## Fast-path admission bounds check: duplicate block ID, immutable slot check,
+  ## and wallclock future slot bounds.
   let id = blockId(hdr)
   # The tree keeps applied blocks whose states were pruned below the LIB.
   if chain.localTree.hasBlock(id):
@@ -225,28 +238,22 @@ proc tryApplyBlock*(
   # descend from the LIB. Holds without the parent, which pruning may remove.
   if hdr.slot <= chain.localTree.latestImmutableSlot():
     return err(BlockApplyError(kind: UnviableFork))
-  let curSlot = chain.currentWallclockSlot()
   if hdr.slot > curSlot:
     return err(BlockApplyError(kind: FutureSlot))
-  let unverified = chain.mempool.unverifiedTxs(blk.txs)
-  let (validBlk, isOrphan) = validateBlock(blk, chain.localTree, chain.ledger, unverified).valueOr:
-    case error.kind
-    of BlockValidationErrorKind.InvalidBlockStructure:
-      return err(BlockApplyError(kind: InvalidStructure))
-    of BlockValidationErrorKind.UnviableFork:
-      return err(BlockApplyError(kind: UnviableFork))
-    of BlockValidationErrorKind.HeaderRejected,
-        BlockValidationErrorKind.TransactionsRejected:
-      return err(BlockApplyError(kind: LedgerRejected, ledgerError: error.ledgerError))
-    of BlockValidationErrorKind.StatelessTxRejected:
-      return err(BlockApplyError(kind: StatelessTxRejected, statelessError: error.statelessError))
+  ok(id)
 
+proc applyValidBlock*(
+    chain: var Chain, id: BlockId, blk: ValidBlock, isOrphan: bool,
+    curSlot: SlotNumber): Result[void, BlockApplyError] =
+  ## Applies a validated block to the chain. The block must have been validated
+  ## by `validateBlock` which determines the `isOrphan` flag.
+  ## Handles orphan buffering, ledger state commit, and cascading orphan promotion.
   if isOrphan:
-    if not chain.orphanPool.addOrphan(validBlk):
+    if not chain.orphanPool.addOrphan(blk):
       return err(BlockApplyError(kind: OrphanAlreadyBuffered))
     return err(BlockApplyError(kind: OrphanBuffered))
 
-  let prepared = prepareBlockUpdate(validBlk, chain.ledger).valueOr:
+  let prepared = prepareBlockUpdate(blk, chain.ledger).valueOr:
     return err(BlockApplyError(kind: LedgerRejected, ledgerError: error.ledgerError))
 
   let oldTip = chain.localTree.localTipId()
@@ -260,5 +267,33 @@ proc tryApplyBlock*(
 
   chain.mempool.pruneExpiredTxs(curSlot)
   ok()
+
+template tryApplyImpl(chain: var Chain, item: untyped, body: untyped): untyped =
+  let curSlot = chain.currentWallclockSlot()
+  let id = ?chain.validateAdmissionBounds(item.header, curSlot)
+  let (vtxs, unverified) = body
+  let (validBlk, isOrphan) = validateBlock(
+    Block(header: item.header, signature: item.signature, txs: @[]),
+    chain.localTree, chain.ledger, vtxs, unverified
+  ).valueOr:
+    return err(toBlockApplyError(error))
+  chain.applyValidBlock(id, validBlk, isOrphan, curSlot)
+
+proc tryApplyBlock*(
+    chain: var Chain, blk: Block): Result[void, BlockApplyError] =
+  ## Full block ingestion in `valid_header` order, validating the wire block
+  ## and applying it via applyValidBlock.
+  tryApplyImpl(chain, blk):
+    chain.mempool.classifyBlockTxs(blk.txs)
+
+proc tryApplyProposal*(
+    chain: var Chain, proposal: Proposal): Result[void, BlockApplyError] =
+  ## Full proposal ingestion: reconstructs transactions from the mempool,
+  ## validates through the canonical `validateBlock` pipeline without
+  ## redundant transaction classification, and applies the resulting ValidBlock.
+  tryApplyImpl(chain, proposal):
+    let (_, vtxs) = proposal.reconstructBlock(chain.mempool).valueOr:
+      return err(BlockApplyError(kind: MissingReference))
+    (vtxs, static(seq[int](@[])))
 
 {.pop.}

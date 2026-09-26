@@ -12,7 +12,7 @@ import
   libp2p/crypto/ed25519/ed25519,
   ../../../logos_chain/core/[types, crypto/hashing],
   ../../../logos_chain/core/mantle/
-    [primitives, operations, proofs, tx_types, utxo],
+    [primitives, operations, proofs, tx_types, utxo, tx_hashing, tx_validation, poc_verifier],
   ../../../logos_chain/zk/poseidon2/hasher
 
 from libp2p/crypto/rng import newBearSslRng
@@ -69,14 +69,15 @@ func mkId*(seed: byte): TestId =
 
 func mkTransferTx*(
     inputs: openArray[NoteId], outputs: openArray[Note]
-): SignedMantleTx =
+): ValidSignedMantleTx =
   let op = createTransferOp(
     TransferPayload(inputs: Inputs(noteIds: @inputs), outputs: Outputs(notes: @outputs))
   )
-  SignedMantleTx(
+  let stx = SignedMantleTx(
     tx: MantleTx(ops: @[op]),
     opProofs: @[OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))],
   )
+  ValidSignedMantleTx(signedTx: stx, hash: mantleTxHash(stx.tx))
 
 func mkProof*(): ProofOfLeadership =
   default(ProofOfLeadership)

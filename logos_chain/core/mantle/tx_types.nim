@@ -28,12 +28,14 @@ type
     tx*: MantleTx
     opProofs*: seq[OpProof]
 
-  ValidSignedMantleTx* = distinct SignedMantleTx
+  ValidSignedMantleTx* = object
+    signedTx*: SignedMantleTx
+    hash*: Hash32
     ## A ``SignedMantleTx`` that has successfully passed all stateless structural
     ## and cryptographic verifications via ``validateMantleTxStateless``.
 
-template tx*(t: ValidSignedMantleTx): untyped = SignedMantleTx(t).tx
-template opProofs*(t: ValidSignedMantleTx): untyped = SignedMantleTx(t).opProofs
+template tx*(t: ValidSignedMantleTx): untyped = t.signedTx.tx
+template opProofs*(t: ValidSignedMantleTx): untyped = t.signedTx.opProofs
 
 func encodeMantleTx*(tx: MantleTx): seq[byte] =
   ## MantleTx = OpCount (u8) || *Op
@@ -45,9 +47,6 @@ func encodeSignedMantleTx*(signedTx: SignedMantleTx): seq[byte] =
   res.add(encodeOpsProofs(signedTx.tx.ops, signedTx.opProofs))
   res
 
-template encodeSignedMantleTx*(signedTx: ValidSignedMantleTx): seq[byte] =
-  encodeSignedMantleTx(SignedMantleTx(signedTx))
-
 func byteLen*(tx: MantleTx): int =
   ## Exact wire byte length of a MantleTx without allocating buffers.
   byteLen(tx.ops)
@@ -56,8 +55,8 @@ func byteLen*(signedTx: SignedMantleTx): int =
   ## Exact wire byte length of a SignedMantleTx without allocating buffers.
   byteLen(signedTx.tx) + byteLen(signedTx.opProofs)
 
-template byteLen*(signedTx: ValidSignedMantleTx): int =
-  byteLen(SignedMantleTx(signedTx))
+func byteLen*(validTx: ValidSignedMantleTx): int {.inline.} =
+  byteLen(validTx.signedTx)
 
 func decodeMantleTx*(data: openArray[byte]): MantleTx {.raises: [DecodingError].} =
   var pos = 0

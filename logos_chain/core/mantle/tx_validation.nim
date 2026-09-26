@@ -18,7 +18,6 @@ import
   ./primitives,
   ./operations,
   ./proofs,
-  ./tx_hashing,
   ./tx_types
 
 type
@@ -42,11 +41,12 @@ func hasHeavyZkProof*(tx: SignedMantleTx): bool {.inline.} =
 
 proc validateMantleTxStateless*(
     tx: SignedMantleTx,
+    txHash: Hash32,
     verifyProof: ProofOfClaimVerifier = verifyProofOfClaim,
 ): Result[void, StatelessLedgerError] =
   ## Stateless transaction validation staged strictly by ascending cost:
   ## Phase 1: Structural, bounds, and payload shape checks (~10 ns)
-  ## Phase 2: Lazy txHash calculation & Ed25519 signature checks (~0.7 ms)
+  ## Phase 2: Ed25519 signature checks (~0.7 ms)
   ## Phase 3: Groth16 zk-SNARK proof verification (~1.13 ms)
   if tx.tx.ops.len != tx.opProofs.len:
     return err(StatelessLedgerError.InvalidProof)
@@ -119,48 +119,36 @@ proc validateMantleTxStateless*(
     of LeaderClaim:
       hasHeavyZk = true
 
-  if not hasSigCrypto and not hasHeavyZk:
-    return ok()
-
-  # Phase 2: Fast symmetric hashing & Ed25519 signatures
-  var txHash: Opt[ZkHash]
-  template getTxHash(): ZkHash =
-    txHash.valueOr:
-      let h = mantleTxHash(tx.tx)
-      txHash = Opt.some(h)
-      h
-
+  # Phase 2: Ed25519 signatures
   if hasSigCrypto:
     for i in 0 ..< tx.tx.ops.len:
       template op: untyped = tx.tx.ops[i]
       template proof: untyped = tx.opProofs[i]
       case op.payload.kind
       of ChannelInscribe:
-        if not verify(proof.ed25519SigProof, getTxHash(), op.payload.channelInscribe.signer):
+        if not verify(proof.ed25519SigProof, txHash, op.payload.channelInscribe.signer):
           return err(StatelessLedgerError.InvalidProof)
       of SdpDeclare:
-        if not verify(proof.declarationProof.ed25519Sig, getTxHash(), op.payload.sdpDeclare.providerId):
+        if not verify(proof.declarationProof.ed25519Sig, txHash, op.payload.sdpDeclare.providerId):
           return err(StatelessLedgerError.InvalidProof)
       else:
         discard
 
-  if not hasHeavyZk:
-    return ok()
-
   # Phase 3: Heavy Groth16 ZK proof verifications
-  if verifyProof == nil:
-    return err(StatelessLedgerError.VerifierNotInitialised)
+  if hasHeavyZk:
+    if verifyProof == nil:
+      return err(StatelessLedgerError.VerifierNotInitialised)
 
-  for i in 0 ..< tx.tx.ops.len:
-    template op: untyped = tx.tx.ops[i]
-    template proof: untyped = tx.opProofs[i]
-    if op.payload.kind == LeaderClaim:
-      template claim: untyped = op.payload.leaderClaim
-      let public = proofOfClaimPublic(claim, claim.rewardsRoot, getTxHash())
-      let verified = verifyProof(proof.proofOfClaimProof, public).valueOr:
-        return err(StatelessLedgerError.VerifierNotInitialised)
-      if not verified:
-        return err(StatelessLedgerError.InvalidProof)
+    for i in 0 ..< tx.tx.ops.len:
+      template op: untyped = tx.tx.ops[i]
+      template proof: untyped = tx.opProofs[i]
+      if op.payload.kind == LeaderClaim:
+        template claim: untyped = op.payload.leaderClaim
+        let public = proofOfClaimPublic(claim, claim.rewardsRoot, txHash)
+        let verified = verifyProof(proof.proofOfClaimProof, public).valueOr:
+          return err(StatelessLedgerError.VerifierNotInitialised)
+        if not verified:
+          return err(StatelessLedgerError.InvalidProof)
 
   ok()
 
