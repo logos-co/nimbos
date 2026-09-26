@@ -32,8 +32,14 @@ type
     ## A ``SignedMantleTx`` that has successfully passed all stateless structural
     ## and cryptographic verifications via ``validateMantleTxStateless``.
 
+  ValidGenesisMantleTx* = distinct SignedMantleTx
+    ## A ``SignedMantleTx`` that passed every stateless genesis check in
+    ## ``validateGenesisTxStateless``; only state checks remain.
+
 template tx*(t: ValidSignedMantleTx): untyped = SignedMantleTx(t).tx
 template opProofs*(t: ValidSignedMantleTx): untyped = SignedMantleTx(t).opProofs
+
+template tx*(t: ValidGenesisMantleTx): untyped = SignedMantleTx(t).tx
 
 func encodeMantleTx*(tx: MantleTx): seq[byte] =
   ## MantleTx = OpCount (u8) || *Op

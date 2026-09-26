@@ -70,7 +70,8 @@ proc fromUtxos*(
     total = 0'u64
   for u in utxos:
     let c = stakeContribution(u.note.value, u.note.zkPublicKey, cfg.faucetPk)
-    doAssert total <= uint64.high - c, "total stake overflows uint64"
+    if total > uint64.high - c:
+      return err(TotalStakeOverflow)
     total += c
   s.epochs = ?genesisEpochTracker(
     nonce, s.cryptarchiaLedger.latestUtxos.root, max(total, 1), cfg)
@@ -78,15 +79,16 @@ proc fromUtxos*(
 
 proc fromGenesis*(
     _: typedesc[LedgerState],
-    genesisTxs: openArray[SignedMantleTx],
+    tx: ValidGenesisMantleTx,
     nonce: FieldElement,
     sdp: sink SdpRegistry,
     cfg: LedgerConfig,
 ): Result[LedgerState, LedgerError] =
-  ## Genesis state from the genesis block's transactions: ops run through the
-  ## pure transition cores (no proof or balance checks), then epochs are
-  ## seeded from the faucet-filtered stake and ceremony nonce.
+  ## Genesis state from the genesis transaction: each op is validated against
+  ## the state the previous op left. `tx` carries every stateless check;
+  ## no proof is verified and no fee is charged.
   const genesisEpoch: EpochNumber = 0
+  template ops: untyped = tx.tx.ops
   var
     s = LedgerState(
       cryptarchiaLedger: CryptarchiaState.init(),
@@ -94,29 +96,26 @@ proc fromGenesis*(
       mantleLedger: MantleState.init(),
       feeMarket: FeeMarket.init())
     total = 0'u64
-  for tx in genesisTxs:
-    for op in tx.tx.ops:
-      case op.payload.kind
-      of Transfer:
-        if op.payload.transfer.inputs.noteIds.len > 0:
-          return err(InputInGenesis)
-        for note in op.payload.transfer.outputs.notes:
-          let c = stakeContribution(note.value, note.zkPublicKey, cfg.faucetPk)
-          doAssert total <= uint64.high - c, "total stake overflows uint64"
-          total += c
-        let r = ?s.cryptarchiaLedger.applyTransferState(
-          s.sdp.state.lockedNotes, s.mantleLedger.channelNotes,
-          op.payload.transfer)
-        s.cryptarchiaLedger = r.state
-      of ChannelInscribe:
-        # Envelope validity (null channel, root parent, zero signer) is
-        # validated statelessly in `chain/genesis.nim` (`decodeCryptarchiaParameter`).
-        s.mantleLedger.channels = applyChannelInscribe(
-          s.mantleLedger.channels, op.payload.channelInscribe, 0)
-      of SdpDeclare:
-        s.sdp = ?applySdpDeclare(s.sdp, op.payload.sdpDeclare, genesisEpoch)
-      else:
-        return err(UnsupportedOp)
+  let r = ?s.cryptarchiaLedger.applyTransferState(
+    s.sdp.state.lockedNotes, s.mantleLedger.channelNotes, ops[0].payload.transfer)
+  s.cryptarchiaLedger = r.state
+  for note in ops[0].payload.transfer.outputs.notes:
+    let c = stakeContribution(note.value, note.zkPublicKey, cfg.faucetPk)
+    if total > uint64.high - c:
+      return err(TotalStakeOverflow)
+    total += c
+  s.mantleLedger = ?s.mantleLedger.tryApplyChannelInscribe(
+    ops[1].payload.channelInscribe, 0)
+  # The declaration count is not checked against the Blend minimum network
+  # size: the devnet genesis declares one provider under a minimum of two.
+  let minStake = getMinStakeAt(s.sdp, genesisEpoch).valueOr:
+    return err(MinStakeNotFound)
+  for op in ops.toOpenArray(2, ops.high):
+    template decl: untyped = op.payload.sdpDeclare
+    discard ?validateSdpDeclareState(
+      decl, minStake, s.cryptarchiaLedger.latestUtxos, s.mantleLedger.channelNotes,
+      s.sdp.state)
+    s.sdp = ?applySdpDeclare(s.sdp, decl, genesisEpoch)
   s.epochs = ?genesisEpochTracker(
     nonce, s.cryptarchiaLedger.latestUtxos.root, max(total, 1), cfg)
   # Epochs 0 and 1 read the registry snapshot taken at genesis:
