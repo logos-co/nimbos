@@ -31,7 +31,7 @@ suite "chain/block_processor":
     withProcessor(chain):
       let
         b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
-        r = await bp.addBlock(BlockSource.Sync, b1)
+        r = await bp.addBlock(b1)
       check r.isOk
       check bp.localTree.localTipId == blockId(b1.header)
       check bp.ledger.state(blockId(b1.header)).isSome
@@ -39,8 +39,8 @@ suite "chain/block_processor":
   asyncTest "addBlock on an applied block completes with AlreadyApplied":
     withProcessor(chain):
       let b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
-      check (await bp.addBlock(BlockSource.Sync, b1)).isOk
-      let r = await bp.addBlock(BlockSource.Gossip, b1)
+      check (await bp.addBlock(b1)).isOk
+      let r = await bp.addBlock(b1)
       check r.isErr and r.error.kind == BlockApplyErrorKind.AlreadyApplied
 
   asyncTest "queue is FIFO":
@@ -48,13 +48,13 @@ suite "chain/block_processor":
       let
         b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
         b2 = childBlock(b1.header, blockId(b1.header), SlotNumber(2), [])
-        f2 = bp.addBlock(BlockSource.Sync, b2)
-        f1 = bp.addBlock(BlockSource.Sync, b1)
+        f2 = bp.addBlock(b2)
+        f1 = bp.addBlock(b1)
       check not f1.finished
       check not f2.finished
       check (await f2).error.kind == BlockApplyErrorKind.OrphanBuffered
       check (await f1).isOk
-      check (await bp.addBlock(BlockSource.Sync, b2)).error.kind == BlockApplyErrorKind.AlreadyApplied
+      check (await bp.addBlock(b2)).error.kind == BlockApplyErrorKind.AlreadyApplied
       check bp.localTree.localTipId == blockId(b2.header)
 
   asyncTest "loop yields to other tasks between blocks":
@@ -75,7 +75,7 @@ suite "chain/block_processor":
       # runs while results are pending. With it, each poll pass promotes one
       # idler after due timers, so the ticker fires at least once per block
       # and in practice about every second poll pass. Expect a count near 23.
-      let futs = blocks.mapIt(bp.addBlock(BlockSource.Sync, it))
+      let futs = blocks.mapIt(bp.addBlock(it))
       var ticksWhileBusy = 0
       proc ticker() {.async: (raises: [CancelledError]).} =
         while true:
@@ -96,8 +96,8 @@ suite "chain/block_processor":
       let
         orphan = childBlock(genesisBlk.header, fakeParentId, SlotNumber(1), [])
         b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
-      discard bp.addBlock(BlockSource.Gossip, orphan)
-      check (await bp.addBlock(BlockSource.Sync, b1)).isOk
+      discard bp.addBlock(orphan)
+      check (await bp.addBlock(b1)).isOk
       check not bp.localTree.hasBlock(blockId(orphan.header))
 
   asyncTest "error kinds: OrphanBuffered and InvalidStructure":
@@ -110,11 +110,32 @@ suite "chain/block_processor":
         # Same slot as its parent, but above the LIB slot so the fork gate
         # does not fire first.
         stale = childBlock(b1.header, blockId(b1.header), SlotNumber(1), [])
-      check (await bp.addBlock(BlockSource.Sync, orphan)).error.kind ==
+      check (await bp.addBlock(orphan)).error.kind ==
         BlockApplyErrorKind.OrphanBuffered
-      check (await bp.addBlock(BlockSource.Sync, b1)).isOk
-      check (await bp.addBlock(BlockSource.Sync, stale)).error.kind ==
+      check (await bp.addBlock(b1)).isOk
+      check (await bp.addBlock(stale)).error.kind ==
         BlockApplyErrorKind.InvalidStructure
+
+  asyncTest "addBlock on Proposal reconstructs, validates, and applies child of genesis":
+    withProcessor(chain):
+      let
+        b1 = childValidBlock(genesisBlk.header, gid, SlotNumber(1), [])
+        p1 = Proposal(header: b1.header, references: default(References), signature: b1.signature)
+        r = await bp.addBlock(p1)
+      check r.isOk
+      check bp.localTree.localTipId == blockId(p1.header)
+      check bp.ledger.state(blockId(p1.header)).isSome
+
+  asyncTest "addBlock on Proposal with missing tx reference fails with MissingReference":
+    withProcessor(chain):
+      var refs: References
+      refs[0] = minimalValidSignedTx().hash
+      let
+        b1 = childValidBlock(genesisBlk.header, gid, SlotNumber(1), [])
+        p1 = Proposal(header: b1.header, references: refs, signature: b1.signature)
+        r = await bp.addBlock(p1)
+      check r.isErr
+      check r.error.kind == BlockApplyErrorKind.MissingReference
 
   asyncTest "stop ends the loop and cancels later addBlock calls":
     withProcessor(chain):
@@ -123,7 +144,7 @@ suite "chain/block_processor":
       check not bp.running
       let
         b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
-        f = bp.addBlock(BlockSource.Sync, b1)
+        f = bp.addBlock(b1)
       await sleepAsync(1.milliseconds)
       check f.cancelled()
 

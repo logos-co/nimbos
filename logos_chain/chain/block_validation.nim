@@ -45,14 +45,14 @@ type
     else:
       discard
 
-func txBytesLen(txs: openArray[SignedMantleTx]): int =
+func txBytesLen(txs: openArray[ValidSignedMantleTx]): int =
   var total = 0
   for i in 0 ..< txs.len:
     total += byteLen(txs[i])
   total
 
 func validateBlockHeader(blk: Block, vtxs: openArray[ValidSignedMantleTx]): bool =
-  let h = header(blk)
+  template h: auto = header(blk)
   if h.bedrockVersion != ExpectedBedrockVersion:
     return false
 
@@ -73,14 +73,16 @@ func validateBlockHeader(blk: Block, vtxs: openArray[ValidSignedMantleTx]): bool
 
   true
 
-func validateBlockStructure(blk: Block): bool =
-  if blk.txs.len > MaxBlockTxs:
+func validateBlockStructure(
+    signature: Ed25519Signature, txs: openArray[ValidSignedMantleTx]
+): bool =
+  if txs.len > MaxBlockTxs:
     return false
 
-  if blk.signature == DefaultEd25519Signature:
+  if signature == DefaultEd25519Signature:
     return false
 
-  if txBytesLen(blk.txs) > MaxBlockSize:
+  if txBytesLen(txs) > MaxBlockSize:
     return false
 
   true
@@ -136,7 +138,7 @@ proc validateBlock*(
   ## Validation does not terminate early; Tier 2 (header signature/root) and Tier 3
   ## (stateless transactions) are executed to ensure malformed blocks are rejected
   ## before buffering. If all checks pass, `isOrphan` is true.
-  if not validateBlockStructure(blk):
+  if not validateBlockStructure(blk.signature, vtxs):
     return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))
 
   let isOrphan = not ledger.hasState(blk.header.parentBlock)

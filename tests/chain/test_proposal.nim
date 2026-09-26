@@ -165,7 +165,7 @@ suite "chain/proposal":
     if setupState != nil:
       setupState(state)
 
-    check m.add(transientTx, SlotNumber(1)).get == true
+    check m.add(transientTx, SlotNumber(1)) == true
     check m.len == 1
 
     let (_, count) = m.selectProposalReferences(
@@ -175,7 +175,7 @@ suite "chain/proposal":
     check count == 0
 
     # Transient transaction is NOT purged; it remains in active mempool for subsequent blocks
-    check mantleTxHash(transientTx.tx).get in m.txs
+    check transientTx.hash in m.txs
     check m.len == 1
 
   test "selectTxsForProposal retains transactions with transient InvalidNote in mempool":
@@ -224,7 +224,7 @@ suite "chain/proposal":
         opProofs: @[OpProof(kind: opfChannelConfig, channelConfigOpProof: proof)],
       )
     testTransientRetention(
-      ValidSignedMantleTx(signedTx: tx, hash: mantleTxHash(tx.tx)),
+      ValidSignedMantleTx(signedTx: tx, hash: mantleTxHash(tx.tx).get),
       setupState = proc(s: var LedgerState) =
         s.mantleLedger = seedMantle(cid, [kp1.pubkey], transferThreshold = 1)
     )
@@ -294,9 +294,11 @@ suite "chain/proposal":
     # Reconstruct the proposal
     let reconstructedRes = reconstructBlock(proposal, m)
     check reconstructedRes.isOk
-    let blk = reconstructedRes.get()
-    check blk.txs.len == 1
-    check blk.txs[0].hash == tx.hash
+    let (blk, vtxs) = reconstructedRes.get()
+    check blk.header == proposal.header
+    check blk.signature == proposal.signature
+    check vtxs.len == 1
+    check vtxs[0].hash == tx.hash
 
   test "reconstructBlock succeeds for orphan proposal":
     var m = Mempool.init()
@@ -322,7 +324,31 @@ suite "chain/proposal":
     )
     let res = reconstructBlock(proposal, m)
     check res.isOk
-    let blk = res.get
+    let (blk, vtxs) = res.get
     check blk.header == proposal.header
+    check blk.signature == proposal.signature
+    check vtxs.len == 1
+    check vtxs[0].hash == tx.hash
+
+  test "reconstructBlock rejects missing reference":
+    var m = Mempool.init()
+    let tx = validSignedTxWithOps(1, 1)
+    let genesis = createGenesisBlock(validSignedTxWithOps(1, 0))
+    var pol = default(ProofOfLeadership)
+    pol.leaderKey = testTxKeyPair.pubkey
+    var refs: References
+    refs[0] = tx.hash
+    let h = initHeader(
+      bedrockVersion = ExpectedBedrockVersion,
+      parentBlock = blockId(genesis.header),
+      slot = SlotNumber(10),
+      txHashes = [tx.hash],
+      proofOfLeadership = pol,
+    )
+    let sig = testTxKeyPair.seckey.sign(blockId(h))
+    let proposal = initProposal(h, refs, sig)
+    let res = reconstructBlock(proposal, m)
+    check res.isErr
+    check res.error == ProposalValidationError.MissingReference
 
 {.pop.}
