@@ -39,7 +39,7 @@ func genesisStateWith(
           parent: parent,
           signer: signer)))]))
   GenesisState(
-    vtx: ValidSignedMantleTx(signedTx: stx, hash: mantleTxHash(stx.tx)))
+    vtx: ValidSignedMantleTx(signedTx: stx, hash: mantleTxHash(stx.tx).get))
 
 suite "chain/genesis cryptarchia parameters":
   test "decodes the spec worked example":

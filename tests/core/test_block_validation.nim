@@ -197,6 +197,7 @@ suite "core/block_validation — inclusive size and count bounds":
 
 suite "core/block_validation — multi-tier evaluation order":
   test "header signature failure short-circuits with InvalidBlockStructure":
+    let
       genesis = createGenesisBlock(minimalValidSignedTx())
       badBody = MantleTx(ops: @[createTransferOp(TransferPayload(
         inputs: Inputs(noteIds: @[]),
@@ -273,7 +274,7 @@ suite "core/block_validation — multi-tier evaluation order":
         blockId(genesis.header), default(LedgerState), default(LedgerConfig))
       # b1 is below the LIB with no ledger state, but the tree still holds it.
       blk = childBlock(b1.header, blockId(b1.header), SlotNumber(4), [minimalValidSignedTx()])
-      (vtxs, unverified) = Mempool.init().classifyBlockTxs(blk.txs)
+      (vtxs, unverified) = Mempool.init().classifyBlockTxs(blk.txs).get
       res = validateBlock(blk, tree, ledger, vtxs, unverified)
     check res.isErr
     check res.error.kind == BlockValidationErrorKind.UnviableFork
@@ -286,7 +287,7 @@ suite "core/block_validation — multi-tier evaluation order":
     var ledger = Ledger[BlockId].init(
       blockId(genesis.header), default(LedgerState), default(LedgerConfig))
     ledger.commitUpdate(blockId(b2.header), default(LedgerState))
-    let (vtxs, unverified) = Mempool.init().classifyBlockTxs(blk.txs)
+    let (vtxs, unverified) = Mempool.init().classifyBlockTxs(blk.txs).get
     check validateBlock(blk, tree, ledger, vtxs, unverified).isOk
 
   test "Tier 2: rejects block with empty leader key":
@@ -379,7 +380,7 @@ suite "core/block_validation — multi-tier evaluation order":
     var mempool = Mempool.init()
     check mempool.add(sm, SlotNumber(0))
 
-    let (vtxs, unverified) = mempool.classifyBlockTxs(blk.txs)
+    let (vtxs, unverified) = mempool.classifyBlockTxs(blk.txs).get
     check unverified.len == 0
     check vtxs.len == 1
     check validateBlock(blk, tree, ledger, vtxs, unverified).isOk
@@ -399,7 +400,7 @@ suite "core/block_validation — multi-tier evaluation order":
     state.feeMarket.executionBaseFee = 1000
     state.feeMarket.storageGasPrice = 1000
     let ledger = Ledger[BlockId].init(gid, state, testLedgerConfig, mockVerifyLeaderProof)
-    let (vtxs1, unverified1) = Mempool.init().classifyBlockTxs(blk.txs)
+    let (vtxs1, unverified1) = Mempool.init().classifyBlockTxs(blk.txs).get
     let (validBlk, _) = validateBlock(blk, tree, ledger, vtxs1, unverified1).expect("valid block")
     let res = prepareBlockUpdate(validBlk, ledger)
     check res.isErr and res.error.kind == BlockValidationErrorKind.TransactionsRejected
@@ -412,7 +413,7 @@ suite "core/block_validation — multi-tier evaluation order":
       ledger = Ledger[BlockId].init(blockId(genesis.header), default(LedgerState), default(LedgerConfig))
       orphanParent = Hash32([1'u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
       blk = childBlock(genesis.header, orphanParent, SlotNumber(1), [sm])
-    let (vtxs2, unverified2) = Mempool.init().classifyBlockTxs(blk.txs)
+    let (vtxs2, unverified2) = Mempool.init().classifyBlockTxs(blk.txs).get
     let res = validateBlock(blk, tree, ledger, vtxs2, unverified2)
     check res.isOk
     let (validBlk, isOrphan) = res.get

@@ -376,7 +376,7 @@ suite "core/mantle/tx_validation — stateless invariants":
       tx: MantleTx(ops: @[op]),
       opProofs: @[OpProof(kind: opfLeaderClaim, proofOfClaimProof: default(ProofOfClaimProof))],
     )
-    let txHash = mantleTxHash(tx.tx)
+    let txHash = mantleTxHash(tx.tx).get
     let mockAccept: ProofOfClaimVerifier = proc(
       proof: ProofOfClaimProof, public: ProofOfClaimPublic
     ): Result[bool, PocLoadError] =
@@ -400,7 +400,7 @@ suite "core/mantle/tx_validation — stateless invariants":
       tx: MantleTx(ops: @[op]),
       opProofs: @[OpProof(kind: opfLeaderClaim, proofOfClaimProof: default(ProofOfClaimProof))],
     )
-    let txHash = mantleTxHash(tx.tx)
+    let txHash = mantleTxHash(tx.tx).get
     let mockUninitialised: ProofOfClaimVerifier = proc(
       proof: ProofOfClaimProof, public: ProofOfClaimPublic
     ): Result[bool, PocLoadError] =
@@ -484,6 +484,6 @@ suite "core/mantle/tx_validation — stateless invariants":
       largeOps.add dummyOp
       largeProofs.add dummyProof
     let tx = SignedMantleTx(tx: MantleTx(ops: largeOps), opProofs: largeProofs)
-    check validateMantleTxStateless(tx).error == StatelessLedgerError.TooManyOps
+    check validateMantleTxStateless(tx, default(Hash32)).error == StatelessLedgerError.TooManyOps
 
 {.pop.}

@@ -33,7 +33,7 @@ func sampleHeader(txs: openArray[ValidSignedMantleTx] = []): Header =
       proof: DefaultCompressedGroth16Proof,
       leaderKey: default(Ed25519PublicKey),
     ),
-  ).get
+  )
 
 proc checkBlockEqual(a, b: Block) =
   check a.header == b.header

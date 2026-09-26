@@ -87,7 +87,8 @@ proc selectProposalReferences*(
         continue
 
       var candidate = workingLedger
-      let balance = candidate.tryApplyTx(item.tx, epoch, currentSlot, verifyPoq).valueOr:
+      let vtx = ValidSignedMantleTx(signedTx: item.tx, hash: hash)
+      let balance = candidate.tryApplyTx(vtx, epoch, currentSlot, verifyPoq).valueOr:
         if error == LedgerError.PermanentInvalidTxProof:
           toEvict.add(hash)
         continue

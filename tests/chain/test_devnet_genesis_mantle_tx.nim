@@ -66,7 +66,7 @@ suite "devnet genesis mantle_tx block root":
       smt = signedMantleTxFromDevnetFixture(text).valueOr:
         check false
         return
-      blockRoot = createBlockRoot([smt]).get
+      blockRoot = createBlockRoot([smt])
       dsText = readAllChars(deploymentSettingsPath).valueOr:
         check false
         return
