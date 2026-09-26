@@ -37,7 +37,7 @@ type
     TxNotFound
 
   MempoolItem = ref object
-    tx*: ValidSignedMantleTx
+    tx*: SignedMantleTx
     addedAtSlot*: SlotNumber
     byteSize*: Opt[int] ## Lazily computed serialized byte length; cached on first proposal evaluation to avoid re-encoding
     execGas*: Opt[Gas]  ## Lazily computed execution gas; cached on first proposal evaluation to avoid repeated gas checks
@@ -99,7 +99,7 @@ proc add*(
     m.compactQueue()
 
   m.txs[hash] = MempoolItem(
-    tx: tx,
+    tx: tx.signedTx,
     addedAtSlot: effectiveSlot,
     byteSize: Opt.none(int),
     execGas: Opt.none(Gas),
@@ -115,10 +115,10 @@ func contains*(m: Mempool, hash: Hash32): bool =
 
 func get*(m: Mempool, hash: Hash32): Result[ValidSignedMantleTx, MempoolError] =
   m.txs.withValue(hash, item):
-    return ok(item[].tx)
+    return ok(ValidSignedMantleTx(HashedSignedMantleTx(signedTx: item[].tx, hash: hash)))
   let item = m.graceCache.peek(hash).valueOr:
     return err(MempoolError.TxNotFound)
-  ok(item.tx)
+  ok(ValidSignedMantleTx(HashedSignedMantleTx(signedTx: item.tx, hash: hash)))
 
 proc pruneExpiredTxs*(m: Mempool, currentSlot: SlotNumber) =
   while m.queue.len > 0:
@@ -168,10 +168,13 @@ func isKnownValid*(m: Mempool, htx: HashedSignedMantleTx): bool =
     if htx.opProofs[i].kind != expectedKind:
       return false
 
-  let poolTx = m.get(htx.hash).valueOr:
+  m.txs.withValue(htx.hash, item):
+    return sameOpProofs(item[].tx.opProofs, htx.opProofs)
+
+  let item = m.graceCache.peek(htx.hash).valueOr:
     return false
 
-  sameOpProofs(poolTx.opProofs, htx.opProofs)
+  sameOpProofs(item.tx.opProofs, htx.opProofs)
 
 func updateUnverifiedIndices*(
     m: Mempool,
