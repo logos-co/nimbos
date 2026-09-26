@@ -339,8 +339,9 @@ suite "core/block_validation — multi-tier evaluation order":
     check mempool.add(sm, SlotNumber(0))
     let res = reconstructBlock(proposal, mempool)
     check res.isOk
-    let blk = res.get
-    check blk.txs.len == 1
+    let (blk, vtxs) = res.get
+    check blk.txs.len == 0
+    check vtxs.len == 1
 
   test "reconstructBlock rejects if referenced transaction is missing from mempool":
     let

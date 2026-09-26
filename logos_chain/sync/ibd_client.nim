@@ -204,7 +204,7 @@ proc sendDownloadBlocksRequest*(
 proc onBlock(
     syncer: Syncer, blk: Block
 ): Future[Result[void, BlockApplyError]] {.async: (raises: [CancelledError]).} =
-  let res = await syncer.processor.addBlock(BlockSource.Sync, blk)
+  let res = await syncer.processor.addBlock(blk)
   res.isOkOr:
     return res
   var leaderKeyBytes: array[EdPublicKeySize, byte]
