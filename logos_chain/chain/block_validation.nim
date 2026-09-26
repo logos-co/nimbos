@@ -22,10 +22,12 @@ import
 export tx_validation.StatelessLedgerError
 
 from ../core/types import
-  Block, body_root, ExpectedBedrockVersion,
-  MaxBlockSize, MaxUncles, asSeq, len, header, blockId, ValidBlock,
+  Block, body_root, ExpectedBedrockVersion, MaxBlockSize, MaxUncles,
+  asSeq, len, header, blockId, ValidBlock,
   AdmittedBlock
-from ../core/mantle/tx_types import SignedMantleTx, HashedSignedMantleTx, ValidSignedMantleTx, byteLen
+from ../core/mantle/tx_types import
+  HashedSignedMantleTx, ValidSignedMantleTx, AnySignedMantleTx,
+  byteLen
 
 type
   BlockValidationErrorKind* {.pure.} = enum
@@ -44,7 +46,7 @@ type
     else:
       discard
 
-func txBytesLen(txs: openArray[SignedMantleTx]): int =
+func txBytesLen[T: AnySignedMantleTx](txs: openArray[T]): int =
   var total = 0
   for i in 0 ..< txs.len:
     total += byteLen(txs[i])
@@ -74,8 +76,11 @@ func validateBlockHeader(blk: Block, txs: openArray[HashedSignedMantleTx]): bool
 
   true
 
-func validateBlockStructure(blk: Block): bool =
-  if blk.txs.len > MaxBlockTxs:
+func validateBlockStructure[T: AnySignedMantleTx](
+    blk: Block,
+    txs: openArray[T],
+): bool =
+  if txs.len > MaxBlockTxs:
     return false
 
   if blk.uncleHeaders.len > MaxUncles:
@@ -85,7 +90,7 @@ func validateBlockStructure(blk: Block): bool =
     return false
 
   # The spec bounds uncles by count only; MaxBlockSize covers the transactions.
-  if txBytesLen(blk.txs.asSeq) > MaxBlockSize:
+  if txBytesLen(txs) > MaxBlockSize:
     return false
 
   true
@@ -173,7 +178,7 @@ proc validateBlockHeaderAndTopology*(
   ##
   ## Returns ok((admittedBlk, isOrphan: true)) if the block is an orphan (parent state not yet in ledger),
   ## or ok((admittedBlk, isOrphan: false)) if the parent state is present.
-  if not validateBlockStructure(blk):
+  if not validateBlockStructure(blk, htxs):
     return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))
 
   let isOrphan = not ledger.hasState(blk.header.parentBlock)

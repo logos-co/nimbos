@@ -17,9 +17,9 @@ import
   ../deployment/deployment_settings,
   ../ledger/[ledger, stake_inference],
   ../mempool,
-  ./[block_validation, genesis, orphan_pool]
+  ./[block_validation, genesis, orphan_pool, proposal]
 
-export genesis, local_tree, mempool, block_validation, orphan_pool
+export genesis, local_tree, mempool, block_validation, orphan_pool, proposal
 export ledger except config
 
 const DefaultSecurityParam*: uint64 = 1'u64
@@ -39,6 +39,7 @@ type
     InFlight
     FutureSlot
     InvalidStructure
+    MissingReference
     UnviableFork
     LedgerRejected
     StatelessTxRejected
@@ -65,7 +66,8 @@ func isRecoverable*(kind: BlockApplyErrorKind): bool =
   case kind
   of BlockApplyErrorKind.AlreadyApplied, BlockApplyErrorKind.InFlight,
       BlockApplyErrorKind.FutureSlot, BlockApplyErrorKind.OrphanBuffered,
-      BlockApplyErrorKind.OrphanAlreadyBuffered:
+      BlockApplyErrorKind.OrphanAlreadyBuffered,
+      BlockApplyErrorKind.MissingReference:
     true
   of BlockApplyErrorKind.InvalidStructure, BlockApplyErrorKind.UnviableFork,
       BlockApplyErrorKind.LedgerRejected, BlockApplyErrorKind.StatelessTxRejected:
@@ -263,32 +265,27 @@ proc tryApplyAdmittedBlock*(
     chain: var Chain,
     admittedBlk: sink AdmittedBlock,
 ): Result[void, BlockApplyError] =
+  ## Directly applies an admitted block promoted from the orphan pool.
   let
     curSlot = chain.currentWallclockSlot()
     id = chain.checkViability(header(admittedBlk), curSlot).valueOr:
       chain.orphanPool.pruneDescendants(blockId(header(admittedBlk)))
       return err(error)
+
   # Re-check mempool for transactions that entered the pool while this block
   # was buffered in the orphan pool, avoiding redundant stateless validation.
   if admittedBlk.unverifiedIndices.len > 0 and chain.mempool != nil:
     chain.mempool.updateUnverifiedIndices(
       admittedBlk.txs, admittedBlk.unverifiedIndices
     )
+
   chain.applyAdmittedBlock(admittedBlk, id, curSlot)
 
-proc tryApplyBlock*(
-    chain: var Chain,
-    blk: Block,
-): Result[void, BlockApplyError] =
-  ## Full block ingestion in `valid_header` order, with automatic orphan buffering.
+template tryApplyIncoming(chain: var Chain, item: untyped, body: untyped): untyped =
   let
     curSlot = chain.currentWallclockSlot()
-    id = ?chain.checkViability(header(blk), curSlot)
-    (htxs, unverified) = chain.mempool.classifyBlockTxs(blk.txs.asSeq).valueOr:
-      return err(BlockApplyError(
-        kind: StatelessTxRejected,
-        statelessError: toStatelessLedgerError(error),
-      ))
+    id = ?chain.checkViability(item.header, curSlot)
+  let (blk, htxs, unverified) = body
 
   # Tiers 0-2: Structure, Topology Viability, Body Root, Header Signature
   let (admittedBlk, isOrphan) = validateBlockHeaderAndTopology(
@@ -302,5 +299,30 @@ proc tryApplyBlock*(
     return err(BlockApplyError(kind: OrphanBuffered))
 
   chain.applyAdmittedBlock(admittedBlk, id, curSlot)
+
+proc tryApplyBlock*(
+    chain: var Chain,
+    blk: Block,
+): Result[void, BlockApplyError] =
+  ## Full block ingestion in `valid_header` order, with automatic orphan buffering.
+  tryApplyIncoming(chain, blk):
+    let (htxs, unverified) = chain.mempool.classifyBlockTxs(blk.txs.asSeq).valueOr:
+      return err(BlockApplyError(
+        kind: StatelessTxRejected,
+        statelessError: toStatelessLedgerError(error),
+      ))
+    (blk, htxs, unverified)
+
+proc tryApplyProposal*(
+    chain: var Chain,
+    proposal: Proposal,
+): Result[void, BlockApplyError] =
+  ## Full proposal ingestion: reconstructs transactions from the mempool,
+  ## validates through the multi-tier pipeline without redundant transaction
+  ## classification, and applies the resulting AdmittedBlock.
+  tryApplyIncoming(chain, proposal):
+    let (blk, vtxs) = proposal.reconstructBlock(chain.mempool).valueOr:
+      return err(BlockApplyError(kind: MissingReference))
+    (blk, cast[seq[HashedSignedMantleTx]](vtxs), static(seq[int](@[])))
 
 {.pop.}

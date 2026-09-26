@@ -275,7 +275,7 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
       check listenerNode.processor.mempool.len == 1
 
       # Malformed: Ops and proofs length mismatch
-      let mismatchTx = SignedMantleTx(tx: sampleTx.tx, opProofs: @[])
+      let mismatchTx = SignedMantleTx(tx: sampleTx.signedTx.tx, opProofs: @[])
       check listenerNode.processor.processTx(mismatchTx, peers.dialer.switch.peerInfo.peerId) == ValidationResult.Reject
 
       # Malformed / Invalid: Corrupt cryptographic signature on new tx
@@ -322,7 +322,7 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
 
       check waitUntil(peers.dialer.switch.isConnected(peers.listenerPeerId))
 
-      let sampleBlock = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [])
+      let sampleBlock = childValidBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [])
       let sampleProposal = Proposal(
         header: sampleBlock.header,
         references: default(References),
@@ -343,7 +343,7 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
       # Broadcast proposal referencing a missing transaction (not in listener's mempool)
       var missingRefs: References
       missingRefs[0] = minimalValidSignedTx().hash
-      let missingBlock = childBlock(sampleProposal.header, blockId(sampleProposal.header), SlotNumber(2), [])
+      let missingBlock = childValidBlock(sampleProposal.header, blockId(sampleProposal.header), SlotNumber(2), [])
       let missingProposal = Proposal(
         header: missingBlock.header,
         references: missingRefs,

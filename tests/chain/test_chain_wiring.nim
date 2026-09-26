@@ -22,7 +22,7 @@ import
   stew/[byteutils, io2],
   libp2p/crypto/ed25519/ed25519,
   ../testutil,
-  ../../logos_chain/chain/[chain, proposal],
+  ../../logos_chain/chain/chain,
   ../../logos_chain/core/mantle/tx_validation,
   ../../logos_chain/deployment/deployment_settings,
   ../../logos_chain/ledger/poq_verifier

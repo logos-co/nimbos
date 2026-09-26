@@ -231,8 +231,8 @@ suite "sync/initial_block_download (IBD requester loop)":
     check serverChain.localTree.addBlockToTree(b1Valid)
     check serverChain.localTree.addBlockToTree(b2Valid)
     withSyncPair(serverChain, clientChain):
-      # Queue b1 via Gossip ahead of time so it is in-flight when IBD processes the downloaded batch
-      let fGossip = clientSyncer.processor.addBlock(BlockSource.Gossip, b1, b1id)
+      # Queue b1 ahead of time so it is in-flight when IBD processes the downloaded batch
+      let fGossip = clientSyncer.processor.addBlock(b1, b1id)
       await initialBlockDownload(clientSyncer, Opt.some(peerProvider(server.peerInfo.peerId)))
       check (await fGossip).isOk
       check clientChain.localTree.hasBlock(b1id)

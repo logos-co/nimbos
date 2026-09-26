@@ -15,7 +15,6 @@ import
   libp2p/peerid,
   libp2p/protocols/pubsub/pubsub,
   ./block_processor,
-  ./proposal,
   ../core/mantle/tx_validation
 
 logScope:
@@ -44,16 +43,10 @@ proc processProposal*(
     trace "GossipSub ignored duplicate proposal", blockId = idHex, src
     return ValidationResult.Ignore
 
-  # 3. Block reconstruction from mempool (~2 µs)
-  let blk = reconstructBlock(proposal, bp.mempool).valueOr:
-    debug "GossipSub cannot reconstruct block from proposal: missing tx in mempool",
-      blockId = idHex, error = $error, src
-    return ValidationResult.Ignore
+  discard bp.addBlock(proposal, id)
 
-  discard bp.addBlock(BlockSource.Gossip, blk.toBlock(), id)
-
-  debug "GossipSub accepted reconstructed block into local tree",
-    blockId = idHex, slot = blk.header.slot, src
+  debug "GossipSub accepted proposal into block queue",
+    blockId = idHex, slot = proposal.header.slot, src
   ValidationResult.Accept
 
 proc processTx*(
@@ -81,7 +74,7 @@ proc processTx*(
 
   let validTx = validateMantleTxStateless(htx).valueOr:
     debug "GossipSub rejected invalid mantle tx",
-      txHash = txHashHex, src
+      txHash = txHashHex, error = $error, src
     return ValidationResult.Reject
 
   let nowSlot = bp.currentWallclockSlot()

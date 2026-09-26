@@ -41,34 +41,47 @@ type
     ## A ``ValidSignedMantleTx`` that passed every stateless genesis check in
     ## ``validateGenesisTxStateless``; only state checks remain.
 
-template tx*(t: HashedSignedMantleTx): untyped = t.signedTx.tx
-template opProofs*(t: HashedSignedMantleTx): untyped = t.signedTx.opProofs
+  AnyHashedSignedMantleTx* =
+    HashedSignedMantleTx | ValidSignedMantleTx | ValidGenesisMantleTx
 
-template tx*(t: ValidSignedMantleTx): untyped = HashedSignedMantleTx(t).signedTx.tx
-template opProofs*(t: ValidSignedMantleTx): untyped = HashedSignedMantleTx(t).signedTx.opProofs
+  AnySignedMantleTx* =
+    SignedMantleTx | AnyHashedSignedMantleTx
+
+template signedTx(t: SignedMantleTx): untyped = t
+template signedTx(t: HashedSignedMantleTx): untyped = t.signedTx
 template signedTx*(t: ValidSignedMantleTx): untyped = HashedSignedMantleTx(t).signedTx
-template hash*(t: ValidSignedMantleTx): untyped = HashedSignedMantleTx(t).hash
+template signedTx(t: ValidGenesisMantleTx): untyped = HashedSignedMantleTx(ValidSignedMantleTx(t)).signedTx
 
-template tx*(t: ValidGenesisMantleTx): untyped = ValidSignedMantleTx(t).tx
+template tx*(t: AnySignedMantleTx): untyped = signedTx(t).tx
+template opProofs*(t: AnySignedMantleTx): untyped = signedTx(t).opProofs
+
+template hash*(t: ValidSignedMantleTx): untyped = HashedSignedMantleTx(t).hash
+template hash*(t: ValidGenesisMantleTx): untyped = ValidSignedMantleTx(t).hash
 
 func encodeMantleTx*(tx: MantleTx): Result[seq[byte], EncodingError] =
   ## MantleTx = OpCount (u8) || *Op
   encodeOps(tx.ops)
 
-func encodeSignedMantleTx*(signedTx: SignedMantleTx): Result[seq[byte], EncodingError] =
+func encodeSignedMantleTx*[T: AnySignedMantleTx](signedTx: T): Result[seq[byte], EncodingError] =
   ## SignedMantleTx = MantleTx || OpsProofs
-  var res = ?encodeMantleTx(signedTx.tx)
-  let proofsBytes = ?encodeOpsProofs(signedTx.tx.ops, signedTx.opProofs)
-  res.add(proofsBytes)
-  ok(res)
+  when T is SignedMantleTx:
+    var res = ?encodeMantleTx(signedTx.tx)
+    let proofsBytes = ?encodeOpsProofs(signedTx.tx.ops, signedTx.opProofs)
+    res.add(proofsBytes)
+    ok(res)
+  else:
+    encodeSignedMantleTx(signedTx.signedTx)
 
 func byteLen*(tx: MantleTx): int =
   ## Exact wire byte length of a MantleTx without allocating buffers.
   byteLen(tx.ops)
 
-func byteLen*(signedTx: SignedMantleTx): int =
-  ## Exact wire byte length of a SignedMantleTx without allocating buffers.
-  byteLen(signedTx.tx) + byteLen(signedTx.opProofs)
+func byteLen*[T: AnySignedMantleTx](tx: T): int =
+  ## Exact wire byte length of any signed MantleTx variant without allocating buffers.
+  when T is SignedMantleTx:
+    byteLen(tx.tx) + byteLen(tx.opProofs)
+  else:
+    byteLen(tx.signedTx)
 
 func readMantleTx*(data: openArray[byte], pos: var int): Result[MantleTx, DecodingError] =
   let count = ?readByte(data, pos)

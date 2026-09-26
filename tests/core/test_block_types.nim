@@ -154,7 +154,16 @@ suite "core/types":
     let
       htxA = HashedSignedMantleTx(signedTx: txA, hash: hA)
       htxB = HashedSignedMantleTx(signedTx: txB, hash: hB)
-    check body_root(openArray[SignedHeader]([]), [htxA, htxB]) == body_root(openArray[SignedHeader]([]), merkle_root(hashes))
+      expectedRoot = body_root(openArray[SignedHeader]([]), merkle_root(hashes))
+    check body_root(openArray[SignedHeader]([]), [htxA, htxB]) == expectedRoot
+    let
+      vtxA = ValidSignedMantleTx(htxA)
+      vtxB = ValidSignedMantleTx(htxB)
+    check body_root(openArray[SignedHeader]([]), [vtxA, vtxB]) == expectedRoot
+    let
+      gtxA = ValidGenesisMantleTx(vtxA)
+      gtxB = ValidGenesisMantleTx(vtxB)
+    check body_root(openArray[SignedHeader]([]), [gtxA, gtxB]) == expectedRoot
     check merkle_root(openArray[Hash32]([])) == default(Hash32)
     check merkle_root([hA]) == hA
 

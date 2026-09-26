@@ -340,7 +340,7 @@ proc mandatory_fees*(
     tx: ValidSignedMantleTx,
 ): Result[tuple[totalCost: GasCost, executionGas, storageGas: Gas], LedgerError] =
   let execGas = ? txExecutionGas(tx)
-  let txByteLen = byteLen(tx.signedTx)
+  let txByteLen = byteLen(tx)
   s.mandatory_fees(execGas, txByteLen)
 
 func creditBlockRewards*(

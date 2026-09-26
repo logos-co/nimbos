@@ -62,7 +62,7 @@ proc selectProposalReferences*(
 
       # Lazily compute and cache byteSize and execGas on first evaluation
       let txBytes = item.byteSize.valueOr:
-        let sz = byteLen(item.tx.signedTx)
+        let sz = byteLen(item.tx)
         item.byteSize = Opt.some(sz)
         sz
 
@@ -136,23 +136,28 @@ proc constructProposal*(
 
 func reconstructBlock*(
     proposal: Proposal,
-    mempool: Mempool
-): Result[ValidBlock, ProposalValidationError] =
-  ## Reconstructs the block from proposal references using the mempool (and internal grace cache).
-  ## Returns error if any reference is missing or if we cannot retrieve it.
-  var vtxs: seq[ValidSignedMantleTx]
+    mempool: Mempool,
+): Result[tuple[blk: Block, vtxs: seq[ValidSignedMantleTx]], ProposalValidationError] =
+  ## Reconstructs the block header/signature and validated transactions from proposal references using the mempool.
+  ## Note: `blk.txs` is intentionally left empty because after validation, `vtxs` are directly
+  ## used to assemble the resulting `ValidBlock`. Since transactions in the mempool are already
+  ## statelessly validated, allocating and copying `SignedMantleTx` into `blk.txs` is unnecessary overhead.
+  var vtxs = newSeqOfCap[ValidSignedMantleTx](MaxBlockTxs)
   for r in proposal.references:
     if r.isZero():
       break
-    let tx = mempool.get(r).valueOr:
+    let vtx = mempool.get(r).valueOr:
       return err(ProposalValidationError.MissingReference)
-    vtxs.add(tx)
-  
-  ok(ValidBlock(
-    header: proposal.header,
-    signature: proposal.signature,
-    uncleHeaders: proposal.uncleHeaders,
-    txs: vtxs,
+    vtxs.add(vtx)
+
+  ok((
+    blk: Block(
+      header: proposal.header,
+      signature: proposal.signature,
+      uncleHeaders: proposal.uncleHeaders,
+      txs: default(BlockTxs),
+    ),
+    vtxs: vtxs,
   ))
 
 {.pop.}

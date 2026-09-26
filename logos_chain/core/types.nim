@@ -181,18 +181,11 @@ func body_root(uncles: openArray[SignedHeader], txHashes: openArray[Hash32]): Ha
   ## Body root over the uncle list and the transaction hashes.
   body_root(uncles, merkle_root(txHashes))
 
-func body_root*(
+func body_root*[T: AnyHashedSignedMantleTx](
     uncles: openArray[SignedHeader],
-    txs: openArray[HashedSignedMantleTx],
+    txs: openArray[T],
 ): Hash32 =
-  ## Body root over the uncle list and the hashed transactions.
-  body_root(uncles, merkle_root(txs.mapIt(it.hash)))
-
-func body_root*(
-    uncles: openArray[SignedHeader],
-    txs: openArray[ValidSignedMantleTx],
-): Hash32 =
-  ## Body root over the uncle list and the valid transactions.
+  ## Body root over the uncle list and any hashed/valid transactions sequence.
   body_root(uncles, merkle_root(txs.mapIt(it.hash)))
 
 func blockId*(header: Header): Hash32 =
