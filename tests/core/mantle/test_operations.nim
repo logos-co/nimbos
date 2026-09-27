@@ -10,6 +10,7 @@
 
 import
   unittest2,
+  libp2p/multiaddress,
   libp2p/crypto/ed25519/ed25519,
   ../../../logos_chain/core/mantle/[operations, tx_types]
 
@@ -204,7 +205,7 @@ suite "core/mantle/operations":
       check proof.kind == expectedOpProofKindForOpcode(opcode).get
     check defaultOpProofForOpcode(Opcode(250)).error == EncodingError.UnsupportedOpcode
 
-  test "encodeOps prefixes op count and includes opcode":
+  test "encodeOps prefixes op count and roundtrips with readOp":
     let
       ops = @[
         createTransferOp(TransferPayload(
@@ -216,6 +217,16 @@ suite "core/mantle/operations":
     check encoded.len >= 2
     check encoded[0] == 1'u8
     check encoded[1] == OpTransfer
+    var pos = 0
+    let count = readByte(encoded, pos).get
+    check count == 1'u8
+    var back: seq[Op]
+    for _ in 0 ..< int(count):
+      back.add readOp(encoded, pos).get
+    check pos == encoded.len
+    check back.len == 1
+    check back[0].opcode == OpTransfer
+    check back[0].payload.kind == Transfer
 
   test "encodeChannelDeposit and encodeChannelWithdraw include expected prefixes":
     let dep = encodeChannelDeposit(ChannelDepositPayload(
@@ -244,64 +255,7 @@ suite "core/mantle/operations":
     check wire[65] == 1'u8 # OutputCount
     check wire[66] == 7'u8 # Value LE low byte
 
-  test "decodeOps roundtrips encodeOps":
-    let
-      ops = @[
-        createTransferOp(TransferPayload(
-          inputs: Inputs(noteIds: @[]),
-          outputs: Outputs(notes: @[]),
-        )),
-      ]
-      wire = encodeOps(ops).get
-      back = decodeOps(wire).get
-    check back.len == 1
-    check back[0].opcode == OpTransfer
-    check back[0].payload.kind == Transfer
-
-  test "decodeChannelDeposit and decodeChannelWithdraw roundtrip encoders":
-    let
-      depPayload = ChannelDepositPayload(
-        channel: default(ChannelId),
-        inputs: Inputs(noteIds: @[default(NoteId)]),
-        metadata: @[],
-      )
-      depWire = encodeChannelDeposit(depPayload).get
-      depBack = decodeChannelDeposit(depWire).get
-    check depBack.channel == depPayload.channel
-    check depBack.inputs == depPayload.inputs
-    check depBack.metadata == depPayload.metadata
-
-    let
-      wdrPayload = ChannelWithdrawPayload(
-        channel: default(ChannelId),
-        inputs: Inputs(noteIds: @[default(NoteId)]),
-      )
-      wdrWire = encodeChannelWithdraw(wdrPayload).get
-      wdrBack = decodeChannelWithdraw(wdrWire).get
-    check wdrBack.channel == wdrPayload.channel
-    check wdrBack.inputs == wdrPayload.inputs
-
-  test "decodeChannelTransfer roundtrips encodeChannelTransfer":
-    let
-      payload = ChannelTransferPayload(
-        channel: default(ChannelId),
-        inputs: Inputs(noteIds: @[default(NoteId)]),
-        outputs: Outputs(notes: @[Note(value: 11, zkPublicKey: default(ZkPublicKey))]),
-      )
-      wire = encodeChannelTransfer(payload).get
-      back = decodeChannelTransfer(wire).get
-    check back.channel == payload.channel
-    check back.inputs == payload.inputs
-    check back.outputs == payload.outputs
-
-    let
-      encOp = encodeOp(createChannelTransferOp(payload)).get
-      opBack = decodeOp(encOp).get
-    check opBack.opcode == OpChannelTransfer
-    check opBack.payload.kind == ChannelTransfer
-    check opBack.payload.channelTransfer.outputs == payload.outputs
-
-  test "encodeChannelConfig uses UINT16 KeyCount and roundtrips":
+  test "encodeChannelConfig uses UINT16 KeyCount and roundtrips with readOpPayload":
     var keys: seq[Signer]
     for i in 0 ..< 256:
       keys.add mkSigner(byte(i))
@@ -318,7 +272,9 @@ suite "core/mantle/operations":
     check wire.len == 32 + 2 + (256 * 32) + 4 + 4 + 2 + 2
     check wire[32] == 0'u8
     check wire[33] == 1'u8 # KeyCount 256 as UINT16 LE
-    let cfgBack = decodeChannelConfig(wire).get
+    var pos = 0
+    let cfgBack = readOpPayload(wire, pos, OpChannelConfig).get.channelConfig
+    check pos == wire.len
     check cfgBack.channel == cfgPayload.channel
     check cfgBack.keys.len == 256
     check cfgBack.postingTimeframe == cfgPayload.postingTimeframe
@@ -326,25 +282,102 @@ suite "core/mantle/operations":
     check cfgBack.configurationThreshold == cfgPayload.configurationThreshold
     check cfgBack.transferThreshold == cfgPayload.transferThreshold
 
-  test "decodeOp roundtrips ChannelConfig through encodeOp":
+  test "readOp and readOpPayload roundtrip all 10 operation variants":
     let
-      op = createChannelConfigOp(ChannelConfigPayload(
-        channel: default(ChannelId),
-        keys: @[mkSigner(9)],
-        postingTimeframe: 1'u32,
-        postingTimeout: 2'u32,
-        configurationThreshold: 3'u16,
-        transferThreshold: 4'u16,
+      # 1. Transfer
+      opTransfer = createTransferOp(TransferPayload(
+        inputs: Inputs(noteIds: @[default(NoteId)]),
+        outputs: Outputs(notes: @[Note(value: 42, zkPublicKey: default(ZkPublicKey))]),
       ))
-      wire = encodeOp(op).get
-      back = decodeOp(wire).get
-    check back.opcode == OpChannelConfig
-    check back.payload.kind == ChannelConfig
-    check back.payload.channelConfig.keys.len == 1
-    check back.payload.channelConfig.postingTimeframe == 1'u32
+      # 2. ChannelInscribe
+      opInscribe = createChannelInscribeOp(ChannelInscribePayload(
+        channelId: default(ChannelId),
+        inscription: @[1'u8, 2, 3],
+        parent: default(Parent),
+        signer: mkSigner(1),
+      ))
+      # 3. ChannelDeposit
+      opDeposit = createChannelDepositOp(ChannelDepositPayload(
+        channel: default(ChannelId),
+        inputs: Inputs(noteIds: @[default(NoteId)]),
+        metadata: @[4'u8, 5],
+      ))
+      # 4. ChannelWithdraw
+      opWithdraw = createChannelWithdrawOp(ChannelWithdrawPayload(
+        channel: default(ChannelId),
+        inputs: Inputs(noteIds: @[default(NoteId)]),
+      ))
+      # 5. ChannelTransfer
+      opChannelTransfer = createChannelTransferOp(ChannelTransferPayload(
+        channel: default(ChannelId),
+        inputs: Inputs(noteIds: @[default(NoteId)]),
+        outputs: Outputs(notes: @[Note(value: 99, zkPublicKey: default(ZkPublicKey))]),
+      ))
+      # 6. SdpDeclare
+      opSdpDeclare = createSdpDeclareOp(DeclarationMessage(
+        serviceType: ServiceType.bn,
+        locators: @[MultiAddress.init("/ip4/127.0.0.1/tcp/1234").tryGet()],
+        providerId: mkSigner(2),
+        zkId: default(ZkId),
+        lockedNoteId: default(LockedNoteId),
+      ))
+      # 7. SdpWithdraw
+      opSdpWithdraw = createSdpWithdrawOp(WithdrawMessage(
+        declarationId: default(DeclarationId),
+        nonce: 123'u64,
+        lockedNoteId: default(LockedNoteId),
+      ))
+      # 8. SdpActive
+      opSdpActive = createSdpActiveOp(ActiveMessage(
+        declarationId: default(DeclarationId),
+        nonce: 456'u64,
+        metadata: @[7'u8, 8, 9],
+      ))
+      # 9. LeaderClaim
+      opLeaderClaim = createLeaderClaimOp(LeaderClaimPayload(
+        rewardsRoot: default(RewardsRoot),
+        voucherNullifier: default(VoucherNullifier),
+        publicKey: default(ZkPublicKey),
+      ))
+      # 10. ChannelConfig
+      opChannelConfig = createChannelConfigOp(ChannelConfigPayload(
+        channel: default(ChannelId),
+        keys: @[mkSigner(3)],
+        postingTimeframe: 10,
+        postingTimeout: 20,
+        configurationThreshold: 1,
+        transferThreshold: 1,
+      ))
 
-  test "decodeOp returns UnsupportedOpcode on unknown opcode byte":
-    check decodeOp([250'u8]).error == DecodingError.UnsupportedOpcode
+      allOps = [
+        opTransfer, opInscribe, opDeposit, opWithdraw, opChannelTransfer,
+        opSdpDeclare, opSdpWithdraw, opSdpActive, opLeaderClaim, opChannelConfig,
+      ]
+
+    for op in allOps:
+      # Test readOp
+      let wire = encodeOp(op).get
+      var pos = 0
+      let backOp = readOp(wire, pos).get
+      check pos == wire.len
+      check backOp.opcode == op.opcode
+      check backOp.payload.kind == op.payload.kind
+      check byteLen(backOp) == wire.len
+
+      # Test readOpPayload directly on payload slice
+      var payloadPos = 0
+      let payloadWire = wire[1 .. ^1]
+      let backPayload = readOpPayload(payloadWire, payloadPos, op.opcode).get
+      check payloadPos == payloadWire.len
+      check backPayload.kind == op.payload.kind
+
+  test "readOp returns UnsupportedOpcode on unknown opcode byte":
+    var pos = 0
+    check readOp([250'u8], pos).error == DecodingError.UnsupportedOpcode
+
+  test "readOpPayload returns UnsupportedOpcode on unknown opcode":
+    var pos = 0
+    check readOpPayload([], pos, Opcode(250)).error == DecodingError.UnsupportedOpcode
 
   test "encodeOps returns OpsCountExceeded when ops count exceeds 255":
     var largeOps: seq[Op]

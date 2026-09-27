@@ -35,7 +35,7 @@ func opId*(op: DeclarationMessage): Result[Hash32, EncodingError] =
 
 func opId*(op: WithdrawMessage): Hash32 =
   ## op_id = Blake2b-256("OPERATION_ID_V1" || encode_op_bytes(op))
-  blake2b256Hash(OperationIdV1DomainTag, @(encodeSdpWithdraw(op)))
+  blake2b256Hash(OperationIdV1DomainTag, encodeSdpWithdraw(op))
 
 func opId*(op: ActiveMessage): Result[Hash32, EncodingError] =
   ## op_id = Blake2b-256("OPERATION_ID_V1" || encode_op_bytes(op))
@@ -64,6 +64,6 @@ func opId*(op: ChannelTransferPayload): Result[Hash32, EncodingError] =
 
 func opId*(op: LeaderClaimPayload): Hash32 =
   ## op_id = Blake2b-256("OPERATION_ID_V1" || encode_op_bytes(op))
-  blake2b256Hash(OperationIdV1DomainTag, @(encodeLeaderClaim(op)))
+  blake2b256Hash(OperationIdV1DomainTag, encodeLeaderClaim(op))
 
 {.pop.}

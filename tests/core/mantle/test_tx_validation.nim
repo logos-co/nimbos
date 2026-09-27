@@ -312,8 +312,6 @@ suite "core/mantle/tx_validation — stateless invariants":
     let r = validateMantleTxStateless(badTx)
     check r.error == StatelessLedgerError.InvalidProof
 
-
-
   test "Structural: rejects ops / opProofs length mismatch":
     let u = mkUtxo(100, 1)
     let op = createTransferOp(TransferPayload(
@@ -469,7 +467,20 @@ suite "core/mantle/tx_validation — stateless invariants":
     check toStatelessLedgerError(EncodingError.MetadataLengthExceeded) == StatelessLedgerError.InvalidProof
     check toStatelessLedgerError(EncodingError.InscriptionLengthExceeded) == StatelessLedgerError.InvalidProof
     check toStatelessLedgerError(EncodingError.InputsCountExceeded) == StatelessLedgerError.InvalidProof
-    check toStatelessLedgerError(EncodingError.OutputsCountExceeded) == StatelessLedgerError.InvalidProof
-    check toStatelessLedgerError(EncodingError.OpsCountExceeded) == StatelessLedgerError.InvalidProof
+    check toStatelessLedgerError(EncodingError.OpsCountExceeded) == StatelessLedgerError.TooManyOps
+
+  test "validateMantleTxStateless rejects tx exceeding MantleMaxOps with TooManyOps":
+    var largeOps: seq[Op]
+    var largeProofs: seq[OpProof]
+    let dummyOp = createTransferOp(TransferPayload(
+      inputs: Inputs(noteIds: @[default(NoteId)]),
+      outputs: Outputs(notes: @[]),
+    ))
+    let dummyProof = OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))
+    for i in 0 .. MantleMaxOps:
+      largeOps.add dummyOp
+      largeProofs.add dummyProof
+    let tx = SignedMantleTx(tx: MantleTx(ops: largeOps), opProofs: largeProofs)
+    check validateMantleTxStateless(tx).error == StatelessLedgerError.TooManyOps
 
 {.pop.}

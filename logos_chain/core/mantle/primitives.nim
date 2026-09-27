@@ -19,9 +19,7 @@ export
   encodeByte, encodeEd25519PublicKey, encodeEd25519Signature, encodeFieldElement,
   encodeGroth16, encodeHash32, encodeU16LeLenPrefixed, encodeU32LeLenPrefixed,
   encodeLe, encodeZkPublicKey, encodeZkSignature,
-  decodeByte, decodeEd25519PublicKey, decodeEd25519Signature, decodeFieldElement,
-  decodeFieldElementAt, decodeGroth16, decodeHash32, decodeU16LeLenPrefixed,
-  decodeU32LeLenPrefixed, decodeZkPublicKey, decodeZkSignature
+  decodeFieldElement, decodeFieldElementAt, decodeU32LeLenPrefixed
 
 const
   MaxBlockTxs* = 1024
@@ -29,9 +27,7 @@ const
   MaxSdpLocators* = 8
   MaxLocatorMultiaddrBytes* = 329
 
-
 type
-  MessageId* = Hash32
   ChannelId* = Hash32
   DeclarationId* = Hash32
   Parent* = Hash32
@@ -48,7 +44,6 @@ type
 
   TokenValue* = uint64
   Value* = uint64
-  Amount* = uint64
   Nonce* = uint64
 
   PostingTimeframe* = uint32
@@ -63,7 +58,6 @@ type
 
   Opcode* = uint8
   OpCount* = uint8
-  HexBytes* = string
 
   NoteId* = FieldElement
   Note* = object
@@ -85,6 +79,16 @@ type
   SignatureCount* = uint16
   ChannelKeyIndex* = uint16
   KeyCount* = uint16
+
+const NoteWireBytes = sizeof(Value) + sizeof(ZkPublicKey)
+
+func byteLen*(inputs: Inputs): int =
+  ## Exact wire byte length of Inputs: 1-byte InputCount + NoteIds
+  sizeof(byte) + inputs.noteIds.len * sizeof(NoteId)
+
+func byteLen*(outputs: Outputs): int =
+  ## Exact wire byte length of Outputs: 1-byte OutputCount + Notes
+  sizeof(byte) + outputs.notes.len * NoteWireBytes
 
 func encodeDeclarationId*(value: DeclarationId): array[32, byte] =
   ## DeclarationId = Hash32
@@ -110,7 +114,7 @@ func encodeSigner*(value: Signer): array[32, byte] =
   ## Signer = Ed25519PublicKey
   encodeEd25519PublicKey(value)
 
-func encodeNoteId*(value: NoteId): array[32, byte] =
+func encodeNoteId(value: NoteId): array[32, byte] =
   ## NoteId = FieldElement
   encodeFieldElement(value)
 
@@ -140,10 +144,6 @@ func encodeOpCount*(value: OpCount): byte =
 
 func encodeValue*(value: Value): array[8, byte] =
   ## Value = UINT64
-  encodeLe(value)
-
-func encodeAmount*(value: Amount): array[8, byte] =
-  ## Amount = UINT64
   encodeLe(value)
 
 func encodeNonce*(value: Nonce): array[8, byte] =
@@ -185,19 +185,18 @@ func encodeTransferThreshold*(value: TransferThreshold): array[2, byte] =
   ## TransferThreshold = UINT16
   encodeLe(value)
 
-
-func encodeNote*(value: Note): array[40, byte] =
+func encodeNote(value: Note): array[NoteWireBytes, byte] =
   ## Note = Value || ZkPublicKey
-  var res: array[40, byte]
-  res[0 ..< 8] = encodeValue(value.value)
-  res[8 ..< 40] = encodeZkPublicKey(value.zkPublicKey)
+  var res: array[NoteWireBytes, byte]
+  res[0 ..< sizeof(Value)] = encodeValue(value.value)
+  res[sizeof(Value) ..< NoteWireBytes] = encodeZkPublicKey(value.zkPublicKey)
   res
 
-func encodeInputCount*(value: byte): byte =
+func encodeInputCount(value: byte): byte =
   ## InputCount = Byte
   encodeByte(value)
 
-func encodeOutputCount*(value: byte): byte =
+func encodeOutputCount(value: byte): byte =
   ## OutputCount = Byte
   encodeByte(value)
 
@@ -205,7 +204,7 @@ func encodeInputs*(value: Inputs): Result[seq[byte], EncodingError] =
   ## Inputs = InputCount * NoteId
   if value.noteIds.len > int(high(byte)):
     return err(EncodingError.InputsCountExceeded)
-  var res = newSeqOfCap[byte](1 + value.noteIds.len * 32)
+  var res = newSeqOfCap[byte](byteLen(value))
   res.add(encodeInputCount(byte(value.noteIds.len)))
   for noteId in value.noteIds:
     res.add(encodeNoteId(noteId))
@@ -215,7 +214,7 @@ func encodeOutputs*(value: Outputs): Result[seq[byte], EncodingError] =
   ## Outputs = OutputCount * Note
   if value.notes.len > int(high(byte)):
     return err(EncodingError.OutputsCountExceeded)
-  var res = newSeqOfCap[byte](1 + value.notes.len * 40)
+  var res = newSeqOfCap[byte](byteLen(value))
   res.add(encodeOutputCount(byte(value.notes.len)))
   for note in value.notes:
     res.add(encodeNote(note))
@@ -235,7 +234,7 @@ func encodeServiceType*(value: ServiceType): byte =
 func isValidLocator*(locator: Locator): bool =
   locator.data().buffer.len <= MaxLocatorMultiaddrBytes
 
-func encodeLocatorCount*(value: byte): byte =
+func encodeLocatorCount(value: byte): byte =
   ## LocatorCount = Byte
   encodeByte(value)
 
@@ -254,7 +253,7 @@ func byteLen*(locator: Locator): int =
 
 func encodeLocators*(locators: openArray[Locator]): Result[seq[byte], EncodingError] =
   ## Locators = LocatorCount *Locator
-  if locators.len > int(high(byte)):
+  if locators.len > MaxSdpLocators:
     return err(EncodingError.LocatorsCountExceeded)
   var res = @[encodeLocatorCount(byte(locators.len))]
   for locator in locators:
@@ -267,65 +266,6 @@ func slotToFr*(slot: SlotNumber): FieldElement =
   ## little-endian zero-padded encoding.
   frFromBytesLE(encodeLe(uint64(slot))).get
 
-func decodeDeclarationId*(data: openArray[byte]): Result[DeclarationId, DecodingError] =
-  decodeHash32(data)
-
-func decodeChannelId*(data: openArray[byte]): Result[ChannelId, DecodingError] =
-  decodeHash32(data)
-
-func decodeParent*(data: openArray[byte]): Result[Parent, DecodingError] =
-  decodeHash32(data)
-
-func decodeProviderId*(data: openArray[byte]): Result[ProviderId, DecodingError] =
-  decodeEd25519PublicKey(data)
-
-func decodeZkId*(data: openArray[byte]): Result[ZkId, DecodingError] =
-  decodeZkPublicKey(data)
-
-func decodeSigner*(data: openArray[byte]): Result[Signer, DecodingError] =
-  decodeEd25519PublicKey(data)
-
-func decodeNoteId*(data: openArray[byte]): Result[NoteId, DecodingError] =
-  decodeFieldElement(data)
-
-func decodeLockedNoteId*(data: openArray[byte]): Result[LockedNoteId, DecodingError] =
-  decodeNoteId(data)
-
-func decodeRewardsRoot*(data: openArray[byte]): Result[RewardsRoot, DecodingError] =
-  decodeFieldElement(data)
-
-func decodeVoucherNullifier*(data: openArray[byte]): Result[VoucherNullifier, DecodingError] =
-  decodeFieldElement(data)
-
-func decodePublicKey*(data: openArray[byte]): Result[PublicKey, DecodingError] =
-  decodeZkPublicKey(data)
-
-func decodeOpcode*(data: openArray[byte]): Result[Opcode, DecodingError] =
-  let b = ?decodeByte(data)
-  ok(Opcode(b))
-
-func decodeOpCount*(data: openArray[byte]): Result[OpCount, DecodingError] =
-  let b = ?decodeByte(data)
-  ok(OpCount(b))
-
-func decodeValue*(data: openArray[byte]): Result[Value, DecodingError] =
-  var pos = 0
-  let res = ?readLe[uint64](data, pos)
-  ?finishDecode(data, pos)
-  ok(Value(res))
-
-func decodeAmount*(data: openArray[byte]): Result[Amount, DecodingError] =
-  decodeValue(data)
-
-func decodeNonce*(data: openArray[byte]): Result[Nonce, DecodingError] =
-  decodeValue(data)
-
-func decodeMetadata*(data: openArray[byte]): Result[Metadata, DecodingError] =
-  decodeU32LeLenPrefixed(data)
-
-func decodeInscription*(data: openArray[byte]): Result[Inscription, DecodingError] =
-  decodeU32LeLenPrefixed(data)
-
 func readServiceType*(data: openArray[byte], pos: var int): Result[ServiceType, DecodingError] =
   let b = ?readByte(data, pos)
   case b
@@ -333,15 +273,6 @@ func readServiceType*(data: openArray[byte], pos: var int): Result[ServiceType, 
     ok(ServiceType.bn)
   else:
     err(DecodingError.InvalidServiceType)
-
-func decodeServiceType*(data: openArray[byte]): Result[ServiceType, DecodingError] =
-  var pos = 0
-  let res = ?readServiceType(data, pos)
-  ?finishDecode(data, pos)
-  ok(res)
-
-func decodeLocatorCount*(data: openArray[byte]): Result[byte, DecodingError] =
-  decodeByte(data)
 
 func readLocator*(data: openArray[byte], pos: var int): Result[Locator, DecodingError] =
   let raw = ?readU16LeLenPrefixed(data, pos)
@@ -351,32 +282,7 @@ func readLocator*(data: openArray[byte], pos: var int): Result[Locator, Decoding
     return err(DecodingError.InvalidLocator)
   ok(ma)
 
-func decodeLocator*(data: openArray[byte]): Result[Locator, DecodingError] =
-  var pos = 0
-  let res = ?readLocator(data, pos)
-  ?finishDecode(data, pos)
-  ok(res)
-
-func decodeSignatureCount*(data: openArray[byte]): Result[SignatureCount, DecodingError] =
-  var pos = 0
-  let res = SignatureCount(?readLe[uint16](data, pos))
-  ?finishDecode(data, pos)
-  ok(res)
-
-func decodeChannelKeyIndex*(data: openArray[byte]): Result[ChannelKeyIndex, DecodingError] =
-  var pos = 0
-  let res = ChannelKeyIndex(?readLe[uint16](data, pos))
-  ?finishDecode(data, pos)
-  ok(res)
-
-func decodeKeyCount*(data: openArray[byte]): Result[KeyCount, DecodingError] =
-  var pos = 0
-  let res = KeyCount(?readLe[uint16](data, pos))
-  ?finishDecode(data, pos)
-  ok(res)
-
-
-func readNote*(data: openArray[byte], pos: var int): Result[Note, DecodingError] =
+func readNote(data: openArray[byte], pos: var int): Result[Note, DecodingError] =
   let value = Value(?readLe[uint64](data, pos))
   let zkPublicKey = ?decodeFieldElementAt(data, pos)
   ok(Note(value: value, zkPublicKey: zkPublicKey))
@@ -394,33 +300,5 @@ func readOutputs*(data: openArray[byte], pos: var int): Result[Outputs, Decoding
   for _ in 0 ..< int(count):
     notes.add ?readNote(data, pos)
   ok(Outputs(notes: notes))
-
-func decodeNote*(data: openArray[byte]): Result[Note, DecodingError] =
-  var pos = 0
-  let res = ?readNote(data, pos)
-  ?finishDecode(data, pos)
-  ok(res)
-
-func decodeInputCount*(data: openArray[byte]): Result[byte, DecodingError] =
-  decodeByte(data)
-
-func decodeOutputCount*(data: openArray[byte]): Result[byte, DecodingError] =
-  decodeByte(data)
-
-func decodeInputs*(data: openArray[byte]): Result[Inputs, DecodingError] =
-  var pos = 0
-  let res = ?readInputs(data, pos)
-  ?finishDecode(data, pos)
-  ok(res)
-
-func decodeInputsNoteIds*(data: openArray[byte]): Result[seq[NoteId], DecodingError] =
-  let inputs = ?decodeInputs(data)
-  ok(inputs.noteIds)
-
-func decodeOutputs*(data: openArray[byte]): Result[Outputs, DecodingError] =
-  var pos = 0
-  let res = ?readOutputs(data, pos)
-  ?finishDecode(data, pos)
-  ok(res)
 
 {.pop.}

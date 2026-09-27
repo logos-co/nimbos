@@ -28,13 +28,6 @@ type
     opfLeaderClaim
     opfChannelConfig
 
-  ProofType* {.pure.} = enum
-    ptEd25519Sig
-    ptZkSig
-    ptZkAndEd25519Sigs
-    ptChannelWithdraw
-    ptProofOfClaim
-
   Ed25519SigProof* = Ed25519Signature
   ZkSigProof* = ZkSignature
 
@@ -52,11 +45,6 @@ type
     voucherRoot*: ZkHash
     voucherNullifier*: ZkHash
     mantleTxHash*: ZkHash
-
-  ProofOfClaimWitness* = object
-    secretVoucher*: ZkHash
-    voucherMerklePath*: seq[ZkHash]
-    voucherMerklePathSelectors*: seq[bool]
 
   OpProof* = object
     case kind*: OpProofKind
@@ -108,20 +96,6 @@ func sameOpProofs*(a, b: openArray[OpProof]): bool {.raises: [].} =
       return false
   true
 
-func proofTypeForKind(kind: OpProofKind): ProofType =
-  ## Canonical mapping from OpProof variant to proof family.
-  case kind
-  of opfChannelInscribe:
-    ptEd25519Sig
-  of opfTransfer, opfChannelDeposit, opfSdpWithdraw, opfSdpActive:
-    ptZkSig
-  of opfSdpDeclare:
-    ptZkAndEd25519Sigs
-  of opfChannelWithdraw, opfChannelTransfer, opfChannelConfig:
-    ptChannelWithdraw
-  of opfLeaderClaim:
-    ptProofOfClaim
-
 func defaultOpProofForOpcode*(opcode: Opcode): Result[OpProof, EncodingError] =
   ## Canonical default/empty proof value for a given opcode.
   case opcode
@@ -163,10 +137,6 @@ func defaultOpProofForOpcode*(opcode: Opcode): Result[OpProof, EncodingError] =
   else:
     err(EncodingError.UnsupportedOpcode)
 
-func proofType*(proof: OpProof): ProofType =
-  ## Proof family for a concrete proof value.
-  proofTypeForKind(proof.kind)
-
 func expectedOpProofKindForOpcode*(opcode: Opcode): Result[OpProofKind, EncodingError] =
   case opcode
   of OpTransfer: ok(opfTransfer)
@@ -182,11 +152,11 @@ func expectedOpProofKindForOpcode*(opcode: Opcode): Result[OpProofKind, Encoding
   else:
     err(EncodingError.UnsupportedOpcode)
 
-func encodeProofOfClaimProof*(value: ProofOfClaimProof): array[128, byte] =
+func encodeProofOfClaimProof(value: ProofOfClaimProof): array[128, byte] =
   ## ProofOfClaimProof = Groth16
   encodeGroth16(value)
 
-func encodeIndexedEd25519Signature*(
+func encodeIndexedEd25519Signature(
     signature: Ed25519Signature, index: ChannelKeyIndex
 ): array[66, byte] =
   ## IndexedEd25519Signature = Ed25519Signature || ChannelKeyIndex
@@ -195,15 +165,15 @@ func encodeIndexedEd25519Signature*(
   res[64 ..< 66] = encodeChannelKeyIndex(index)
   res
 
-func encodeEd25519SigProof*(value: Ed25519Signature): array[64, byte] =
+func encodeEd25519SigProof(value: Ed25519Signature): array[64, byte] =
   ## Ed25519SigProof = Ed25519Signature
   encodeEd25519Signature(value)
 
-func encodeZkSigProof*(value: ZkSignature): array[128, byte] =
+func encodeZkSigProof(value: ZkSignature): array[128, byte] =
   ## ZkSigProof = ZkSignature
   encodeZkSignature(value)
 
-func encodeZkAndEd25519SigsProof*(
+func encodeZkAndEd25519SigsProof(
     zkSig: ZkSignature, ed25519Sig: Ed25519Signature
 ): array[192, byte] =
   ## ZkAndEd25519SigsProof = ZkSignature || Ed25519Signature
@@ -303,10 +273,6 @@ func byteLen*(proofs: openArray[OpProof]): int =
     total += byteLen(p)
   total
 
-func decodeProofOfClaimProof*(data: openArray[byte]): Result[ProofOfClaimProof, DecodingError] =
-  decodeGroth16(data)
-
-
 func readEd25519Signature(data: openArray[byte], pos: var int): Result[Ed25519Signature, DecodingError] =
   var sig: Ed25519Signature
   let raw = ?readFixed[EdSignatureSize](data, pos)
@@ -318,19 +284,6 @@ func readIndexedEd25519Signature(data: openArray[byte], pos: var int): Result[(E
   let signature = ?readEd25519Signature(data, pos)
   let index = ChannelKeyIndex(?readLe[uint16](data, pos))
   ok((signature, index))
-
-func decodeEd25519SigProof*(data: openArray[byte]): Result[Ed25519Signature, DecodingError] =
-  decodeEd25519Signature(data)
-
-func decodeZkSigProof*(data: openArray[byte]): Result[ZkSignature, DecodingError] =
-  decodeZkSignature(data)
-
-func decodeZkAndEd25519SigsProof*(data: openArray[byte]): Result[ZkAndEd25519SigsProof, DecodingError] =
-  var pos = 0
-  let zkSig = ?readFixed[128](data, pos)
-  let ed25519Sig = ?readEd25519Signature(data, pos)
-  ?finishDecode(data, pos)
-  ok(ZkAndEd25519SigsProof(zkSig: zkSig, ed25519Sig: ed25519Sig))
 
 func readChannelMultiSigProof(data: openArray[byte], pos: var int): Result[ChannelMultiSigProof, DecodingError] =
   let count = SignatureCount(?readLe[uint16](data, pos))
@@ -347,12 +300,6 @@ func readChannelMultiSigProof(data: openArray[byte], pos: var int): Result[Chann
     prevIndex = index
     havePrev = true
   ok(ChannelMultiSigProof(signatures: signatures, indexes: indexes))
-
-func decodeChannelMultiSigProof*(data: openArray[byte]): Result[ChannelMultiSigProof, DecodingError] =
-  var pos = 0
-  let res = ?readChannelMultiSigProof(data, pos)
-  ?finishDecode(data, pos)
-  ok(res)
 
 func readOpProof*(data: openArray[byte], pos: var int, kind: OpProofKind): Result[OpProof, DecodingError] =
   case kind
@@ -399,12 +346,6 @@ func readOpProof*(data: openArray[byte], pos: var int, kind: OpProofKind): Resul
   of opfChannelDeposit:
     let proof = ?readFixed[128](data, pos)
     ok(OpProof(kind: opfChannelDeposit, channelDepositProof: proof))
-
-func decodeOpProof*(data: openArray[byte], kind: OpProofKind): Result[OpProof, DecodingError] =
-  var pos = 0
-  let res = ?readOpProof(data, pos, kind)
-  ?finishDecode(data, pos)
-  ok(res)
 
 func encodeOpsProofs*(ops: openArray[Op], proofs: openArray[OpProof]): Result[seq[byte], EncodingError] =
   ## OpsProofs = *OpProof

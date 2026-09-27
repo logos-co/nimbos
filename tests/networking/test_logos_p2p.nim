@@ -274,10 +274,6 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
       check dupRes == ValidationResult.Ignore
       check listenerNode.processor.mempool.len == 1
 
-      # Malformed: Empty ops
-      let emptyTx = SignedMantleTx(tx: MantleTx(ops: @[]), opProofs: @[])
-      check listenerNode.processor.processTx(emptyTx, peers.dialer.switch.peerInfo.peerId) == ValidationResult.Reject
-
       # Malformed: Ops and proofs length mismatch
       let mismatchTx = SignedMantleTx(tx: sampleTx.tx, opProofs: @[])
       check listenerNode.processor.processTx(mismatchTx, peers.dialer.switch.peerInfo.peerId) == ValidationResult.Reject

@@ -34,6 +34,7 @@ type
     InvalidChannelConfig ## ChannelConfig has zero threshold or empty keys
     EmptyInputs ## Deposit/Withdraw/Transfer must consume at least one note
     VerifierNotInitialised ## per-circuit VK singleton wasn't installed at startup
+    TooManyOps ## Transaction operations count exceeds MantleMaxOps (255)
 
 export results, StatelessLedgerError
 
@@ -47,26 +48,14 @@ func toStatelessLedgerError*(err: EncodingError): StatelessLedgerError =
     StatelessLedgerError.InvalidLocator
   of EncodingError.KeysCountExceeded:
     StatelessLedgerError.InvalidChannelConfig
+  of EncodingError.OpsCountExceeded:
+    StatelessLedgerError.TooManyOps
   of EncodingError.ProofCountMismatch, EncodingError.ProofKindMismatch,
      EncodingError.MultiSigCountExceeded, EncodingError.MultiSigSignaturesMismatch:
     StatelessLedgerError.InvalidProof
   of EncodingError.LengthExceeded, EncodingError.MetadataLengthExceeded,
      EncodingError.InscriptionLengthExceeded,
-     EncodingError.InputsCountExceeded, EncodingError.OutputsCountExceeded,
-     EncodingError.OpsCountExceeded:
-    StatelessLedgerError.InvalidProof
-
-func toStatelessLedgerError*(err: DecodingError): StatelessLedgerError =
-  case err
-  of DecodingError.UnsupportedOpcode:
-    StatelessLedgerError.UnsupportedOp
-  of DecodingError.LocatorsCountExceeded:
-    StatelessLedgerError.TooManyLocators
-  of DecodingError.LocatorLengthExceeded, DecodingError.InvalidLocator:
-    StatelessLedgerError.InvalidLocator
-  of DecodingError.InvalidSigner:
-    StatelessLedgerError.InvalidChannelConfig
-  else:
+     EncodingError.InputsCountExceeded, EncodingError.OutputsCountExceeded:
     StatelessLedgerError.InvalidProof
 
 func hasHeavyZkProof*(tx: SignedMantleTx): bool {.inline.} =
@@ -80,6 +69,8 @@ proc validateMantleTxStateless*(
   ## Phase 1: Structural, bounds, and payload shape checks (~10 ns)
   ## Phase 2: Lazy txHash calculation & Ed25519 signature checks (~0.7 ms)
   ## Phase 3: Groth16 zk-SNARK proof verification (~1.13 ms)
+  if tx.tx.ops.len > MantleMaxOps:
+    return err(StatelessLedgerError.TooManyOps)
   if tx.tx.ops.len != tx.opProofs.len:
     return err(StatelessLedgerError.InvalidProof)
 

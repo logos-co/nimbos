@@ -15,11 +15,13 @@ import
   ../../../logos_chain/core/mantle/tx_types
 
 suite "core/mantle/tx_types":
-  test "decodeMantleTx roundtrips encodeMantleTx":
+  test "readMantleTx roundtrips encodeMantleTx":
     let
       tx = MantleTx(ops: @[])
       wire = encodeMantleTx(tx).get
-      back = decodeMantleTx(wire).get
+    var pos = 0
+    let back = readMantleTx(wire, pos).get
+    check pos == wire.len
     check back.ops.len == tx.ops.len
     check wire.len == 1
     check wire[0] == byte(0)

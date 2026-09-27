@@ -13,7 +13,7 @@ import
   bincode,
   ./types
 from ./crypto/types as crypto_types import isZero
-from ./mantle/primitives import SlotNumber
+from ./mantle/primitives import SlotNumber, BlockNumber
 
 export types.Block, types.Header, types.BlockId, types.ValidBlock
 
@@ -21,7 +21,7 @@ type
   Tip* = object
     tip*: BlockId
     slot*: SlotNumber
-    height*: uint64
+    height*: BlockNumber
 
 deriveBincode(Tip)
 
@@ -30,11 +30,11 @@ type
     id: BlockId
     blk: Block
     parent: BlockNode
-    height: uint64
+    height: BlockNumber
 
   LocalTree* = ref object
     blocksById: Table[BlockId, BlockNode]
-    idsByHeight: Table[uint64, seq[BlockId]]
+    idsByHeight: Table[BlockNumber, seq[BlockId]]
     tipId: BlockId
     latestImmutableId: BlockId
     securityParam: uint64
@@ -42,7 +42,7 @@ type
 template isStrictlyHigherTip(currentTip, candidate: BlockNode): bool =
   candidate.height > currentTip.height
 
-func ancestorAtHeight(node: BlockNode, targetHeight: uint64): BlockNode =
+func ancestorAtHeight(node: BlockNode, targetHeight: BlockNumber): BlockNode =
   var n = node
   while n != nil:
     if n.height == targetHeight:
@@ -63,12 +63,12 @@ func newLocalTree*(genesisBlock: Block, securityParam: uint64): LocalTree =
     securityParam: securityParam,
   )
 
-func blockHeight*(localTree: LocalTree, blockId: BlockId): Opt[uint64] =
+func blockHeight*(localTree: LocalTree, blockId: BlockId): Opt[BlockNumber] =
   localTree.blocksById.withValue(blockId, node):
     return Opt.some(node.height)
-  Opt.none(uint64)
+  Opt.none(BlockNumber)
 
-func latestImmutableHeight*(localTree: LocalTree): uint64 =
+func latestImmutableHeight*(localTree: LocalTree): BlockNumber =
   localTree.blocksById.withValue(localTree.latestImmutableId, node):
     return node.height
   0'u64
@@ -79,7 +79,7 @@ func latestImmutableSlot*(localTree: LocalTree): SlotNumber =
   SlotNumber(0)
 
 proc pruneForks(localTree: LocalTree, fromNode: BlockNode,
-    untilHeight: uint64, tipHeight: uint64): seq[BlockId] =
+    untilHeight: BlockNumber, tipHeight: BlockNumber): seq[BlockId] =
   var pruned: seq[BlockId]
   if fromNode == nil:
     return pruned
@@ -163,7 +163,7 @@ func getBlock*(localTree: LocalTree, id: BlockId): Opt[Block] =
     return Opt.some(node.blk)
   Opt.none(Block)
 
-func blocksIdsAtHeight*(localTree: LocalTree, height: uint64): seq[BlockId] =
+func blocksIdsAtHeight*(localTree: LocalTree, height: BlockNumber): seq[BlockId] =
   ## Returns a sequence of block IDs admitted at the specified height.
   localTree.idsByHeight.withValue(height, ids):
     return ids[]
@@ -216,26 +216,26 @@ func canDescendFromImmutable*(localTree: LocalTree, header: Header): bool =
 
 func lcaBlockIdAndHeight*(
     localTree: LocalTree, idA, idB: BlockId,
-): Opt[(BlockId, uint64)] =
+): Opt[(BlockId, BlockNumber)] =
   var na = localTree.blocksById.getOrDefault(idA, nil)
   var nb = localTree.blocksById.getOrDefault(idB, nil)
   if na == nil or nb == nil:
-    return Opt.none((BlockId, uint64))
+    return Opt.none((BlockId, BlockNumber))
   if na.id == nb.id:
     return Opt.some((na.id, na.height))
   while na.height > nb.height:
     na = na.parent
     if na == nil:
-      return Opt.none((BlockId, uint64))
+      return Opt.none((BlockId, BlockNumber))
   while nb.height > na.height:
     nb = nb.parent
     if nb == nil:
-      return Opt.none((BlockId, uint64))
+      return Opt.none((BlockId, BlockNumber))
   while na.id != nb.id:
     na = na.parent
     nb = nb.parent
     if na == nil or nb == nil:
-      return Opt.none((BlockId, uint64))
+      return Opt.none((BlockId, BlockNumber))
   Opt.some((na.id, na.height))
 
 proc addBlockToTree*(localTree: LocalTree, blk: Block): bool =
@@ -258,7 +258,7 @@ template addBlockToTree*(localTree: LocalTree, blk: ValidBlock): bool =
   localTree.addBlockToTree(Block(blk))
 
 when defined(unittest) or defined(test):
-  proc `latestImmutableHeight=`*(localTree: LocalTree, height: uint64) =
+  proc `latestImmutableHeight=`*(localTree: LocalTree, height: BlockNumber) =
     localTree.blocksById.withValue(localTree.tipId, tip):
       let node = ancestorAtHeight(tip[], height)
       if node != nil:

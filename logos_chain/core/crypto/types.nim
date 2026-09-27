@@ -190,7 +190,7 @@ func encodeZkPublicKey*(value: ZkPublicKey): array[32, byte] =
   ## ZkPublicKey = FieldElement (32-byte).
   encodeFieldElement(value)
 
-func ensureRemaining*(data: openArray[byte], pos: int, need: int): Result[void, DecodingError] {.inline.} =
+func ensureRemaining(data: openArray[byte], pos: int, need: int): Result[void, DecodingError] {.inline.} =
   if pos < 0 or pos + need > data.len:
     return err(DecodingError.UnexpectedEnd)
   ok()
@@ -241,12 +241,6 @@ func readU16LeLenPrefixed*(data: openArray[byte], pos: var int): Result[seq[byte
     pos += plen
   ok(res)
 
-func decodeGroth16*(data: openArray[byte]): Result[CompressedGroth16Proof, DecodingError] =
-  var pos = 0
-  let res = ?readFixed[128](data, pos)
-  ?finishDecode(data, pos)
-  ok(res)
-
 func decodeFieldElementAt*(data: openArray[byte], pos: var int): Result[FieldElement, DecodingError] =
   let raw = ?readFixed[32](data, pos)
   let fe = frFromBytesLE(raw).valueOr:
@@ -259,51 +253,9 @@ func decodeFieldElement*(data: openArray[byte]): Result[FieldElement, DecodingEr
   ?finishDecode(data, pos)
   ok(res)
 
-func decodeHash32*(data: openArray[byte]): Result[Hash32, DecodingError] =
-  var pos = 0
-  let res = ?readFixed[32](data, pos)
-  ?finishDecode(data, pos)
-  ok(res)
-
-func decodeEd25519PublicKey*(data: openArray[byte]): Result[Ed25519PublicKey, DecodingError] =
-  var pos = 0
-  let raw = ?readFixed[EdPublicKeySize](data, pos)
-  ?finishDecode(data, pos)
-  var key: Ed25519PublicKey
-  if not key.init(raw):
-    return err(DecodingError.InvalidPublicKey)
-  ok(key)
-
-func decodeEd25519Signature*(data: openArray[byte]): Result[Ed25519Signature, DecodingError] =
-  var pos = 0
-  let raw = ?readFixed[EdSignatureSize](data, pos)
-  ?finishDecode(data, pos)
-  var sig: Ed25519Signature
-  if not sig.init(raw):
-    return err(DecodingError.InvalidSignature)
-  ok(sig)
-
-func decodeZkSignature*(data: openArray[byte]): Result[ZkSignature, DecodingError] =
-  decodeGroth16(data)
-
-func decodeZkPublicKey*(data: openArray[byte]): Result[ZkPublicKey, DecodingError] =
-  decodeFieldElement(data)
-
-func decodeByte*(data: openArray[byte]): Result[byte, DecodingError] =
-  var pos = 0
-  let res = ?readByte(data, pos)
-  ?finishDecode(data, pos)
-  ok(res)
-
 func decodeU32LeLenPrefixed*(data: openArray[byte]): Result[seq[byte], DecodingError] =
   var pos = 0
   let res = ?readU32LeLenPrefixed(data, pos)
-  ?finishDecode(data, pos)
-  ok(res)
-
-func decodeU16LeLenPrefixed*(data: openArray[byte]): Result[seq[byte], DecodingError] =
-  var pos = 0
-  let res = ?readU16LeLenPrefixed(data, pos)
   ?finishDecode(data, pos)
   ok(res)
 
