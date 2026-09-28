@@ -43,6 +43,19 @@ suite "chain/block_processor":
       let r = await bp.addBlock(BlockSource.Gossip, b1)
       check r.isErr and r.error.kind == BlockApplyErrorKind.AlreadyApplied
 
+  asyncTest "addBlock on a buffered orphan completes immediately with OrphanAlreadyBuffered":
+    withProcessor(chain):
+      let
+        b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
+        b2 = childBlock(b1.header, blockId(b1.header), SlotNumber(2), [])
+      # Buffer b2 as orphan
+      check (await bp.addBlock(BlockSource.Sync, b2)).error.kind == BlockApplyErrorKind.OrphanBuffered
+      check bp.orphanPool.hasOrphan(blockId(b2.header))
+      # Ingesting duplicate b2 while in orphanPool returns OrphanAlreadyBuffered immediately
+      let fDup = bp.addBlock(BlockSource.Gossip, b2)
+      check fDup.finished
+      check (await fDup).error.kind == BlockApplyErrorKind.OrphanAlreadyBuffered
+
   asyncTest "addBlock deduplicates in-flight blocks immediately":
     withProcessor(chain):
       let b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
@@ -212,5 +225,91 @@ suite "chain/block_processor":
         f = bp.addBlock(BlockSource.Sync, b1)
       await sleepAsync(1.milliseconds)
       check f.cancelled()
+
+  asyncTest "cascaded orphan promotions apply multiple levels of buffered orphans":
+    withProcessor(chain):
+      let
+        b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
+        id1 = blockId(b1.header)
+        b2 = childBlock(b1.header, id1, SlotNumber(2), [])
+        id2 = blockId(b2.header)
+        b3 = childBlock(b2.header, id2, SlotNumber(3), [])
+        id3 = blockId(b3.header)
+
+      # Queue b2 and b3 as orphans
+      let f3 = bp.addBlock(BlockSource.Sync, b3)
+      let f2 = bp.addBlock(BlockSource.Sync, b2)
+      check (await f3).error.kind == BlockApplyErrorKind.OrphanBuffered
+      check (await f2).error.kind == BlockApplyErrorKind.OrphanBuffered
+
+      # Ingest root b1
+      let f1 = bp.addBlock(BlockSource.Sync, b1)
+      check (await f1).isOk
+
+      # Both b2 and b3 are promoted and applied
+      while not bp.localTree.hasBlock(id3):
+        await sleepAsync(1.milliseconds)
+
+      check bp.localTree.hasBlock(id1)
+      check bp.localTree.hasBlock(id2)
+      check bp.localTree.hasBlock(id3)
+      check bp.orphanPool.len == 0
+
+  asyncTest "promoted orphan supersedes pending raw incoming block in queue and fulfills its future":
+    withProcessor(chain):
+      let
+        b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
+        id1 = blockId(b1.header)
+        b2 = childBlock(b1.header, id1, SlotNumber(2), [])
+        id2 = blockId(b2.header)
+
+      # 1. Queue b1 first (it sits at front of queue)
+      let f1 = bp.addBlock(BlockSource.Sync, b1)
+
+      # 2. Queue raw b2 next (it sits behind b1 in queue as RawIncoming)
+      let fRawB2 = bp.addBlock(BlockSource.Sync, b2)
+      check not fRawB2.finished
+
+      # 3. Buffer admitted copy of b2 in orphanPool before b1 finishes processing
+      let (admittedB2, isOrphan) = validateBlockHeaderAndTopology(b2, bp.localTree, bp.ledger).get()
+      check isOrphan
+      check bp.orphanPool.addOrphan(admittedB2)
+
+      # 4. Awaiting f1 allows event loop to process b1, which promotes admittedB2 from orphanPool.
+      # The promoted orphan supersedes the queued raw b2, steals fRawB2, and applies.
+      check (await f1).isOk
+
+      # 5. The stolen caller future fRawB2 completes with ok()
+      let resRawB2 = await fRawB2
+      check resRawB2.isOk
+
+      check bp.localTree.hasBlock(id1)
+      check bp.localTree.hasBlock(id2)
+      check bp.orphanPool.len == 0
+
+  asyncTest "promoted orphan failing validation completes stolen caller future with error":
+    withProcessor(chain):
+      let
+        b1 = childBlock(genesisBlk.header, gid, SlotNumber(2), [])
+        id1 = blockId(b1.header)
+        # b2 has slot 2 == parent b1 slot 2 -> passes Tiers 0-2 (isOrphan), but fails Tier 3 on promotion
+        b2 = childBlock(b1.header, id1, SlotNumber(2), [])
+        id2 = blockId(b2.header)
+
+      let f1 = bp.addBlock(BlockSource.Sync, b1)
+      let fRawB2 = bp.addBlock(BlockSource.Sync, b2)
+      check not fRawB2.finished
+
+      let (admittedB2, isOrphan) = validateBlockHeaderAndTopology(b2, bp.localTree, bp.ledger).get()
+      check isOrphan
+      check bp.orphanPool.addOrphan(admittedB2)
+
+      check (await f1).isOk
+
+      # Promoted b2 fails validation and completes the stolen future fRawB2 with an error
+      let resRawB2 = await fRawB2
+      check resRawB2.isErr
+      check not bp.localTree.hasBlock(id2)
+      check bp.orphanPool.len == 0
 
 {.pop.}
