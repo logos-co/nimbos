@@ -20,31 +20,26 @@ type
     inputs*: Inputs
     outputs*: Outputs
 
-type
   ChannelInscribePayload* = object
     channelId*: ChannelId
     inscription*: Inscription
     parent*: Parent
     signer*: Signer
 
-type
   ChannelDepositPayload* = object
     channel*: ChannelId
     inputs*: Inputs
     metadata*: Metadata
 
-type
   ChannelWithdrawPayload* = object
     channel*: ChannelId
     inputs*: Inputs
 
-type
   ChannelTransferPayload* = object
     channel*: ChannelId
     inputs*: Inputs
     outputs*: Outputs
 
-type
   DeclarationMessage* = object
     serviceType*: ServiceType
     locators*: seq[Locator]
@@ -62,13 +57,11 @@ type
     nonce*: Nonce
     metadata*: Metadata
 
-type
   LeaderClaimPayload* = object
     rewardsRoot*: RewardsRoot
     voucherNullifier*: VoucherNullifier
     publicKey*: PublicKey
 
-type
   ChannelConfigPayload* = object
     channel*: ChannelId
     keys*: seq[Ed25519PublicKey]
@@ -77,7 +70,6 @@ type
     configurationThreshold*: ConfigurationThreshold
     transferThreshold*: TransferThreshold
 
-type
   OpPayloadTag* {.pure.} = enum
     Transfer
     ChannelInscribe

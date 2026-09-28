@@ -14,17 +14,18 @@ import
   stew/endians2,
   ./primitives, ../../zk/poseidon2/hasher
 
-type Utxo* = object
-  opId*: Hash32
-  outputIndex*: uint64
-  note*: Note
+type
+  Utxo* = object
+    opId*: Hash32
+    outputIndex*: uint64
+    note*: Note
 
 const NoteIdV1DomainTag = "NOTE_ID_V1"
 
 func noteIdV1DomainFr(): FieldElement =
   frFromBytesLE(NoteIdV1DomainTag.toOpenArrayByte(0, NoteIdV1DomainTag.high)).get
 
-func noteIDPreimage(u:Utxo): array[5, FieldElement] =
+func noteIDPreimage(u: Utxo): array[5, FieldElement] =
   ## Preimage for NoteId computation, used in ZK proofs that bind to NoteId.
   ## See `noteId` for the corresponding hash function.
   [
