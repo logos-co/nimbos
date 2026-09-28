@@ -73,6 +73,7 @@ type
     OpsCountExceeded
     MultiSigCountExceeded
     MultiSigSignaturesMismatch
+    MultiSigIndicesNonIncreasing
     ProofCountMismatch
     ProofKindMismatch
     UnsupportedOpcode
@@ -113,14 +114,6 @@ func encodeU32LeLenPrefixed*(data: openArray[byte]): Result[seq[byte], EncodingE
   if data.len > int(high(uint32)):
     return err(EncodingError.LengthExceeded)
   var res = @(encodeLe(uint32(data.len)))
-  res.add(data)
-  ok(res)
-
-func encodeU16LeLenPrefixed*(data: openArray[byte]): Result[seq[byte], EncodingError] =
-  ## ``UINT16`` length (LE) then payload (e.g. single Locator).
-  if data.len > int(high(uint16)):
-    return err(EncodingError.LengthExceeded)
-  var res = @(encodeLe(uint16(data.len)))
   res.add(data)
   ok(res)
 

@@ -192,7 +192,7 @@ func encodeChannelMultiSigProof*(
     return err(EncodingError.MultiSigCountExceeded)
   for i in 1 ..< indexes.len:
     if uint16(indexes[i - 1]) >= uint16(indexes[i]):
-      return err(EncodingError.MultiSigSignaturesMismatch)
+      return err(EncodingError.MultiSigIndicesNonIncreasing)
 
   var res: seq[byte]
   let countBytes = encodeSignatureCount(SignatureCount(uint16(signatures.len)))

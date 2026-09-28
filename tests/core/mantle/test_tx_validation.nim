@@ -463,6 +463,7 @@ suite "core/mantle/tx_validation — stateless invariants":
     check toStatelessLedgerError(EncodingError.ProofKindMismatch) == StatelessLedgerError.InvalidProof
     check toStatelessLedgerError(EncodingError.MultiSigCountExceeded) == StatelessLedgerError.InvalidProof
     check toStatelessLedgerError(EncodingError.MultiSigSignaturesMismatch) == StatelessLedgerError.InvalidProof
+    check toStatelessLedgerError(EncodingError.MultiSigIndicesNonIncreasing) == StatelessLedgerError.InvalidProof
     check toStatelessLedgerError(EncodingError.LengthExceeded) == StatelessLedgerError.InvalidProof
     check toStatelessLedgerError(EncodingError.MetadataLengthExceeded) == StatelessLedgerError.InvalidProof
     check toStatelessLedgerError(EncodingError.InscriptionLengthExceeded) == StatelessLedgerError.InvalidProof

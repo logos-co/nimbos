@@ -46,12 +46,6 @@ suite "core/crypto/types":
     check s[5] == 8'u8
     check s[6] == 7'u8
 
-  test "encodeU16LeLenPrefixed length then bytes":
-    let s = encodeU16LeLenPrefixed([0xAB'u8, 0xCD'u8]).get
-    check s.len == 2 + 2
-    check s[0] == 2'u8
-    check s[2] == 0xAB'u8
-
   test "encodeFieldElement round-trips canonical LE bytes":
     var bytes: array[32, byte]
     bytes[0] = 0x11'u8

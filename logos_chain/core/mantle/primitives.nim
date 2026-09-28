@@ -17,7 +17,7 @@ import
 export hashing, types, io
 export
   encodeByte, encodeEd25519PublicKey, encodeEd25519Signature, encodeFieldElement,
-  encodeGroth16, encodeHash32, encodeU16LeLenPrefixed, encodeU32LeLenPrefixed,
+  encodeGroth16, encodeHash32, encodeU32LeLenPrefixed,
   encodeLe, encodeZkPublicKey, encodeZkSignature,
   decodeFieldElement, decodeFieldElementAt, decodeU32LeLenPrefixed
 
@@ -243,8 +243,8 @@ func encodeLocator*(value: Locator): Result[seq[byte], EncodingError] =
   let locatorBytes = value.data().buffer
   if locatorBytes.len > MaxLocatorMultiaddrBytes:
     return err(EncodingError.LocatorLengthExceeded)
-  let enc = encodeU16LeLenPrefixed(locatorBytes).valueOr:
-    return err(EncodingError.LocatorLengthExceeded)
+  var enc = @(encodeLe(uint16(locatorBytes.len)))
+  enc.add(locatorBytes)
   ok(enc)
 
 func byteLen*(locator: Locator): int =

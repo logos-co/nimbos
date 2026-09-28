@@ -56,8 +56,8 @@ suite "core/mantle/proofs":
   test "encodeChannelMultiSigProof returns error on invalid signatures/indexes":
     let sig = DefaultEd25519Signature
     check encodeChannelMultiSigProof(@[sig], @[]).error == EncodingError.MultiSigSignaturesMismatch
-    check encodeChannelMultiSigProof(@[sig, sig], @[1'u16, 1'u16]).error == EncodingError.MultiSigSignaturesMismatch
-    check encodeChannelMultiSigProof(@[sig, sig], @[2'u16, 1'u16]).error == EncodingError.MultiSigSignaturesMismatch
+    check encodeChannelMultiSigProof(@[sig, sig], @[1'u16, 1'u16]).error == EncodingError.MultiSigIndicesNonIncreasing
+    check encodeChannelMultiSigProof(@[sig, sig], @[2'u16, 1'u16]).error == EncodingError.MultiSigIndicesNonIncreasing
     var tooManySigs = newSeq[Ed25519Signature](65536)
     var tooManyIdxs = newSeq[ChannelKeyIndex](65536)
     for i in 0 ..< 65536:

@@ -51,9 +51,9 @@ func toStatelessLedgerError*(err: EncodingError): StatelessLedgerError =
   of EncodingError.OpsCountExceeded:
     StatelessLedgerError.TooManyOps
   of EncodingError.ProofCountMismatch, EncodingError.ProofKindMismatch,
-     EncodingError.MultiSigCountExceeded, EncodingError.MultiSigSignaturesMismatch:
-    StatelessLedgerError.InvalidProof
-  of EncodingError.LengthExceeded, EncodingError.MetadataLengthExceeded,
+     EncodingError.MultiSigCountExceeded, EncodingError.MultiSigSignaturesMismatch,
+     EncodingError.MultiSigIndicesNonIncreasing,
+     EncodingError.LengthExceeded, EncodingError.MetadataLengthExceeded,
      EncodingError.InscriptionLengthExceeded,
      EncodingError.InputsCountExceeded, EncodingError.OutputsCountExceeded:
     StatelessLedgerError.InvalidProof
