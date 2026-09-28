@@ -32,6 +32,15 @@ const
   testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
   deploymentSettingsPath = testsDir / "../../config/deployment-settings.yaml"
 
+proc parseGenesis(ds: DeploymentSettings):
+    tuple[validTx: ValidGenesisMantleTx, param: CryptarchiaParameter] =
+  ## Validated genesis tx and the cryptarchia parameter it inscribes.
+  let
+    validTx = validateGenesisTxStateless(
+      ds.cryptarchia.genesisState.signedMantleTx).expect("valid genesis tx")
+    param = cryptarchiaParameter(validTx).expect("valid cryptarchia parameter")
+  (validTx, param)
+
 proc initZeroFeeChain(ds: DeploymentSettings): Chain =
   var chain = Chain.init(ds, mockVerifyLeaderProof).expect("chain init")
   chain.slotConfig.genesisTime = uint64(getTime().toUnix() - 100)
@@ -64,13 +73,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
 
   test "cryptarchiaParameter decodes the devnet ceremony values":
     let
-      validTx = validateGenesisTxStateless(
-          ds.cryptarchia.genesisState.signedMantleTx).valueOr:
-        check false
-        return
-      param = cryptarchiaParameter(validTx).valueOr:
-        check false
-        return
+      (validTx, param) = parseGenesis(ds)
       # Nonce derived by the ceremony from its pinned entropy_sources input.
       ceremonyNonce = frFromBytesLE(hexToByteArray[32](
         "2d2ddf918544bca603c5a291c7dd1b902d6769ff4b00021506780e075c06051a"
@@ -81,13 +84,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
 
   test "fromGenesis builds a lottery-ready genesis state":
     let
-      validTx = validateGenesisTxStateless(
-          ds.cryptarchia.genesisState.signedMantleTx).valueOr:
-        check false
-        return
-      param = cryptarchiaParameter(validTx).valueOr:
-        check false
-        return
+      (validTx, param) = parseGenesis(ds)
       cfg = ledgerConfig(ds)
       state = LedgerState.fromGenesis(
         validTx, param.epochNonce,
