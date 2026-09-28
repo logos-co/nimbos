@@ -189,10 +189,10 @@ proc prepareBlockUpdate*(
   let prepared = ledger.prepareUpdate(
     id, blk.header.slot, headerState, validTxs
   ).valueOr:
-    if error in {LedgerError.InvalidSlot, LedgerError.InvalidProofOfLeadership, LedgerError.ParentNotFound, LedgerError.UnsupportedLotteryF, LedgerError.VerifierNotInitialised}:
-      return err(BlockValidationError(kind: BlockValidationErrorKind.HeaderRejected, ledgerError: error))
-    else:
-      return err(BlockValidationError(kind: BlockValidationErrorKind.TransactionsRejected, ledgerError: error))
+    return err(BlockValidationError(
+      kind: BlockValidationErrorKind.TransactionsRejected,
+      ledgerError: error,
+    ))
 
   ok(prepared)
 

@@ -214,6 +214,8 @@ func checkViability(
   # The tree keeps applied blocks whose states were pruned below the LIB.
   if chain.localTree.hasBlock(id):
     return err(BlockApplyError(kind: AlreadyApplied))
+  if chain.orphanPool.hasOrphan(id):
+    return err(BlockApplyError(kind: OrphanAlreadyBuffered))
   # Slots increase along a chain, so a block at or before the LIB slot cannot
   # descend from the LIB. Holds without the parent, which pruning may remove.
   if hdr.slot <= chain.localTree.latestImmutableSlot():
@@ -227,18 +229,20 @@ proc applyAdmittedBlock(
     admittedBlk: AdmittedBlock,
     id: BlockId,
     curSlot: SlotNumber,
-): Result[tuple[toBePromotedBlocks: seq[AdmittedBlock]], BlockApplyError] =
+): Result[void, BlockApplyError] =
   # Tier 3: PoL against parent state and stateless transaction validation
-  let unverified = chain.mempool.unverifiedTxs(admittedBlk.txs)
-  let (validBlk, headerState) = validatePolAndStatelessTransactions(admittedBlk, chain.ledger, unverified).valueOr:
-    chain.orphanPool.pruneDescendants(id)
-    return err(toBlockApplyError(error))
+  let
+    unverified = chain.mempool.unverifiedTxs(admittedBlk.txs)
+    (validBlk, headerState) = validatePolAndStatelessTransactions(
+      admittedBlk, chain.ledger, unverified
+    ).valueOr:
+      chain.orphanPool.pruneDescendants(id)
+      return err(toBlockApplyError(error))
+    prepared = prepareBlockUpdate(validBlk, chain.ledger, headerState).valueOr:
+      chain.orphanPool.pruneDescendants(id)
+      return err(BlockApplyError(kind: LedgerRejected, ledgerError: error.ledgerError))
+    oldTip = chain.localTree.localTipId()
 
-  let prepared = prepareBlockUpdate(validBlk, chain.ledger, headerState).valueOr:
-    chain.orphanPool.pruneDescendants(id)
-    return err(BlockApplyError(kind: LedgerRejected, ledgerError: error.ledgerError))
-
-  let oldTip = chain.localTree.localTipId()
   if not chain.localTree.addBlockToTree(validBlk):
     chain.orphanPool.pruneDescendants(id)
     return err(BlockApplyError(kind: UnviableFork))
@@ -246,27 +250,32 @@ proc applyAdmittedBlock(
   let newTip = chain.localTree.localTipId()
   chain.handleTipChange(oldTip, newTip)
   chain.mempool.pruneExpiredTxs(curSlot)
-  ok((toBePromotedBlocks: chain.orphanPool.takeChildren(id)))
+  ok()
 
 proc tryApplyAdmittedBlock*(
     chain: var Chain,
     admittedBlk: AdmittedBlock,
-): Result[tuple[toBePromotedBlocks: seq[AdmittedBlock]], BlockApplyError] =
-  let curSlot = chain.currentWallclockSlot()
-  let id = ?chain.checkViability(header(admittedBlk), curSlot)
+): Result[void, BlockApplyError] =
+  let
+    curSlot = chain.currentWallclockSlot()
+    id = chain.checkViability(header(admittedBlk), curSlot).valueOr:
+      chain.orphanPool.pruneDescendants(blockId(header(admittedBlk)))
+      return err(error)
   chain.applyAdmittedBlock(admittedBlk, id, curSlot)
 
 proc tryApplyBlock*(
     chain: var Chain,
     blk: Block,
-): Result[tuple[toBePromotedBlocks: seq[AdmittedBlock]], BlockApplyError] =
+): Result[void, BlockApplyError] =
   ## Full block ingestion in `valid_header` order, with automatic orphan buffering.
-  ## Returns ready orphan child blocks on successful application.
-  let curSlot = chain.currentWallclockSlot()
-  let id = ?chain.checkViability(header(blk), curSlot)
+  let
+    curSlot = chain.currentWallclockSlot()
+    id = ?chain.checkViability(header(blk), curSlot)
 
   # Tiers 0-2: Structure, Topology Viability, Merkle Root, Header Signature
-  let (admittedBlk, isOrphan) = validateBlockHeaderAndTopology(blk, chain.localTree, chain.ledger).valueOr:
+  let (admittedBlk, isOrphan) = validateBlockHeaderAndTopology(
+    blk, chain.localTree, chain.ledger
+  ).valueOr:
     return err(toBlockApplyError(error))
 
   if isOrphan:

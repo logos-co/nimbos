@@ -20,10 +20,6 @@ import
 
 export hashing, tx_types, tx_hashing, results
 
-const
-  ExpectedBedrockVersion* = 1'u8
-  MaxBlockSize* = 1_048_576
-
 type
   ProofOfLeadershipProof* = CompressedGroth16Proof
 
@@ -55,8 +51,8 @@ type
     ## Merkle root, and header signature verifications (Tiers 0–2).
 
   ValidBlock* = distinct Block
-    ## A ``Block`` that has successfully passed all structural, admission,
-    ## and stateless transaction verifications via ``validateBlock``.
+    ## A ``Block`` that has successfully passed structural and admission checks
+    ## (Tiers 0–2) and PoL/stateless transaction verifications (Tier 3).
 
   Proposal* = object
     header*: Header
@@ -64,6 +60,8 @@ type
     signature*: Ed25519Signature
 
 const
+  ExpectedBedrockVersion* = 1'u8
+  MaxBlockSize* = 1_048_576
   DefaultHash32* = default(Hash32)
   DefaultBlockId* = default(BlockId)
 
@@ -160,7 +158,6 @@ func blockId*(header: Header): Hash32 =
   preimage.add(leaderKeyBytes)
 
   blake2b256Hash(preimage)
-
 
 func initBlock*(
     header: Header,
