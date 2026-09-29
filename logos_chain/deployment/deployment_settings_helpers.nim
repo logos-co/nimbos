@@ -322,7 +322,9 @@ func parseGenesisOpPayload(
   if payload.kind != yMapping:
     return err("deployment-settings: payload must be a mapping at " & path)
   if payload.len == 0:
-    return ok(defaultOpForOpcode(opcode))
+    let defOp = defaultOpForOpcode(opcode).valueOr:
+      return err("deployment-settings: unsupported opcode " & $opcode & " at " & path)
+    return ok(defOp)
   case opcode
   of OpTransfer:
     var noteIds: seq[NoteId]
@@ -407,14 +409,18 @@ func parseGenesisOpPayload(
       lockedNoteId: ? parseFieldElementNode(lockedNode, path & ".locked_note_id"),
     )))
   else:
-    ok(defaultOpForOpcode(opcode))
+    let defOp = defaultOpForOpcode(opcode).valueOr:
+      return err("deployment-settings: unsupported opcode " & $opcode & " at " & path)
+    ok(defOp)
 
 func parseGenesisOpProof(
     node: YamlNode, idx: int, forOp: Op, proofsPathPrefix: string
 ): Result[OpProof, string] =
   let path = proofsPathPrefix & "[" & $idx & "]"
-  let expectedDefaultProof = defaultOpProofForOpcode(forOp.opcode)
-  let expectedKind = expectedOpProofKindForOpcode(forOp.opcode)
+  let expectedDefaultProof = defaultOpProofForOpcode(forOp.opcode).valueOr:
+    return err("deployment-settings: unsupported opcode " & $forOp.opcode & " at " & path)
+  let expectedKind = expectedOpProofKindForOpcode(forOp.opcode).valueOr:
+    return err("deployment-settings: unsupported opcode " & $forOp.opcode & " at " & path)
   if node.kind == yScalar:
     if expectedKind == opfChannelInscribe:
       return ok(OpProof(
@@ -543,7 +549,8 @@ func parseSignedMantleTxFromOpsYaml*(
 
   var opProofs: seq[OpProof] = newSeq[OpProof](ops.len)
   for i in 0 ..< ops.len:
-    opProofs[i] = defaultOpProofForOpcode(ops[i].opcode)
+    opProofs[i] = defaultOpProofForOpcode(ops[i].opcode).valueOr:
+      return err("deployment-settings: unsupported opcode at ops[" & $i & "]")
   for i in 0 ..< proofsNode.len:
     opProofs[i] = ? parseGenesisOpProof(proofsNode[i], i, ops[i], proofsPathPrefix)
 

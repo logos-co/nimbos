@@ -87,7 +87,8 @@ func applyTransferState*(
     balance = ?balance.checkedAdd(i128(removedUtxo.note.value))
     pks.add(removedUtxo.note.zkPublicKey)
 
-  let transferOpId = opId(op)
+  let transferOpId = opId(op).valueOr:
+    return err(error.toLedgerError)
   for i, outNote in op.outputs.notes:
     balance = ?balance.checkedSub(i128(outNote.value))
     let u = Utxo(opId: transferOpId, outputIndex: uint64(i), note: outNote)

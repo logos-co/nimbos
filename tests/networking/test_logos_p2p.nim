@@ -250,7 +250,7 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
     const topic = "/logos-blockchain/mempool/1.0.0"
     let
       peers = await createBootstrapPeers()
-      genesis = createGenesisBlock(minimalSignedTx())
+      genesis = createGenesisBlock(minimalSignedTx()).get
       listenerNode = initTestLBNode(peers.listener, genesis, mempoolTopic = topic)
       dialerNode = initTestLBNode(peers.dialer, genesis, mempoolTopic = topic)
     try:
@@ -265,7 +265,7 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
       check waitUntil((await peers.dialer.broadcast(topic, sampleTx)).isOk)
       check waitUntil(listenerNode.processor.mempool.len > 0)
 
-      let txItem = listenerNode.processor.mempool.get(mantleTxHash(sampleTx.tx))
+      let txItem = listenerNode.processor.mempool.get(mantleTxHash(sampleTx.tx).get)
       check txItem.isOk
       check txItem.get.tx.ops.len == 1
 
@@ -273,10 +273,6 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
       let dupRes = listenerNode.processor.processTx(sampleTx, peers.dialer.switch.peerInfo.peerId)
       check dupRes == ValidationResult.Ignore
       check listenerNode.processor.mempool.len == 1
-
-      # Malformed: Empty ops
-      let emptyTx = SignedMantleTx(tx: MantleTx(ops: @[]), opProofs: @[])
-      check listenerNode.processor.processTx(emptyTx, peers.dialer.switch.peerInfo.peerId) == ValidationResult.Reject
 
       # Malformed: Ops and proofs length mismatch
       let mismatchTx = SignedMantleTx(tx: sampleTx.tx, opProofs: @[])
@@ -299,7 +295,7 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
       )
       let largeOp = createChannelInscribeOp(largePayload)
       let largeMtx = MantleTx(ops: @[largeOp])
-      let largeSig = sign(testTxKeyPair.seckey, mantleTxHash(largeMtx))
+      let largeSig = sign(testTxKeyPair.seckey, mantleTxHash(largeMtx).get)
       let largeTx = SignedMantleTx(
         tx: largeMtx,
         opProofs: @[OpProof(kind: opfChannelInscribe, ed25519SigProof: largeSig)],
@@ -317,7 +313,7 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
     const topic = "/logos-blockchain/cryptarchia/1.0.0"
     let peers = await createBootstrapPeers()
     let
-      genesis = createGenesisBlock(minimalSignedTx())
+      genesis = createGenesisBlock(minimalSignedTx()).get
       listenerNode = initTestLBNode(peers.listener, genesis, proposalTopic = topic)
       dialerNode = initTestLBNode(peers.dialer, genesis, proposalTopic = topic)
     try:
@@ -346,7 +342,7 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
 
       # Broadcast proposal referencing a missing transaction (not in listener's mempool)
       var missingRefs: References
-      missingRefs[0] = mantleTxHash(minimalSignedTx().tx)
+      missingRefs[0] = mantleTxHash(minimalSignedTx().tx).get
       let missingBlock = childBlock(sampleProposal.header, blockId(sampleProposal.header), SlotNumber(2), [])
       let missingProposal = Proposal(
         header: missingBlock.header,
@@ -381,12 +377,13 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
 
 suite "P2P stack — on-the-wire encoding":
   test "Network Wire Format: payloads on negotiated streams follow Logos Chain wire format spec":
-    let tx = minimalSignedTx()
-    let encoded = encodeSignedMantleTx(tx)
+    let
+      tx = minimalSignedTx()
+      encoded = encodeSignedMantleTx(tx).get
     check encoded.len > 0
-    let decoded = decodeSignedMantleTx(encoded)
-    check encodeSignedMantleTx(decoded) == encodeSignedMantleTx(tx)
-    check mantleTxHash(decoded.tx) == mantleTxHash(tx.tx)
+    let decoded = decodeSignedMantleTx(encoded).get
+    check encodeSignedMantleTx(decoded).get == encodeSignedMantleTx(tx).get
+    check mantleTxHash(decoded.tx).get == mantleTxHash(tx.tx).get
     check decoded.opProofs.len == tx.opProofs.len
 
 {.pop.}

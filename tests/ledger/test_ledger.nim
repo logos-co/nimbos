@@ -148,8 +148,8 @@ suite "tryApplyTx — channel ops":
     var
       s0 = mkChannelState([note], cid, kp.pubkey, [note])
       body = MantleTx(ops: @[createChannelWithdrawOp(
-        ChannelWithdrawPayload(channel: cid, inputs: @[note.id]))])
-      txHash = mantleTxHash(body)
+        ChannelWithdrawPayload(channel: cid, inputs: Inputs(noteIds: @[note.id])))])
+      txHash = mantleTxHash(body).get
       tx = SignedMantleTx(
         tx: body,
         opProofs: @[OpProof(
@@ -180,9 +180,9 @@ suite "tryApplyTx — channel ops":
     var
       s0 = mkChannelState([note], cid, kp.pubkey, [note])
       op = ChannelTransferPayload(
-        channel: cid, inputs: @[note.id], outputs: @[reassigned])
+        channel: cid, inputs: Inputs(noteIds: @[note.id]), outputs: Outputs(notes: @[reassigned]))
       body = MantleTx(ops: @[createChannelTransferOp(op)])
-      txHash = mantleTxHash(body)
+      txHash = mantleTxHash(body).get
       tx = SignedMantleTx(
         tx: body,
         opProofs: @[OpProof(
@@ -196,7 +196,7 @@ suite "tryApplyTx — channel ops":
     check r.isOk
     let
       balance = r.get
-      minted = Utxo(opId: opId(op), outputIndex: 0, note: reassigned)
+      minted = Utxo(opId: opId(op).get, outputIndex: 0, note: reassigned)
     check balance == Balance.zero
     check s0.mandatory_fees(ValidSignedMantleTx(tx)).get.executionGas == Gas(56)
     check not s0.latestUtxos.contains(note.id)
@@ -316,7 +316,7 @@ suite "tryApplyTx — happy path (Rust-generated fixture)":
       verifyPoq = acceptAllPoq)
     check r.isOk
     check s0.epochs == prevEpochs
-    check declarationId(declaration) in s0.sdp.state.declarations
+    check declarationId(declaration).get in s0.sdp.state.declarations
 
 # Suites below need a valid `OpProof` per transfer op — i.e. a zksign proof
 # generated for that op's input pks + tx hash. nimbos has no Nim-side prover
@@ -481,7 +481,7 @@ when false:
             inputs: Inputs(noteIds: @[input1.id]),
             outputs: Outputs(notes: @[mkNote(100, pkSeed = 2)]),
           )
-        )
+        ).get
         utxoAfter1 = Utxo(
           opId: tx1OpId, outputIndex: 0, note: mkNote(100, pkSeed = 2)
         )
@@ -505,7 +505,7 @@ when false:
             inputs: Inputs(noteIds: @[utxoAfter1.id]),
             outputs: Outputs(notes: @[mkNote(100, pkSeed = 3)]),
           )
-        )
+        ).get
         utxoAfter2 = Utxo(
           opId: tx2OpId, outputIndex: 0, note: mkNote(100, pkSeed = 3)
         )
@@ -597,7 +597,7 @@ suite "tryApplyTx — SDP":
     )
     check r.isOk
     l.commitUpdate(r.get.id, r.get.state)
-    check declarationId(declaration) in l.state(mkId(0x11)).get.sdp.state.declarations
+    check declarationId(declaration).get in l.state(mkId(0x11)).get.sdp.state.declarations
 
 const noTxs: seq[ValidSignedMantleTx] = @[]
   ## Empty block contents; a compile-time value stays gcsafe, a `let` would not.
@@ -675,5 +675,11 @@ suite "block rewards — per-block leader crediting":
     check s.latestUtxos.len == utxosBefore
     check s.sdp.blendRewards.target.isNone
     check s.sdp.blendRewards.epochIncome == 0
+
+  test "toLedgerError: maps EncodingError variants correctly":
+    check toLedgerError(EncodingError.UnsupportedOpcode) == LedgerError.UnsupportedOp
+    check toLedgerError(EncodingError.LengthExceeded) == LedgerError.PermanentInvalidTxProof
+    check toLedgerError(EncodingError.ProofCountMismatch) == LedgerError.PermanentInvalidTxProof
+    check toLedgerError(EncodingError.MultiSigCountExceeded) == LedgerError.PermanentInvalidTxProof
 
 {.pop.}

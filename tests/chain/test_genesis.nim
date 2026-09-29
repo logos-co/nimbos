@@ -10,8 +10,9 @@
 
 import
   std/[os, strutils],
+  results,
   stew/io2,
-  ../../logos_chain/core/mantle/[tx_types, tx_hashing],
+  ../../logos_chain/core/mantle/[tx_types, tx_hashing, proofs],
   ../../logos_chain/chain/chain,
   ../../logos_chain/deployment/deployment_settings,
   ../testutil
@@ -23,13 +24,25 @@ suite "chain/genesis":
   test "createGenesisBlock wraps a minimal signed mantle tx":
     let tx = MantleTx(ops: @[])
     let sm = SignedMantleTx(tx: tx, opProofs: @[])
-    let h = createGenesisBlock(sm).header
-    let b = createGenesisBlock(sm)
-    check h.blockRoot == createBlockRoot([sm])
+    let h = createGenesisBlock(sm).get.header
+    let b = createGenesisBlock(sm).get
+    check h.blockRoot == createBlockRoot([sm]).get
     check b.txs.len == 1
     check b.header.bedrockVersion == GenesisBedrockVersion
     check b.txs[0].tx.ops.len == sm.tx.ops.len
     check b.signature == DefaultEd25519Signature
+
+  test "createGenesisBlock returns error on malformed tx":
+    var invalidInputs: seq[NoteId]
+    for i in 0 .. 255:
+      invalidInputs.add(default(NoteId))
+    let malformedTx = SignedMantleTx(
+      tx: MantleTx(ops: @[createTransferOp(TransferPayload(
+        inputs: Inputs(noteIds: invalidInputs), outputs: Outputs(notes: @[])
+      ))]),
+      opProofs: @[OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))]
+    )
+    check createGenesisBlock(malformedTx).error == EncodingError.InputsCountExceeded
 
   test "createGenesisBlock builds expected header/envelope from deployment settings":
     let text = readAllChars(deploymentSettingsPath).valueOr:
@@ -54,7 +67,7 @@ suite "chain/genesis":
     check gb.header.bedrockVersion == GenesisBedrockVersion
     check gb.header.parentBlock == default(BlockId)
     check gb.header.slot == 0'u64
-    check gb.header.blockRoot == createBlockRoot([genesisTx])
+    check gb.header.blockRoot == createBlockRoot([genesisTx]).get
     check gb.header == gstate.header
     check gb.signature == gstate.blockSignature
 
@@ -67,7 +80,7 @@ suite "chain/genesis":
 
     let
       gstate = ds.cryptarchia.genesisState
-      fromTx = createGenesisBlock(gstate.signedMantleTx)
+      fromTx = createGenesisBlock(gstate.signedMantleTx).get
       fromState = initBlock(gstate.header, gstate.blockSignature, [gstate.signedMantleTx])
 
     check fromTx.header == fromState.header
@@ -75,7 +88,7 @@ suite "chain/genesis":
     check fromTx.signature == fromState.signature
     check fromTx.txs.len == fromState.txs.len
     check fromTx.txs.len == 1
-    check mantleTxHash(fromTx.txs[0].tx) == mantleTxHash(fromState.txs[0].tx)
+    check mantleTxHash(fromTx.txs[0].tx).get == mantleTxHash(fromState.txs[0].tx).get
     check fromTx.txs[0].opProofs.len == fromState.txs[0].opProofs.len
     for i in 0 ..< fromTx.txs[0].opProofs.len:
       check fromTx.txs[0].opProofs[i].kind == fromState.txs[0].opProofs[i].kind

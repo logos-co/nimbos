@@ -9,6 +9,7 @@
 {.used.}
 
 import
+  results,
   unittest2,
   ../testutil,
   bincode,
@@ -32,7 +33,7 @@ func sampleHeader(txs: openArray[SignedMantleTx]): Header =
       proof: DefaultCompressedGroth16Proof,
       leaderKey: default(Ed25519PublicKey),
     ),
-  )
+  ).get
 
 proc checkBlockEqual(a, b: Block) =
   check a.header == b.header
@@ -68,7 +69,7 @@ suite "core/block bincode (cryptarchia sync)":
       fail getCurrentExceptionMsg()
 
   test "encode / decode roundtrip (genesis block)":
-    let genesis = createGenesisBlock(minimalSignedTx())
+    let genesis = createGenesisBlock(minimalSignedTx()).get
     try:
       checkBlockEqual(roundtrip(genesis), genesis)
       check genesis.signature == DefaultEd25519Signature
@@ -117,7 +118,7 @@ suite "core/block bincode (cryptarchia sync)":
       h = sampleHeader([sm])
     var proposal = new(Proposal)
     proposal.header = h
-    proposal.references[0] = mantleTxHash(sm.tx)
+    proposal.references[0] = mantleTxHash(sm.tx).get
     proposal.signature = DefaultEd25519Signature
     try:
       let serialized = encode(proposal[], cfg)

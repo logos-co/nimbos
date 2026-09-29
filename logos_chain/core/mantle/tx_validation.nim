@@ -34,8 +34,29 @@ type
     InvalidChannelConfig ## ChannelConfig has zero threshold or empty keys
     EmptyInputs ## Deposit/Withdraw/Transfer must consume at least one note
     VerifierNotInitialised ## per-circuit VK singleton wasn't installed at startup
+    TooManyOps ## Transaction operations count exceeds MantleMaxOps (255)
 
 export results, StatelessLedgerError
+
+func toStatelessLedgerError*(err: EncodingError): StatelessLedgerError =
+  case err
+  of EncodingError.UnsupportedOpcode:
+    StatelessLedgerError.UnsupportedOp
+  of EncodingError.LocatorsCountExceeded:
+    StatelessLedgerError.TooManyLocators
+  of EncodingError.LocatorLengthExceeded:
+    StatelessLedgerError.InvalidLocator
+  of EncodingError.KeysCountExceeded:
+    StatelessLedgerError.InvalidChannelConfig
+  of EncodingError.OpsCountExceeded:
+    StatelessLedgerError.TooManyOps
+  of EncodingError.ProofCountMismatch, EncodingError.ProofKindMismatch,
+     EncodingError.MultiSigCountExceeded, EncodingError.MultiSigSignaturesMismatch,
+     EncodingError.MultiSigIndicesNonIncreasing,
+     EncodingError.LengthExceeded, EncodingError.MetadataLengthExceeded,
+     EncodingError.InscriptionLengthExceeded,
+     EncodingError.InputsCountExceeded, EncodingError.OutputsCountExceeded:
+    StatelessLedgerError.InvalidProof
 
 func hasHeavyZkProof*(tx: SignedMantleTx): bool {.inline.} =
   tx.opProofs.anyIt(it.kind == opfLeaderClaim)
@@ -48,6 +69,8 @@ proc validateMantleTxStateless*(
   ## Phase 1: Structural, bounds, and payload shape checks (~10 ns)
   ## Phase 2: Lazy txHash calculation & Ed25519 signature checks (~0.7 ms)
   ## Phase 3: Groth16 zk-SNARK proof verification (~1.13 ms)
+  if tx.tx.ops.len > MantleMaxOps:
+    return err(StatelessLedgerError.TooManyOps)
   if tx.tx.ops.len != tx.opProofs.len:
     return err(StatelessLedgerError.InvalidProof)
 
@@ -55,14 +78,14 @@ proc validateMantleTxStateless*(
   var hasSigCrypto = false
   var hasHeavyZk = false
 
-  template checkInputs(inputs: openArray[NoteId]): untyped =
-    if inputs.len == 0:
+  template checkInputs(inputs: Inputs): untyped =
+    if inputs.noteIds.len == 0:
       return err(StatelessLedgerError.EmptyInputs)
-    if inputs.anyIt(allInputs.containsOrIncl(it)):
+    if inputs.noteIds.anyIt(allInputs.containsOrIncl(it)):
       return err(StatelessLedgerError.DoubleSpend)
 
-  template checkOutputs(notes: openArray[Note]): untyped =
-    if notes.anyIt(it.value == 0):
+  template checkOutputs(outputs: Outputs): untyped =
+    if outputs.notes.anyIt(it.value == 0):
       return err(StatelessLedgerError.ZeroValueNote)
 
   # Phase 1: Structural, bounds, and payload shape checks
@@ -72,14 +95,16 @@ proc validateMantleTxStateless*(
 
     if not isSupportedOpcode(op.opcode) or op.opcode != opPayloadToOpcode(op.payload):
       return err(StatelessLedgerError.UnsupportedOp)
-    if proof.kind != expectedOpProofKindForOpcode(op.opcode):
+    let expectedProofKind = expectedOpProofKindForOpcode(op.opcode).valueOr:
+      return err(error.toStatelessLedgerError)
+    if proof.kind != expectedProofKind:
       return err(StatelessLedgerError.InvalidProof)
 
     case op.payload.kind
     of Transfer:
       template t: untyped = op.payload.transfer
-      checkInputs(t.inputs.noteIds)
-      checkOutputs(t.outputs.notes)
+      checkInputs(t.inputs)
+      checkOutputs(t.outputs)
 
     of ChannelDeposit:
       checkInputs(op.payload.channelDeposit.inputs)
@@ -126,7 +151,8 @@ proc validateMantleTxStateless*(
   var txHash: Opt[ZkHash]
   template getTxHash(): ZkHash =
     txHash.valueOr:
-      let h = mantleTxHash(tx.tx)
+      let h = mantleTxHash(tx.tx).valueOr:
+        return err(error.toStatelessLedgerError)
       txHash = Opt.some(h)
       h
 

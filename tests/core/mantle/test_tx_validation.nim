@@ -60,7 +60,7 @@ suite "core/mantle/tx_validation — stateless invariants":
   test "ChannelDeposit: rejects empty inputs":
     let op = createChannelDepositOp(ChannelDepositPayload(
       channel: mkChannelId(1),
-      inputs: @[],
+      inputs: Inputs(noteIds: @[]),
     ))
     let tx = SignedMantleTx(
       tx: MantleTx(ops: @[op]),
@@ -73,7 +73,7 @@ suite "core/mantle/tx_validation — stateless invariants":
     let u = mkUtxo(100, 1)
     let op = createChannelDepositOp(ChannelDepositPayload(
       channel: mkChannelId(1),
-      inputs: @[u.id, u.id],
+      inputs: Inputs(noteIds: @[u.id, u.id]),
     ))
     let tx = SignedMantleTx(
       tx: MantleTx(ops: @[op]),
@@ -85,7 +85,7 @@ suite "core/mantle/tx_validation — stateless invariants":
   test "ChannelWithdraw: rejects empty inputs":
     let op = createChannelWithdrawOp(ChannelWithdrawPayload(
       channel: mkChannelId(1),
-      inputs: @[],
+      inputs: Inputs(noteIds: @[]),
     ))
     let tx = SignedMantleTx(
       tx: MantleTx(ops: @[op]),
@@ -98,7 +98,7 @@ suite "core/mantle/tx_validation — stateless invariants":
     let u = mkUtxo(100, 1)
     let op = createChannelWithdrawOp(ChannelWithdrawPayload(
       channel: mkChannelId(1),
-      inputs: @[u.id, u.id],
+      inputs: Inputs(noteIds: @[u.id, u.id]),
     ))
     let tx = SignedMantleTx(
       tx: MantleTx(ops: @[op]),
@@ -110,8 +110,8 @@ suite "core/mantle/tx_validation — stateless invariants":
   test "ChannelTransfer: rejects empty inputs":
     let op = createChannelTransferOp(ChannelTransferPayload(
       channel: mkChannelId(1),
-      inputs: @[],
-      outputs: @[mkNote(100, 1)],
+      inputs: Inputs(noteIds: @[]),
+      outputs: Outputs(notes: @[mkNote(100, 1)]),
     ))
     let tx = SignedMantleTx(
       tx: MantleTx(ops: @[op]),
@@ -124,8 +124,8 @@ suite "core/mantle/tx_validation — stateless invariants":
     let u = mkUtxo(100, 1)
     let op = createChannelTransferOp(ChannelTransferPayload(
       channel: mkChannelId(1),
-      inputs: @[u.id, u.id],
-      outputs: @[mkNote(200, 2)],
+      inputs: Inputs(noteIds: @[u.id, u.id]),
+      outputs: Outputs(notes: @[mkNote(200, 2)]),
     ))
     let tx = SignedMantleTx(
       tx: MantleTx(ops: @[op]),
@@ -138,8 +138,8 @@ suite "core/mantle/tx_validation — stateless invariants":
     let u = mkUtxo(100, 1)
     let op = createChannelTransferOp(ChannelTransferPayload(
       channel: mkChannelId(1),
-      inputs: @[u.id],
-      outputs: @[mkNote(0, 2)],
+      inputs: Inputs(noteIds: @[u.id]),
+      outputs: Outputs(notes: @[mkNote(0, 2)]),
     ))
     let tx = SignedMantleTx(
       tx: MantleTx(ops: @[op]),
@@ -266,7 +266,7 @@ suite "core/mantle/tx_validation — stateless invariants":
       lockedNoteId: mkUtxo(100, 1).id,
     ))
     let body = MantleTx(ops: @[op])
-    let txHash = mantleTxHash(body)
+    let txHash = mantleTxHash(body).get
     let sig = sign(testKp.seckey, txHash)
     let validTx = SignedMantleTx(
       tx: body,
@@ -297,7 +297,7 @@ suite "core/mantle/tx_validation — stateless invariants":
       signer: testKp.pubkey,
     ))
     let body = MantleTx(ops: @[op])
-    let txHash = mantleTxHash(body)
+    let txHash = mantleTxHash(body).get
     let sig = sign(testKp.seckey, txHash)
     let validTx = SignedMantleTx(
       tx: body,
@@ -311,8 +311,6 @@ suite "core/mantle/tx_validation — stateless invariants":
     )
     let r = validateMantleTxStateless(badTx)
     check r.error == StatelessLedgerError.InvalidProof
-
-
 
   test "Structural: rejects ops / opProofs length mismatch":
     let u = mkUtxo(100, 1)
@@ -425,7 +423,7 @@ suite "core/mantle/tx_validation — stateless invariants":
       signer: testKp.pubkey,
     ))
     let body = MantleTx(ops: @[op1, op2])
-    let txHash = mantleTxHash(body)
+    let txHash = mantleTxHash(body).get
     let sig2 = sign(testKp.seckey, txHash)
     let tx = SignedMantleTx(
       tx: body,
@@ -444,7 +442,7 @@ suite "core/mantle/tx_validation — stateless invariants":
     ))
     let op2 = createChannelDepositOp(ChannelDepositPayload(
       channel: mkChannelId(1),
-      inputs: @[u1.id], # double-spent across ops
+      inputs: Inputs(noteIds: @[u1.id]), # double-spent across ops
     ))
     let tx = SignedMantleTx(
       tx: MantleTx(ops: @[op1, op2]),
@@ -455,5 +453,35 @@ suite "core/mantle/tx_validation — stateless invariants":
     )
     let r = validateMantleTxStateless(tx)
     check r.error == StatelessLedgerError.DoubleSpend
+
+  test "toStatelessLedgerError: maps EncodingError variants correctly":
+    check toStatelessLedgerError(EncodingError.UnsupportedOpcode) == StatelessLedgerError.UnsupportedOp
+    check toStatelessLedgerError(EncodingError.LocatorsCountExceeded) == StatelessLedgerError.TooManyLocators
+    check toStatelessLedgerError(EncodingError.LocatorLengthExceeded) == StatelessLedgerError.InvalidLocator
+    check toStatelessLedgerError(EncodingError.KeysCountExceeded) == StatelessLedgerError.InvalidChannelConfig
+    check toStatelessLedgerError(EncodingError.ProofCountMismatch) == StatelessLedgerError.InvalidProof
+    check toStatelessLedgerError(EncodingError.ProofKindMismatch) == StatelessLedgerError.InvalidProof
+    check toStatelessLedgerError(EncodingError.MultiSigCountExceeded) == StatelessLedgerError.InvalidProof
+    check toStatelessLedgerError(EncodingError.MultiSigSignaturesMismatch) == StatelessLedgerError.InvalidProof
+    check toStatelessLedgerError(EncodingError.MultiSigIndicesNonIncreasing) == StatelessLedgerError.InvalidProof
+    check toStatelessLedgerError(EncodingError.LengthExceeded) == StatelessLedgerError.InvalidProof
+    check toStatelessLedgerError(EncodingError.MetadataLengthExceeded) == StatelessLedgerError.InvalidProof
+    check toStatelessLedgerError(EncodingError.InscriptionLengthExceeded) == StatelessLedgerError.InvalidProof
+    check toStatelessLedgerError(EncodingError.InputsCountExceeded) == StatelessLedgerError.InvalidProof
+    check toStatelessLedgerError(EncodingError.OpsCountExceeded) == StatelessLedgerError.TooManyOps
+
+  test "validateMantleTxStateless rejects tx exceeding MantleMaxOps with TooManyOps":
+    var largeOps: seq[Op]
+    var largeProofs: seq[OpProof]
+    let dummyOp = createTransferOp(TransferPayload(
+      inputs: Inputs(noteIds: @[default(NoteId)]),
+      outputs: Outputs(notes: @[]),
+    ))
+    let dummyProof = OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))
+    for i in 0 .. MantleMaxOps:
+      largeOps.add dummyOp
+      largeProofs.add dummyProof
+    let tx = SignedMantleTx(tx: MantleTx(ops: largeOps), opProofs: largeProofs)
+    check validateMantleTxStateless(tx).error == StatelessLedgerError.TooManyOps
 
 {.pop.}

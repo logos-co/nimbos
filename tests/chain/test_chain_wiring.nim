@@ -17,6 +17,7 @@
 
 import
   std/[os, strutils, tables, times],
+  results,
   unittest2,
   stew/[byteutils, io2],
   libp2p/crypto/ed25519/ed25519,
@@ -158,8 +159,8 @@ suite "chain/epoch wiring (devnet deployment settings)":
 
     # 1. Add tx to mempool
     let dummyTx = signedTxWithOps(1, 1)
-    let txHash = mantleTxHash(dummyTx.tx)
-    check chain.mempool.add(ValidSignedMantleTx(dummyTx), SlotNumber(0)) == true
+    let txHash = mantleTxHash(dummyTx.tx).get
+    check chain.mempool.add(ValidSignedMantleTx(dummyTx), SlotNumber(0)).get == true
     check txHash in chain.mempool
 
     # 2. Ingest block b1 containing dummyTx
@@ -206,13 +207,13 @@ suite "chain/epoch wiring (devnet deployment settings)":
     let tx1 = signedTxWithOps(1, 101)
     let tx2 = signedTxWithOps(1, 102)
     let tx3 = signedTxWithOps(1, 103)
-    let h1 = mantleTxHash(tx1.tx)
-    let h2 = mantleTxHash(tx2.tx)
-    let h3 = mantleTxHash(tx3.tx)
+    let h1 = mantleTxHash(tx1.tx).get
+    let h2 = mantleTxHash(tx2.tx).get
+    let h3 = mantleTxHash(tx3.tx).get
 
-    check chain.mempool.add(ValidSignedMantleTx(tx1), SlotNumber(0))
-    check chain.mempool.add(ValidSignedMantleTx(tx2), SlotNumber(0))
-    check chain.mempool.add(ValidSignedMantleTx(tx3), SlotNumber(0))
+    check chain.mempool.add(ValidSignedMantleTx(tx1), SlotNumber(0)).get
+    check chain.mempool.add(ValidSignedMantleTx(tx2), SlotNumber(0)).get
+    check chain.mempool.add(ValidSignedMantleTx(tx3), SlotNumber(0)).get
 
     # Branch A: Genesis -> A1 (contains tx1) -> A2 (contains tx2) (height 2)
     let a1 = childBlock(chain.genesisBlock.header, gid, SlotNumber(1), [tx1])
@@ -297,7 +298,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
 
     let gid = blockId(chain.genesisBlock.header)
     let tx = signedTxWithOps(1, 101)
-    check chain.mempool.add(ValidSignedMantleTx(tx), SlotNumber(0))
+    check chain.mempool.add(ValidSignedMantleTx(tx), SlotNumber(0)).get
 
     let tipState = chain.ledger.state(gid).get()
     check tipState.epochs.activeEpoch.epoch == 0
@@ -307,7 +308,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
       tipState, ledgerConfig(ds), SlotNumber(6500), verifyPoq = verifyProofOfQuota
     )
     check count == 1
-    check refs[0] == mantleTxHash(tx.tx)
+    check refs[0] == mantleTxHash(tx.tx).get
 
     # Verify that a block constructed from this proposal is valid and admitted to localTree & ledger
     let blk = childBlock(chain.genesisBlock.header, gid, SlotNumber(6500), [tx])

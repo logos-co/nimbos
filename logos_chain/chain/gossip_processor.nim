@@ -64,14 +64,17 @@ proc processTx*(
     bp: BlockProcessor, tx: SignedMantleTx, src: PeerId
 ): ValidationResult =
   # Reject malformed payloads before hashing:
-  # 1. Enforces OpCount byte bounds (0 < ops.len <= 255) to prevent doAssert failure in encodeOps during mantleTxHash.
+  # 1. Enforces OpCount byte bounds (ops.len <= MantleMaxOps).
   # 2. Ensures operations and opProofs counts match with zero allocations before running crypto verifications.
-  if tx.tx.ops.len == 0 or tx.tx.ops.len > int(high(uint8)) or tx.tx.ops.len != tx.opProofs.len:
+  if tx.tx.ops.len > MantleMaxOps or tx.tx.ops.len != tx.opProofs.len:
     debug "GossipSub rejected malformed tx (invalid op bounds or proof mismatch)",
       opCount = tx.tx.ops.len, proofCount = tx.opProofs.len, src
     return ValidationResult.Reject
 
-  let txHash = mantleTxHash(tx.tx)
+  let txHash = mantleTxHash(tx.tx).valueOr:
+    debug "GossipSub rejected malformed tx (hashing failed)",
+      error = $error, src
+    return ValidationResult.Reject
   let txHashHex = toHex(txHash)
 
   if txHash in bp.mempool:
@@ -85,7 +88,11 @@ proc processTx*(
     return ValidationResult.Reject
 
   let nowSlot = bp.currentWallclockSlot()
-  if not bp.mempool.add(ValidSignedMantleTx(tx), nowSlot):
+  let added = bp.mempool.add(ValidSignedMantleTx(tx), nowSlot).valueOr:
+    debug "GossipSub rejected tx (mempool add failed)",
+      error = $error, src
+    return ValidationResult.Reject
+  if not added:
     trace "GossipSub ignored duplicate tx already in mempool",
       txHash = txHashHex, src
     return ValidationResult.Ignore

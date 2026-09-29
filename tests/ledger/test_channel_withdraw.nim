@@ -32,7 +32,7 @@ suite "MantleState.tryApplyChannelWithdraw":
       m = seedMantle(cid, [kp1.pubkey, kp2.pubkey], [note])
       cs = CryptarchiaState.init([note])
       txHash = mkTxHash()
-      op = ChannelWithdrawPayload(channel: cid, inputs: @[note.id])
+      op = ChannelWithdrawPayload(channel: cid, inputs: Inputs(noteIds: @[note.id]))
       r = m.tryApplyChannelWithdraw(
         cs, LockedNotes.init(), op, twoOfTwo(kp1, kp2, txHash), txHash)
     check r.isOk
@@ -50,7 +50,7 @@ suite "MantleState.tryApplyChannelWithdraw":
       note = mkUtxo(value = 10, pkSeed = 1)
       m = seedMantle(cid, [], [note])
       cs = CryptarchiaState.init([note])
-      op = ChannelWithdrawPayload(channel: mkChannelId(0xFF), inputs: @[note.id])
+      op = ChannelWithdrawPayload(channel: mkChannelId(0xFF), inputs: Inputs(noteIds: @[note.id]))
       r = m.tryApplyChannelWithdraw(
         cs, LockedNotes.init(), op, ChannelMultiSigProof(), mkTxHash())
     check r.error == ChannelNotFound
@@ -61,7 +61,7 @@ suite "MantleState.tryApplyChannelWithdraw":
       note = mkUtxo(value = 10, pkSeed = 1)
       m = seedMantle(cid, [])
       cs = CryptarchiaState.init([note])
-      op = ChannelWithdrawPayload(channel: cid, inputs: @[note.id])
+      op = ChannelWithdrawPayload(channel: cid, inputs: Inputs(noteIds: @[note.id]))
       r = m.tryApplyChannelWithdraw(
         cs, LockedNotes.init(), op, ChannelMultiSigProof(), mkTxHash())
     check r.error == NotAChannelNote
@@ -72,7 +72,7 @@ suite "MantleState.tryApplyChannelWithdraw":
       other = mkChannelId(0xA0)
       note = mkUtxo(value = 10, pkSeed = 1)
       cs = CryptarchiaState.init([note])
-      op = ChannelWithdrawPayload(channel: cid, inputs: @[note.id])
+      op = ChannelWithdrawPayload(channel: cid, inputs: Inputs(noteIds: @[note.id]))
     var m = seedMantle(cid, [])
     m.channelNotes = seedChannelNotes([(note: note, channel: other)])
     let r = m.tryApplyChannelWithdraw(
@@ -85,7 +85,7 @@ suite "MantleState.tryApplyChannelWithdraw":
       note = mkUtxo(value = 10, pkSeed = 1)
       m = seedMantle(cid, [], [note])
       cs = CryptarchiaState.init()
-      op = ChannelWithdrawPayload(channel: cid, inputs: @[note.id])
+      op = ChannelWithdrawPayload(channel: cid, inputs: Inputs(noteIds: @[note.id]))
       r = m.tryApplyChannelWithdraw(
         cs, LockedNotes.init(), op, ChannelMultiSigProof(), mkTxHash())
     check r.error == InvalidNote
@@ -96,7 +96,7 @@ suite "MantleState.tryApplyChannelWithdraw":
       note = mkUtxo(value = 10, pkSeed = 1)
       m = seedMantle(cid, [], [note])
       cs = CryptarchiaState.init([note])
-      op = ChannelWithdrawPayload(channel: cid, inputs: @[note.id])
+      op = ChannelWithdrawPayload(channel: cid, inputs: Inputs(noteIds: @[note.id]))
       locked = LockedNotes.init().insert(note.id, initHashSet[DeclarationId]())
       r = m.tryApplyChannelWithdraw(
         cs, locked, op, ChannelMultiSigProof(), mkTxHash())
@@ -112,7 +112,7 @@ suite "MantleState.tryApplyChannelWithdraw":
       m = seedMantle(cid, [kp1.pubkey, kp2.pubkey], [note])
       cs = CryptarchiaState.init([note])
       txHash = mkTxHash()
-      op = ChannelWithdrawPayload(channel: cid, inputs: @[note.id])
+      op = ChannelWithdrawPayload(channel: cid, inputs: Inputs(noteIds: @[note.id]))
       proof = ChannelMultiSigProof(
         signatures: @[sign(kp1.seckey, txHash)],
         indexes: @[ChannelKeyIndex(0)],
@@ -130,7 +130,7 @@ suite "MantleState.tryApplyChannelWithdraw":
       m = seedMantle(cid, [kp1.pubkey, kp2.pubkey], [note])
       cs = CryptarchiaState.init([note])
       txHash = mkTxHash()
-      op = ChannelWithdrawPayload(channel: cid, inputs: @[note.id])
+      op = ChannelWithdrawPayload(channel: cid, inputs: Inputs(noteIds: @[note.id]))
       proof = ChannelMultiSigProof(
         signatures: @[sign(kp1.seckey, txHash), sign(kp2.seckey, txHash)],
         indexes: @[ChannelKeyIndex(0), ChannelKeyIndex(99)],
@@ -148,7 +148,7 @@ suite "MantleState.tryApplyChannelWithdraw":
       m = seedMantle(cid, [kp1.pubkey, kp2.pubkey], [note])
       cs = CryptarchiaState.init([note])
       txHash = mkTxHash()
-      op = ChannelWithdrawPayload(channel: cid, inputs: @[note.id])
+      op = ChannelWithdrawPayload(channel: cid, inputs: Inputs(noteIds: @[note.id]))
       proof = ChannelMultiSigProof(
         signatures: @[
           sign(kp1.seckey, mkTxHash(seed = 0xEE)),
@@ -165,7 +165,7 @@ suite "applyChannelWithdraw — released notes rejoin the regular note set":
       cid = mkChannelId(20)
       note = mkUtxo(value = 50, pkSeed = 3)
       cs = CryptarchiaState.init([note])
-      op = ChannelWithdrawPayload(channel: cid, inputs: @[note.id])
+      op = ChannelWithdrawPayload(channel: cid, inputs: Inputs(noteIds: @[note.id]))
       transfer = TransferPayload(
         inputs: Inputs(noteIds: @[note.id]),
         outputs: Outputs(notes: @[mkNote(50, pkSeed = 4)]),
@@ -190,7 +190,7 @@ suite "applyChannelWithdraw — released notes rejoin the regular note set":
       txHash = mkTxHash()
       m = seedMantle(
         cid, [kp.pubkey], [note], transferThreshold = TransferThreshold(1))
-      op = ChannelWithdrawPayload(channel: cid, inputs: @[note.id])
+      op = ChannelWithdrawPayload(channel: cid, inputs: Inputs(noteIds: @[note.id]))
       proof = ChannelMultiSigProof(
         signatures: @[sign(kp.seckey, txHash)], indexes: @[ChannelKeyIndex(0)])
     check m.tryApplyChannelWithdraw(cs, LockedNotes.init(), op, proof, txHash).isOk

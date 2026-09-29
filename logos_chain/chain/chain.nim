@@ -110,7 +110,8 @@ proc init*(
     poqVerifier: ProofOfQuotaVerifier = verifyProofOfQuota,
 ): Result[T, string] =
   let
-    genesisBlock = createGenesisBlock(settings.cryptarchia.genesisState.signedMantleTx)
+    genesisBlock = createGenesisBlock(settings.cryptarchia.genesisState.signedMantleTx).valueOr:
+      return err("chain: invalid genesis transaction: " & $error)
     cfg = ledgerConfig(settings)
     sdp = SdpRegistry.init(
       settings.cryptarchia.sdpConfig,

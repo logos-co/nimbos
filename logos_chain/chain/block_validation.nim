@@ -65,7 +65,9 @@ func validateBlockHeader(blk: Block): bool =
   if blk.txs.len > 0 and h.blockRoot.isZero:
     return false
 
-  if createBlockRoot(blk.txs) != h.blockRoot:
+  let root = createBlockRoot(blk.txs).valueOr:
+    return false
+  if root != h.blockRoot:
     return false
 
   if not verify(blk.signature, blockId(h), h.proofOfLeadership.leaderKey):

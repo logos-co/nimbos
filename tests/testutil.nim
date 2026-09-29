@@ -212,7 +212,7 @@ proc signedTxWithOps*(opsCount: int = 1, txIndex: int = 1): SignedMantleTx =
     ops.add(createChannelInscribeOp(payload))
 
   let mtx = MantleTx(ops: ops)
-  let txHash = mantleTxHash(mtx)
+  let txHash = mantleTxHash(mtx).get
   let sig = sign(testTxKeyPair.seckey, txHash)
   for _ in 0 ..< opsCount:
     proofs.add(OpProof(kind: opfChannelInscribe, ed25519SigProof: sig))
@@ -239,7 +239,7 @@ proc childBlock*(
     slot = slot,
     txs = txs,
     proofOfLeadership = proofOfLeadership,
-  )
+  ).get
   let sig = testBlockKeyPair.seckey.sign(blockId(h))
   initBlock(h, signature = sig, txs = txs)
 

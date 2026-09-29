@@ -283,8 +283,8 @@ func validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
     "cryptarchia.genesis_block: len(ops_proofs) must be <= len(ops)"
   )
   for i in 0 ..< smt.opProofs.len:
-    let expectedKind = expectedOpProofKindForOpcode(smt.tx.ops[i].opcode)
-    let proofOk = smt.opProofs[i].kind == expectedKind
+    let expectedKindRes = expectedOpProofKindForOpcode(smt.tx.ops[i].opcode)
+    let proofOk = expectedKindRes.isOk and smt.opProofs[i].kind == expectedKindRes.get
     need(
       proofOk,
       "cryptarchia.genesis_block: ops_proofs[" & $i & "] does not match ProofFor(mantle_tx.ops[" & $i & "])"

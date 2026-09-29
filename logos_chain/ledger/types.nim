@@ -80,4 +80,11 @@ type
     learningRateFixed*: uint64 ## fixedPoint(beta) — stake-inference input
     faucetPk*: Opt[ZkPublicKey] ## excluded from the genesis total-stake sum
 
+func toLedgerError*(err: EncodingError): LedgerError =
+  case err
+  of EncodingError.UnsupportedOpcode:
+    LedgerError.UnsupportedOp
+  else:
+    LedgerError.PermanentInvalidTxProof
+
 {.pop.}

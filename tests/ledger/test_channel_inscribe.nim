@@ -33,7 +33,7 @@ suite "MantleState.tryApplyChannelInscribe — JIT creation":
     check r.isOk
     let chan = r.get.channels.getOrDefault(cid)
     check chan.accreditedKeys == @[kp.pubkey]
-    check chan.tipMessage == opId(op)
+    check chan.tipMessage == opId(op).get
     check chan.tipSlot == 7'u64
 
   test "fresh channel with non-ZERO parent → InvalidParent":
@@ -71,7 +71,7 @@ suite "MantleState.tryApplyChannelInscribe — existing channel":
       r = seedMantle.tryApplyChannelInscribe(op, blockSlot = 2'u64)
     check r.isOk
     let newChan = r.get.channels.getOrDefault(cid)
-    check newChan.tipMessage == opId(op)
+    check newChan.tipMessage == opId(op).get
     check newChan.tipMessage != prevTip
     check newChan.tipSlot == 2'u64
 

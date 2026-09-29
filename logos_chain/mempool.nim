@@ -19,6 +19,8 @@ import
   ./core/crypto/types,
   ./core/mantle/[gas, proofs, tx_hashing, tx_types]
 
+export results
+
 from ./core/mantle/primitives import MaxBlockTxs, SlotNumber
 from ./core/types import Block
 
@@ -75,13 +77,13 @@ proc add*(
     m: Mempool,
     tx: sink ValidSignedMantleTx,
     currentSlot: SlotNumber,
-): bool =
+): Result[bool, EncodingError] =
   # Clamp to lastAddedSlot to preserve monotonic insertion order against minor clock skew/NTP slewing
   let effectiveSlot = max(currentSlot, m.lastAddedSlot)
 
-  let hash = mantleTxHash(tx.tx)
+  let hash = ?mantleTxHash(tx.tx)
   if hash in m.txs:
-    return false
+    return ok(false)
 
   # If transaction is currently in grace cache, remove it from grace and promote to active txs
   m.graceCache.del(hash)
@@ -104,7 +106,7 @@ proc add*(
   )
   m.queue.addLast(hash)
   m.lastAddedSlot = effectiveSlot
-  true
+  ok(true)
 
 func contains*(m: Mempool, hash: Hash32): bool =
   ## Returns true if the transaction is in the active mempool or grace cache.
@@ -142,7 +144,9 @@ proc pruneBlockTxs*(m: Mempool, blk: Block) =
   # In a follow-up PR, replace this with an unfinalized canonical transaction index
   # (tip to LIB) to eliminate reliance on bounded LRU grace eviction under high mempool churn.
   for stx in blk.txs:
-    m.remove(mantleTxHash(stx.tx), moveToGrace = true)
+    let h = mantleTxHash(stx.tx).valueOr:
+      continue
+    m.remove(h, moveToGrace = true)
 
 func isKnownValid*(m: Mempool, tx: SignedMantleTx): bool =
   ## Light validation check: checks if transaction is present in the mempool
@@ -161,10 +165,13 @@ func isKnownValid*(m: Mempool, tx: SignedMantleTx): bool =
     return false
 
   for i in 0 ..< tx.tx.ops.len:
-    if tx.opProofs[i].kind != expectedOpProofKindForOpcode(tx.tx.ops[i].opcode):
+    let expectedKind = expectedOpProofKindForOpcode(tx.tx.ops[i].opcode).valueOr:
+      return false
+    if tx.opProofs[i].kind != expectedKind:
       return false
 
-  let hash = mantleTxHash(tx.tx)
+  let hash = mantleTxHash(tx.tx).valueOr:
+    return false
   let poolTx = m.get(hash).valueOr:
     return false
 

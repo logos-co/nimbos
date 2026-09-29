@@ -39,23 +39,21 @@ suite "core/crypto/types":
     check le[7] == 1'u8
 
   test "encodeU32LeLenPrefixed length then bytes":
-    let s = encodeU32LeLenPrefixed([9'u8, 8'u8, 7'u8])
+    let s = encodeU32LeLenPrefixed([9'u8, 8'u8, 7'u8]).get
     check s.len == 4 + 3
     check s[0] == 3'u8
     check s[4] == 9'u8
     check s[5] == 8'u8
     check s[6] == 7'u8
 
-  test "encodeU16LeLenPrefixed length then bytes":
-    let s = encodeU16LeLenPrefixed([0xAB'u8, 0xCD'u8])
-    check s.len == 2 + 2
-    check s[0] == 2'u8
-    check s[2] == 0xAB'u8
-
   test "encodeFieldElement round-trips canonical LE bytes":
     var bytes: array[32, byte]
     bytes[0] = 0x11'u8
-    check encodeFieldElement(decodeFieldElement(bytes)) == bytes
+    check encodeFieldElement(decodeFieldElement(bytes).get) == bytes
     check encodeHash32(bytes) == bytes
+
+  test "decode helpers return DecodingError on malformed input":
+    check decodeFieldElement([1'u8, 2'u8]).error == DecodingError.UnexpectedEnd
+    check decodeU32LeLenPrefixed([10'u8, 0'u8, 0'u8, 0'u8, 1'u8]).error == DecodingError.BufferExceeded
 
 {.pop.}

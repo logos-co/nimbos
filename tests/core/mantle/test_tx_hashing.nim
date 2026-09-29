@@ -44,11 +44,11 @@ suite "core/mantle/tx_hashing":
       ],
     )
     let txB = MantleTx(ops: @[])
-    check mantleTxHash(txA) != mantleTxHash(txB)
+    check mantleTxHash(txA).get != mantleTxHash(txB).get
 
   test "mantleTxHash is deterministic":
     let tx = MantleTx(ops: @[])
-    check mantleTxHash(tx) == mantleTxHash(tx)
+    check mantleTxHash(tx).get == mantleTxHash(tx).get
 
   test "sdp opId is deterministic and payload-sensitive":
     let utxo = mkUtxo(pkSeed = 1)
@@ -60,14 +60,14 @@ suite "core/mantle/tx_hashing":
       lockedNoteId: id(utxo),
       zkId: utxo.note.zkPublicKey,
     )
-    check opId(declare) == opId(declare)
-    check opId(declare) != opId(DeclarationMessage(
+    check opId(declare).get == opId(declare).get
+    check opId(declare).get != opId(DeclarationMessage(
       serviceType: declare.serviceType,
       locators: declare.locators,
       providerId: declare.providerId,
       lockedNoteId: id(otherUtxo),
       zkId: declare.zkId,
-    ))
+    )).get
 
     var declarationId: DeclarationId
     declarationId[0] = 4'u8
@@ -88,12 +88,12 @@ suite "core/mantle/tx_hashing":
       nonce: 1'u64,
       metadata: @[],
     )
-    check opId(active) == opId(active)
-    check opId(active) != opId(ActiveMessage(
+    check opId(active).get == opId(active).get
+    check opId(active).get != opId(ActiveMessage(
       declarationId: declarationId,
       nonce: 2'u64,
       metadata: @[],
-    ))
+    )).get
 
   test "sdp declare opId is over wire-encoded payload, not declaration_id preimage":
     let declare = DeclarationMessage(
@@ -103,49 +103,49 @@ suite "core/mantle/tx_hashing":
       lockedNoteId: id(mkUtxo(pkSeed = 1)),
       zkId: mkUtxo(pkSeed = 1).note.zkPublicKey,
     )
-    let wire = encodeSdpDeclare(declare)
+    let wire = encodeSdpDeclare(declare).get
     check wire[0] == encodeServiceType(ServiceType.bn)
-    check opId(declare) != declarationId(declare)
+    check opId(declare).get != declarationId(declare).get
 
 suite "core/mantle/tx_hashing — channel op_id spec vectors":
   # Payload/op_id pairs from the Mantle specification's "Operation Id" table.
   test "CHANNEL_DEPOSIT payload and op_id are unchanged by the notes rework":
     let op = ChannelDepositPayload(
       channel: filledHash32(0x10),
-      inputs: @[smallFe(0x11)],
+      inputs: Inputs(noteIds: @[smallFe(0x11)]),
       metadata: toBytes("deposit-metadata"),
     )
-    check encodeChannelDeposit(op).toHex ==
+    check encodeChannelDeposit(op).get.toHex ==
       "1010101010101010101010101010101010101010101010101010101010101010" &
       "01" &
       "1100000000000000000000000000000000000000000000000000000000000000" &
       "10000000" & "6465706f7369742d6d65746164617461"
-    check opId(op).toHex ==
+    check opId(op).get.toHex ==
       "f14ff0aad9bc5e8e30c5d1aa3710aaa1c1cc1f47c2c256e7d9e73104cb17ccaf"
 
   test "CHANNEL_WITHDRAW op_id over ChannelId || Inputs":
     let op = ChannelWithdrawPayload(
-      channel: filledHash32(0x12), inputs: @[smallFe(0x13)])
-    check encodeChannelWithdraw(op).toHex ==
+      channel: filledHash32(0x12), inputs: Inputs(noteIds: @[smallFe(0x13)]))
+    check encodeChannelWithdraw(op).get.toHex ==
       "1212121212121212121212121212121212121212121212121212121212121212" &
       "01" &
       "1300000000000000000000000000000000000000000000000000000000000000"
-    check opId(op).toHex ==
+    check opId(op).get.toHex ==
       "503d0d08f9faef971864943103965d13be7159fe6e0361c8ea614c6d0431e59c"
 
   test "CHANNEL_TRANSFER op_id over ChannelId || Inputs || Outputs":
     let op = ChannelTransferPayload(
       channel: filledHash32(0x14),
-      inputs: @[smallFe(0x15)],
-      outputs: @[mkNote(0x16, pkSeed = 0x17)],
+      inputs: Inputs(noteIds: @[smallFe(0x15)]),
+      outputs: Outputs(notes: @[mkNote(0x16, pkSeed = 0x17)]),
     )
-    check encodeChannelTransfer(op).toHex ==
+    check encodeChannelTransfer(op).get.toHex ==
       "1414141414141414141414141414141414141414141414141414141414141414" &
       "01" &
       "1500000000000000000000000000000000000000000000000000000000000000" &
       "01" & "1600000000000000" &
       "1700000000000000000000000000000000000000000000000000000000000000"
-    check opId(op).toHex ==
+    check opId(op).get.toHex ==
       "fb24c17731954e8bbe1b0dedd69e4857c8083d1689aff331ba16f3ed5883f0ce"
 
 {.pop.}

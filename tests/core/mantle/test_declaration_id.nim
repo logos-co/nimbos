@@ -50,9 +50,9 @@ suite "core/mantle/operations — declarationId":
     var otherNote = base
     otherNote.lockedNoteId = seedNoteId(9)
 
-    let idA = declarationId(base)
-    let idB = declarationId(base)
-    let idC = declarationId(otherNote)
+    let idA = declarationId(base).get
+    let idB = declarationId(base).get
+    let idC = declarationId(otherNote).get
     check idA == idB
     check idA == idC
 
@@ -66,28 +66,28 @@ suite "core/mantle/operations — declarationId":
       providerId: provider,
       zkId: zkId,
       lockedNoteId: default(NoteId),
-    ))
+    )).get
     check base != declarationId(DeclarationMessage(
       serviceType: ServiceType.bn,
       locators: locators,
       providerId: mkProvider(2),
       zkId: zkId,
       lockedNoteId: default(NoteId),
-    ))
+    )).get
     check base != declarationId(DeclarationMessage(
       serviceType: ServiceType.bn,
       locators: locators,
       providerId: provider,
       zkId: seedZkId(3),
       lockedNoteId: default(NoteId),
-    ))
+    )).get
     check base != declarationId(DeclarationMessage(
       serviceType: ServiceType.bn,
       locators: @[mkLocator(30304)],
       providerId: provider,
       zkId: zkId,
       lockedNoteId: default(NoteId),
-    ))
+    )).get
 
   test "declarationId matches blake2b over identity preimage encoding":
     let provider = mkProvider(7)
@@ -103,8 +103,8 @@ suite "core/mantle/operations — declarationId":
     var preimage = @[encodeServiceType(decl.serviceType)]
     preimage.add(encodeProviderId(decl.providerId))
     preimage.add(encodeZkId(decl.zkId))
-    preimage.add(encodeLocators(decl.locators))
-    check declarationId(decl) == blake2b256Hash(preimage)
+    preimage.add(encodeLocators(decl.locators).get)
+    check declarationId(decl).get == blake2b256Hash(preimage)
 
   test "declarationId is independent of full mantle SDPDeclare wire bytes":
     let provider = mkProvider(1)
@@ -116,7 +116,7 @@ suite "core/mantle/operations — declarationId":
       zkId: zkId,
       lockedNoteId: default(NoteId),
     )
-    check declarationId(declare) != blake2b256Hash(encodeSdpDeclare(declare))
-    check opId(declare) != declarationId(declare)
+    check declarationId(declare).get != blake2b256Hash(encodeSdpDeclare(declare).get)
+    check opId(declare).get != declarationId(declare).get
 
 {.pop.}

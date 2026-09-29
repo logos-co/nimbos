@@ -114,7 +114,7 @@ suite "sync/types (download RequestMessage / request & response payloads)":
   test "encode / decode DownloadBlocksRequest roundtrip":
     let
       sm = minimalSignedTx()
-      genesis = createGenesisBlock(sm)
+      genesis = createGenesisBlock(sm).get
       gid = blockId(genesis.header)
       tree = newLocalTree(genesis, 1'u64)
       req = DownloadBlocksRequest(targetBlock: gid, knownBlocks: buildKnownBlocks(tree))
@@ -132,7 +132,7 @@ suite "sync/types (download RequestMessage / request & response payloads)":
   test "RequestMessage download discriminant roundtrips":
     let
       sm = minimalSignedTx()
-      genesis = createGenesisBlock(sm)
+      genesis = createGenesisBlock(sm).get
       gid = blockId(genesis.header)
       tree = newLocalTree(genesis, 1'u64)
       req = DownloadBlocksRequest(targetBlock: gid, knownBlocks: buildKnownBlocks(tree))
@@ -168,7 +168,7 @@ suite "sync/types (download RequestMessage / request & response payloads)":
   test "encode / decode DownloadBlocksResponse roundtrip (one block)":
     let
       sm = minimalSignedTx()
-      genesis = createGenesisBlock(sm)
+      genesis = createGenesisBlock(sm).get
     let blockWire = try:
       encode(genesis, cryptarchiaSyncBincodeConfig)
     except BincodeError:
@@ -285,7 +285,7 @@ suite "sync/types (cryptarchia u32 length-prefixed wire fixtures 1-9)":
     let pr = parseDeploymentSettings(readFile(deploymentSettingsPath))
     require pr.isOk
     let genesisFromDeployment =
-      createGenesisBlock(pr.get.cryptarchia.genesisState.signedMantleTx)
+      createGenesisBlock(pr.get.cryptarchia.genesisState.signedMantleTx).get
     let genesisWire = try:
       encode(genesisFromDeployment, cryptarchiaSyncBincodeConfig)
     except BincodeError:

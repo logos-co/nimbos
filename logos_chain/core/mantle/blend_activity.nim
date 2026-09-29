@@ -28,6 +28,9 @@ const
   ActivityMetadataLen* = 230
     ## type(1) ‖ version(1) ‖ epoch u32 LE(4) ‖ signing key(32) ‖
     ## key nullifier frLE(32) ‖ quota proof(128) ‖ selection frLE(32).
+  ActivityProofBodyLen* = 224
+    ## signing key(32) ‖ key nullifier frLE(32) ‖ quota proof(128) ‖
+    ## selection randomness frLE(32); also the blending-token hash preimage.
 
 type
   ProofOfQuota* = object
@@ -40,10 +43,6 @@ type
     signingKey*: Ed25519PublicKey
     proofOfQuota*: ProofOfQuota
     proofOfSelection*: FieldElement
-
-const ActivityProofBodyLen* = 224
-  ## signing key(32) ‖ key nullifier frLE(32) ‖ quota proof(128) ‖
-  ## selection randomness frLE(32); also the blending-token hash preimage.
 
 func encodeActivityProofBody*(
     signingKey: Ed25519PublicKey,

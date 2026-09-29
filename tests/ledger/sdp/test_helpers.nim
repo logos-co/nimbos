@@ -120,7 +120,7 @@ proc installTestDeclaration*(
     declaration: DeclarationMessage,
     epoch: EpochNumber,
 ): DeclarationId =
-  let declarationId = declarationId(declaration)
+  let declarationId = declarationId(declaration).get
   registry.state = insertDeclaration(
     addDeclarationToLockedNote(
       registry.state,
@@ -172,13 +172,13 @@ func mkTxHash*(seed: byte = 0x42): ZkHash =
   h
 
 func defaultDeclareProof(): ZkAndEd25519SigsProof =
-  defaultOpProofForOpcode(OpSdpDeclare).declarationProof
+  defaultOpProofForOpcode(OpSdpDeclare).get.declarationProof
 
 func defaultWithdrawProof(): ZkSigProof =
-  defaultOpProofForOpcode(OpSdpWithdraw).sdpWithdrawProof
+  defaultOpProofForOpcode(OpSdpWithdraw).get.sdpWithdrawProof
 
 func defaultActiveProof(): ZkSigProof =
-  defaultOpProofForOpcode(OpSdpActive).sdpActiveProof
+  defaultOpProofForOpcode(OpSdpActive).get.sdpActiveProof
 
 type SeededDeclaration* = object
   registry*: SdpRegistry

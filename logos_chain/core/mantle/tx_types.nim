@@ -19,7 +19,6 @@ import
 
 export primitives, operations, proofs
 
-
 type
   MantleTx* = object
     ops*: seq[Op]
@@ -35,17 +34,18 @@ type
 template tx*(t: ValidSignedMantleTx): untyped = SignedMantleTx(t).tx
 template opProofs*(t: ValidSignedMantleTx): untyped = SignedMantleTx(t).opProofs
 
-func encodeMantleTx*(tx: MantleTx): seq[byte] =
+func encodeMantleTx*(tx: MantleTx): Result[seq[byte], EncodingError] =
   ## MantleTx = OpCount (u8) || *Op
   encodeOps(tx.ops)
 
-func encodeSignedMantleTx*(signedTx: SignedMantleTx): seq[byte] =
+func encodeSignedMantleTx*(signedTx: SignedMantleTx): Result[seq[byte], EncodingError] =
   ## SignedMantleTx = MantleTx || OpsProofs
-  var res = encodeMantleTx(signedTx.tx)
-  res.add(encodeOpsProofs(signedTx.tx.ops, signedTx.opProofs))
-  res
+  var res = ?encodeMantleTx(signedTx.tx)
+  let proofsBytes = ?encodeOpsProofs(signedTx.tx.ops, signedTx.opProofs)
+  res.add(proofsBytes)
+  ok(res)
 
-template encodeSignedMantleTx*(signedTx: ValidSignedMantleTx): seq[byte] =
+template encodeSignedMantleTx*(signedTx: ValidSignedMantleTx): Result[seq[byte], EncodingError] =
   encodeSignedMantleTx(SignedMantleTx(signedTx))
 
 func byteLen*(tx: MantleTx): int =
@@ -59,33 +59,40 @@ func byteLen*(signedTx: SignedMantleTx): int =
 template byteLen*(signedTx: ValidSignedMantleTx): int =
   byteLen(SignedMantleTx(signedTx))
 
-func decodeMantleTx*(data: openArray[byte]): MantleTx {.raises: [DecodingError].} =
-  var pos = 0
-  let count = readByte(data, pos)
+func readMantleTx*(data: openArray[byte], pos: var int): Result[MantleTx, DecodingError] =
+  let count = ?readByte(data, pos)
   var ops = newSeqOfCap[Op](count)
   for _ in 0 ..< int(count):
-    ops.add readOp(data, pos)
-  finishDecode(data, pos)
-  MantleTx(ops: ops)
+    ops.add ?readOp(data, pos)
+  ok(MantleTx(ops: ops))
 
-func decodeSignedMantleTx*(data: openArray[byte]): SignedMantleTx {.raises: [DecodingError].} =
+func decodeSignedMantleTx*(data: openArray[byte]): Result[SignedMantleTx, DecodingError] =
   var pos = 0
-  let count = readByte(data, pos)
-  var ops = newSeqOfCap[Op](count)
-  for _ in 0 ..< int(count):
-    ops.add readOp(data, pos)
-  let tx = MantleTx(ops: ops)
+  let tx = ?readMantleTx(data, pos)
   let opProofs =
-    if ops.len == 0:
+    if tx.ops.len == 0:
+      ?finishDecode(data, pos)
       @[]
     elif pos < data.len:
-      decodeOpsProofs(ops, data.toOpenArray(pos, data.high))
+      ?decodeOpsProofs(tx.ops, data.toOpenArray(pos, data.high))
     else:
-      raise newException(DecodingError, "SignedMantleTx: missing OpsProofs")
-  SignedMantleTx(tx: tx, opProofs: opProofs)
- 
+      return err(DecodingError.MissingProofs)
+  ok(SignedMantleTx(tx: tx, opProofs: opProofs))
+
+func bincodeEncodeSignedMantleTx(tx: SignedMantleTx): seq[byte] {.raises: [BincodeError].} =
+  let res = encodeSignedMantleTx(tx)
+  if res.isErr:
+    raise newException(BincodeError, "SignedMantleTx encoding failed: " & $res.error)
+  res.get
+
+func bincodeDecodeSignedMantleTx(data: openArray[byte]): SignedMantleTx {.raises: [BincodeError].} =
+  let res = decodeSignedMantleTx(data)
+  if res.isErr:
+    raise newException(BincodeError, "SignedMantleTx decoding failed: " & $res.error)
+  res.get
+
 deriveBincodeCustom(
-  SignedMantleTx, encodeSignedMantleTx, decodeSignedMantleTx, DecodingError
+  SignedMantleTx, bincodeEncodeSignedMantleTx, bincodeDecodeSignedMantleTx, BincodeError
 )
 
 {.pop.}
