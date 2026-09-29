@@ -36,7 +36,7 @@ const expectedDevnetGenesisBlockRoot =
 const expectedDevnetMantleTxHash =
   expectedDevnetGenesisBlockRoot
 
-proc signedMantleTxFromDevnetFixture(text: string): Result[SignedMantleTx, string] =
+proc signedMantleTxFromDevnetFixture(text: string): Result[ValidSignedMantleTx, string] =
   let yroot = ? parseDeploymentSettingsYaml(text)
   if yroot.kind != yMapping:
     return err("fixture: expected top-level mapping")
@@ -66,7 +66,7 @@ suite "devnet genesis mantle_tx block root":
       smt = signedMantleTxFromDevnetFixture(text).valueOr:
         check false
         return
-      blockRoot = createBlockRoot([smt]).get
+      blockRoot = createBlockRoot([smt])
       dsText = readAllChars(deploymentSettingsPath).valueOr:
         check false
         return
@@ -74,9 +74,9 @@ suite "devnet genesis mantle_tx block root":
         check false
         return
       gstate = ds.cryptarchia.genesisState
-      smtFromDeployment = gstate.signedMantleTx
-    check mantleTxHash(smt.tx).get == mantleTxHash(smtFromDeployment.tx).get
-    check blockRoot == createBlockRoot([smtFromDeployment]).get
+      smtFromDeployment = gstate.vtx
+    check mantleTxHash(smt.tx).get == smtFromDeployment.hash
+    check blockRoot == createBlockRoot([smtFromDeployment])
     check toHex(blockRoot) == expectedDevnetGenesisBlockRoot
     check blockRoot == gstate.header.blockRoot
     check blockRoot == mantleTxHash(smt.tx).get
@@ -89,8 +89,8 @@ suite "devnet genesis mantle_tx block root":
       ds = parseDeploymentSettings(dsText).valueOr:
         check false
         return
+      gb = createGenesisBlock(ds.cryptarchia.genesisState.vtx)
     check validateDeploymentSettings(ds).isOk
-    let gb = createGenesisBlock(ds.cryptarchia.genesisState.signedMantleTx).get
     check toHex(gb.header.blockRoot) == expectedDevnetGenesisBlockRoot
     check toHex(blockId(gb.header)) == expectedDevnetGenesisBlockId
 

@@ -16,7 +16,7 @@ import
   stew/byteutils,
   ./chain
 
-from ../core/types import Block, BlockId, blockId, header
+from ../core/types import Block, BlockId, blockId, header, Proposal
 
 export chain
 
@@ -34,9 +34,15 @@ type
   BlockApplyResult* = Result[void, BlockApplyError]
   BlockApplyFuture* = Future[BlockApplyResult].Raising([CancelledError])
 
+  BlockItem* = object
+    case src*: BlockSource
+    of BlockSource.Sync:
+      blk*: Block
+    of BlockSource.Gossip:
+      proposal*: Proposal
+
   BlockEntry = ref object
-    blk: Block
-    src: BlockSource
+    item: BlockItem
     resfut: BlockApplyFuture
     queueTick: Moment
 
@@ -64,8 +70,8 @@ func running*(bp: BlockProcessor): bool =
   bp.loopFut != nil and not bp.loopFut.finished
 
 proc addBlock*(
-    bp: BlockProcessor, src: BlockSource, blk: sink Block): BlockApplyFuture =
-  ## Queue `blk`. The future completes with the apply result, or is cancelled
+    bp: BlockProcessor, blk: sink Block): BlockApplyFuture =
+  ## Queue `blk` from sync. The future completes with the apply result, or is cancelled
   ## when the loop is not running. Cancelling it does not dequeue the block.
   let resfut = BlockApplyFuture.init("BlockProcessor.addBlock")
   if not bp.running:
@@ -73,7 +79,24 @@ proc addBlock*(
     return resfut
   try:
     bp.blockQueue.addLastNoWait(BlockEntry(
-      blk: blk, src: src, resfut: resfut, queueTick: Moment.now()))
+      item: BlockItem(src: BlockSource.Sync, blk: blk),
+      resfut: resfut, queueTick: Moment.now()))
+  except AsyncQueueFullError:
+    raiseAssert "unbounded queue cannot be full"
+  resfut
+
+proc addBlock*(
+    bp: BlockProcessor, proposal: sink Proposal): BlockApplyFuture =
+  ## Queue `proposal` from gossip. The future completes with the apply result, or is cancelled
+  ## when the loop is not running. Cancelling it does not dequeue the proposal.
+  let resfut = BlockApplyFuture.init("BlockProcessor.addBlock")
+  if not bp.running:
+    resfut.cancelSoon()
+    return resfut
+  try:
+    bp.blockQueue.addLastNoWait(BlockEntry(
+      item: BlockItem(src: BlockSource.Gossip, proposal: proposal),
+      resfut: resfut, queueTick: Moment.now()))
   except AsyncQueueFullError:
     raiseAssert "unbounded queue cannot be full"
   resfut
@@ -81,17 +104,22 @@ proc addBlock*(
 proc processBlock(bp: BlockProcessor, entry: BlockEntry) =
   let
     startTick = Moment.now()
-    res = bp.chain.tryApplyBlock(entry.blk)
+    (res, hdr) =
+      case entry.item.src
+      of BlockSource.Gossip:
+        (bp.chain.tryApplyProposal(entry.item.proposal), entry.item.proposal.header)
+      of BlockSource.Sync:
+        (bp.chain.tryApplyBlock(entry.item.blk), header(entry.item.blk))
     applyDur = Moment.now() - startTick
     queueDur = startTick - entry.queueTick
   if res.isOk:
     debug "Block applied",
-      id = toHex(blockId(header(entry.blk))), slot = header(entry.blk).slot,
-      src = entry.src, queueDur, applyDur
+      id = toHex(blockId(hdr)), slot = hdr.slot,
+      src = entry.item.src, queueDur, applyDur
   else:
     debug "Block rejected",
-      id = toHex(blockId(header(entry.blk))), slot = header(entry.blk).slot,
-      src = entry.src, queueDur, applyDur, err = res.error.kind
+      id = toHex(blockId(hdr)), slot = hdr.slot,
+      src = entry.item.src, queueDur, applyDur, err = res.error.kind
   entry.resfut.complete(res)
 
 proc runQueueProcessingLoop(bp: BlockProcessor) {.async: (raises: [CancelledError]).} =

@@ -273,7 +273,7 @@ func validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
   need(ds.mempool.pubsubTopic.startsWith("/"), "mempool.pubsub_topic must start with '/'")
   need(ds.cryptarchia.gossipsubProtocol.startsWith("/"), "cryptarchia.gossipsub_protocol must start with '/'")
 
-  let smt = ds.cryptarchia.genesisState.signedMantleTx
+  let smt = ds.cryptarchia.genesisState.vtx
   need(smt.tx.ops.len > 0,
     "cryptarchia.genesis_block.transactions[0].mantle_tx.ops must be non-empty")
   let genesisProofCount = smt.opProofs.len

@@ -514,7 +514,8 @@ func parseSignedMantleTxFromOpsYaml*(
     proofsNode: YamlNode,
     opsPathPrefix: string,
     proofsPathPrefix: string,
-): Result[SignedMantleTx, string] =
+    txHash: Opt[Hash32] = Opt.none(Hash32),
+): Result[ValidSignedMantleTx, string] =
   if opsNode.kind != ySequence:
     return err("deployment-settings: " & opsPathPrefix & " must be a sequence")
   if proofsNode.kind != ySequence:
@@ -558,7 +559,13 @@ func parseSignedMantleTxFromOpsYaml*(
   let mantleTx = MantleTx(ops: ops)
   doAssert opProofs.len == mantleTx.ops.len,
     "signed mantle tx: len(ops_proofs) must equal len(ops)"
-  ok(SignedMantleTx(tx: mantleTx, opProofs: opProofs))
+  let h = txHash.valueOr:
+    mantleTxHash(mantleTx).valueOr:
+      return err("deployment-settings: failed to compute mantle tx hash: " & $error)
+  ok(ValidSignedMantleTx(
+    signedTx: SignedMantleTx(tx: mantleTx, opProofs: opProofs),
+    hash: h,
+  ))
 
 func parseDeploymentGenesisState*(root: YamlNode): Result[GenesisState, string] =
   let gb = yamlGetPathNode(root, ["cryptarchia", "genesis_block"]).valueOr:
@@ -594,17 +601,23 @@ func parseDeploymentGenesisState*(root: YamlNode): Result[GenesisState, string] 
   let opsNode = yamlGetPathNode(mantle, ["ops"]).valueOr:
     return err(
       "deployment-settings: missing cryptarchia.genesis_block.transactions[0].mantle_tx.ops")
-  let smt = ? parseSignedMantleTxFromOpsYaml(
+  let txHashOpt =
+    if txSeq.len == 1:
+      Opt.some(signedHeader.blockRoot)
+    else:
+      Opt.none(Hash32)
+  let vtx = ? parseSignedMantleTxFromOpsYaml(
     opsNode,
     proofsNode,
     "cryptarchia.genesis_block.transactions[0].mantle_tx.ops",
     "cryptarchia.genesis_block.transactions[0].ops_proofs",
+    txHashOpt,
   )
   let faucetNode = yamlGetPathNode(root, ["cryptarchia", "faucet_pk"]).valueOr:
     return err("deployment-settings: missing cryptarchia.faucet_pk")
   let faucetPk = ? parseFieldElementNode(faucetNode, "cryptarchia.faucet_pk")
   ok(GenesisState(
-    signedMantleTx: smt,
+    vtx: vtx,
     faucetZkPublicKey: faucetPk,
     header: signedHeader,
     blockSignature: blockSig,

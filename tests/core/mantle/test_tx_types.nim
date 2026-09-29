@@ -158,7 +158,7 @@ suite "core/mantle/tx_types":
     for tx in allTxs:
       let enc = encodeSignedMantleTx(tx).get
       check byteLen(tx) == enc.len
-      check byteLen(ValidSignedMantleTx(tx)) == enc.len
+      check byteLen(ValidSignedMantleTx(signedTx: tx, hash: default(Hash32))) == enc.len
 
   test "encodeSignedMantleTx returns error on proof count mismatch":
     let tx = SignedMantleTx(
