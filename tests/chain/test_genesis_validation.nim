@@ -40,7 +40,7 @@ func withOps(ops: openArray[Op]): SignedMantleTx =
   ## `ops` with a placeholder proof of the right kind for each.
   SignedMantleTx(
     tx: MantleTx(ops: @ops),
-    opProofs: ops.mapIt(defaultOpProofForOpcode(it.opcode)))
+    opProofs: ops.mapIt(defaultOpProofForOpcode(it.opcode).get))
 
 proc declareOn(
     noteId: NoteId, zkId: ZkPublicKey, providerSeed: byte = 1
@@ -176,7 +176,7 @@ suite "chain/genesis validation: stage 1 (stateless)":
       var tx = SignedMantleTx(
         testGenesisTx(declarations = [declareOn(fe(1), mkZkPubKey(1))]))
       tx.opProofs[i] = defaultOpProofForOpcode(
-        if i == 0: OpChannelInscribe else: OpTransfer)
+        if i == 0: OpChannelInscribe else: OpTransfer).get
       check validateGenesisTxStateless(tx).error == StatelessLedgerError.InvalidProof
 
   test "rejects a Transfer with an input":

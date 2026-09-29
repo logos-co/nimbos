@@ -30,6 +30,7 @@ type
     PermanentInvalidTxProof ## Cryptographic proof permanently invalid (e.g. ZkSig Groth16, proof kind mismatch)
     InvalidTxProof ## Transaction proof verification failed against current state (e.g. channel multisig, SDP activity)
     BalanceOutOfRange ## balance math left the representable range
+    UnsupportedOp ## opcode the encoder does not know
     InsufficientBalance ## not enough balance for the requested debit
     GasOverflow ## gas or fee arithmetic exceeded uint64
     TooMuchExecutionGas ## block's summed execution gas exceeds the per-block limit

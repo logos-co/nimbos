@@ -217,7 +217,7 @@ func testGenesisTx*(
         channelId: default(ChannelId), inscription: inscription,
         parent: default(Parent), signer: DefaultEd25519PublicKey))] &
       declarations.mapIt(createSdpDeclareOp(it))
-    proofs = ops.mapIt(defaultOpProofForOpcode(it.opcode))
+    proofs = ops.mapIt(defaultOpProofForOpcode(it.opcode).get)
   validateGenesisTxStateless(
     SignedMantleTx(tx: MantleTx(ops: ops), opProofs: proofs)
   ).expect("spec-shaped genesis")
@@ -226,7 +226,7 @@ func genesisNoteId*(tx: ValidGenesisMantleTx, index: int): NoteId =
   ## NoteId of output `index` of the genesis Transfer.
   template transfer: untyped = tx.tx.ops[0].payload.transfer
   Utxo(
-    opId: opId(transfer), outputIndex: uint64(index),
+    opId: opId(transfer).get, outputIndex: uint64(index),
     note: transfer.outputs.notes[index]).id
 
 let testTxKeyPair* = block:

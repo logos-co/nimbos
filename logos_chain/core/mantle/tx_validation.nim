@@ -133,7 +133,7 @@ proc validateMantleTxStateless*(
     of ChannelTransfer:
       template ct: untyped = op.payload.channelTransfer
       checkInputs(ct.inputs)
-      ?assert_valid_output(ct.outputs)
+      ?assert_valid_output(ct.outputs.notes)
 
     of ChannelConfig:
       template cfg: untyped = op.payload.channelConfig
@@ -223,7 +223,9 @@ func validateGenesisTxStateless*(
     template op: untyped = ops[i]
     if not isSupportedOpcode(op.opcode) or op.opcode != opPayloadToOpcode(op.payload):
       return err(StatelessLedgerError.UnsupportedOp)
-    if tx.opProofs[i].kind != expectedOpProofKindForOpcode(op.opcode):
+    let expectedProofKind = expectedOpProofKindForOpcode(op.opcode).valueOr:
+      return err(error.toStatelessLedgerError)
+    if tx.opProofs[i].kind != expectedProofKind:
       return err(StatelessLedgerError.InvalidProof)
   template transfer: untyped = ops[0].payload.transfer
   if transfer.inputs.noteIds.len > 0:
