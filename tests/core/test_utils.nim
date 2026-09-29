@@ -24,7 +24,7 @@ suite "core/utils":
     check isUtf8("ü€😀".toBytes)
 
   test "isUtf8 accepts the boundary code points":
-    for ok in [
+    for good in [
         @[byte 0xc2, 0x80],             # U+0080, smallest 2-byte
         @[byte 0xdf, 0xbf],             # U+07FF, largest 2-byte
         @[byte 0xe0, 0xa0, 0x80],       # U+0800, smallest 3-byte
@@ -33,7 +33,7 @@ suite "core/utils":
         @[byte 0xef, 0xbf, 0xbf],       # U+FFFF, largest 3-byte
         @[byte 0xf0, 0x90, 0x80, 0x80], # U+10000, smallest 4-byte
         @[byte 0xf4, 0x8f, 0xbf, 0xbf]]: # U+10FFFF, largest code point
-      check isUtf8(ok)
+      check isUtf8(good)
 
   test "isUtf8 rejects invalid lead bytes":
     for bad in [

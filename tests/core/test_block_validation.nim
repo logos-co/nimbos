@@ -316,8 +316,7 @@ suite "core/block_validation — multi-tier evaluation order":
   test "validateProposal reconstructs block and validates it":
     let
       sm = minimalSignedTx()
-      valid = testGenesisTx()
-      genesis = createGenesisBlock(SignedMantleTx(valid)).get
+      genesis = createGenesisBlock(SignedMantleTx(testGenesisTx())).get
       gid = blockId(genesis.header)
       proposal = childProposal(genesis.header, gid, SlotNumber(1), [sm])
     
@@ -328,8 +327,7 @@ suite "core/block_validation — multi-tier evaluation order":
   test "reconstructBlock rejects if referenced transaction is missing from mempool":
     let
       sm = minimalSignedTx()
-      valid = testGenesisTx()
-      genesis = createGenesisBlock(SignedMantleTx(valid)).get
+      genesis = createGenesisBlock(SignedMantleTx(testGenesisTx())).get
       gid = blockId(genesis.header)
       proposal = childProposal(genesis.header, gid, SlotNumber(1), [sm])
       mempool = Mempool.init()

@@ -50,7 +50,6 @@ func decodeCryptarchiaParameter(
   # no network.
   if data.len < 1 + 1 + 4 + 32:
     return err(cstring"inscription too short")
-  # An exact length match rejects trailing bytes.
   let chainIdLen = int(data[0])
   if chainIdLen != data.len - 1 - 4 - 32:
     return err(cstring"inscription length mismatch")

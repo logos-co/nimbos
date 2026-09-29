@@ -24,6 +24,8 @@ export
 const
   MaxBlockTxs* = 1024
   MantleMaxOps* = 255
+  MaxInputs* = 255
+  MaxOutputs* = 255
   MaxSdpLocators* = 8
   MaxLocatorMultiaddrBytes* = 329
 
@@ -202,7 +204,7 @@ func encodeOutputCount(value: byte): byte =
 
 func encodeInputs*(value: Inputs): Result[seq[byte], EncodingError] =
   ## Inputs = InputCount * NoteId
-  if value.noteIds.len > int(high(byte)):
+  if value.noteIds.len > MaxInputs:
     return err(EncodingError.InputsCountExceeded)
   var res = newSeqOfCap[byte](byteLen(value))
   res.add(encodeInputCount(byte(value.noteIds.len)))
@@ -212,7 +214,7 @@ func encodeInputs*(value: Inputs): Result[seq[byte], EncodingError] =
 
 func encodeOutputs*(value: Outputs): Result[seq[byte], EncodingError] =
   ## Outputs = OutputCount * Note
-  if value.notes.len > int(high(byte)):
+  if value.notes.len > MaxOutputs:
     return err(EncodingError.OutputsCountExceeded)
   var res = newSeqOfCap[byte](byteLen(value))
   res.add(encodeOutputCount(byte(value.notes.len)))

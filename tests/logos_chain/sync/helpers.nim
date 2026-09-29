@@ -35,11 +35,11 @@ proc initTestChain*(
   ## `testLedgerConfig`).
   let
     validTx = validateGenesisTxStateless(genesis.txs[0]).valueOr:
-      raiseAssert "initTestChain: " & $error
+      raiseAssert "initTestChain: stateless genesis: " & $error
     state = LedgerState.fromGenesis(
         validTx, default(FieldElement), testSdpRegistry(),
         testLedgerConfig).valueOr:
-      raiseAssert "initTestChain: " & $error
+      raiseAssert "initTestChain: genesis state: " & $error
   Chain.init(
     genesis,
     Ledger[BlockId].init(blockId(genesis.header), state, testLedgerConfig,

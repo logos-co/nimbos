@@ -36,12 +36,6 @@ const
   SpecInscription = hexToSeqByte(
     "186c6f676f732d626c6f636b636861696e2d6d61696e6e6574030f5c69" & SpecNonceHex)
 
-func withOps(ops: openArray[Op]): SignedMantleTx =
-  ## `ops` with a placeholder proof of the right kind for each.
-  SignedMantleTx(
-    tx: MantleTx(ops: @ops),
-    opProofs: ops.mapIt(defaultOpProofForOpcode(it.opcode).get))
-
 proc declareOn(
     noteId: NoteId, zkId: ZkPublicKey, providerSeed: byte = 1
 ): DeclarationMessage =
@@ -85,34 +79,32 @@ suite "chain/genesis validation: stage 1 (stateless)":
     let
       declarations = [1'u8, 2, 3].mapIt(declareOn(fe(it), mkZkPubKey(it), it))
       tx = SignedMantleTx(testGenesisTx(declarations = declarations))
-    check:
-      validateGenesisTxStateless(tx).isOk
-      tx.tx.ops.len == 5
+    check validateGenesisTxStateless(tx).isOk
 
   test "rejects empty ops":
-    check validateGenesisTxStateless(withOps([])).error ==
+    check validateGenesisTxStateless(txWithPlaceholderProofs([])).error ==
       StatelessLedgerError.GenesisShape
 
   test "rejects a lone Transfer":
     let ops = SignedMantleTx(testGenesisTx()).tx.ops
-    check validateGenesisTxStateless(withOps([ops[0]])).error ==
+    check validateGenesisTxStateless(txWithPlaceholderProofs([ops[0]])).error ==
       StatelessLedgerError.GenesisShape
 
   test "rejects an Inscribe first":
     let ops = SignedMantleTx(testGenesisTx()).tx.ops
-    check validateGenesisTxStateless(withOps([ops[1], ops[0]])).error ==
+    check validateGenesisTxStateless(txWithPlaceholderProofs([ops[1], ops[0]])).error ==
       StatelessLedgerError.GenesisShape
 
   test "rejects two Transfers":
     let ops = SignedMantleTx(testGenesisTx()).tx.ops
-    check validateGenesisTxStateless(withOps([ops[0], ops[0]])).error ==
+    check validateGenesisTxStateless(txWithPlaceholderProofs([ops[0], ops[0]])).error ==
       StatelessLedgerError.GenesisShape
 
   test "rejects a Transfer after a Declare":
     let ops = SignedMantleTx(
       testGenesisTx(declarations = [declareOn(fe(1), mkZkPubKey(1))])).tx.ops
     check validateGenesisTxStateless(
-      withOps([ops[0], ops[1], ops[2], ops[0]])).error ==
+      txWithPlaceholderProofs([ops[0], ops[1], ops[2], ops[0]])).error ==
       StatelessLedgerError.GenesisShape
 
   test "rejects any other opcode":
@@ -121,7 +113,7 @@ suite "chain/genesis validation: stage 1 (stateless)":
         createSdpWithdrawOp(WithdrawMessage()),
         createChannelConfigOp(ChannelConfigPayload()),
         createLeaderClaimOp(LeaderClaimPayload())]:
-      check validateGenesisTxStateless(withOps([ops[0], ops[1], extra])).error ==
+      check validateGenesisTxStateless(txWithPlaceholderProofs([ops[0], ops[1], extra])).error ==
         StatelessLedgerError.GenesisShape
 
   test "accepts 255 ops":
@@ -129,7 +121,7 @@ suite "chain/genesis validation: stage 1 (stateless)":
       ops = SignedMantleTx(testGenesisTx()).tx.ops
       extra = (1 .. MantleMaxOps - 2).mapIt(
         createSdpDeclareOp(declareOn(fe(uint64 it), mkZkPubKey(byte it), byte it)))
-      tx = withOps(ops & extra)
+      tx = txWithPlaceholderProofs(ops & extra)
     check:
       tx.tx.ops.len == MantleMaxOps
       validateGenesisTxStateless(tx).isOk
@@ -139,7 +131,7 @@ suite "chain/genesis validation: stage 1 (stateless)":
       ops = SignedMantleTx(testGenesisTx()).tx.ops
       extra = (1 .. MantleMaxOps - 1).mapIt(
         createSdpDeclareOp(declareOn(fe(uint64 it), mkZkPubKey(byte it), byte it)))
-    check validateGenesisTxStateless(withOps(ops & extra)).error ==
+    check validateGenesisTxStateless(txWithPlaceholderProofs(ops & extra)).error ==
       StatelessLedgerError.TooManyOps
 
   test "accepts 255 outputs":

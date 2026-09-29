@@ -20,12 +20,13 @@ import
   ../logos_chain/conf,
   ../logos_chain/networking/network,
   ../logos_chain/core/[types, local_tree],
-  ../logos_chain/core/crypto/types,
   ../logos_chain/core/mantle/[operations, tx_types, tx_validation, utxo],
   ../logos_chain/chain/genesis,
   ../logos_chain/ledger/[pol_verifier, types],
   ./core/mantle/test_helpers
 
+from ../logos_chain/core/crypto/types import
+  DefaultEd25519PublicKey, Hash32, ZkPublicKey, encodeFieldElement
 from ../logos_chain/core/mantle/primitives import SlotNumber
 from std/algorithm import SortOrder, sort
 from std/strformat import `&`
@@ -194,6 +195,12 @@ func minimalSignedTx*(): SignedMantleTx =
 
 func testZkPk*(): ZkPublicKey = mkZkPubKey(1)
 
+func txWithPlaceholderProofs*(ops: openArray[Op]): SignedMantleTx =
+  ## `ops` with a placeholder proof of the right kind for each.
+  SignedMantleTx(
+    tx: MantleTx(ops: @ops),
+    opProofs: ops.mapIt(defaultOpProofForOpcode(it.opcode).get))
+
 func testGenesisTx*(
     outputs: openArray[Note] = [Note(value: 1000, zkPublicKey: testZkPk())],
     declarations: openArray[DeclarationMessage] = [],
@@ -217,10 +224,7 @@ func testGenesisTx*(
         channelId: default(ChannelId), inscription: inscription,
         parent: default(Parent), signer: DefaultEd25519PublicKey))] &
       declarations.mapIt(createSdpDeclareOp(it))
-    proofs = ops.mapIt(defaultOpProofForOpcode(it.opcode).get)
-  validateGenesisTxStateless(
-    SignedMantleTx(tx: MantleTx(ops: ops), opProofs: proofs)
-  ).expect("spec-shaped genesis")
+  validateGenesisTxStateless(txWithPlaceholderProofs(ops)).expect("spec-shaped genesis")
 
 func genesisNoteId*(tx: ValidGenesisMantleTx, index: int): NoteId =
   ## NoteId of output `index` of the genesis Transfer.

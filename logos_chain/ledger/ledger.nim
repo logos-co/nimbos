@@ -85,11 +85,13 @@ proc fromGenesis*(
     sdp: sink SdpRegistry,
     cfg: LedgerConfig,
 ): Result[LedgerState, LedgerError] =
-  ## Genesis state from the genesis transaction: each op is validated against
-  ## the state the previous op left. `tx` carries every stateless check;
-  ## no proof is verified and no fee is charged.
-  const genesisEpoch: EpochNumber = 0
-  template ops: untyped = tx.tx.ops
+  ## Genesis state: each op is validated against the state the previous op left.
+  ## `tx` carries the stateless checks; no proof is verified, no fee charged.
+  const
+    genesisEpoch: EpochNumber = 0
+    genesisSlot: SlotNumber = 0
+  template transfer: untyped = tx.tx.ops[0].payload.transfer
+  template inscribe: untyped = tx.tx.ops[1].payload.channelInscribe
   var
     s = LedgerState(
       cryptarchiaLedger: CryptarchiaState.init(),
@@ -98,18 +100,18 @@ proc fromGenesis*(
       feeMarket: FeeMarket.init())
     total = 0'u64
   let r = ?s.cryptarchiaLedger.applyTransferState(
-    s.sdp.state.lockedNotes, s.mantleLedger.channelNotes, ops[0].payload.transfer)
+    s.sdp.state.lockedNotes, s.mantleLedger.channelNotes, transfer)
   s.cryptarchiaLedger = r.state
-  for note in ops[0].payload.transfer.outputs.notes:
+  for note in transfer.outputs.notes:
     ?total.addStake(note, cfg.faucetPk)
-  s.mantleLedger = ?s.mantleLedger.tryApplyChannelInscribe(
-    ops[1].payload.channelInscribe, 0)
+  s.mantleLedger = ?s.mantleLedger.tryApplyChannelInscribe(inscribe, genesisSlot)
   # The declaration count is not checked against the Blend minimum network
   # size: the devnet genesis declares one provider under a minimum of two.
   let minStake = getMinStakeAt(s.sdp, genesisEpoch).valueOr:
     return err(MinStakeNotFound)
-  for op in ops.toOpenArray(2, ops.high):
+  for op in tx.tx.ops.toOpenArray(2, tx.tx.ops.high):
     template decl: untyped = op.payload.sdpDeclare
+    # The note key feeds the zkSig check, which genesis skips.
     discard ?validateSdpDeclareState(
       decl, minStake, s.cryptarchiaLedger.latestUtxos, s.mantleLedger.channelNotes,
       s.sdp.state)

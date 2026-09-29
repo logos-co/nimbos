@@ -35,7 +35,7 @@ type
     EmptyInputs ## Deposit/Withdraw/Transfer must consume at least one note
     VerifierNotInitialised ## per-circuit VK singleton wasn't installed at startup
     GenesisShape ## ops are not Transfer, ChannelInscribe, then SdpDeclare*
-    GenesisInscription ## the parameter inscription is not on the null channel from the null key
+    GenesisInscription ## inscription not on the null channel from the null key
     GenesisInputs ## the genesis Transfer consumes notes
     TooManyOps ## more ops than the u8 wire count holds
     TooManyOutputs ## more outputs than the u8 wire count holds
@@ -59,10 +59,8 @@ func toStatelessLedgerError*(err: EncodingError): StatelessLedgerError =
      EncodingError.MultiSigIndicesNonIncreasing,
      EncodingError.LengthExceeded, EncodingError.MetadataLengthExceeded,
      EncodingError.InscriptionLengthExceeded,
-     EncodingError.InputsCountExceeded:
+     EncodingError.InputsCountExceeded, EncodingError.OutputsCountExceeded:
     StatelessLedgerError.InvalidProof
-  of EncodingError.OutputsCountExceeded:
-    StatelessLedgerError.TooManyOutputs
 
 func checkOpShape(op: Op, proof: OpProof): Result[void, StatelessLedgerError] =
   ## The opcode is supported and matches both its payload and its proof kind.
@@ -77,9 +75,9 @@ func checkOpShape(op: Op, proof: OpProof): Result[void, StatelessLedgerError] =
 func hasHeavyZkProof*(tx: SignedMantleTx): bool {.inline.} =
   tx.opProofs.anyIt(it.kind == opfLeaderClaim)
 
-func assert_valid_output(notes: openArray[Note]): Result[void, StatelessLedgerError] =
+func assert_valid_output(outputs: openArray[Note]): Result[void, StatelessLedgerError] =
   ## Output Notes Validation: every value is non-zero.
-  if notes.anyIt(it.value == 0):
+  if outputs.anyIt(it.value == 0):
     return err(StatelessLedgerError.ZeroValueNote)
   ok()
 
@@ -209,15 +207,14 @@ proc validateMantleTxStateless*(
 
 func validateGenesisTxStateless*(
     tx: SignedMantleTx): Result[ValidGenesisMantleTx, StatelessLedgerError] =
-  ## Every stateless genesis check: shape, wire bounds, proof kinds, the
-  ## inscription envelope, inputs, outputs and locators. No proof is verified.
+  ## Stateless genesis checks; no proof is verified.
   template ops: untyped = tx.tx.ops
+  if ops.len > MantleMaxOps:
+    return err(StatelessLedgerError.TooManyOps)
   if ops.len < 2 or ops[0].payload.kind != Transfer or
       ops[1].payload.kind != ChannelInscribe or
       not ops.toOpenArray(2, ops.high).allIt(it.payload.kind == SdpDeclare):
     return err(StatelessLedgerError.GenesisShape)
-  if ops.len > MantleMaxOps:
-    return err(StatelessLedgerError.TooManyOps)
   template inscribe: untyped = ops[1].payload.channelInscribe
   if inscribe.channelId != static(default(ChannelId)) or
       inscribe.signer != DefaultEd25519PublicKey:
@@ -229,7 +226,7 @@ func validateGenesisTxStateless*(
   template transfer: untyped = ops[0].payload.transfer
   if transfer.inputs.noteIds.len > 0:
     return err(StatelessLedgerError.GenesisInputs)
-  if transfer.outputs.notes.len > int(high(byte)):
+  if transfer.outputs.notes.len > MaxOutputs:
     return err(StatelessLedgerError.TooManyOutputs)
   ?assert_valid_output(transfer.outputs.notes)
   for op in ops.toOpenArray(2, ops.high):
