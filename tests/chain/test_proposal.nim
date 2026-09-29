@@ -301,7 +301,6 @@ suite "chain/proposal":
     var m = Mempool.init()
     let tx = signedTxWithOps(1, 1)
     check m.add(ValidSignedMantleTx(tx), SlotNumber(1)).get == true
-    let genesis = createGenesisBlock(signedTxWithOps(1, 0)).get
     var state = LedgerState.fromGenesis(
       testGenesisTx(), default(FieldElement), testSdpRegistry(),
       testLedgerConfig).expect("genesis state")

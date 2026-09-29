@@ -101,7 +101,7 @@ proc tryApplySdpDeclare*(
       return err(MinStakeNotFound)
     notePk = ?validateSdpDeclareState(
       declaration, minStake, utxos, channelNotes, registry.state)
-  ?verifyZkSig(proof.zkSig, txHash, @[notePk, declaration.zkId])
+  ?verifyZkSig(proof.zkSig, txHash, [notePk, declaration.zkId])
   applySdpDeclare(registry, declaration, epoch)
 
 {.pop.}

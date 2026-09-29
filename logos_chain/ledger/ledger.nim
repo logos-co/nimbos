@@ -46,11 +46,15 @@ func latestUtxos*(s: LedgerState): lent UtxoStore =
   ## The live UTXO set.
   s.cryptarchiaLedger.latestUtxos
 
-func stakeContribution(
-    value: uint64, pk: ZkPublicKey, faucetPk: Opt[ZkPublicKey]): uint64 =
-  ## A note's contribution to total stake — zero for the faucet note, whose
+func addStake(
+    total: var uint64, note: Note, faucetPk: Opt[ZkPublicKey]): Result[void, LedgerError] =
+  ## Adds a note's stake to `total` — zero for the faucet note, whose
   ## outsized mint would dominate the lottery.
-  if faucetPk.isSome and pk == faucetPk.get: 0'u64 else: value
+  let c = if faucetPk.isSome and note.zkPublicKey == faucetPk.get: 0'u64 else: note.value
+  if total > uint64.high - c:
+    return err(TotalStakeOverflow)
+  total += c
+  ok()
 
 proc fromUtxos*(
     _: typedesc[LedgerState],
@@ -69,10 +73,7 @@ proc fromUtxos*(
       feeMarket: FeeMarket.init())
     total = 0'u64
   for u in utxos:
-    let c = stakeContribution(u.note.value, u.note.zkPublicKey, cfg.faucetPk)
-    if total > uint64.high - c:
-      return err(TotalStakeOverflow)
-    total += c
+    ?total.addStake(u.note, cfg.faucetPk)
   s.epochs = ?genesisEpochTracker(
     nonce, s.cryptarchiaLedger.latestUtxos.root, max(total, 1), cfg)
   ok(s)
@@ -100,10 +101,7 @@ proc fromGenesis*(
     s.sdp.state.lockedNotes, s.mantleLedger.channelNotes, ops[0].payload.transfer)
   s.cryptarchiaLedger = r.state
   for note in ops[0].payload.transfer.outputs.notes:
-    let c = stakeContribution(note.value, note.zkPublicKey, cfg.faucetPk)
-    if total > uint64.high - c:
-      return err(TotalStakeOverflow)
-    total += c
+    ?total.addStake(note, cfg.faucetPk)
   s.mantleLedger = ?s.mantleLedger.tryApplyChannelInscribe(
     ops[1].payload.channelInscribe, 0)
   # The declaration count is not checked against the Blend minimum network

@@ -73,7 +73,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
 
   test "cryptarchiaParameter decodes the devnet ceremony values":
     let
-      (validTx, param) = parseGenesis(ds)
+      (_, param) = parseGenesis(ds)
       # Nonce derived by the ceremony from its pinned entropy_sources input.
       ceremonyNonce = frFromBytesLE(hexToByteArray[32](
         "2d2ddf918544bca603c5a291c7dd1b902d6769ff4b00021506780e075c06051a"

@@ -64,6 +64,16 @@ func toStatelessLedgerError*(err: EncodingError): StatelessLedgerError =
   of EncodingError.OutputsCountExceeded:
     StatelessLedgerError.TooManyOutputs
 
+func checkOpShape(op: Op, proof: OpProof): Result[void, StatelessLedgerError] =
+  ## The opcode is supported and matches both its payload and its proof kind.
+  if not isSupportedOpcode(op.opcode) or op.opcode != opPayloadToOpcode(op.payload):
+    return err(StatelessLedgerError.UnsupportedOp)
+  let expectedProofKind = expectedOpProofKindForOpcode(op.opcode).valueOr:
+    return err(error.toStatelessLedgerError)
+  if proof.kind != expectedProofKind:
+    return err(StatelessLedgerError.InvalidProof)
+  ok()
+
 func hasHeavyZkProof*(tx: SignedMantleTx): bool {.inline.} =
   tx.opProofs.anyIt(it.kind == opfLeaderClaim)
 
@@ -111,12 +121,7 @@ proc validateMantleTxStateless*(
     template op: untyped = tx.tx.ops[i]
     template proof: untyped = tx.opProofs[i]
 
-    if not isSupportedOpcode(op.opcode) or op.opcode != opPayloadToOpcode(op.payload):
-      return err(StatelessLedgerError.UnsupportedOp)
-    let expectedProofKind = expectedOpProofKindForOpcode(op.opcode).valueOr:
-      return err(error.toStatelessLedgerError)
-    if proof.kind != expectedProofKind:
-      return err(StatelessLedgerError.InvalidProof)
+    ?checkOpShape(op, proof)
 
     case op.payload.kind
     of Transfer:
@@ -220,13 +225,7 @@ func validateGenesisTxStateless*(
   if tx.opProofs.len != ops.len:
     return err(StatelessLedgerError.InvalidProof)
   for i in 0 ..< ops.len:
-    template op: untyped = ops[i]
-    if not isSupportedOpcode(op.opcode) or op.opcode != opPayloadToOpcode(op.payload):
-      return err(StatelessLedgerError.UnsupportedOp)
-    let expectedProofKind = expectedOpProofKindForOpcode(op.opcode).valueOr:
-      return err(error.toStatelessLedgerError)
-    if tx.opProofs[i].kind != expectedProofKind:
-      return err(StatelessLedgerError.InvalidProof)
+    ?checkOpShape(ops[i], tx.opProofs[i])
   template transfer: untyped = ops[0].payload.transfer
   if transfer.inputs.noteIds.len > 0:
     return err(StatelessLedgerError.GenesisInputs)

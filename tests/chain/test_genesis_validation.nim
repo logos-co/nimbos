@@ -58,11 +58,19 @@ func inscriptionWithChainId(chainId: openArray[byte]): seq[byte] =
     @(encodeFieldElement(default(FieldElement)))
 
 func withInscription(inscribe: ChannelInscribePayload): ValidGenesisMantleTx =
-  ## Genesis transaction whose parameter inscription is `inscribe`; the
-  ## cast skips stage 1 so the later stages see the payload unchanged.
+  ## Genesis transaction whose parameter inscription is `inscribe`.
   var tx = SignedMantleTx(testGenesisTx())
   tx.tx.ops[1].payload.channelInscribe = inscribe
-  ValidGenesisMantleTx(tx)
+  validateGenesisTxStateless(tx).expect("stage 1 does not read the inscription bytes")
+
+func twoNoteGenesis(
+    declarations: openArray[DeclarationMessage] = []): ValidGenesisMantleTx =
+  ## Genesis minting 1000 to zk keys 1 and 2, followed by `declarations`.
+  testGenesisTx(
+    outputs = [
+      Note(value: 1000, zkPublicKey: mkZkPubKey(1)),
+      Note(value: 1000, zkPublicKey: mkZkPubKey(2))],
+    declarations = declarations)
 
 proc genesisState(
     tx: ValidGenesisMantleTx, cfg = testLedgerConfig
@@ -308,44 +316,32 @@ suite "chain/genesis validation: stage 3 (ledger state)":
     # The declaration id excludes the note, so the second note reaches the
     # duplicate-id check rather than the note-service conflict.
     let
-      outputs = [
-        Note(value: 1000, zkPublicKey: mkZkPubKey(1)),
-        Note(value: 1000, zkPublicKey: mkZkPubKey(2))]
-      base = testGenesisTx(outputs = outputs)
-      tx = testGenesisTx(outputs = outputs, declarations = [
+      base = twoNoteGenesis()
+      tx = twoNoteGenesis([
         declareOn(genesisNoteId(base, 0), mkZkPubKey(1)),
         declareOn(genesisNoteId(base, 1), mkZkPubKey(1))])
     check genesisState(tx).error == LedgerError.DuplicateDeclaration
 
   test "rejects two declarations with one provider id":
     let
-      outputs = [
-        Note(value: 1000, zkPublicKey: mkZkPubKey(1)),
-        Note(value: 1000, zkPublicKey: mkZkPubKey(2))]
-      base = testGenesisTx(outputs = outputs)
-      tx = testGenesisTx(outputs = outputs, declarations = [
+      base = twoNoteGenesis()
+      tx = twoNoteGenesis([
         declareOn(genesisNoteId(base, 0), mkZkPubKey(1), providerSeed = 1),
         declareOn(genesisNoteId(base, 1), mkZkPubKey(2), providerSeed = 1)])
     check genesisState(tx).error == LedgerError.DuplicateProviderOrZkId
 
   test "rejects two declarations with one zk id":
     let
-      outputs = [
-        Note(value: 1000, zkPublicKey: mkZkPubKey(1)),
-        Note(value: 1000, zkPublicKey: mkZkPubKey(2))]
-      base = testGenesisTx(outputs = outputs)
-      tx = testGenesisTx(outputs = outputs, declarations = [
+      base = twoNoteGenesis()
+      tx = twoNoteGenesis([
         declareOn(genesisNoteId(base, 0), mkZkPubKey(1), providerSeed = 1),
         declareOn(genesisNoteId(base, 1), mkZkPubKey(1), providerSeed = 2)])
     check genesisState(tx).error == LedgerError.DuplicateProviderOrZkId
 
   test "stores declarations with created == 0":
     let
-      outputs = [
-        Note(value: 1000, zkPublicKey: mkZkPubKey(1)),
-        Note(value: 1000, zkPublicKey: mkZkPubKey(2))]
-      base = testGenesisTx(outputs = outputs)
-      tx = testGenesisTx(outputs = outputs, declarations = [
+      base = twoNoteGenesis()
+      tx = twoNoteGenesis([
         declareOn(genesisNoteId(base, 0), mkZkPubKey(1), providerSeed = 1),
         declareOn(genesisNoteId(base, 1), mkZkPubKey(2), providerSeed = 2)])
       state = genesisState(tx).expect("genesis state")
