@@ -40,7 +40,6 @@ logScope: topics = "logos_nd"
 type
   LBNode* = ref object
     network*: LBP2PNode
-    netKeys*: NetKeyPair
     config*: LBNodeConf
     deploymentSettings*: DeploymentSettings
     processor*: BlockProcessor
@@ -138,15 +137,17 @@ proc init*(
       polLeaderKey = byteutils.toHex(leaderKeyBytes),
       blockSignature = byteutils.toHex(genesisBlock.signature.data)
 
-  let network = createLBP2PNode(
-    rng,
-    networkConfig(config),
-    rng.getRandomNetKeys(),
-  ).valueOr:
-    error "Failed to initialize node", err = error
-    return Opt.none(LBNode)
+  let
+    netConfig = networkConfig(config)
+    netKeys = rng.loadNetKeys(netConfig).valueOr:
+      error "Failed to load network key", err = error,
+        netKeyFile = netConfig.netKeyFile
+      return Opt.none(LBNode)
+    network = createLBP2PNode(rng, netConfig, netKeys).valueOr:
+      error "Failed to initialize node", err = error
+      return Opt.none(LBNode)
+    processor = BlockProcessor.new(chain)
 
-  let processor = BlockProcessor.new(chain)
   var nodeSyncer: Syncer = nil
   if processor.localTree != nil and
       deploymentSettings.network.chainSyncProtocolName.len > 0:

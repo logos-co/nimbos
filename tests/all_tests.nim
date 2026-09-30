@@ -16,6 +16,7 @@ import # Unit test
   ./networking/test_logos_p2p,
   ./networking/test_discovery,
   ./networking/test_network_connection,
+  ./networking/test_net_keys,
   ./test_api_handlers,
   ./test_deployment_settings,
   ./test_poseidon_hasher,
