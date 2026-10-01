@@ -166,16 +166,16 @@ type
       desc: "Do not display interactive prompts. Quit on missing configuration"
       name: "non-interactive" .}: bool
 
-    netKeyFile* {.
-      desc: "Source of network (secp256k1) private key file " &
-            "(random|<path>)"
-      defaultValue: "random",
-      name: "netkey-file" .}: string
+    netKey* {.
+      desc: "Network (Ed25519) private key: the 32-byte seed as 64 hex " &
+            "characters. For test setups only. Do not use in production: " &
+            "Use --netkey-file instead. Default: a new random key on every start"
+      name: "netkey" .}: Option[string]
 
-    netKeyInsecurePassword* {.
-      desc: "Use pre-generated INSECURE password for network private key file"
-      defaultValue: false,
-      name: "insecure-netkey-password" .}: bool
+    netKeyFile* {.
+      desc: "File that holds the network private key in the --netkey format. " &
+            "Absolute path, or relative to the working directory"
+      name: "netkey-file" .}: Option[string]
 
     agentString* {.
       defaultValue: "nimbus",
@@ -310,6 +310,8 @@ type
     bootstrapNodes*: seq[string]
     bootstrapNodesFile*: InputFile
     bootstrapTimeout*: int
+    netKey*: Option[string]
+    netKeyFile*: Option[string]
 
   AnyConf* = LBNodeConf
 
@@ -390,6 +392,8 @@ proc networkConfig*(config: LBNodeConf): NetworkConfig =
     bootstrapNodes: config.bootstrapNodes,
     bootstrapNodesFile: config.bootstrapNodesFile,
     bootstrapTimeout: config.bootstrapTimeout,
+    netKey: config.netKey,
+    netKeyFile: config.netKeyFile,
   )
 
 template writeValue*(writer: var JsonWriter,

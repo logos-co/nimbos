@@ -113,10 +113,10 @@ proc getTestRng*(): Rng =
     testRng
 
 proc getRandomNetKeys*(): KeyPair =
-  getTestHmacRng().getRandomNetKeys()
+  getTestHmacRng().getRandomNetKeys().expect("random network key")
 
 proc getRandomPeerId*(): PeerId =
-  PeerId.init(getTestHmacRng().getRandomNetKeys().seckey).expect("valid PeerId")
+  PeerId.init(getRandomNetKeys().seckey).expect("valid PeerId")
 
 proc createTestNode*(
     agentString: string,

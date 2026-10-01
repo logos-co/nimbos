@@ -9,13 +9,13 @@
 
 import
   # Std lib
-  std/[sequtils, sets, algorithm, tables],
+  std/[sequtils, sets, algorithm, strutils, tables],
 
   # Vendor / external libs
   bearssl/rand,
   bincode,
   chronos, chronicles, chronicles/chronos_tools, metrics, results,
-  stew/byteutils,
+  stew/[byteutils, io2],
   libp2p/[switch, peerinfo, multiaddress, crypto/crypto, builders],
   libp2p/protocols/connectivity/autonatv2/[server, service],
   libp2p/protocols/pubsub/[pubsub, gossipsub, rpc/message, rpc/messages],
@@ -26,6 +26,8 @@ import
 
   # Logos chain core modules
   ../[version, conf]
+
+from libp2p/crypto/ed25519/ed25519 import EdPrivateKey, fromSeed
 
 export
   tables, chronos, version, multiaddress, peerinfo,
@@ -919,14 +921,51 @@ proc loadBootstrapPeers(config: NetworkConfig): seq[PeerAddr] =
   peers
 
 func initNetKeys(privKey: PrivateKey): NetKeyPair =
-  let pubKey = privKey.getPublicKey().expect("working public key from random")
+  let pubKey = privKey.getPublicKey().expect("public key from a valid private key")
   NetKeyPair(seckey: privKey, pubkey: pubKey)
 
-proc getRandomNetKeys*(rng: ref HmacDrbgContext): NetKeyPair =
+proc getRandomNetKeys*(rng: ref HmacDrbgContext): Result[NetKeyPair, string] =
   let privKey = PrivateKey.random(Ed25519, newBearSslRng(rng)).valueOr:
-    fatal "Could not generate random network key file"
-    quit QuitFailure
-  initNetKeys(privKey)
+    return err("cannot generate random network key: " & $error)
+  ok(initNetKeys(privKey))
+
+func netKeysFromSeedHex*(hex: string): Result[NetKeyPair, string] =
+  ## Ed25519 key pair from a 32-byte seed written as 64 hex characters.
+  const EdSeedSize = 32
+  let seed =
+    try:
+      hexToByteArrayStrict[EdSeedSize](hex.strip())
+    except ValueError as exc:
+      return err("network key seed must be 64 hex characters: " & exc.msg)
+  ok(initNetKeys(PrivateKey.init(EdPrivateKey.fromSeed(seed))))
+
+proc readNetKeyFile*(path: string): Result[NetKeyPair, string] =
+  ## Key pair from a file that holds the seed in the --netkey format.
+  let
+    content = readAllChars(path).valueOr:
+      return err("cannot read network key file " & path & ": " & ioErrorMsg(error))
+    keys = netKeysFromSeedHex(content).valueOr:
+      return err("network key file " & path & ": " & error)
+  ok(keys)
+
+proc loadNetKeys*(
+    rng: ref HmacDrbgContext, config: NetworkConfig): Result[NetKeyPair, string] =
+  ## Key pair from --netkey, --netkey-file, or a new random key.
+  if config.netKey.isSome and config.netKeyFile.isSome:
+    return err("set only one of --netkey and --netkey-file")
+  let
+    (keys, source) =
+      if config.netKey.isSome:
+        (? netKeysFromSeedHex(config.netKey.get), "--netkey")
+      elif config.netKeyFile.isSome:
+        (? readNetKeyFile(config.netKeyFile.get), "--netkey-file")
+      else:
+        (? rng.getRandomNetKeys(), "random")
+    peerId = PeerId.init(keys.pubkey).valueOr:
+      return err("cannot derive peer id from network key: " & $error)
+  info "Loaded network key", source,
+    network_public_key = keys.pubkey, network_peer_id = peerId
+  ok(keys)
 
 import nimcrypto/sha2
 
