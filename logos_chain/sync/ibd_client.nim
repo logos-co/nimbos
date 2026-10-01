@@ -21,7 +21,7 @@ import
 
 from ../core/local_tree import
   LocalTree, localTipId, latestImmutableBlockId, hasBlock
-from ../core/types import Block, BlockId, blockId, header
+from ../core/types import Block, BlockId, MaxUncles, blockId, header
 from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
 
 export types, block_processor, syncer_types
@@ -99,6 +99,17 @@ func buildKnownBlocks*(
     additionalBlocks: (0 ..< takeCount).mapIt(additionalBlocks[it]),
   )
 
+func decodeSyncBlock(wire: openArray[byte]): Result[Block, string] =
+  # Decodes a sync-wire block; rejects an uncle list above `MaxUncles`.
+  let blk =
+    try:
+      decode(wire, Block, cryptarchiaSyncBincodeConfig)
+    except BincodeError as exc:
+      return err(exc.msg)
+  if blk.uncleHeaders.len > MaxUncles:
+    return err("uncle count exceeds MaxUncles: " & $blk.uncleHeaders.len)
+  ok(blk)
+
 func decodeBlocksFromDownloadResponses*(messages: seq[DownloadBlocksResponse]): Opt[seq[Block]] =
   var blks = newSeqOfCap[Block](messages.len)
   for msg in messages:
@@ -108,11 +119,7 @@ func decodeBlocksFromDownloadResponses*(messages: seq[DownloadBlocksResponse]): 
     of dbrNoMoreBlocks:
       discard
     of dbrBlock:
-      let blkOpt = try:
-        Opt.some(decode(msg.downloadedBlock, Block, cryptarchiaSyncBincodeConfig))
-      except BincodeError:
-        Opt.none(Block)
-      let blk = blkOpt.valueOr:
+      let blk = decodeSyncBlock(msg.downloadedBlock).valueOr:
         return Opt.none(seq[Block])
       blks.add blk
   Opt.some(blks)
@@ -180,12 +187,8 @@ proc sendDownloadBlocksRequest*(
           peer, blocks = blks.len
         break
       of dbrBlock:
-        let blkOpt = try:
-          Opt.some(decode(msg.downloadedBlock, Block, cryptarchiaSyncBincodeConfig))
-        except BincodeError as exc:
-          debug "IBD download block decode failed", peer, exc = exc.msg
-          Opt.none(Block)
-        let blk = blkOpt.valueOr:
+        let blk = decodeSyncBlock(msg.downloadedBlock).valueOr:
+          debug "IBD download block decode failed", peer, reason = error
           return Opt.none(seq[Block])
         blks.add blk
         debug "IBD download deserialize ok (block)",
@@ -214,7 +217,7 @@ proc onBlock(
     bedrockVersion = header(blk).bedrockVersion,
     parent = sbyteutils.toHex(header(blk).parentBlock),
     slot = header(blk).slot,
-    blockRoot = sbyteutils.toHex(header(blk).blockRoot),
+    bodyRoot = sbyteutils.toHex(header(blk).bodyRoot),
     txCount = blk.txs.len,
     polLeaderVoucher = sbyteutils.toHex(header(blk).proofOfLeadership.leaderVoucher),
     polEntropyContribution = sbyteutils.toHex(header(blk).proofOfLeadership.entropyContribution),

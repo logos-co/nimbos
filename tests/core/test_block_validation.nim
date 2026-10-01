@@ -9,6 +9,7 @@
 {.used.}
 
 import
+  std/algorithm,
   results,
   bearssl/rand,
   libp2p/crypto/ed25519/ed25519,
@@ -86,18 +87,31 @@ proc childProposal(
   var proofOfLeadership = parentHdr.proofOfLeadership
   proofOfLeadership.leaderKey = testBlockKeyPair.pubkey
 
-  let h = initHeader(
-    bedrockVersion = parentHdr.bedrockVersion,
-    parentBlock = parentId,
-    slot = slot,
-    txs = txs,
-    proofOfLeadership = proofOfLeadership,
-  ).get
-  let sig = testBlockKeyPair.seckey.sign(blockId(h))
+  let
+    h = initHeader(
+      bedrockVersion = parentHdr.bedrockVersion,
+      parentBlock = parentId,
+      slot = slot,
+      uncleHeaders = [],
+      txs = txs,
+      proofOfLeadership = proofOfLeadership,
+    ).get
+    sig = testBlockKeyPair.seckey.sign(blockId(h))
   var refs: References
   for i, tx in txs:
     refs[i] = mantleTxHash(tx.tx).get
-  initProposal(h, refs, sig)
+  initProposal(h, [], refs, sig)
+
+func sampleUncle(value: byte): SignedHeader =
+  # Arbitrary bytes: only the commitment to an entry is checked, not the entry.
+  var
+    h: Header
+    sig: Ed25519Signature
+  h.bedrockVersion = ExpectedBedrockVersion
+  h.parentBlock.fill(value)
+  h.bodyRoot.fill(value)
+  sig.data.fill(value)
+  SignedHeader(header: h, signature: sig)
 
 suite "core/block_validation":
   test "accepts a structurally valid block":
@@ -115,12 +129,37 @@ suite "core/block_validation":
     b1.header.bedrockVersion = 99'u8
     check validate(genesis, b1).isErr
 
-  test "rejects a block root that disagrees with the transactions":
+  test "rejects a body root that disagrees with the transactions":
     let
       sm = minimalSignedTx()
       genesis = createGenesisBlock(sm).get
     var b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [sm])
-    b1.header.blockRoot[0] = b1.header.blockRoot[0] xor 0xff'u8
+    b1.header.bodyRoot[0] = b1.header.bodyRoot[0] xor 0xff'u8
+    check validate(genesis, b1).isErr
+
+  test "accepts a block whose body root commits to two uncles":
+    let
+      sm = minimalSignedTx()
+      genesis = createGenesisBlock(sm).get
+      uncles = [sampleUncle(0x11'u8), sampleUncle(0x22'u8)]
+      b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [sm], uncles)
+    check validate(genesis, b1).isOk
+
+  test "rejects a block whose body root ignores its uncles":
+    let
+      sm = minimalSignedTx()
+      genesis = createGenesisBlock(sm).get
+    var b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [sm])
+    b1.uncleHeaders = @[sampleUncle(0x11'u8), sampleUncle(0x22'u8)]
+    check validate(genesis, b1).isErr
+
+  test "rejects more than MaxUncles uncles":
+    let
+      sm = minimalSignedTx()
+      genesis = createGenesisBlock(sm).get
+      uncle = sampleUncle(0x33'u8)
+    var b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [sm])
+    b1.uncleHeaders = @[uncle, uncle, uncle, uncle, uncle]
     check validate(genesis, b1).isErr
 
   test "rejects a transaction with mismatched ops and opProofs counts":

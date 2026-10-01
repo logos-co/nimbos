@@ -6,7 +6,7 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## Genesis block construction from a signed genesis mantle transaction.
-## Spec: [Bedrock Genesis Block v1.2.0](https://github.com/logos-co/logos-lips/blob/b7301a67b5364a8dbe719f8b67b96b7f198d0a13/docs/blockchain/raw/bedrock-genesis-block.md)
+## Spec: [Bedrock Genesis Block v1.2.0](https://github.com/logos-co/logos-lips/blob/d788723992a805b395f377de6e6cf59859b47168/docs/blockchain/raw/bedrock-genesis-block.md)
 ## The "Initial Proof of Work Reward Pool" section is not implemented.
 
 {.push raises: [], gcsafe.}
@@ -70,14 +70,12 @@ func cryptarchiaParameter*(
   decodeCryptarchiaParameter(tx.tx.ops[1].payload.channelInscribe.inscription)
 
 func createGenesisHeader(genesisMantleTx: SignedMantleTx): Result[Header, EncodingError] =
-  ## Genesis header constructor using spec defaults:
-  ## - parent block id = zero hash
-  ## - slot = 0
-  ## - proof-of-leadership fields = zero/default
+  ## Genesis header: zero parent, slot 0, no uncles, default proof of leadership.
   initHeader(
     bedrockVersion = GenesisBedrockVersion,
     parentBlock = DefaultBlockId,
     slot = 0'u64,
+    uncleHeaders = [],
     txs = [genesisMantleTx],
     proofOfLeadership = ProofOfLeadership(
       leaderVoucher: default(RewardVoucher),
@@ -88,8 +86,8 @@ func createGenesisHeader(genesisMantleTx: SignedMantleTx): Result[Header, Encodi
   )
 
 func createGenesisBlock*(genesisMantleTx: SignedMantleTx): Result[Block, EncodingError] =
-  ## GENESIS_BLOCK = (GENESIS_HEADER, GENESIS_SIGNATURE, [GENESIS_MANTLE_TX])
+  ## GENESIS_BLOCK = (GENESIS_HEADER, GENESIS_SIGNATURE, [], [GENESIS_MANTLE_TX])
   let genesisHeader = ?createGenesisHeader(genesisMantleTx)
-  ok(initBlock(genesisHeader, DefaultEd25519Signature, [genesisMantleTx]))
+  ok(initBlock(genesisHeader, DefaultEd25519Signature, [], [genesisMantleTx]))
 
 {.pop.}
