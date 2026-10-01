@@ -46,11 +46,15 @@ func latestUtxos*(s: LedgerState): lent UtxoStore =
   ## The live UTXO set.
   s.cryptarchiaLedger.latestUtxos
 
-func stakeContribution(
-    value: uint64, pk: ZkPublicKey, faucetPk: Opt[ZkPublicKey]): uint64 =
-  ## A note's contribution to total stake — zero for the faucet note, whose
+func addStake(
+    total: var uint64, note: Note, faucetPk: Opt[ZkPublicKey]): Result[void, LedgerError] =
+  ## Adds a note's stake to `total` — zero for the faucet note, whose
   ## outsized mint would dominate the lottery.
-  if faucetPk.isSome and pk == faucetPk.get: 0'u64 else: value
+  let c = if faucetPk.isSome and note.zkPublicKey == faucetPk.get: 0'u64 else: note.value
+  if total > uint64.high - c:
+    return err(TotalStakeOverflow)
+  total += c
+  ok()
 
 proc fromUtxos*(
     _: typedesc[LedgerState],
@@ -69,24 +73,25 @@ proc fromUtxos*(
       feeMarket: FeeMarket.init())
     total = 0'u64
   for u in utxos:
-    let c = stakeContribution(u.note.value, u.note.zkPublicKey, cfg.faucetPk)
-    doAssert total <= uint64.high - c, "total stake overflows uint64"
-    total += c
+    ?total.addStake(u.note, cfg.faucetPk)
   s.epochs = ?genesisEpochTracker(
     nonce, s.cryptarchiaLedger.latestUtxos.root, max(total, 1), cfg)
   ok(s)
 
 proc fromGenesis*(
     _: typedesc[LedgerState],
-    genesisTxs: openArray[SignedMantleTx],
+    tx: ValidGenesisMantleTx,
     nonce: FieldElement,
     sdp: sink SdpRegistry,
     cfg: LedgerConfig,
 ): Result[LedgerState, LedgerError] =
-  ## Genesis state from the genesis block's transactions: ops run through the
-  ## pure transition cores (no proof or balance checks), then epochs are
-  ## seeded from the faucet-filtered stake and ceremony nonce.
-  const genesisEpoch: EpochNumber = 0
+  ## Genesis state: each op is validated against the state the previous op left.
+  ## `tx` carries the stateless checks; no proof is verified, no fee charged.
+  const
+    genesisEpoch: EpochNumber = 0
+    genesisSlot: SlotNumber = 0
+  template transfer: untyped = tx.tx.ops[0].payload.transfer
+  template inscribe: untyped = tx.tx.ops[1].payload.channelInscribe
   var
     s = LedgerState(
       cryptarchiaLedger: CryptarchiaState.init(),
@@ -94,29 +99,23 @@ proc fromGenesis*(
       mantleLedger: MantleState.init(),
       feeMarket: FeeMarket.init())
     total = 0'u64
-  for tx in genesisTxs:
-    for op in tx.tx.ops:
-      case op.payload.kind
-      of Transfer:
-        if op.payload.transfer.inputs.noteIds.len > 0:
-          return err(InputInGenesis)
-        for note in op.payload.transfer.outputs.notes:
-          let c = stakeContribution(note.value, note.zkPublicKey, cfg.faucetPk)
-          doAssert total <= uint64.high - c, "total stake overflows uint64"
-          total += c
-        let r = ?s.cryptarchiaLedger.applyTransferState(
-          s.sdp.state.lockedNotes, s.mantleLedger.channelNotes,
-          op.payload.transfer)
-        s.cryptarchiaLedger = r.state
-      of ChannelInscribe:
-        # Envelope validity (null channel, root parent, zero signer) is
-        # validated statelessly in `chain/genesis.nim` (`decodeCryptarchiaParameter`).
-        s.mantleLedger.channels = ?applyChannelInscribe(
-          s.mantleLedger.channels, op.payload.channelInscribe, 0)
-      of SdpDeclare:
-        s.sdp = ?applySdpDeclare(s.sdp, op.payload.sdpDeclare, genesisEpoch)
-      else:
-        return err(UnsupportedOp)
+  let r = ?s.cryptarchiaLedger.applyTransferState(
+    s.sdp.state.lockedNotes, s.mantleLedger.channelNotes, transfer)
+  s.cryptarchiaLedger = r.state
+  for note in transfer.outputs.notes:
+    ?total.addStake(note, cfg.faucetPk)
+  s.mantleLedger = ?s.mantleLedger.tryApplyChannelInscribe(inscribe, genesisSlot)
+  # The declaration count is not checked against the Blend minimum network
+  # size: the devnet genesis declares one provider under a minimum of two.
+  let minStake = getMinStakeAt(s.sdp, genesisEpoch).valueOr:
+    return err(MinStakeNotFound)
+  for op in tx.tx.ops.toOpenArray(2, tx.tx.ops.high):
+    template decl: untyped = op.payload.sdpDeclare
+    # The note key feeds the zkSig check, which genesis skips.
+    discard ?validateSdpDeclareState(
+      decl, minStake, s.cryptarchiaLedger.latestUtxos, s.mantleLedger.channelNotes,
+      s.sdp.state)
+    s.sdp = ?applySdpDeclare(s.sdp, decl, genesisEpoch)
   s.epochs = ?genesisEpochTracker(
     nonce, s.cryptarchiaLedger.latestUtxos.root, max(total, 1), cfg)
   # Epochs 0 and 1 read the registry snapshot taken at genesis:

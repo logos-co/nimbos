@@ -14,6 +14,7 @@ import
   chronicles,
   results,
   ../core/[local_tree, types],
+  ../core/mantle/tx_validation,
   ../deployment/deployment_settings,
   ../ledger/[ledger, stake_inference],
   ../mempool,
@@ -110,16 +111,19 @@ proc init*(
     poqVerifier: ProofOfQuotaVerifier = verifyProofOfQuota,
 ): Result[T, string] =
   let
-    genesisBlock = createGenesisBlock(settings.cryptarchia.genesisState.signedMantleTx).valueOr:
+    validTx = validateGenesisTxStateless(
+        settings.cryptarchia.genesisState.signedMantleTx).valueOr:
       return err("chain: invalid genesis transaction: " & $error)
+    param = cryptarchiaParameter(validTx).valueOr:
+      return err("chain: " & $error)
+    genesisBlock = createGenesisBlock(SignedMantleTx(validTx)).valueOr:
+      return err("chain: genesis block encoding failed: " & $error)
     cfg = ledgerConfig(settings)
     sdp = SdpRegistry.init(
       settings.cryptarchia.sdpConfig,
       blendRewardsParams(settings, cfg.epochSchedule.epochLength))
-    param = settings.cryptarchia.genesisState.cryptarchiaParameter().valueOr:
-      return err("chain: " & $error)
     genesisState = LedgerState.fromGenesis(
-        genesisBlock.txs, param.epochNonce, sdp, cfg).valueOr:
+        validTx, param.epochNonce, sdp, cfg).valueOr:
       return err("chain: failed to build the genesis state: " & $error)
   ok(T.init(
     genesisBlock,

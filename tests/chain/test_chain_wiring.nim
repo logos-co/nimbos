@@ -23,6 +23,7 @@ import
   libp2p/crypto/ed25519/ed25519,
   ../testutil,
   ../../logos_chain/chain/[chain, proposal],
+  ../../logos_chain/core/mantle/tx_validation,
   ../../logos_chain/deployment/deployment_settings,
   ../../logos_chain/ledger/poq_verifier,
   ../../logos_chain/zk/poseidon2/hasher
@@ -30,6 +31,15 @@ import
 const
   testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
   deploymentSettingsPath = testsDir / "../../config/deployment-settings.yaml"
+
+proc parseGenesis(ds: DeploymentSettings):
+    tuple[validTx: ValidGenesisMantleTx, param: CryptarchiaParameter] =
+  ## Validated genesis tx and the cryptarchia parameter it inscribes.
+  let
+    validTx = validateGenesisTxStateless(
+      ds.cryptarchia.genesisState.signedMantleTx).expect("valid genesis tx")
+    param = cryptarchiaParameter(validTx).expect("valid cryptarchia parameter")
+  (validTx, param)
 
 proc initZeroFeeChain(ds: DeploymentSettings): Chain =
   var chain = Chain.init(ds, mockVerifyLeaderProof).expect("chain init")
@@ -63,9 +73,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
 
   test "cryptarchiaParameter decodes the devnet ceremony values":
     let
-      param = ds.cryptarchia.genesisState.cryptarchiaParameter().valueOr:
-        check false
-        return
+      (_, param) = parseGenesis(ds)
       # Nonce derived by the ceremony from its pinned entropy_sources input.
       ceremonyNonce = frFromBytesLE(hexToByteArray[32](
         "2d2ddf918544bca603c5a291c7dd1b902d6769ff4b00021506780e075c06051a"
@@ -76,12 +84,10 @@ suite "chain/epoch wiring (devnet deployment settings)":
 
   test "fromGenesis builds a lottery-ready genesis state":
     let
-      param = ds.cryptarchia.genesisState.cryptarchiaParameter().valueOr:
-        check false
-        return
+      (validTx, param) = parseGenesis(ds)
       cfg = ledgerConfig(ds)
       state = LedgerState.fromGenesis(
-        [ds.cryptarchia.genesisState.signedMantleTx], param.epochNonce,
+        validTx, param.epochNonce,
         SdpRegistry.init(
           ds.cryptarchia.sdpConfig,
           blendRewardsParams(ds, cfg.epochSchedule.epochLength)), cfg).valueOr:
@@ -98,6 +104,10 @@ suite "chain/epoch wiring (devnet deployment settings)":
       state.epochs.activeEpoch.lottery1 != default(FieldElement)
       state.epochs.blockDensity.periodStart == 0
       state.epochs.blockDensity.periodEnd == 3599
+      # One Blend provider, declared on a ceremony note the Transfer created.
+      state.sdp.state.declarations.len == 1
+    for info in state.sdp.state.declarations.values:
+      check state.latestUtxos.get(info.lockedNoteId).isSome
 
   test "Chain.init wires ledger, epoch state and clock from settings":
     let chain = Chain.init(ds, mockVerifyLeaderProof).valueOr:

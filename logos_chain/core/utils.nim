@@ -42,4 +42,38 @@ func toPrettyString*(bytes: openArray[byte]): string =
   else:
     pretty
 
+# `std/unicode.validateUtf8` accepts overlong 3- and 4-byte forms, UTF-16
+# surrogates and code points above U+10FFFF, so it cannot gate wire data.
+func isUtf8*(s: openArray[byte]): bool =
+  ## Strict UTF-8: no overlong form, no surrogate, nothing above U+10FFFF.
+  var i = 0
+  while i < s.len:
+    let
+      lead = s[i]
+      n =
+        if lead < 0x80: 0
+        elif lead in 0xC2'u8 .. 0xDF'u8: 1
+        elif lead in 0xE0'u8 .. 0xEF'u8: 2
+        elif lead in 0xF0'u8 .. 0xF4'u8: 3
+        else: -1
+    if n < 0 or i + n >= s.len:
+      return false
+    if n > 0:
+      # The second byte's range is narrower after the leads that would
+      # otherwise admit overlong forms, surrogates or code points too large.
+      let (lo, hi) =
+        case lead
+        of 0xE0: (0xA0'u8, 0xBF'u8)
+        of 0xED: (0x80'u8, 0x9F'u8)
+        of 0xF0: (0x90'u8, 0xBF'u8)
+        of 0xF4: (0x80'u8, 0x8F'u8)
+        else: (0x80'u8, 0xBF'u8)
+      if s[i + 1] < lo or s[i + 1] > hi:
+        return false
+      for j in 2 .. n:
+        if s[i + j] notin 0x80'u8 .. 0xBF'u8:
+          return false
+    i += n + 1
+  true
+
 {.pop.}
