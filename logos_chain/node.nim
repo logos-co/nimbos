@@ -140,8 +140,7 @@ proc init*(
   let
     netConfig = networkConfig(config)
     netKeys = rng.loadNetKeys(netConfig).valueOr:
-      error "Failed to load network key", err = error,
-        netKeyFile = netConfig.netKeyFile
+      error "Failed to load network key", err = error
       return Opt.none(LBNode)
     network = createLBP2PNode(rng, netConfig, netKeys).valueOr:
       error "Failed to initialize node", err = error

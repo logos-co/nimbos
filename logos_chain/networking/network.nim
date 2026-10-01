@@ -27,7 +27,7 @@ import
   # Logos chain core modules
   ../[version, conf]
 
-from libp2p/crypto/ed25519/ed25519 import EdPrivateKey, EdPublicKeySize, fromSeed
+from libp2p/crypto/ed25519/ed25519 import EdPrivateKey, fromSeed
 
 export
   tables, chronos, version, multiaddress, peerinfo,
@@ -924,28 +924,32 @@ func initNetKeys(privKey: PrivateKey): NetKeyPair =
   let pubKey = privKey.getPublicKey().expect("public key from a valid private key")
   NetKeyPair(seckey: privKey, pubkey: pubKey)
 
-proc getRandomNetKeys*(rng: ref HmacDrbgContext): Result[NetKeyPair, cstring] =
+proc getRandomNetKeys*(rng: ref HmacDrbgContext): Result[NetKeyPair, string] =
   let privKey = PrivateKey.random(Ed25519, newBearSslRng(rng)).valueOr:
-    return err("cannot generate random network key")
+    return err("cannot generate random network key: " & $error)
   ok(initNetKeys(privKey))
 
-func netKeysFromSeedHex*(hex: string): Result[NetKeyPair, cstring] =
+func netKeysFromSeedHex*(hex: string): Result[NetKeyPair, string] =
   ## Ed25519 key pair from a 32-byte seed written as 64 hex characters.
+  const EdSeedSize = 32
   let seed =
     try:
-      hexToByteArrayStrict[EdPublicKeySize](hex.strip())
-    except ValueError:
-      return err("network key seed must be 64 hex characters")
+      hexToByteArrayStrict[EdSeedSize](hex.strip())
+    except ValueError as exc:
+      return err("network key seed must be 64 hex characters: " & exc.msg)
   ok(initNetKeys(PrivateKey.init(EdPrivateKey.fromSeed(seed))))
 
-proc readNetKeyFile*(path: string): Result[NetKeyPair, cstring] =
+proc readNetKeyFile*(path: string): Result[NetKeyPair, string] =
   ## Key pair from a file that holds the seed in the --netkey format.
-  let content = readAllChars(path).valueOr:
-    return err("cannot read network key file")
-  netKeysFromSeedHex(content)
+  let
+    content = readAllChars(path).valueOr:
+      return err("cannot read network key file " & path & ": " & ioErrorMsg(error))
+    keys = netKeysFromSeedHex(content).valueOr:
+      return err("network key file " & path & ": " & error)
+  ok(keys)
 
 proc loadNetKeys*(
-    rng: ref HmacDrbgContext, config: NetworkConfig): Result[NetKeyPair, cstring] =
+    rng: ref HmacDrbgContext, config: NetworkConfig): Result[NetKeyPair, string] =
   ## Key pair from --netkey, --netkey-file, or a new random key.
   if config.netKey.isSome and config.netKeyFile.isSome:
     return err("set only one of --netkey and --netkey-file")
@@ -957,7 +961,8 @@ proc loadNetKeys*(
         (? readNetKeyFile(config.netKeyFile.get), "--netkey-file")
       else:
         (? rng.getRandomNetKeys(), "random")
-    peerId = ? PeerId.init(keys.pubkey)
+    peerId = PeerId.init(keys.pubkey).valueOr:
+      return err("cannot derive peer id from network key: " & $error)
   info "Loaded network key", source,
     network_public_key = keys.pubkey, network_peer_id = peerId
   ok(keys)

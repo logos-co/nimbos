@@ -168,7 +168,8 @@ type
 
     netKey* {.
       desc: "Network (Ed25519) private key: the 32-byte seed as 64 hex " &
-            "characters. Default: a new random key on every start"
+            "characters. For test setups only. Do not use in production: " &
+            "Use --netkey-file instead. Default: a new random key on every start"
       name: "netkey" .}: Option[string]
 
     netKeyFile* {.
