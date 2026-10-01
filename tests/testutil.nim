@@ -273,19 +273,22 @@ proc childBlock*(
     parentId: BlockId,
     slot: SlotNumber,
     txs: openArray[SignedMantleTx],
+    uncleHeaders: openArray[SignedHeader] = [],
 ): Block =
   var proofOfLeadership = parentHdr.proofOfLeadership
   proofOfLeadership.leaderKey = testBlockKeyPair.pubkey
 
-  let h = initHeader(
-    bedrockVersion = parentHdr.bedrockVersion,
-    parentBlock = parentId,
-    slot = slot,
-    txs = txs,
-    proofOfLeadership = proofOfLeadership,
-  ).get
-  let sig = testBlockKeyPair.seckey.sign(blockId(h))
-  initBlock(h, signature = sig, txs = txs)
+  let
+    h = initHeader(
+      bedrockVersion = parentHdr.bedrockVersion,
+      parentBlock = parentId,
+      slot = slot,
+      uncleHeaders = uncleHeaders,
+      txs = txs,
+      proofOfLeadership = proofOfLeadership,
+    ).get
+    sig = testBlockKeyPair.seckey.sign(blockId(h))
+  initBlock(h, signature = sig, uncleHeaders = uncleHeaders, txs = txs)
 
 type BootstrapPeers* = object
   listener*, dialer*: LBP2PNode

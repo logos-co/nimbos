@@ -21,11 +21,13 @@ from libp2p/crypto/ed25519/ed25519 import EdSignatureSize
 
 const cfg = cryptarchiaSyncBincodeConfig
 
-func sampleHeader(txs: openArray[SignedMantleTx]): Header =
+func sampleHeader(
+    txs: openArray[SignedMantleTx], uncles: openArray[SignedHeader] = []): Header =
   initHeader(
     bedrockVersion = ExpectedBedrockVersion,
     parentBlock = default(BlockId),
     slot = 1'u64,
+    uncleHeaders = uncles,
     txs = txs,
     proofOfLeadership = ProofOfLeadership(
       leaderVoucher: default(RewardVoucher),
@@ -38,6 +40,7 @@ func sampleHeader(txs: openArray[SignedMantleTx]): Header =
 proc checkBlockEqual(a, b: Block) =
   check a.header == b.header
   check a.signature == b.signature
+  check a.uncleHeaders == b.uncleHeaders
   check a.txs.len == b.txs.len
   for i in 0 ..< a.txs.len:
     check encodeSignedMantleTx(a.txs[i]) == encodeSignedMantleTx(b.txs[i])
@@ -47,7 +50,7 @@ template roundtrip(blk: Block): untyped =
 
 suite "core/block bincode (cryptarchia sync)":
   test "encode / decode roundtrip (default signature, empty txs)":
-    let blk = initBlock(sampleHeader([]), txs = [])
+    let blk = initBlock(sampleHeader([]), uncleHeaders = [], txs = [])
     try:
       checkBlockEqual(roundtrip(blk), blk)
     except BincodeError:
@@ -59,7 +62,7 @@ suite "core/block bincode (cryptarchia sync)":
       sig.data[i] = byte(i)
     let
       sm = minimalSignedTx()
-      blk = initBlock(sampleHeader([sm]), signature = sig, txs = [sm])
+      blk = initBlock(sampleHeader([sm]), signature = sig, uncleHeaders = [], txs = [sm])
     try:
       let back = roundtrip(blk)
       checkBlockEqual(back, blk)
@@ -76,14 +79,14 @@ suite "core/block bincode (cryptarchia sync)":
     except BincodeError:
       fail getCurrentExceptionMsg()
 
-  test "bincode field order is header then signature then txs":
+  test "bincode field order is header, signature, uncles, txs":
     let
       sm = minimalSignedTx()
       h = sampleHeader([sm])
     var sig: Ed25519Signature
     sig.data[0] = 0xAA'u8
     sig.data[1] = 0xBB'u8
-    let blk = initBlock(h, signature = sig, txs = [sm])
+    let blk = initBlock(h, signature = sig, uncleHeaders = [], txs = [sm])
     try:
       let
         hdrWire = encode(h, cfg)
@@ -91,7 +94,9 @@ suite "core/block bincode (cryptarchia sync)":
       check blkWire.len > hdrWire.len + EdSignatureSize
       check blkWire[hdrWire.len] == 0xAA'u8
       check blkWire[hdrWire.len + 1] == 0xBB'u8
-      let txsLenOff = hdrWire.len + EdSignatureSize
+      let uncleLenOff = hdrWire.len + EdSignatureSize
+      check blkWire[uncleLenOff] == 0'u8
+      let txsLenOff = uncleLenOff + 8
       check blkWire[txsLenOff] == 1'u8
       check blkWire[txsLenOff + 1] == 0'u8
     except BincodeError:
@@ -102,10 +107,10 @@ suite "core/block bincode (cryptarchia sync)":
       sm = minimalSignedTx()
       h = sampleHeader([sm])
     try:
-      let withDefaultSig = encode(initBlock(h, txs = [sm]), cfg)
+      let withDefaultSig = encode(initBlock(h, uncleHeaders = [], txs = [sm]), cfg)
       var sig: Ed25519Signature
       sig.data[0] = 0x55'u8
-      let withMarkedSig = encode(initBlock(h, signature = sig, txs = [sm]), cfg)
+      let withMarkedSig = encode(initBlock(h, signature = sig, uncleHeaders = [], txs = [sm]), cfg)
       check withDefaultSig.len == withMarkedSig.len
       check withDefaultSig != withMarkedSig
       check withMarkedSig.len > EdSignatureSize
@@ -123,12 +128,42 @@ suite "core/block bincode (cryptarchia sync)":
     try:
       let serialized = encode(proposal[], cfg)
       check sizeof(proposal.references) == 32768
-      check serialized.len == 33129
+      check serialized.len == 33137
       var deserialized = new(Proposal)
       deserialized[] = decode(serialized, Proposal, cfg)
       check deserialized.header == proposal.header
+      check deserialized.uncleHeaders.len == 0
       check deserialized.references == proposal.references
       check deserialized.signature == proposal.signature
+    except BincodeError:
+      fail getCurrentExceptionMsg()
+
+  test "empty block encodes to 377 bytes":
+    let blk = initBlock(sampleHeader([]), uncleHeaders = [], txs = [])
+    try:
+      check encode(blk, cfg).len == 377
+    except BincodeError:
+      fail getCurrentExceptionMsg()
+
+  test "encode / decode roundtrip (two uncles, one tx)":
+    var sig: Ed25519Signature
+    sig.data[0] = 0x0F'u8
+    let
+      sm = minimalSignedTx()
+      uncles = [
+        SignedHeader(header: sampleHeader([]), signature: sig),
+        SignedHeader(header: sampleHeader([sm]), signature: DefaultEd25519Signature),
+      ]
+      blk = initBlock(
+        sampleHeader([sm], uncles), signature = sig, uncleHeaders = uncles,
+        txs = [sm])
+    try:
+      let back = roundtrip(blk)
+      checkBlockEqual(back, blk)
+      check back.uncleHeaders.len == 2
+      # Each transaction carries a u64 byte-length prefix on the sync wire.
+      check encode(blk, cfg).len ==
+        377 + 2 * SignedHeaderSize + 8 + encodeSignedMantleTx(sm).get.len
     except BincodeError:
       fail getCurrentExceptionMsg()
 

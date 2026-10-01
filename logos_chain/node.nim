@@ -113,7 +113,7 @@ proc init*(
       bedrockVersion = genesisBlock.header.bedrockVersion,
       slot = genesisBlock.header.slot,
       parentBlock = byteutils.toHex(genesisBlock.header.parentBlock),
-      blockRoot = byteutils.toHex(genesisBlock.header.blockRoot),
+      bodyRoot = byteutils.toHex(genesisBlock.header.bodyRoot),
       txCount = genesisBlock.txs.len,
       opCount = genesisState.tx.ops.len,
       proofCount = genesisState.opProofs.len,

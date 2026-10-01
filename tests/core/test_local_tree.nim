@@ -66,10 +66,11 @@ suite "core/local_tree":
         GenesisBedrockVersion,
         default(BlockId),
         99'u64,
+        [],
         [sm],
         genesis.header.proofOfLeadership,
       ).get
-      bad = initBlock(zeroParentHdr, txs = [sm])
+      bad = initBlock(zeroParentHdr, uncleHeaders = [], txs = [sm])
     check not tree.addBlockToTree(bad)
 
   test "blockHeight returns none for unknown id":
