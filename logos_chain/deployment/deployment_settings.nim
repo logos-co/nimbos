@@ -273,36 +273,6 @@ func validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
   need(ds.mempool.pubsubTopic.startsWith("/"), "mempool.pubsub_topic must start with '/'")
   need(ds.cryptarchia.gossipsubProtocol.startsWith("/"), "cryptarchia.gossipsub_protocol must start with '/'")
 
-  let smt = ds.cryptarchia.genesisState.signedMantleTx
-  need(smt.tx.ops.len > 0,
-    "cryptarchia.genesis_block.transactions[0].mantle_tx.ops must be non-empty")
-  let genesisProofCount = smt.opProofs.len
-  let genesisOpCount = smt.tx.ops.len
-  need(
-    genesisProofCount <= genesisOpCount,
-    "cryptarchia.genesis_block: len(ops_proofs) must be <= len(ops)"
-  )
-  for i in 0 ..< smt.opProofs.len:
-    let expectedKindRes = expectedOpProofKindForOpcode(smt.tx.ops[i].opcode)
-    let proofOk = expectedKindRes.isOk and smt.opProofs[i].kind == expectedKindRes.get
-    need(
-      proofOk,
-      "cryptarchia.genesis_block: ops_proofs[" & $i & "] does not match ProofFor(mantle_tx.ops[" & $i & "])"
-    )
-  need(smt.tx.ops.len >= 2,
-    "cryptarchia.genesis_block first mantle_tx.ops must contain at least transfer and inscription")
-  need(
-    smt.tx.ops[0].opcode == OpTransfer,
-    "cryptarchia.genesis_block first mantle_tx.ops[0] must be transfer")
-  need(
-    smt.tx.ops[1].opcode == OpChannelInscribe,
-    "cryptarchia.genesis_block first mantle_tx.ops[1] must be channel_inscribe")
-  if smt.tx.ops.len > 2:
-    for i in 2 ..< smt.tx.ops.len:
-      need(
-        smt.tx.ops[i].opcode == OpSdpDeclare,
-        "cryptarchia.genesis_block first mantle_tx.ops[" & $i & "] must be sdp_declare")
-
   ok()
 
 proc loadDeploymentSettings*(deploymentSettingsFile: InputFile): Result[DeploymentSettings, string] =

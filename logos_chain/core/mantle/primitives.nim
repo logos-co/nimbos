@@ -24,7 +24,7 @@ export
 const
   MaxBlockTxs* = 1024
   MantleMaxOps* = 255
-  MaxInputs* = 255
+  MaxInputs = 255
   MaxOutputs* = 255
   MaxSdpLocators* = 8
   MaxLocatorMultiaddrBytes* = 329
