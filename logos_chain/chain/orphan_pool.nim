@@ -17,7 +17,7 @@ import
 
 type
   OrphanPool* = ref object
-    byBlockId: Table[BlockId, ValidBlock]
+    byBlockId: Table[BlockId, AdmittedBlock]
     byParentId: Table[BlockId, seq[BlockId]]
     arrivalOrder: Deque[BlockId]
 
@@ -34,12 +34,12 @@ func hasOrphan*(pool: OrphanPool, id: BlockId): bool =
   ## Time: O(1) avg | Space: O(1)
   pool.byBlockId.hasKey(id)
 
-func getOrphan*(pool: OrphanPool, id: BlockId): Opt[ValidBlock] =
+func getOrphan*(pool: OrphanPool, id: BlockId): Opt[AdmittedBlock] =
   ## Retrieves an orphan block by its ID if present.
   ## Time: O(1) avg | Space: O(1)
   pool.byBlockId.withValue(id, blk):
     return Opt.some(blk[])
-  Opt.none(ValidBlock)
+  Opt.none(AdmittedBlock)
 
 proc pruneDescendants*(pool: OrphanPool, rootId: BlockId) =
   ## Purges all descendant subtrees waiting on `rootId` via iterative BFS traversal.
@@ -72,12 +72,12 @@ proc removeOrphan*(pool: OrphanPool, id: BlockId) =
 
     pool.pruneDescendants(id)
 
-proc takeChildren*(pool: OrphanPool, parentId: BlockId): seq[ValidBlock] =
+proc takeChildren*(pool: OrphanPool, parentId: BlockId): seq[AdmittedBlock] =
   ## Extracts and removes all direct child blocks waiting on `parentId`.
   ## Time: O(K) avg, where K is the number of direct children | Space: O(K)
-  var children: seq[ValidBlock]
+  var children: seq[AdmittedBlock]
   pool.byParentId.withValue(parentId, list):
-    children = newSeqOfCap[ValidBlock](list[].len)
+    children = newSeqOfCap[AdmittedBlock](list[].len)
     for cid in list[]:
       pool.byBlockId.withValue(cid, childBlk):
         children.add(move(childBlk[]))
@@ -88,11 +88,11 @@ proc takeChildren*(pool: OrphanPool, parentId: BlockId): seq[ValidBlock] =
 func compactQueue*(pool: OrphanPool) =
   ## Rebuilds arrivalOrder deque to eliminate stale entries of removed orphans.
   ## Time: O(Q) where Q is deque length | Space: O(N) where N is pool size
-  var cleanDeque = initDeque[BlockId](pool.byBlockId.len)
+  var newOrder = initDeque[BlockId](pool.byBlockId.len)
   for id in pool.arrivalOrder:
     if pool.byBlockId.hasKey(id):
-      cleanDeque.addLast(id)
-  pool.arrivalOrder = move(cleanDeque)
+      newOrder.addLast(id)
+  pool.arrivalOrder = move(newOrder)
 
 proc pruneIncompatibleWithImmutable*(pool: OrphanPool, localTree: LocalTree) =
   ## Evicts orphans (and their descendant subtrees) that cannot possibly
@@ -116,7 +116,7 @@ proc pruneIncompatibleWithImmutable*(pool: OrphanPool, localTree: LocalTree) =
 
 proc addOrphan*(
     pool: OrphanPool,
-    blk: sink ValidBlock,
+    blk: sink AdmittedBlock,
 ): bool =
   ## Adds a validated orphan block to the pool, evicting the oldest orphan if capacity is reached.
   ## Returns false if the block is already buffered (duplicate).

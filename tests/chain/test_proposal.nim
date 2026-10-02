@@ -297,7 +297,7 @@ suite "chain/proposal":
     check blk.txs.len == 1
     check mantleTxHash(blk.txs[0].tx).get == mantleTxHash(tx.tx).get
 
-  test "reconstructBlock reconstructs block for orphan proposal":
+  test "reconstructBlock succeeds for orphan proposal":
     var m = Mempool.init()
     let tx = signedTxWithOps(1, 1)
     check m.add(ValidSignedMantleTx(tx), SlotNumber(1)).get == true
