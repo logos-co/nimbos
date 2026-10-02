@@ -22,7 +22,7 @@ export hashing, tx_types, tx_hashing, results
 
 const
   ExpectedBedrockVersion* = 1'u8
-  MaxBlockSize* = 1_048_576
+  MaxBlockSize* = 2_097_152
   MaxUncles* = 4
   HeaderSize* = 297
   SignedHeaderSize* = HeaderSize + EdSignatureSize
