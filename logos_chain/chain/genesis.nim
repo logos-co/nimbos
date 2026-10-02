@@ -6,7 +6,7 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## Genesis block construction from a signed genesis mantle transaction.
-## Spec: [Bedrock Genesis Block v1.2.0](https://github.com/logos-co/logos-lips/blob/d788723992a805b395f377de6e6cf59859b47168/docs/blockchain/raw/bedrock-genesis-block.md)
+## Spec: [Bedrock Genesis Block v1.2.0](https://github.com/logos-co/logos-lips/blob/4deef612ce1ae1776167daf8779d4abae953201b/docs/blockchain/raw/bedrock-genesis-block.md)
 ## The "Initial Proof of Work Reward Pool" section is not implemented.
 
 {.push raises: [], gcsafe.}
@@ -86,7 +86,8 @@ func createGenesisHeader(genesisMantleTx: SignedMantleTx): Result[Header, Encodi
   )
 
 func createGenesisBlock*(genesisMantleTx: SignedMantleTx): Result[Block, EncodingError] =
-  ## GENESIS_BLOCK = (GENESIS_HEADER, GENESIS_SIGNATURE, [], [GENESIS_MANTLE_TX])
+  ## GENESIS_BLOCK = (GENESIS_HEADER, [GENESIS_MANTLE_TX]); the zero signature
+  ## and the empty uncle list are implementation-defined, the spec sets neither.
   let genesisHeader = ?createGenesisHeader(genesisMantleTx)
   ok(initBlock(genesisHeader, DefaultEd25519Signature, [], [genesisMantleTx]))
 
