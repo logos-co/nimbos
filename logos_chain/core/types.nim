@@ -6,7 +6,7 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## Bedrock block types aligned with Nomos block construction / validation / execution.
-## Spec: [Block Construction, Validation and Execution v1.3.0](https://github.com/logos-co/logos-lips/blob/d788723992a805b395f377de6e6cf59859b47168/docs/blockchain/raw/bedrock-v1.1-block-construction.md)
+## Spec: [Block Construction, Validation and Execution v1.3.0](https://github.com/logos-co/logos-lips/blob/4deef612ce1ae1776167daf8779d4abae953201b/docs/blockchain/raw/bedrock-v1.1-block-construction.md)
 
 {.push raises: [], gcsafe.}
 
@@ -64,6 +64,9 @@ type
     ## A ``Block`` that has successfully passed structural and admission checks
     ## (Tiers 0–2) and PoL/stateless transaction verifications (Tier 3).
 
+  # Fields are in the canonical order of Block Construction 1.3.0, but the
+  # wire is still bincode (u64 counts, fixed full-hash references, signature
+  # over the block ID). The canonical proposal codec is a separate change.
   Proposal* = object
     header*: Header
     uncleHeaders*: seq[SignedHeader]
@@ -120,7 +123,7 @@ func encodeSignedHeader*(signed: SignedHeader): array[SignedHeaderSize, byte] =
 
 func merkle_root*(hashes: openArray[Hash32]): Hash32 =
   ## Merkle root over the transaction hashes in block order.
-  ## Spec: https://github.com/logos-co/logos-lips/blob/d788723992a805b395f377de6e6cf59859b47168/docs/blockchain/raw/cryptarchia-v1-protocol.md#block-header-validation
+  ## Spec: [Cryptarchia Protocol v1.2.4, Block Header Validation](https://github.com/logos-co/logos-lips/blob/4deef612ce1ae1776167daf8779d4abae953201b/docs/blockchain/raw/cryptarchia-v1-protocol.md#block-header-validation)
   # Leaves pad with zero hashes to the next power of two, not with a copy of
   # the last leaf; the empty list is the zero hash (step 4).
   doAssert hashes.len <= MaxBlockTxs,
@@ -158,7 +161,7 @@ func merkle_root*(txs: openArray[SignedMantleTx]): Result[Hash32, EncodingError]
 
 func body_root*(uncles: openArray[SignedHeader], txRoot: Hash32): Hash32 =
   ## blake2b256("BODY_ROOT_V1" ‖ u8 uncle count ‖ 361-byte entries ‖ merkle root).
-  ## Spec: https://github.com/logos-co/logos-lips/blob/d788723992a805b395f377de6e6cf59859b47168/docs/blockchain/raw/cryptarchia-v1-protocol.md#block-header-validation
+  ## Spec: [Cryptarchia Protocol v1.2.4, Block Header Validation](https://github.com/logos-co/logos-lips/blob/4deef612ce1ae1776167daf8779d4abae953201b/docs/blockchain/raw/cryptarchia-v1-protocol.md#block-header-validation)
   # Every input path bounds the count first (`validateBlockStructure`,
   # `initBlock`, `initProposal`, the sync decoder). A longer list here is a
   # programming error, not input.
