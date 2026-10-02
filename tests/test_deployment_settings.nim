@@ -54,7 +54,7 @@ const deploymentGenesisBlockMin = """
       version: Bedrock
       parent_block: '0000000000000000000000000000000000000000000000000000000000000000'
       slot: 0
-      body_root: '0000000000000000000000000000000000000000000000000000000000000000'
+      body_root: d1cdbc88f45b7171c62d680738488eadc90e1fd6c7c35d2218f0a733dd137028
       proof_of_leadership:
         proof: '0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000'
         entropy_contribution: '0000000000000000000000000000000000000000000000000000000000000000'
@@ -75,7 +75,7 @@ const deploymentGenesisBlockMin = """
             channel_id: '0000000000000000000000000000000000000000000000000000000000000000'
             inscription: '00'
             parent: '0000000000000000000000000000000000000000000000000000000000000000'
-            signer: 'd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a'
+            signer: '0000000000000000000000000000000000000000000000000000000000000000'
       ops_proofs:
       - !ZkSig
         pi_a: [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
@@ -551,5 +551,37 @@ mempool:
       check false
       return
     check yamlGetPathNode(root, ["x"]).isNone
+
+  test "validateDeploymentSettings: valid genesis transaction and matching header pass":
+    let ds = parseDeploymentSettings(minimalValidYaml).valueOr:
+      check false
+      return
+    let v = validateDeploymentSettings(ds)
+    check v.isOk
+
+  test "validateDeploymentSettings: mismatched genesis header body_root":
+    var ds = parseDeploymentSettings(minimalValidYaml).valueOr:
+      check false
+      return
+    ds.cryptarchia.genesisState.header.bodyRoot = default(Hash32)
+    let v = validateDeploymentSettings(ds)
+    check v.isErr
+    check "genesis_block.header does not match header derived from genesis mantle_tx" in v.error
+
+  test "validateDeploymentSettings: mismatched genesis header slot":
+    var ds = parseDeploymentSettings(minimalValidYaml).valueOr:
+      check false
+      return
+    ds.cryptarchia.genesisState.header.slot = 1
+    let v = validateDeploymentSettings(ds)
+    check v.isErr
+    check "genesis_block.header does not match header derived from genesis mantle_tx" in v.error
+
+  test "parseDeploymentSettings: invalid genesis transaction rejected eagerly":
+    # Empty ops in genesis mantle tx
+    let badYaml = minimalValidYaml.replace("opcode: 0", "opcode: 99")
+    let p = parseDeploymentSettings(badYaml)
+    check p.isErr
+    check "unsupported opcode" in p.error
 
 {.pop.}
