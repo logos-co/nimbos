@@ -666,7 +666,7 @@ proc acquireNoWait*[A, B](
   var peers: seq[A]
   if pool.lenAvailable(filter) < number:
     raise newException(PeerPoolError, "Not enough peers in pool")
-  for i in 0 ..< number:
+  for _ in 0 ..< number:
     peers.add(pool.acquireItemImpl(filter))
   peers
 
@@ -684,7 +684,7 @@ proc acquireNoWait*[A, B](
   var peers: seq[A]
   if pool.lenAvailable(filter, customFilter) < number:
     raise newException(PeerPoolError, "Not enough peers in pool")
-  for i in 0 ..< number:
+  for _ in 0 ..< number:
     peers.add(pool.acquireItemImpl(filter, customFilter))
   peers
 

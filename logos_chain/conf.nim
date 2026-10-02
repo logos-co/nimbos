@@ -39,7 +39,6 @@ const
   # TODO: How should we select between IPv4 and IPv6
   # Maybe there should be a config option for this.
   defaultAdminListenAddress* = (static parseIpAddress("127.0.0.1"))
-  defaultSigningNodeRequestTimeout* = 60
   defaultAdminListenAddressDesc* = $defaultAdminListenAddress
   ## Default ``--deployment-settings`` path (canonical cfgsync layout; run from repo root or override).
   defaultDeploymentSettingsPath* = "config/deployment-settings.yaml"
@@ -344,9 +343,6 @@ proc readValue*(r: var TomlReader, value: var ThreadCount)
                {.raises: [SerializationError, IOError].} =
   value = ThreadCount.init(r.parseInt(int)).valueOr:
     raise newException(SerializationError, error)
-
-proc secretsDir*[Conf](config: Conf): string =
-  string config.secretsDirFlag.get(InputDir(config.dataDir / "secrets"))
 
 func databaseDir*(dataDir: OutDir): string =
   dataDir / "db"

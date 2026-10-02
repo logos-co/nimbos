@@ -385,7 +385,7 @@ suite "core/mantle/operations":
       inputs: Inputs(noteIds: @[]),
       outputs: Outputs(notes: @[]),
     ))
-    for i in 0 .. 256:
+    for _ in 0 .. 256:
       largeOps.add dummyOp
     check encodeOps(largeOps).error == EncodingError.OpsCountExceeded
 

@@ -881,7 +881,7 @@ proc stop*(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
       waitedFutures.add FutureBase(fut.cancelAndWait())
   node.backgroundTasks.setLen(0)
 
-  for pid, event in node.connEvents:
+  for _, event in node.connEvents:
     event.fire()
   node.connEvents.clear()
 

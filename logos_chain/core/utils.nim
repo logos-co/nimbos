@@ -10,9 +10,6 @@
 # Layer L0 — generic helpers usable from any layer.
 # Pure utilities only: no I/O, async, DB, or network.
 
-import std/strutils
-from stew/byteutils import fromBytes, toHex
-
 template newClone*[T: not ref](x: T): ref T =
   let res = new typeof(x)
   res[] = x
@@ -28,19 +25,6 @@ type NonNegativeRatio* = object
   ## Exact rational for consensus parameters (`f`, `beta`). Derived integers
   ## use `num`/`den` arithmetic directly — no float ever materialises.
   num*, den*: uint64
-
-const
-  # http://facweb.cs.depaul.edu/sjost/it212/documents/ascii-pr.htm
-  PrintableAsciiChars* = {' '..'~'}
-
-func toPrettyString*(bytes: openArray[byte]): string =
-  let pretty = strip(string.fromBytes(bytes),
-                     leading = false,
-                     chars = Whitespace + {'\0'})
-  if not allCharsInSet(pretty, PrintableAsciiChars):
-    "0x" & toHex(bytes)
-  else:
-    pretty
 
 # `std/unicode.validateUtf8` accepts overlong 3- and 4-byte forms, UTF-16
 # surrogates and code points above U+10FFFF, so it cannot gate wire data.

@@ -287,9 +287,6 @@ proc childBlock*(
   let sig = testBlockKeyPair.seckey.sign(blockId(h))
   initBlock(h, signature = sig, txs = txs)
 
-func singleTxRefs*(hash: Hash32): References {.inline.} =
-  result[0] = hash
-
 type BootstrapPeers* = object
   listener*, dialer*: LBP2PNode
   listenerPeerId*: PeerId

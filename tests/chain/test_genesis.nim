@@ -34,7 +34,7 @@ suite "chain/genesis":
 
   test "createGenesisBlock returns error on malformed tx":
     var invalidInputs: seq[NoteId]
-    for i in 0 .. 255:
+    for _ in 0 .. 255:
       invalidInputs.add(default(NoteId))
     let malformedTx = SignedMantleTx(
       tx: MantleTx(ops: @[createTransferOp(TransferPayload(

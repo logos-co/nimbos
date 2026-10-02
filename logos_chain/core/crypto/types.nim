@@ -48,7 +48,6 @@ type
     TrailingBytes
     BufferExceeded
     InvalidFieldElement
-    InvalidPublicKey
     InvalidSignature
     InvalidServiceType
     LocatorLengthExceeded

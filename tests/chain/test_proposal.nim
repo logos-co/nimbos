@@ -85,6 +85,8 @@ suite "chain/proposal":
       maxBytes = tx1Bytes + tx2Bytes, verifyPoq = acceptAllPoq
     )
     check countAll == 2
+    check refsAll[0] == mantleTxHash(tx1.tx).get
+    check refsAll[1] == mantleTxHash(tx2.tx).get
 
   test "selectProposalReferences stops search after MaxConsecutiveCandidateMisses":
     var m = Mempool.init()
@@ -164,7 +166,7 @@ suite "chain/proposal":
     check m.add(transientTx, SlotNumber(1)).get == true
     check m.len == 1
 
-    let (refs, count) = m.selectProposalReferences(
+    let (_, count) = m.selectProposalReferences(
       state, testLedgerConfig, SlotNumber(10), verifyPoq = acceptAllPoq,
     )
     # Not selected because prerequisite condition is not yet satisfied

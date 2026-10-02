@@ -59,20 +59,20 @@ suite "core/mantle/primitives":
 
   test "encodeInputs returns error on count overflow":
     var largeNotes: seq[NoteId]
-    for i in 0 .. 256:
+    for _ in 0 .. 256:
       largeNotes.add default(NoteId)
     check encodeInputs(Inputs(noteIds: largeNotes)).error == EncodingError.InputsCountExceeded
 
   test "encodeOutputs returns error on count overflow":
     var largeNotes: seq[Note]
-    for i in 0 .. 256:
+    for _ in 0 .. 256:
       largeNotes.add default(Note)
     check encodeOutputs(Outputs(notes: largeNotes)).error == EncodingError.OutputsCountExceeded
 
   test "encodeLocators returns error on count overflow":
     let loc = MultiAddress.init("/ip4/127.0.0.1/udp/30303/quic-v1").tryGet()
     var largeLocs: seq[Locator]
-    for i in 0 .. MaxSdpLocators:
+    for _ in 0 .. MaxSdpLocators:
       largeLocs.add loc
     check encodeLocators(largeLocs).error == EncodingError.LocatorsCountExceeded
 

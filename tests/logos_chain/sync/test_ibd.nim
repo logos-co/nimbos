@@ -147,13 +147,7 @@ suite "sync/initial_block_download (GetTip)":
       genesis = createGenesisBlock(SignedMantleTx(testGenesisTx())).get
       serverChain = initTestChain(genesis)
     withSyncPair(serverChain, initTestChain(genesis)):
-      let
-        tipResp = (await sendGetTipRequest(clientSyncer, server.peerInfo.peerId)).get()
-        expected = Tip(
-          tip: localTipId(serverChain.localTree),
-          slot: SlotNumber(0),
-          height: serverChain.localTree.latestImmutableHeight,
-        )
+      let tipResp = (await sendGetTipRequest(clientSyncer, server.peerInfo.peerId)).get()
       check tipResp.kind == gtrTip
       check tipResp.tipData == serverChain.localTree.localTip()
 

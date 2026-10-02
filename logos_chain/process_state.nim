@@ -120,7 +120,7 @@ proc stopping*(_: type ProcessState): Opt[cstring] =
 template stopIt*(_: type ProcessState, body: untyped): bool =
   let state = ProcessState.stopping()
   if state.isSome():
-    let it {.inject.} = state.get()
+    let it {.inject, used.} = state.get()
     body
     true
   else:
@@ -187,7 +187,7 @@ when isMainModule: # Test case
 
     # poll for 10s, this should be enough even on platforms with async signal
     # delivery (like windows, presumably?)
-    for i in 0 ..< 100:
+    for _ in 0 ..< 100:
       if ProcessState.stopping().isSome:
         break
       os.sleep(100)

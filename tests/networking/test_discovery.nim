@@ -264,7 +264,6 @@ suite "Bootstrap link maintenance and disconnection":
   asyncTest "runBootstrapLinkMaintenanceTick: disconnects bootstrap peer when pool target is met":
     let bootNode = await startTestNode("bootstrap-node", maxPeers = 8)
     let bootPid = bootNode.switch.peerInfo.peerId
-    let bootAddrs = bootNode.switch.peerInfo.addrs
     let bootAddrStr = bootNode.fullAddress()
 
     let clientNode = await startTestNode("client-node", @[bootAddrStr], maxPeers = 2)
