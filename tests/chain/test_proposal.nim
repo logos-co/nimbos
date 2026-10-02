@@ -265,7 +265,7 @@ suite "chain/proposal":
 
     let
       valid = testGenesisTx()
-      genesis = createGenesisBlock(SignedMantleTx(valid)).get
+      genesis = createGenesisBlock(valid).get
       gid = blockId(genesis.header)
     var state = LedgerState.fromGenesis(
       valid, default(FieldElement), testSdpRegistry(),
