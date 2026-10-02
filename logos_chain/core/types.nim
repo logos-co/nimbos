@@ -75,7 +75,7 @@ type
 
 const
   ExpectedBedrockVersion* = 1'u8
-  MaxBlockSize* = 1_048_576
+  MaxBlockSize* = 2_097_152
   DefaultHash32 = default(Hash32)
   DefaultBlockId* = default(BlockId)
 
