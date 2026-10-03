@@ -141,7 +141,7 @@ suite "core/block_validation":
       sm = minimalSignedTx()
       genesis = createGenesisBlock(sm).get
     var b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [sm])
-    b1.uncleHeaders = @[sampleUncle(0x11'u8), sampleUncle(0x22'u8)]
+    b1.uncleHeaders = UncleHeaders(@[sampleUncle(0x11'u8), sampleUncle(0x22'u8)])
     check validate(genesis, b1).isErr
 
   test "rejects more than MaxUncles uncles":
@@ -150,7 +150,7 @@ suite "core/block_validation":
       genesis = createGenesisBlock(sm).get
       uncle = sampleUncle(0x33'u8)
     var b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [sm])
-    b1.uncleHeaders = @[uncle, uncle, uncle, uncle, uncle]
+    b1.uncleHeaders = UncleHeaders(@[uncle, uncle, uncle, uncle, uncle])
     check validate(genesis, b1).isErr
 
   test "rejects a transaction with mismatched ops and opProofs counts":

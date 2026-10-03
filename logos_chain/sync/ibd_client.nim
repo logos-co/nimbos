@@ -21,7 +21,7 @@ import
 
 from ../core/local_tree import
   LocalTree, localTipId, latestImmutableBlockId, hasBlock
-from ../core/types import Block, BlockId, MaxUncles, blockId, header
+from ../core/types import Block, BlockId, blockId, header
 from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
 
 export types, block_processor, syncer_types
@@ -100,15 +100,12 @@ func buildKnownBlocks*(
   )
 
 func decodeSyncBlock(wire: openArray[byte]): Result[Block, string] =
-  # Decodes a sync-wire block; rejects an uncle list above `MaxUncles`.
-  let blk =
-    try:
-      decode(wire, Block, cryptarchiaSyncBincodeConfig)
-    except BincodeError as exc:
-      return err(exc.msg)
-  if blk.uncleHeaders.len > MaxUncles:
-    return err("uncle count exceeds MaxUncles: " & $blk.uncleHeaders.len)
-  ok(blk)
+  # Decodes a sync-wire block; the decoder rejects an uncle list above
+  # `MaxUncles`.
+  try:
+    ok(decode(wire, Block, cryptarchiaSyncBincodeConfig))
+  except BincodeError as exc:
+    err(exc.msg)
 
 func decodeBlocksFromDownloadResponses*(messages: seq[DownloadBlocksResponse]): Opt[seq[Block]] =
   var blks = newSeqOfCap[Block](messages.len)

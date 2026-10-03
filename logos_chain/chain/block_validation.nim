@@ -24,7 +24,7 @@ export tx_validation.StatelessLedgerError
 
 from ../core/types import
   Block, body_root, ExpectedBedrockVersion,
-  MaxBlockSize, MaxUncles, header, txs, blockId, ValidBlock
+  MaxBlockSize, MaxUncles, asSeq, len, header, txs, blockId, ValidBlock
 from ../core/mantle/primitives import MaxBlockTxs
 from ../core/mantle/tx_types import SignedMantleTx, ValidSignedMantleTx, byteLen
 
@@ -65,7 +65,7 @@ func validateBlockHeader(blk: Block): bool =
   # Only the commitment to the carried uncle list is checked here; the uncle
   # validity rules (Cryptarchia "Block Header Validation") are not
   # implemented yet.
-  let root = body_root(blk.uncleHeaders, blk.txs).valueOr:
+  let root = body_root(blk.uncleHeaders.asSeq, blk.txs).valueOr:
     return false
   if root != h.bodyRoot:
     return false
