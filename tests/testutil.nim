@@ -22,7 +22,7 @@ import
   ../logos_chain/core/[types, local_tree],
   ../logos_chain/core/mantle/[operations, tx_types, tx_validation, utxo],
   ../logos_chain/chain/genesis,
-  ../logos_chain/ledger/[pol_verifier, types],
+  ../logos_chain/ledger/pol_verifier,
   ./core/mantle/test_helpers
 
 from ../logos_chain/core/crypto/types import

@@ -10,7 +10,7 @@
 import
   std/json,
   chronicles,
-  stew/[base10, byteutils],
+  stew/base10,
   libp2p/peerid,
   presto/common as presto_common,
   ./rest_json

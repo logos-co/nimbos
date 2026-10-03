@@ -16,7 +16,7 @@ import
     [channel_state, cryptarchia_state, leader_state, mantle_state, types],
   ../../logos_chain/core/mantle/[primitives, operations, proofs, tx_hashing, utxo],
   ../../logos_chain/zk/zksign,
-  ../zk/[snarkjs_helpers, zksign_helpers],
+  ../zk/zksign_helpers,
   ../core/mantle/test_helpers
 
 const

@@ -18,9 +18,9 @@ import
   ../../../logos_chain/chain/[chain, block_processor],
   ../../../logos_chain/core/[types, local_tree],
   ../../../logos_chain/ledger/ledger,
-  ../../../logos_chain/sync/[framing, types, ibd_client, ibd_server, syncer]
+  ../../../logos_chain/sync/[framing, types, ibd_server, syncer]
 from ../../../logos_chain/core/mantle/primitives import SlotNumber
-from ../../../logos_chain/core/mantle/tx_types import SignedMantleTx, encodeSignedMantleTx
+from ../../../logos_chain/core/mantle/tx_types import encodeSignedMantleTx
 from ../../../logos_chain/core/mantle/tx_validation import validateGenesisTxStateless
 from ../../ledger/test_helpers import testLedgerConfig
 
@@ -178,10 +178,6 @@ func downloadBlocksResponseEqual*(a, b: DownloadBlocksResponse): bool =
       true
     of burUnknown:
       ra.message == rb.message
-
-func downloadBlocksResponsesEqual*(a, b: seq[DownloadBlocksResponse]): bool =
-  a.len == b.len and
-  (0 ..< a.len).allIt(downloadBlocksResponseEqual(a[it], b[it]))
 
 proc downloadBlocksResponsesForRequest*(
     tree: LocalTree, req: DownloadBlocksRequest

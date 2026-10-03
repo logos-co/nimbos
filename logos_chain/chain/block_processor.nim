@@ -31,8 +31,8 @@ type
     Sync
     Gossip
 
-  BlockApplyResult* = Result[void, BlockApplyError]
-  BlockApplyFuture* = Future[BlockApplyResult].Raising([CancelledError])
+  BlockApplyResult = Result[void, BlockApplyError]
+  BlockApplyFuture = Future[BlockApplyResult].Raising([CancelledError])
 
   BlockEntry = ref object
     blk: Block

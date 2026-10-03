@@ -46,7 +46,7 @@ suite "mempool":
   test "mempool add returns error on malformed transaction":
     var m = Mempool.init()
     var invalidInputs: seq[NoteId]
-    for _ in 0 .. 255:
+    for i in 0 .. 255:
       invalidInputs.add(default(NoteId))
     let malformedTx = ValidSignedMantleTx(SignedMantleTx(
       tx: MantleTx(ops: @[createTransferOp(TransferPayload(

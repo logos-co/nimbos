@@ -16,12 +16,12 @@ from std/os import AltSep, DirSep
 from std/strutils import rsplit, strip
 
 const
-  versionMajor* = 0
-  versionMinor* = 0
-  versionBuild* = 1
+  versionMajor = 0
+  versionMinor = 0
+  versionBuild = 1
 
   sourcePath = currentSourcePath.rsplit({DirSep, AltSep}, 1)[0]
-  gitRevision* = strip(generateGitRevision(sourcePath))[0..5]
+  gitRevision = strip(generateGitRevision(sourcePath))[0..5]
 
   versionAsStr* =
     $versionMajor & "." & $versionMinor & "." & $versionBuild

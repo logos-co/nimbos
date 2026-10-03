@@ -175,7 +175,7 @@ suite "core/types":
 
   test "initHeader returns error for malformed tx":
     var invalidInputs: seq[NoteId]
-    for _ in 0 .. 255:
+    for i in 0 .. 255:
       invalidInputs.add(default(NoteId))
     let
       malformedTx = sampleTx(createTransferOp(TransferPayload(

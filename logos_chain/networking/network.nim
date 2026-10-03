@@ -42,7 +42,7 @@ type
   PublicKey = crypto.PublicKey
   PrivateKey = crypto.PrivateKey
 
-  SendResult* = Result[void, cstring]
+  SendResult = Result[void, cstring]
 
   # TODO: This is here only to eradicate a compiler
   # warning about unused import (rpc/messages).
@@ -163,7 +163,7 @@ when not (crypto.PKScheme.Ed25519 in crypto.SupportedSchemes):
   {.fatal:
     "Incorrect building process, please use -d:\"libp2p_pki_schemes=ed25519\"".}
 
-func shortLog*(peer: Peer): string = shortLog(peer.peerId)
+func shortLog(peer: Peer): string = shortLog(peer.peerId)
 chronicles.formatIt(Peer): shortLog(it)
 chronicles.formatIt(PublicKey): byteutils.toHex(it.getBytes().tryGet())
 
@@ -232,7 +232,7 @@ proc addSeen(network: LBP2PNode, peerId: PeerId,
   do:
     network.seenTable[peerId] = item
 
-proc disconnect*(peer: Peer, reason: DisconnectionReason,
+proc disconnect(peer: Peer, reason: DisconnectionReason,
                  notifyOtherPeer = false) {.async: (raises: [CancelledError]).} =
   # Per the specification, we MAY send a disconnect reason to the other peer but
   # we currently don't - the fact that we're disconnecting is obvious and the
@@ -428,11 +428,11 @@ proc connectWorker(node: LBP2PNode, index: int) {.async: (raises: [CancelledErro
       node.outboundTable.del(remotePeerAddr.peerId)
       node.signalConnEvent(remotePeerAddr.peerId)
 
-func minOutPeers*(wantedPeers: int): int =
+func minOutPeers(wantedPeers: int): int =
   ## Minimum number of outbound peers required as defense against eclipse attacks.
   min(wantedPeers, max(wantedPeers div 10, 3))
 
-proc handlePeer*(peer: Peer) {.async: (raises: [CancelledError]).} =
+proc handlePeer(peer: Peer) {.async: (raises: [CancelledError]).} =
   let node = peer.network
   if peer.direction == PeerType.Incoming:
     let minOut = minOutPeers(node.wantedPeers)
@@ -881,7 +881,7 @@ proc stop*(node: LBP2PNode) {.async: (raises: [CancelledError]).} =
       waitedFutures.add FutureBase(fut.cancelAndWait())
   node.backgroundTasks.setLen(0)
 
-  for _, event in node.connEvents:
+  for pid, event in node.connEvents:
     event.fire()
   node.connEvents.clear()
 

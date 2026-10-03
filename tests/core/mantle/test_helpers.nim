@@ -10,9 +10,9 @@
 import
   bearssl/rand,
   libp2p/crypto/ed25519/ed25519,
-  ../../../logos_chain/core/[types, crypto/hashing],
+  ../../../logos_chain/core/types,
   ../../../logos_chain/core/mantle/
-    [primitives, operations, proofs, tx_types, utxo],
+    [primitives, operations, proofs, utxo],
   ../../../logos_chain/zk/poseidon2/hasher
 
 from libp2p/crypto/rng import newBearSslRng

@@ -14,7 +14,7 @@ import
   bearssl/rand,
   libp2p/crypto/ed25519/ed25519,
   ../../logos_chain/ledger/[channel_state, mantle_state, types],
-  ../../logos_chain/core/mantle/[primitives, operations, tx_hashing],
+  ../../logos_chain/core/mantle/[operations, tx_hashing],
   ../core/mantle/test_helpers
 
 suite "MantleState.tryApplyChannelInscribe — JIT creation":

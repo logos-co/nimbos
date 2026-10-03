@@ -12,9 +12,9 @@ import
   std/[os, strutils],
   unittest2,
   stew/io2,
-  ../../logos_chain/core/mantle/[operations, proofs, tx_hashing, tx_types, poc_verifier],
+  ../../logos_chain/core/mantle/[operations, proofs, tx_hashing, poc_verifier],
   ../../logos_chain/ledger/
-    [cryptarchia_state, leader_state, ledger, types],
+    [cryptarchia_state, leader_state, ledger],
   ../../logos_chain/utils/dynamic_merkle_tree as voucherTree,
   ../../logos_chain/zk/[groth16/utils, poc, poseidon2/hasher],
   ../core/mantle/test_helpers,
@@ -50,11 +50,6 @@ func voucherBytes(seed: byte): RewardVoucher =
   var b: RewardVoucher
   b[0] = seed
   b
-
-func mockVerifyProofOfClaim*(
-    proof: ProofOfClaimProof, public: ProofOfClaimPublic
-): Result[bool, PocLoadError] =
-  ok(true)
 
 func fieldFromSeed(seed: byte): FieldElement =
   var b: array[32, byte]

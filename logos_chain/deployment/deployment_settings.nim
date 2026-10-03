@@ -33,38 +33,38 @@ export
   NumberOfEpochs
 
 type
-  BlendSchedulerCover* = object
+  BlendSchedulerCover = object
     messageFrequencyPerRound*: float
 
-  BlendSchedulerDelayer* = object
-    maximumReleaseDelayInRounds*: int
+  BlendSchedulerDelayer = object
+    maximumReleaseDelayInRounds: int
 
-  BlendScheduler* = object
+  BlendScheduler = object
     cover*: BlendSchedulerCover
     delayer*: BlendSchedulerDelayer
 
-  BlendCore* = object
+  BlendCore = object
     scheduler*: BlendScheduler
-    minimumMessagesCoefficient*: int
-    normalizationConstant*: float
+    minimumMessagesCoefficient: int
+    normalizationConstant: float
     activityThresholdSensitivity*: int
 
-  BlendCommon* = object
+  BlendCommon = object
     numBlendLayers*: int
     minimumNetworkSize*: int
     protocolName*: string
     dataReplicationFactor*: int
 
-  BlendSettings* = object
+  BlendSettings = object
     common*: BlendCommon
     core*: BlendCore
 
-  NetworkDeploymentSettings* = object
+  NetworkDeploymentSettings = object
     kademliaProtocolName*: string
     identifyProtocolName*: string
     chainSyncProtocolName*: string
 
-  EpochConfig* = object
+  EpochConfig = object
     epochStakeDistributionStabilization*: int
     epochPeriodNonceBuffer*: int
     epochPeriodNonceStabilization*: int
@@ -81,7 +81,7 @@ type
     bn*: BnServiceParams
     minStake*: MinStake
 
-  CryptarchiaDeploymentSettings* = object
+  CryptarchiaDeploymentSettings = object
     epochConfig*: EpochConfig
     securityParam*: int
     slotActivationCoeff*: NonNegativeRatio ## f — exact rational, no float
@@ -93,7 +93,7 @@ type
   TimeDeploymentSettings* = object
     slotDuration*: Duration
 
-  MempoolDeploymentSettings* = object
+  MempoolDeploymentSettings = object
     pubsubTopic*: string
 
   DeploymentSettings* = object

@@ -36,13 +36,13 @@ type
     flags: set[PeerFlags]
     index: PeerIndex
 
-  PeerScoreCheckCallback*[T] = proc(peer: T): bool {.gcsafe, raises: [].}
+  PeerScoreCheckCallback[T] = proc(peer: T): bool {.gcsafe, raises: [].}
 
-  PeerCounterCallback* = proc() {.gcsafe, raises: [].}
+  PeerCounterCallback = proc() {.gcsafe, raises: [].}
 
-  PeerOnDeleteCallback*[T] = proc(peer: T) {.gcsafe, raises: [].}
+  PeerOnDeleteCallback[T] = proc(peer: T) {.gcsafe, raises: [].}
 
-  PeerCustomFilterCallback*[T] = proc(peer: T): bool {.gcsafe, raises: [].}
+  PeerCustomFilterCallback[T] = proc(peer: T): bool {.gcsafe, raises: [].}
 
   PeerPool*[A, B] = ref object
     changeEvent: AsyncEvent
@@ -60,8 +60,6 @@ type
     curOutPeersCount: int
     acqIncPeersCount: int
     acqOutPeersCount: int
-
-  PeerPoolError* = object of CatchableError
 
 func `==`*(a, b: PeerIndex): bool {.borrow.}
 
@@ -261,7 +259,7 @@ proc shortLogSpace*[A, B](pool: PeerPool[A, B]): string =
 proc shortLogCurrent*[A, B](pool: PeerPool[A, B]): string =
   $pool.curIncPeersCount & "/" & $pool.curOutPeersCount
 
-template checkPeerScore*[A, B](pool: PeerPool[A, B], peer: A): bool =
+template checkPeerScore[A, B](pool: PeerPool[A, B], peer: A): bool =
   ## Returns ``true`` if peer passing score check.
   ## Benchmark (10M ops): template (8.63 ms) vs inline (10.37 ms) vs default (9.95 ms).
   if not(isNil(pool.scoreCheck)):
@@ -527,32 +525,6 @@ proc acquire*[A, B](
     else:
       return pool.acquireItemImpl(filter, customFilter)
 
-proc acquireNoWait*[A, B](
-    pool: PeerPool[A, B],
-    filter = {PeerType.Incoming, PeerType.Outgoing}
-): A {.raises: [PeerPoolError].} =
-  ## Acquire peer from PeerPool ``pool``, which match the filter ``filter``
-  ## without waiting, this procedure will raise PeerPoolError if no peers
-  ## which satisfy filters are available for acquisition.
-  doAssert(filter != {}, "Filter must not be empty")
-  if pool.lenAvailable(filter) < 1:
-    raise newException(PeerPoolError, "Not enough peers in pool")
-  pool.acquireItemImpl(filter, nil)
-
-proc acquireNoWait*[A, B](
-    pool: PeerPool[A, B],
-    filter: set[PeerType],
-    customFilter: PeerCustomFilterCallback[A]
-): A {.raises: [PeerPoolError].} =
-  ## Acquire peer from PeerPool ``pool``, which match the filter ``filter`` and
-  ## custom filter ``customFilter`` without waiting, this procedure will raise
-  ## PeerPoolError if no peers which satisfy filters are available for
-  ## acquisition.
-  doAssert(filter != {}, "Filter must not be empty")
-  if pool.lenAvailable(filter, customFilter) < 1:
-    raise newException(PeerPoolError, "Not enough peers in pool")
-  pool.acquireItemImpl(filter, customFilter)
-
 proc release*[A, B](pool: PeerPool[A, B], peer: A) =
   ## Release peer ``peer`` back to PeerPool ``pool``
   mixin getKey
@@ -652,40 +624,6 @@ proc acquire*[A, B](
       pool.release(item)
     peers.setLen(0)
     raise exc
-  peers
-
-proc acquireNoWait*[A, B](
-    pool: PeerPool[A, B],
-    number: int,
-    filter = {PeerType.Incoming, PeerType.Outgoing}
-): seq[A] =
-  ## Acquire ``number`` number of peers from PeerPool ``pool``, which match the
-  ## filter ``filter``. This procedure does not wait for peers, it will raise
-  ## `PeerPoolError` if peers matching the filters are not available.
-  doAssert(filter != {}, "Filter must not be empty")
-  var peers: seq[A]
-  if pool.lenAvailable(filter) < number:
-    raise newException(PeerPoolError, "Not enough peers in pool")
-  for _ in 0 ..< number:
-    peers.add(pool.acquireItemImpl(filter))
-  peers
-
-proc acquireNoWait*[A, B](
-    pool: PeerPool[A, B],
-    number: int,
-    filter: set[PeerType],
-    customFilter: PeerCustomFilterCallback[A]
-): seq[A] =
-  ## Acquire ``number`` number of peers from PeerPool ``pool``, which match the
-  ## filter ``filter`` and custom filter ``filter``. This procedure does not
-  ## wait for peers, it will raise `PeerPoolError` if peers matching the
-  ## filters are not available.
-  doAssert(filter != {}, "Filter must not be empty")
-  var peers: seq[A]
-  if pool.lenAvailable(filter, customFilter) < number:
-    raise newException(PeerPoolError, "Not enough peers in pool")
-  for _ in 0 ..< number:
-    peers.add(pool.acquireItemImpl(filter, customFilter))
   peers
 
 proc acquireIncomingPeer*[A, B](

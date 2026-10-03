@@ -88,7 +88,7 @@ type
     value: ptr LogosBlockchainNode
     error: OperationStatus
 
-  CCallback_c_char* = proc(data: cstring) {.cdecl.}
+  CCallback_c_char = proc(data: cstring) {.cdecl.}
 
   KnownAddresses* {.exportc.} = object
     addresses: ptr UncheckedArray[ptr byte]
@@ -164,7 +164,7 @@ func transfer_funds*(
 func free_transfer_funds*(pointer: ptr LogosDigest): void {.exportc, cdecl.} =
   discard
 
-func is_ok*(self: ptr OperationStatus): bool {.exportc, cdecl.} =
+func is_ok(self: ptr OperationStatus): bool {.exportc, cdecl.} =
   if self == nil:
     return false
   self[] == Ok

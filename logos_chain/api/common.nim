@@ -11,8 +11,7 @@ import
   chronos, presto/client,
   ./[types, serialization]
 
-from std/times import Time, DateTime, toTime, fromUnix, now, utc, `-`,
-                      inNanoseconds
+from std/times import toTime, fromUnix, now, utc, `-`, inNanoseconds
 
 export chronos, client, types, serialization
 

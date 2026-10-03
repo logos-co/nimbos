@@ -67,13 +67,13 @@ type
     powBlendDifficulty*: FieldElement
     coreSk*: FieldElement
     corePath*: CircuitPath[CoreTreeHeight]
-    polSlot*: uint64
-    polNoteValue*: uint64
-    polNoteTxHash*: FieldElement
-    polNoteOutputNumber*: uint64
-    polNoteidPath*: CircuitPath[TreeDepth]
-    polSecretKey*: FieldElement
-    powNonce*: FieldElement
+    polSlot: uint64
+    polNoteValue: uint64
+    polNoteTxHash: FieldElement
+    polNoteOutputNumber: uint64
+    polNoteidPath: CircuitPath[TreeDepth]
+    polSecretKey: FieldElement
+    powNonce: FieldElement
 
 func toInputsJson*(input: PoqWitnessInput): string =
   ## Witness-generator JSON with the circuit's input names.

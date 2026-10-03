@@ -309,7 +309,7 @@ suite "HashTrieMap iteration":
     m = m.insert(CollidingKey(id: 2, bucket: 7), 20)
     m = m.insert(CollidingKey(id: 3, bucket: 13), 30)
     var seen: HashSet[int]
-    for _, v in m.pairs:
+    for k, v in m.pairs:
       seen.incl(v)
     check seen == toHashSet([10, 20, 30])
 
@@ -326,9 +326,9 @@ suite "HashTrieMap iteration":
     var
       aOrder = newSeqOfCap[int](a.len)
       bOrder = newSeqOfCap[int](b.len)
-    for k, _ in a.pairs:
+    for k, v in a.pairs:
       aOrder.add(k)
-    for k, _ in b.pairs:
+    for k, v in b.pairs:
       bOrder.add(k)
     check aOrder == bOrder
 
@@ -515,7 +515,7 @@ suite "HashTrieMap scale and structure":
     var
       visited = 0
       sum = 0
-    for k, _ in m.pairs:
+    for k, v in m.pairs:
       inc visited
       sum += k
     check visited == N

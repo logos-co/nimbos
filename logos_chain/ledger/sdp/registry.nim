@@ -19,13 +19,13 @@ import
 export blend_rewards, sdpState
 
 type
-  SdpSnapshots* = Table[ServiceType, Table[EpochNumber, SdpState]]
+  SdpSnapshots = Table[ServiceType, Table[EpochNumber, SdpState]]
     ## Frozen SDP state keyed by **target epoch** ``n`` (``S_n`` for use during
     ## epoch ``n``). Keys ``0`` and ``1`` are both set to the genesis snapshot.
     ## For ``n >= 2``, taken when epoch ``n-2`` starts; snapshot ``S_n`` is
     ## pruned at the start of epoch ``n+1``.
 
-  SdpParams* = object
+  SdpParams = object
     parameters*: Table[ServiceType, ServiceParameters]
     stakeThresholds*: seq[sdpState.MinStake]
     rewardsParams*: BlendRewardsParams

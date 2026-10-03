@@ -478,7 +478,7 @@ suite "core/mantle/tx_validation — stateless invariants":
       outputs: Outputs(notes: @[]),
     ))
     let dummyProof = OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))
-    for _ in 0 .. MantleMaxOps:
+    for i in 0 .. MantleMaxOps:
       largeOps.add dummyOp
       largeProofs.add dummyProof
     let tx = SignedMantleTx(tx: MantleTx(ops: largeOps), opProofs: largeProofs)

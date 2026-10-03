@@ -39,7 +39,7 @@ type
     Json = "json"
     None = "none"
 
-proc updateLogLevel*(logLevel: string) {.raises: [ValueError].} =
+proc updateLogLevel(logLevel: string) {.raises: [ValueError].} =
   # Updates log levels (without clearing old ones)
   let directives = logLevel.split(";")
   try:

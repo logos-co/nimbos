@@ -11,7 +11,6 @@
 import std/[random, heapqueue, tables, sequtils, strutils]
 import chronos, chronos/unittest2/asynctests
 import ../../logos_chain/networking/peer_pool
-import ../testutil
 
 type
   PeerTestID = string
@@ -63,10 +62,10 @@ suite "PeerPool testing suite":
 
       var peer = PeerTest.init("idCheck")
       if item[1] != -1:
-        for _ in 0 ..< item[3]:
+        for i in 0 ..< item[3]:
           check pool.addPeerNoWait(peer, PeerType.Incoming) == PeerStatus.NoSpaceError
       if item[2] != -1:
-        for _ in 0 ..< item[3]:
+        for i in 0 ..< item[3]:
           check pool.addPeerNoWait(peer, PeerType.Outgoing) == PeerStatus.NoSpaceError
       check:
         pool.lenAvailable == item[3]
@@ -257,12 +256,12 @@ suite "PeerPool testing suite":
       var incWeight1, outWeight1, totWeight1: int
 
       incoming.setLen(0)
-      for _ in 0 ..< pool.lenAvailable({PeerType.Incoming}):
+      for i in 0 ..< pool.lenAvailable({PeerType.Incoming}):
         var peer = await pool.acquire({PeerType.Incoming})
         incoming.add(peer)
 
       outgoing.setLen(0)
-      for _ in 0 ..< pool.lenAvailable({PeerType.Outgoing}):
+      for i in 0 ..< pool.lenAvailable({PeerType.Outgoing}):
         var peer = await pool.acquire({PeerType.Outgoing})
         outgoing.add(peer)
 
@@ -284,7 +283,7 @@ suite "PeerPool testing suite":
         weight = outgoing[i].weight
         pool.release(outgoing[i])
 
-      for _ in 0 ..< pool.lenAvailable():
+      for i in 0 ..< pool.lenAvailable():
         var peer = await pool.acquire()
         total.add(peer)
 
@@ -413,7 +412,7 @@ suite "PeerPool testing suite":
         pool.lenAvailable({PeerType.Outgoing}) == 100
         pool.lenAvailable({PeerType.Incoming}) == 100
 
-      for _ in 0 ..< 20:
+      for i in 0 ..< 20:
         let apeer = await pool.acquire()
         check pool.deletePeer(apeer) == true
         pool.release(apeer)
@@ -438,7 +437,7 @@ suite "PeerPool testing suite":
         pool.lenAvailable({PeerType.Outgoing}) == 100
         pool.lenAvailable({PeerType.Incoming}) == 100
 
-      for _ in 0 ..< 20:
+      for i in 0 ..< 20:
         let apeer = await pool.acquire()
         check:
           pool.deletePeer(apeer, true) == true

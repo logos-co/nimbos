@@ -15,25 +15,25 @@ when defined(windows):
   import ./binary_common
 
   type
-    SERVICE_STATUS* {.final, pure.} = object
-      dwServiceType*: DWORD
-      dwCurrentState*: DWORD
-      dwControlsAccepted*: DWORD
-      dwWin32ExitCode*: DWORD
-      dwServiceSpecificExitCode*: DWORD
-      dwCheckPoint*: DWORD
-      dwWaitHint*: DWORD
+    SERVICE_STATUS {.final, pure.} = object
+      dwServiceType: DWORD
+      dwCurrentState: DWORD
+      dwControlsAccepted: DWORD
+      dwWin32ExitCode: DWORD
+      dwServiceSpecificExitCode: DWORD
+      dwCheckPoint: DWORD
+      dwWaitHint: DWORD
 
-    SERVICE_STATUS_HANDLE* = DWORD
-    LPSERVICE_STATUS* = ptr SERVICE_STATUS
-    LPSERVICE_MAIN_FUNCTIONW* = proc (para1: DWORD, para2: LPWSTR) {.stdcall.}
+    SERVICE_STATUS_HANDLE = DWORD
+    LPSERVICE_STATUS = ptr SERVICE_STATUS
+    LPSERVICE_MAIN_FUNCTIONW = proc (para1: DWORD, para2: LPWSTR) {.stdcall.}
 
-    SERVICE_TABLE_ENTRYW* {.final, pure.} = object
-      lpServiceName*: LPWSTR
-      lpServiceProc*: LPSERVICE_MAIN_FUNCTIONW
+    SERVICE_TABLE_ENTRYW {.final, pure.} = object
+      lpServiceName: LPWSTR
+      lpServiceProc: LPSERVICE_MAIN_FUNCTIONW
 
-    LPSERVICE_TABLE_ENTRYW* = ptr SERVICE_TABLE_ENTRYW
-    LPHANDLER_FUNCTION* = proc (para1: DWORD): WINBOOL {.stdcall.}
+    LPSERVICE_TABLE_ENTRYW = ptr SERVICE_TABLE_ENTRYW
+    LPHANDLER_FUNCTION = proc (para1: DWORD): WINBOOL {.stdcall.}
 
   const
     SERVICE_WIN32_OWN_PROCESS = 16

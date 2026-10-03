@@ -27,7 +27,7 @@ const
   ZkSignPublicSignals* = ZkSignMaxKeys + 1
 
 type
-  ZkSignLoadError* = VkLoadError
+  ZkSignLoadError = VkLoadError
 
   ZkSignVerifierInput* = object
     ## Public-input vector. Field order is positional in the circuit's IC —

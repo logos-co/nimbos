@@ -19,10 +19,10 @@ import
 export hash_trie_map
 
 type
-  ChannelOwner* = object
+  ChannelOwner = object
     ## Boxes the owning `ChannelId`. A bare `array[32, byte]` map value fails
     ## to compile when read back out through `Opt[V]`.
-    channel*: ChannelId
+    channel: ChannelId
 
   ChannelNotes* = HashTrieMap[NoteId, ChannelOwner]
 

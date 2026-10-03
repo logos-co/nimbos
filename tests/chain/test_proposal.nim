@@ -45,7 +45,7 @@ suite "chain/proposal":
     state.feeMarket.executionBaseFee = 0
     state.feeMarket.storageGasPrice = 0
 
-    let (refs, count) = m.selectProposalReferences(
+    let (_, count) = m.selectProposalReferences(
       state, testLedgerConfig, SlotNumber(10), verifyPoq = acceptAllPoq)
     check count == 1
 

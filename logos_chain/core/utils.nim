@@ -10,14 +10,6 @@
 # Layer L0 — generic helpers usable from any layer.
 # Pure utilities only: no I/O, async, DB, or network.
 
-template newClone*[T: not ref](x: T): ref T =
-  let res = new typeof(x)
-  res[] = x
-  res
-
-template newClone*[T](x: ref T): ref T =
-  newClone(x[])
-
 template lenu64*(x: untyped): untyped =
   uint64(len(x))
 

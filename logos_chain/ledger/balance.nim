@@ -21,7 +21,7 @@ type
   Balance* = Int128
 
 const
-  DefaultBalance* = default(Balance)
+  DefaultBalance = default(Balance)
 
 func zero*(_: typedesc[Balance]): Balance {.inline.} =
   # `i128(0)` inside a `typedesc` generic routine causes `stint`'s

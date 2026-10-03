@@ -19,10 +19,9 @@ import
   ./[framing, syncer_types, types]
 
 from ../core/local_tree import
-  LocalTree, localTipId, lcaBlockIdAndHeight, hasBlock, getBlock, blockHeight,
+  LocalTree, lcaBlockIdAndHeight, hasBlock, getBlock, blockHeight,
   localTip
-from ../core/types import Block, BlockId
-from ../core/mantle/primitives import SlotNumber
+from ../core/types import BlockId
 
 logScope:
   topics = "cryptarchia_ibd"
