@@ -6,11 +6,12 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## Bedrock block types aligned with Nomos block construction / validation / execution.
-## Spec: [Block Construction, Validation and Execution v1.1.2](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/bedrock-v1.1-block-construction.md)
+## Spec: [Block Construction, Validation and Execution v1.3.0](https://github.com/logos-co/logos-lips/blob/4deef612ce1ae1776167daf8779d4abae953201b/docs/blockchain/raw/bedrock-v1.1-block-construction.md)
 
 {.push raises: [], gcsafe.}
 
 import
+  std/typetraits,
   results,
   stew/[assign2, bitops2],
   bincode,
@@ -22,7 +23,10 @@ export hashing, tx_types, tx_hashing, results
 
 const
   ExpectedBedrockVersion* = 1'u8
-  MaxBlockSize* = 1_048_576
+  MaxBlockSize* = 2_097_152
+  MaxUncles* = 4
+  HeaderSize* = 297
+  SignedHeaderSize* = HeaderSize + EdSignatureSize
 
 type
   ProofOfLeadershipProof = CompressedGroth16Proof
@@ -42,20 +46,32 @@ type
     bedrockVersion*: uint8
     parentBlock*: BlockId
     slot*: SlotNumber
-    blockRoot*: Hash32
+    bodyRoot*: Hash32
     proofOfLeadership*: ProofOfLeadership
+
+  SignedHeader* = object
+    header*: Header
+    signature*: Ed25519Signature
+
+  UncleHeaders* = distinct seq[SignedHeader]
+    ## Uncle headers of a block; the decoder accepts ``MaxUncles`` at most.
 
   Block* = object
     header*: Header
     signature*: Ed25519Signature
+    uncleHeaders*: UncleHeaders
     txs*: seq[SignedMantleTx]
 
   ValidBlock* = distinct Block
     ## A ``Block`` that has successfully passed all structural, admission,
     ## and stateless transaction verifications via ``validateBlock``.
 
+  # Fields are in the canonical order of Block Construction 1.3.0, but the
+  # wire is still bincode (u64 counts, fixed full-hash references, signature
+  # over the block ID). The canonical proposal codec is a separate change.
   Proposal* = object
     header*: Header
+    uncleHeaders*: UncleHeaders
     references*: References
     signature*: Ed25519Signature
 
@@ -65,8 +81,28 @@ const
 
 deriveBincode(ProofOfLeadership)
 deriveBincode(Header)
+deriveBincode(SignedHeader)
+
+# The uncle bound is a constraint of the serialization schema, so the decoder
+# rejects a longer list before it allocates. This overload must stay before
+# every other use of `UncleHeaders`: a generic decoder that is instantiated
+# for the type first is not bounded.
+func decodeAt*(
+    data: openArray[byte],
+    tParam: typedesc[UncleHeaders],
+    config: BincodeConfig = standard(),
+    start: int = 0,
+): (UncleHeaders, int) {.raises: [BincodeError].} =
+  let (uncles, used) =
+    decodeBoundedSeqAt(data, SignedHeader, MaxUncles, config, start)
+  (UncleHeaders(uncles), used)
+
 deriveBincode(Block)
 deriveBincode(Proposal)
+
+template asSeq*(uncles: UncleHeaders): auto = distinctBase(uncles)
+template len*(uncles: UncleHeaders): auto = len(distinctBase(uncles))
+template `==`*(a, b: UncleHeaders): bool = distinctBase(a) == distinctBase(b)
 
 template header*(blk: Block): auto = blk.header
 template header*(blk: ValidBlock): auto = Block(blk).header
@@ -78,12 +114,35 @@ func hashPair*(left, right: Hash32): Hash32 =
   assign(pairBytes.toOpenArray(32, 63), right)
   blake2b256Hash(pairBytes)
 
-func createBlockRoot*(hashes: openArray[Hash32]): Hash32 =
-  ## Computes Merkle root over tx hashes (in block order).
-  ## Pads the leaf layer to the next power of two with zero ``Hash32`` leaves,
-  ## then pairs ``left || right`` with BLAKE2b-256.
-  ## Empty-root returns default(Hash32) zero hash per Cryptarchia Protocol v1.0.2:
-  ## https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/cryptarchia-v1-protocol.md#block-header-validation
+func encodeHeader*(header: Header): array[HeaderSize, byte] =
+  ## Canonical 297-byte header encoding.
+  # Wire order: version ‖ parent ‖ slot ‖ body root ‖ proof ‖ entropy ‖
+  # leader key ‖ voucher. The block ID preimage uses another order.
+  var res: array[HeaderSize, byte]
+  res[0] = header.bedrockVersion
+  assign(res.toOpenArray(1, 32), header.parentBlock)
+  assign(res.toOpenArray(33, 40), encodeLe(header.slot))
+  assign(res.toOpenArray(41, 72), header.bodyRoot)
+  assign(res.toOpenArray(73, 200), header.proofOfLeadership.proof)
+  assign(res.toOpenArray(201, 232), header.proofOfLeadership.entropyContribution)
+  assign(res.toOpenArray(233, 264),
+    encodeEd25519PublicKey(header.proofOfLeadership.leaderKey))
+  assign(res.toOpenArray(265, 296), header.proofOfLeadership.leaderVoucher)
+  res
+
+func encodeSignedHeader*(signed: SignedHeader): array[SignedHeaderSize, byte] =
+  ## Canonical 361-byte signed header encoding.
+  var res: array[SignedHeaderSize, byte]
+  assign(res.toOpenArray(0, HeaderSize - 1), encodeHeader(signed.header))
+  assign(res.toOpenArray(HeaderSize, SignedHeaderSize - 1),
+    encodeEd25519Signature(signed.signature))
+  res
+
+func merkle_root*(hashes: openArray[Hash32]): Hash32 =
+  ## Merkle root over the transaction hashes in block order.
+  ## Spec: [Cryptarchia Protocol v1.2.4, Block Header Validation](https://github.com/logos-co/logos-lips/blob/4deef612ce1ae1776167daf8779d4abae953201b/docs/blockchain/raw/cryptarchia-v1-protocol.md#block-header-validation)
+  # Leaves pad with zero hashes to the next power of two, not with a copy of
+  # the last leaf; the empty list is the zero hash (step 4).
   doAssert hashes.len <= MaxBlockTxs,
     "hash set exceeds MaxBlockTxs (" & $MaxBlockTxs & "): " & $hashes.len
 
@@ -105,7 +164,8 @@ func createBlockRoot*(hashes: openArray[Hash32]): Hash32 =
 
   level[0]
 
-func createBlockRoot*(txs: openArray[SignedMantleTx]): Result[Hash32, EncodingError] =
+func merkle_root*(txs: openArray[SignedMantleTx]): Result[Hash32, EncodingError] =
+  ## Merkle root over the hashes of `txs`.
   if txs.len == 0:
     return ok(DefaultHash32)
   if txs.len == 1:
@@ -114,7 +174,34 @@ func createBlockRoot*(txs: openArray[SignedMantleTx]): Result[Hash32, EncodingEr
   for tx in txs:
     let h = ?mantleTxHash(tx.tx)
     hashes.add(h)
-  ok(createBlockRoot(hashes))
+  ok(merkle_root(hashes))
+
+func body_root*(uncles: openArray[SignedHeader], txRoot: Hash32): Hash32 =
+  ## blake2b256("BODY_ROOT_V1" ‖ u8 uncle count ‖ 361-byte entries ‖ merkle root).
+  ## Spec: [Cryptarchia Protocol v1.2.4, Block Header Validation](https://github.com/logos-co/logos-lips/blob/4deef612ce1ae1776167daf8779d4abae953201b/docs/blockchain/raw/cryptarchia-v1-protocol.md#block-header-validation)
+  # Every input path bounds the count first (`validateBlockStructure`,
+  # `initBlock`, `initProposal`, the `UncleHeaders` decoder). A longer list
+  # here is a programming error, not input.
+  doAssert uncles.len <= MaxUncles,
+    "uncle count exceeds MaxUncles (" & $MaxUncles & "): " & $uncles.len
+  var preimage = newSeqOfCap[byte](
+    1 + uncles.len * SignedHeaderSize + sizeof(Hash32))
+  preimage.add(uint8(uncles.len))
+  for uncle in uncles:
+    preimage.add(encodeSignedHeader(uncle))
+  preimage.add(txRoot)
+  blake2b256Hash("BODY_ROOT_V1", preimage)
+
+func body_root(uncles: openArray[SignedHeader], txHashes: openArray[Hash32]): Hash32 =
+  ## Body root over the uncle list and the transaction hashes.
+  body_root(uncles, merkle_root(txHashes))
+
+func body_root*(
+    uncles: openArray[SignedHeader],
+    txs: openArray[SignedMantleTx],
+): Result[Hash32, EncodingError] =
+  ## Body root over the uncle list and the transactions.
+  ok(body_root(uncles, ? merkle_root(txs)))
 
 func blockId*(header: Header): Hash32 =
   ## block_id(header) = hash(
@@ -122,7 +209,7 @@ func blockId*(header: Header): Hash32 =
   ##   header.bedrock_version,
   ##   header.parent_block,
   ##   header.slot.to_bytes(8, byteorder="little"),
-  ##   header.block_root,
+  ##   header.body_root,
   ##   header.proof_of_leadership.leader_voucher,
   ##   header.proof_of_leadership.entropy_contribution,
   ##   header.proof_of_leadership.proof.serialize(),
@@ -131,7 +218,7 @@ func blockId*(header: Header): Hash32 =
   const
     DomainTag = "BLOCK_ID_V1"
     PreimageCap = DomainTag.len + sizeof(header.bedrockVersion) +
-      sizeof(header.parentBlock) + sizeof(uint64) + sizeof(header.blockRoot) +
+      sizeof(header.parentBlock) + sizeof(uint64) + sizeof(header.bodyRoot) +
       sizeof(header.proofOfLeadership.leaderVoucher) +
       sizeof(header.proofOfLeadership.entropyContribution) +
       sizeof(header.proofOfLeadership.proof) + EdPublicKeySize
@@ -141,7 +228,7 @@ func blockId*(header: Header): Hash32 =
   preimage.add(header.bedrockVersion)
   preimage.add(header.parentBlock)
   preimage.add(encodeLe(header.slot))
-  preimage.add(header.blockRoot)
+  preimage.add(header.bodyRoot)
   preimage.add(header.proofOfLeadership.leaderVoucher)
   preimage.add(header.proofOfLeadership.entropyContribution)
   ## Proof is kept in serialized wire representation.
@@ -159,26 +246,32 @@ func blockId*(header: Header): Hash32 =
 func initBlock*(
     header: Header,
     signature: Ed25519Signature = DefaultEd25519Signature,
+    uncleHeaders: openArray[SignedHeader],
     txs: openArray[SignedMantleTx],
 ): Block =
-  ## Canonical constructor that enforces block tx count limit.
+  ## Canonical constructor; bounds the uncle and transaction counts.
+  doAssert uncleHeaders.len <= MaxUncles,
+    "uncle count exceeds MaxUncles (" & $MaxUncles & "): " & $uncleHeaders.len
   doAssert txs.len <= MaxBlockTxs,
     "block tx count exceeds MaxBlockTxs (" & $MaxBlockTxs & "): " & $txs.len
-  Block(header: header, signature: signature, txs: @txs)
+  Block(
+    header: header, signature: signature,
+    uncleHeaders: UncleHeaders(@uncleHeaders), txs: @txs)
 
 func initHeader*(
     bedrockVersion: uint8,
     parentBlock: BlockId,
     slot: SlotNumber,
+    uncleHeaders: openArray[SignedHeader],
     txHashes: openArray[Hash32],
     proofOfLeadership: ProofOfLeadership,
 ): Header =
-  ## Canonical constructor for block headers with transaction hashes. Mainly used for proposal creation.
+  ## Header over transaction hashes; used for proposal construction.
   Header(
     bedrockVersion: bedrockVersion,
     parentBlock: parentBlock,
     slot: slot,
-    blockRoot: createBlockRoot(txHashes),
+    bodyRoot: body_root(uncleHeaders, txHashes),
     proofOfLeadership: proofOfLeadership,
   )
 
@@ -186,24 +279,31 @@ func initHeader*(
     bedrockVersion: uint8,
     parentBlock: BlockId,
     slot: SlotNumber,
+    uncleHeaders: openArray[SignedHeader],
     txs: openArray[SignedMantleTx],
     proofOfLeadership: ProofOfLeadership,
 ): Result[Header, EncodingError] =
-  ## Canonical constructor for block headers. Used during block import and validation, where the full transactions are available.
-  let root = ?createBlockRoot(txs)
+  ## Header over full transactions; used for block import and genesis.
+  let root = ? body_root(uncleHeaders, txs)
   ok(Header(
     bedrockVersion: bedrockVersion,
     parentBlock: parentBlock,
     slot: slot,
-    blockRoot: root,
+    bodyRoot: root,
     proofOfLeadership: proofOfLeadership,
   ))
 
 func initProposal*(
     header: Header,
+    uncleHeaders: openArray[SignedHeader],
     references: References,
     signature: Ed25519Signature,
 ): Proposal =
-  Proposal(header: header, references: references, signature: signature)
+  ## Canonical constructor; bounds the uncle count.
+  doAssert uncleHeaders.len <= MaxUncles,
+    "uncle count exceeds MaxUncles (" & $MaxUncles & "): " & $uncleHeaders.len
+  Proposal(
+    header: header, uncleHeaders: UncleHeaders(@uncleHeaders),
+    references: references, signature: signature)
 
 {.pop.}

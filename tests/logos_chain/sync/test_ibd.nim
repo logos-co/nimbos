@@ -68,6 +68,20 @@ suite "sync/initial_block_download (download blocks)":
     check blks.len == 1
     check blockId(blks[0].header) == blockId(genesis.header)
 
+  test "decodeBlocksFromDownloadResponses bounds the uncle count":
+    let
+      genesis = createGenesisBlock(SignedMantleTx(testGenesisTx())).get
+      uncle = SignedHeader(header: genesis.header, signature: DefaultEd25519Signature)
+    template response(uncles: seq[SignedHeader]): DownloadBlocksResponse =
+      DownloadBlocksResponse(
+        kind: dbrBlock,
+        downloadedBlock: encode(
+          Block(header: genesis.header, signature: genesis.signature,
+                uncleHeaders: UncleHeaders(uncles), txs: @[]),
+          cryptarchiaSyncBincodeConfig))
+    check decodeBlocksFromDownloadResponses(@[response(@[uncle, uncle, uncle, uncle])]).get.len == 1
+    check decodeBlocksFromDownloadResponses(@[response(@[uncle, uncle, uncle, uncle, uncle])]).isNone
+
   test "cappedDownloadPathBlockIds returns target block when path is one hop":
     let
       sm = minimalSignedTx()

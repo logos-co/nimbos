@@ -5,7 +5,7 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-## Block root / block id for devnet genesis (mantle tx fixture from
+## Body root / block id for devnet genesis (mantle tx fixture from
 ## ``config/deployment-settings.yaml``).
 
 {.push raises: [].}
@@ -22,19 +22,20 @@ import
   ../../logos_chain/core/[types, crypto/hashing],
   ../../logos_chain/core/mantle/[tx_types, tx_hashing]
 
-const testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
-const mantleTxFixturePath = testsDir / "../fixtures/devnet-genesis-mantle-tx.yaml"
-const deploymentSettingsPath = testsDir / "../../config/deployment-settings.yaml"
-const expectedDevnetGenesisBlockId =
-  "a7235cbc04ed5b8a6fca453bf585109e4e045561c33293eb7b0f33f8a762438e"
-const fixedGenesisTxBytesHex =
-  "03000005a086010000000000e3635f207984ae779cf76b5f20714b514373f61ff96260879fe0a6d71f2dce07640000000000000039e16b432574571a6bcd8ee36e370589641bd9f35367f6f97a972453c46c322564000000000000009750fa86471fddc69749aa9f8568ef6635e64d9f9aa815e8cb932cea183c8e180100000000000000852efb444db8c3c811625850df39425f43aeffc69571192c0be9f72523256e0affffffffffffffffd2a1977db29daf6691f7ce897fe7b666ec964b1bf027814cacd1a2c141b12f1011000000000000000000000000000000000000000000000000000000000000000035000000107374616e64616c6f6e652d6c6f63616c9169fe692d2ddf918544bca603c5a291c7dd1b902d6769ff4b00021506780e075c06051a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002000010b00047f00000191020d48cd03aa70aafc48536ae13168ed4845981a40cbd2dc1c38df88d04c46250e9ad65ce0852efb444db8c3c811625850df39425f43aeffc69571192c0be9f72523256e0aa4405fdbd782bd39c4e388ac470c98fdca3e9edfdf7d2672bc63223d75dab721"
-const expectedDevnetBlake2bMantleDigest =
-  "5d48e34dad66cbcc1e1df116f508a5984fc0170fe05dba02f7d9e87a4480639b"
-const expectedDevnetGenesisBlockRoot =
-  "ae3904dcc94dff1d2f18d83625c2c4b7e7a17cb6efc3b9c3c66b9e72e5dcf554"
-const expectedDevnetMantleTxHash =
-  expectedDevnetGenesisBlockRoot
+const
+  testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
+  mantleTxFixturePath = testsDir / "../fixtures/devnet-genesis-mantle-tx.yaml"
+  deploymentSettingsPath = testsDir / "../../config/deployment-settings.yaml"
+  expectedDevnetGenesisBlockId =
+    "bacd543e2ca38403ee9845e0732588a1bd79468c6b31b9c4a188329c05ebd003"
+  fixedGenesisTxBytesHex =
+    "03000005a086010000000000e3635f207984ae779cf76b5f20714b514373f61ff96260879fe0a6d71f2dce07640000000000000039e16b432574571a6bcd8ee36e370589641bd9f35367f6f97a972453c46c322564000000000000009750fa86471fddc69749aa9f8568ef6635e64d9f9aa815e8cb932cea183c8e180100000000000000852efb444db8c3c811625850df39425f43aeffc69571192c0be9f72523256e0affffffffffffffffd2a1977db29daf6691f7ce897fe7b666ec964b1bf027814cacd1a2c141b12f1011000000000000000000000000000000000000000000000000000000000000000035000000107374616e64616c6f6e652d6c6f63616c9169fe692d2ddf918544bca603c5a291c7dd1b902d6769ff4b00021506780e075c06051a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002000010b00047f00000191020d48cd03aa70aafc48536ae13168ed4845981a40cbd2dc1c38df88d04c46250e9ad65ce0852efb444db8c3c811625850df39425f43aeffc69571192c0be9f72523256e0aa4405fdbd782bd39c4e388ac470c98fdca3e9edfdf7d2672bc63223d75dab721"
+  expectedDevnetBlake2bMantleDigest =
+    "5d48e34dad66cbcc1e1df116f508a5984fc0170fe05dba02f7d9e87a4480639b"
+  expectedDevnetGenesisBodyRoot =
+    "85418723f6c3119fbaa51768de28a6c077be6fdaddb965690a5f74be21c621ef"
+  expectedDevnetMantleTxHash =
+    "ae3904dcc94dff1d2f18d83625c2c4b7e7a17cb6efc3b9c3c66b9e72e5dcf554"
 
 proc signedMantleTxFromDevnetFixture(text: string): Result[SignedMantleTx, string] =
   let yroot = ? parseDeploymentSettingsYaml(text)
@@ -56,8 +57,8 @@ proc signedMantleTxFromDevnetFixture(text: string): Result[SignedMantleTx, strin
     "ops_proofs",
   )
 
-suite "devnet genesis mantle_tx block root":
-  test "genesis fixture single-tx block root matches deployment header.block_root":
+suite "devnet genesis mantle_tx body root":
+  test "genesis fixture single-tx body root matches deployment header.body_root":
     check fileExists(mantleTxFixturePath)
     let
       text = readAllChars(mantleTxFixturePath).valueOr:
@@ -66,7 +67,8 @@ suite "devnet genesis mantle_tx block root":
       smt = signedMantleTxFromDevnetFixture(text).valueOr:
         check false
         return
-      blockRoot = createBlockRoot([smt]).get
+      txRoot = merkle_root([smt]).get
+      bodyRoot = body_root([], txRoot)
       dsText = readAllChars(deploymentSettingsPath).valueOr:
         check false
         return
@@ -76,10 +78,11 @@ suite "devnet genesis mantle_tx block root":
       gstate = ds.cryptarchia.genesisState
       smtFromDeployment = gstate.signedMantleTx
     check mantleTxHash(smt.tx).get == mantleTxHash(smtFromDeployment.tx).get
-    check blockRoot == createBlockRoot([smtFromDeployment]).get
-    check toHex(blockRoot) == expectedDevnetGenesisBlockRoot
-    check blockRoot == gstate.header.blockRoot
-    check blockRoot == mantleTxHash(smt.tx).get
+    check txRoot == merkle_root([smtFromDeployment]).get
+    check txRoot == mantleTxHash(smt.tx).get
+    check toHex(txRoot) == expectedDevnetMantleTxHash
+    check toHex(bodyRoot) == expectedDevnetGenesisBodyRoot
+    check bodyRoot == gstate.header.bodyRoot
 
   test "deployment genesis block id matches devnet header preimage":
     let
@@ -91,7 +94,7 @@ suite "devnet genesis mantle_tx block root":
         return
     check validateDeploymentSettings(ds).isOk
     let gb = createGenesisBlock(ds.cryptarchia.genesisState.signedMantleTx).get
-    check toHex(gb.header.blockRoot) == expectedDevnetGenesisBlockRoot
+    check toHex(gb.header.bodyRoot) == expectedDevnetGenesisBodyRoot
     check toHex(blockId(gb.header)) == expectedDevnetGenesisBlockId
 
   test "devnet genesis mantle tx encoding and hashes match fixed vectors":

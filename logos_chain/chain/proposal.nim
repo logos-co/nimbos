@@ -6,7 +6,7 @@
 # at your option, this file may not be copied, modified, or distributed except according to these terms.
 
 ## Bedrock block proposal construction, transaction selection, and reconstruction.
-## Spec: [Block Construction, Validation and Execution v1.1.2](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/bedrock-v1.1-block-construction.md)
+## Spec: [Block Construction, Validation and Execution v1.3.0](https://github.com/logos-co/logos-lips/blob/4deef612ce1ae1776167daf8779d4abae953201b/docs/blockchain/raw/bedrock-v1.1-block-construction.md)
 ## Spec: [Execution Market v1.1.0](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/execution-market.md)
 
 {.push raises: [], gcsafe.}
@@ -120,18 +120,20 @@ proc constructProposal*(
   ## Full constructor from mempool: selects fee-paying transaction references from the
   ## mempool according to the execution market spec, constructs the header,
   ## signs it with the leader's private key, and produces the Proposal.
-  let (refs, count) = m.selectProposalReferences(
-    tipLedgerState, cfg, currentSlot, verifyPoq
-  )
-  let h = initHeader(
-    bedrockVersion = ExpectedBedrockVersion,
-    parentBlock = parentBlock,
-    slot = currentSlot,
-    txHashes = refs.toOpenArray(0, count - 1),
-    proofOfLeadership = proofOfLeadership,
-  )
-  let sig = leaderSecKey.sign(blockId(h))
-  initProposal(h, refs, sig)
+  # No uncle selection yet; the list stays empty.
+  let
+    (refs, count) = m.selectProposalReferences(
+      tipLedgerState, cfg, currentSlot, verifyPoq)
+    h = initHeader(
+      bedrockVersion = ExpectedBedrockVersion,
+      parentBlock = parentBlock,
+      slot = currentSlot,
+      uncleHeaders = [],
+      txHashes = refs.toOpenArray(0, count - 1),
+      proofOfLeadership = proofOfLeadership,
+    )
+    sig = leaderSecKey.sign(blockId(h))
+  initProposal(h, [], refs, sig)
 
 func reconstructBlock*(
     proposal: Proposal,
@@ -147,9 +149,12 @@ func reconstructBlock*(
       return err(ProposalValidationError.MissingReference)
     txs.add(SignedMantleTx(tx))
   
+  # Not `initBlock`: its uncle-count assert is for programming errors, and
+  # `validateBlock` checks the count of this block as input.
   ok(Block(
     header: proposal.header,
     signature: proposal.signature,
+    uncleHeaders: proposal.uncleHeaders,
     txs: txs
   ))
 
