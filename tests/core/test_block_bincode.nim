@@ -69,7 +69,7 @@ suite "core/block bincode (cryptarchia sync)":
       fail getCurrentExceptionMsg()
 
   test "encode / decode roundtrip (genesis block)":
-    let genesis = createGenesisBlock(minimalSignedTx()).get
+    let genesis = createGenesisBlock(testGenesisTx()).get
     try:
       checkBlockEqual(roundtrip(genesis), genesis)
       check genesis.signature == DefaultEd25519Signature

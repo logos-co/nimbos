@@ -76,7 +76,7 @@ suite "devnet genesis mantle_tx block root":
       gstate = ds.cryptarchia.genesisState
       smtFromDeployment = gstate.signedMantleTx
     check mantleTxHash(smt.tx).get == mantleTxHash(smtFromDeployment.tx).get
-    check blockRoot == createBlockRoot([smtFromDeployment]).get
+    check blockRoot == createBlockRoot([SignedMantleTx(smtFromDeployment)]).get
     check toHex(blockRoot) == expectedDevnetGenesisBlockRoot
     check blockRoot == gstate.header.blockRoot
     check blockRoot == mantleTxHash(smt.tx).get

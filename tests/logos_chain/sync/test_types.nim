@@ -113,8 +113,7 @@ suite "sync/types (GetTip RequestMessage / response wire)":
 suite "sync/types (download RequestMessage / request & response payloads)":
   test "encode / decode DownloadBlocksRequest roundtrip":
     let
-      sm = minimalSignedTx()
-      genesis = createGenesisBlock(sm).get
+      genesis = createGenesisBlock(testGenesisTx()).get
       gid = blockId(genesis.header)
       tree = newLocalTree(genesis, 1'u64)
       req = DownloadBlocksRequest(targetBlock: gid, knownBlocks: buildKnownBlocks(tree))
@@ -131,8 +130,7 @@ suite "sync/types (download RequestMessage / request & response payloads)":
 
   test "RequestMessage download discriminant roundtrips":
     let
-      sm = minimalSignedTx()
-      genesis = createGenesisBlock(sm).get
+      genesis = createGenesisBlock(testGenesisTx()).get
       gid = blockId(genesis.header)
       tree = newLocalTree(genesis, 1'u64)
       req = DownloadBlocksRequest(targetBlock: gid, knownBlocks: buildKnownBlocks(tree))
@@ -167,8 +165,7 @@ suite "sync/types (download RequestMessage / request & response payloads)":
 
   test "encode / decode DownloadBlocksResponse roundtrip (one block)":
     let
-      sm = minimalSignedTx()
-      genesis = createGenesisBlock(sm).get
+      genesis = createGenesisBlock(testGenesisTx()).get
     let blockWire = try:
       encode(genesis, cryptarchiaSyncBincodeConfig)
     except BincodeError:

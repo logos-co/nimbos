@@ -19,6 +19,7 @@ import
 
 from stew/byteutils import fromBytes
 
+from ../core/mantle/tx_types import ValidGenesisMantleTx, SignedMantleTx
 from ../core/utils import isUtf8
 from ../core/crypto/types as crypto_types import DefaultEd25519PublicKey
 from ../consensus/clock import WallclockSeconds
@@ -30,7 +31,7 @@ const
 
 type
   GenesisState* = object
-    signedMantleTx*: SignedMantleTx
+    signedMantleTx*: ValidGenesisMantleTx
     faucetZkPublicKey*: ZkPublicKey
     header*: Header
     blockSignature*: Ed25519Signature
@@ -69,7 +70,7 @@ func cryptarchiaParameter*(
   ## Decode the Cryptarchia parameters from the genesis inscription.
   decodeCryptarchiaParameter(tx.tx.ops[1].payload.channelInscribe.inscription)
 
-func createGenesisHeader(genesisMantleTx: SignedMantleTx): Result[Header, EncodingError] =
+func createGenesisHeader*(genesisMantleTx: ValidGenesisMantleTx): Result[Header, EncodingError] =
   ## Genesis header constructor using spec defaults:
   ## - parent block id = zero hash
   ## - slot = 0
@@ -78,7 +79,7 @@ func createGenesisHeader(genesisMantleTx: SignedMantleTx): Result[Header, Encodi
     bedrockVersion = GenesisBedrockVersion,
     parentBlock = DefaultBlockId,
     slot = 0'u64,
-    txs = [genesisMantleTx],
+    txs = [SignedMantleTx(genesisMantleTx)],
     proofOfLeadership = ProofOfLeadership(
       leaderVoucher: default(RewardVoucher),
       entropyContribution: default(ZkHash),
@@ -87,9 +88,9 @@ func createGenesisHeader(genesisMantleTx: SignedMantleTx): Result[Header, Encodi
     ),
   )
 
-func createGenesisBlock*(genesisMantleTx: SignedMantleTx): Result[Block, EncodingError] =
+func createGenesisBlock*(genesisMantleTx: ValidGenesisMantleTx): Result[Block, EncodingError] =
   ## GENESIS_BLOCK = (GENESIS_HEADER, GENESIS_SIGNATURE, [GENESIS_MANTLE_TX])
   let genesisHeader = ?createGenesisHeader(genesisMantleTx)
-  ok(initBlock(genesisHeader, DefaultEd25519Signature, [genesisMantleTx]))
+  ok(initBlock(genesisHeader, DefaultEd25519Signature, [SignedMantleTx(genesisMantleTx)]))
 
 {.pop.}
