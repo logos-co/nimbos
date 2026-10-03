@@ -35,7 +35,7 @@ type
     header*: Header
     blockSignature*: Ed25519Signature
 
-  # https://github.com/logos-co/logos-lips/blob/b7301a67b5364a8dbe719f8b67b96b7f198d0a13/docs/blockchain/raw/bedrock-genesis-block.md#cryptarchia-parameters
+  # https://github.com/logos-co/logos-lips/blob/4deef612ce1ae1776167daf8779d4abae953201b/docs/blockchain/raw/bedrock-genesis-block.md#cryptarchia-parameters
   CryptarchiaParameter* = object
     ## Consensus parameters inscribed into the genesis block.
     chainId*: string
