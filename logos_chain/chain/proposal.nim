@@ -148,8 +148,8 @@ func reconstructBlock*(
       return err(ProposalValidationError.MissingReference)
     txs.add(SignedMantleTx(tx))
   
-  # Not `initBlock`: the uncle list is unbounded here and
-  # `validateBlockStructure` rejects an oversized one as input.
+  # Not `initBlock`: its uncle-count assert is for programming errors, and
+  # `validateBlockStructure` checks the count of this block as input.
   ok(Block(
     header: proposal.header,
     signature: proposal.signature,

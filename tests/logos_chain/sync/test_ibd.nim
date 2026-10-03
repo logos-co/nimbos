@@ -77,7 +77,7 @@ suite "sync/initial_block_download (download blocks)":
         kind: dbrBlock,
         downloadedBlock: encode(
           Block(header: genesis.header, signature: genesis.signature,
-                uncleHeaders: uncles, txs: @[]),
+                uncleHeaders: UncleHeaders(uncles), txs: @[]),
           cryptarchiaSyncBincodeConfig))
     check decodeBlocksFromDownloadResponses(@[response(@[uncle, uncle, uncle, uncle])]).get.len == 1
     check decodeBlocksFromDownloadResponses(@[response(@[uncle, uncle, uncle, uncle, uncle])]).isNone

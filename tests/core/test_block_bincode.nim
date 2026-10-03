@@ -9,7 +9,9 @@
 {.used.}
 
 import
+  std/sequtils,
   results,
+  stew/endians2,
   unittest2,
   ../testutil,
   bincode,
@@ -166,5 +168,46 @@ suite "core/block bincode (cryptarchia sync)":
         377 + 2 * SignedHeaderSize + 8 + encodeSignedMantleTx(sm).get.len
     except BincodeError:
       fail getCurrentExceptionMsg()
+
+  test "decode rejects more than MaxUncles uncles (Block and Proposal)":
+    let
+      uncle = SignedHeader(
+        header: sampleHeader([]), signature: DefaultEd25519Signature)
+      tooMany = UncleHeaders(newSeqWith(MaxUncles + 1, uncle))
+      atLimit = UncleHeaders(newSeqWith(MaxUncles, uncle))
+      h = sampleHeader([])
+    var
+      proposal = new(Proposal)
+      wireBlock, wireProposal: seq[byte]
+    proposal.header = h
+    try:
+      # Not `initBlock`: the constructor asserts the bound.
+      check decode(
+        encode(Block(header: h, uncleHeaders: atLimit), cfg), Block, cfg
+      ).uncleHeaders.len == MaxUncles
+      wireBlock = encode(Block(header: h, uncleHeaders: tooMany), cfg)
+      proposal.uncleHeaders = tooMany
+      wireProposal = encode(proposal[], cfg)
+    except BincodeError:
+      fail getCurrentExceptionMsg()
+    expect BincodeError:
+      discard decode(wireBlock, Block, cfg)
+    expect BincodeError:
+      var decoded = new(Proposal)
+      decoded[] = decode(wireProposal, Proposal, cfg)
+
+  test "decode rejects a false uncle count with no uncle data":
+    # The uncle count follows the header. A large count with no elements
+    # must fail before the decoder allocates for it.
+    let h = sampleHeader([])
+    var wire: seq[byte]
+    try:
+      wire = encode(h, cfg)
+    except BincodeError:
+      fail getCurrentExceptionMsg()
+    wire.add toBytesLE(10_000_000'u64)
+    expect BincodeError:
+      var decoded = new(Proposal)
+      decoded[] = decode(wire, Proposal, cfg)
 
 {.pop.}
