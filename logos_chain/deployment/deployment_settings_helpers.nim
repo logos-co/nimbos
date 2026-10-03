@@ -34,7 +34,7 @@ func yamlGetPathNode*(root: YamlNode, keys: openArray[string]): Opt[YamlNode] =
       return Opt.none(YamlNode)
   Opt.some(cur)
 
-func yamlGetPathScalar*(root: YamlNode, keys: openArray[string]): Opt[string] =
+func yamlGetPathScalar(root: YamlNode, keys: openArray[string]): Opt[string] =
   if keys.len == 0:
     return Opt.none(string)
   let node = yamlGetPathNode(root, keys).valueOr:
@@ -124,7 +124,7 @@ func reqDecimalRatio*(
     root: YamlNode, path: openArray[string]): Result[NonNegativeRatio, string] =
   reqParsed(root, path, parseDecimalRatio, "decimal ratio")
 
-proc parseSlotDurationSeconds*(s: string): Duration {.raises: [ValueError].} =
+proc parseSlotDurationSeconds(s: string): Duration {.raises: [ValueError].} =
   ## ``time.slot_duration`` YAML scalar: seconds as a float (e.g. ``'1.0'``).
   let secs = parseFloat(s)
   nanoseconds(int64(secs * float(nanoseconds(seconds(1)))))

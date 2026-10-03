@@ -36,7 +36,7 @@ func update*(h: var Poseidon2Hasher, xs: openArray[FieldElement]) =
     h.updateOne(x)
   h.updateOne(one)
 
-func finalize*(h: Poseidon2Hasher): FieldElement =
+func finalize(h: Poseidon2Hasher): FieldElement =
   h.s0
 
 func digest*(_: type Poseidon2Hasher, xs: openArray[FieldElement]): FieldElement =

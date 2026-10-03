@@ -25,7 +25,7 @@ import
   ./binary_common,
   ./zk/circuits
 
-from std/os import dirExists, getDataDir, `/`
+from std/os import getDataDir, `/`
 
 export
   uri, multiaddress,
@@ -39,7 +39,6 @@ const
   # TODO: How should we select between IPv4 and IPv6
   # Maybe there should be a config option for this.
   defaultAdminListenAddress* = (static parseIpAddress("127.0.0.1"))
-  defaultSigningNodeRequestTimeout* = 60
   defaultAdminListenAddressDesc* = $defaultAdminListenAddress
   ## Default ``--deployment-settings`` path (canonical cfgsync layout; run from repo root or override).
   defaultDeploymentSettingsPath* = "config/deployment-settings.yaml"
@@ -313,7 +312,7 @@ type
     netKey*: Option[string]
     netKeyFile*: Option[string]
 
-  AnyConf* = LBNodeConf
+  AnyConf = LBNodeConf
 
 func parseCmdArg*(T: type Uri, input: string): T
                  {.raises: [ValueError].} =
@@ -345,19 +344,10 @@ proc readValue*(r: var TomlReader, value: var ThreadCount)
   value = ThreadCount.init(r.parseInt(int)).valueOr:
     raise newException(SerializationError, error)
 
-proc secretsDir*[Conf](config: Conf): string =
-  string config.secretsDirFlag.get(InputDir(config.dataDir / "secrets"))
-
-func databaseDir*(dataDir: OutDir): string =
-  dataDir / "db"
-
-template databaseDir*(config: AnyConf): string =
-  config.dataDir.databaseDir
-
 func runAsService*(config: LBNodeConf): bool =
   config.runAsServiceFlag
 
-func announcedAddress*(uri: Uri, defaultPort: Port): Result[MultiAddress, string] =
+func announcedAddress(uri: Uri, defaultPort: Port): Result[MultiAddress, string] =
   if uri.hostname.len == 0:
     return err("Missing hostname in advertised URI: " & $uri)
 

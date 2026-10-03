@@ -29,7 +29,7 @@ const
 
   GitRevisionOverride {.strdefine.} = ""
 
-  nimFullBanner* = staticExec("nim --version")
+  nimFullBanner = staticExec("nim --version")
 
 template generateGitRevision*(repoPath: string): untyped =
   # strip: remove spaces

@@ -12,7 +12,7 @@ import
   std/[sequtils, strutils],
   chronos,
   chronos/unittest2/asynctests,
-  libp2p/[switch, builders, multiaddress, peerid, peerstore],
+  libp2p/[switch, multiaddress, peerid, peerstore],
   libp2p/protocols/connectivity/autonatv2/[types, client],
   libp2p/protocols/pubsub/gossipsub,
   ../testutil,
@@ -20,7 +20,7 @@ import
   ../../logos_chain/conf,
   ../../logos_chain/core/[types, local_tree],
   ../../logos_chain/core/mantle/[operations, tx_types, tx_hashing],
-  ../../logos_chain/networking/[network, discovery, protocols],
+  ../../logos_chain/networking/[network, protocols],
   ../../logos_chain/chain/genesis,
   ../../logos_chain/node,
   ../../logos_chain/deployment/deployment_settings

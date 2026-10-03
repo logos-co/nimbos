@@ -25,7 +25,7 @@ from ./core/mantle/primitives import MaxBlockTxs, SlotNumber
 from ./core/types import Block
 
 const
-  DefaultMempoolCapacity* = 10_240
+  DefaultMempoolCapacity = 10_240
   MempoolMaxAgeSlots* = 100'u64
 
 func maxMempoolCapacity*(securityParam: uint64 = 1): uint64 {.inline.} =
@@ -36,7 +36,7 @@ type
   MempoolError* {.pure.} = enum
     TxNotFound
 
-  MempoolItem* = ref object
+  MempoolItem = ref object
     tx*: ValidSignedMantleTx
     addedAtSlot*: SlotNumber
     byteSize*: Opt[int] ## Lazily computed serialized byte length; cached on first proposal evaluation to avoid re-encoding

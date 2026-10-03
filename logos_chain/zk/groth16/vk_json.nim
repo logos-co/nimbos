@@ -17,7 +17,7 @@ import
 export VKey, SpecPoints, VerifierPoints, JsonLoadError, utils
 
 type
-  VerificationKeyJson* = object
+  VerificationKeyJson = object
     protocol*: string
     curve*: string
     alpha1* {.serializedFieldName: "vk_alpha_1".}: JsonG1

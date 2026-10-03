@@ -11,7 +11,7 @@
 {.push raises: [], gcsafe.}
 
 import
-  libp2p/[switch, peerinfo, errors, crypto/crypto, peeraddrpolicy],
+  libp2p/[switch, peerinfo, errors, peeraddrpolicy],
   libp2p/protocols/identify,
   libp2p/protocols/kademlia,
   ../conf

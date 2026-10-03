@@ -39,7 +39,7 @@ type
 # `requireAllFields` stays true so missing-required-field errors still surface.
 createJsonFlavor SnarkjsJson
 
-func fpFromDecimal*(s: string): Result[Fp[BN254_Snarks], JsonLoadError] =
+func fpFromDecimal(s: string): Result[Fp[BN254_Snarks], JsonLoadError] =
   ## Parse a decimal string into a BN254 base-field element.
   try:
     let big = BigInt[254].fromDecimal(s)
@@ -49,7 +49,7 @@ func fpFromDecimal*(s: string): Result[Fp[BN254_Snarks], JsonLoadError] =
   except ValueError:
     err(BadFieldElement)
 
-func fp2FromDecimal*(c0, c1: string): Result[Fp2[BN254_Snarks], JsonLoadError] =
+func fp2FromDecimal(c0, c1: string): Result[Fp2[BN254_Snarks], JsonLoadError] =
   ## Parse two decimal strings into an Fp2 quadratic-extension element.
   let
     a = ? fpFromDecimal(c0)

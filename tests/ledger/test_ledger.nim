@@ -22,7 +22,7 @@ import
     [primitives, operations, proofs, tx_hashing, tx_types, utxo],
   ../../logos_chain/core/types,
   ../../logos_chain/zk/pol,
-  ../zk/[snarkjs_helpers, zksign_helpers],
+  ../zk/zksign_helpers,
   ./sdp/test_helpers,
   ../core/mantle/test_helpers,
   ../testutil

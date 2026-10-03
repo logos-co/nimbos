@@ -9,7 +9,7 @@
 {.used.}
 
 import std/strutils
-import chronos, chronos/apps, chronos/unittest2/asynctests
+import chronos, chronos/unittest2/asynctests
 import presto/[route, server]
 import ./helpers
 import ../logos_chain/api/paths

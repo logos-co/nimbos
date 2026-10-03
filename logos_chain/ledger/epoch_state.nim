@@ -22,7 +22,7 @@ from ../core/mantle/primitives import slotToFr
 
 export clock, types, hasher, block_density, blend_difficulty
 
-type EpochState* = object
+type EpochState = object
   ## The spec's Epoch State `(C_LEAD, η, D)` plus cached lottery coefficients.
   epoch*: EpochNumber
   nonce*: FieldElement ## η — frozen at nonceSnapshot(epoch)

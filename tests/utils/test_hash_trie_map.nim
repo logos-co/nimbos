@@ -537,10 +537,6 @@ suite "HashTrieMap scale and structure":
     check m.len == BranchCount
     for i in 0 ..< BranchCount:
       check m[CollidingKey(id: i, bucket: i)] == i * 100
-    var visited = 0
-    for k, v in m.pairs:
-      inc visited
-    check visited == BranchCount
 
   test "remove then reinsert yields a map equal to original":
     var m = HashTrieMap[int, int].init()

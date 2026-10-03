@@ -115,7 +115,7 @@ suite "chain/orphan_resolution":
     check chain.orphanPool.len == 0
 
   test "chain respects MaxOrphans capacity limit and evicts oldest":
-    var (chain, genesis, gid) = setupChain()
+    var (chain, _, gid) = setupChain()
 
     var
       blocks: seq[Block]
@@ -139,7 +139,7 @@ suite "chain/orphan_resolution":
     check chain.orphanPool.len == 1
 
   test "chain re-buffers evicted orphan and resolves cascade upon parent arrival":
-    var (chain, genesis, gid) = setupChain()
+    var (chain, _, gid) = setupChain()
 
     var
       blocks: seq[Block]

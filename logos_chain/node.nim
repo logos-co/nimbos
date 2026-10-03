@@ -53,18 +53,6 @@ type
 template rng*(node: LBNode): ref HmacDrbgContext =
   node.network.rng
 
-proc initFullNode(
-    node: LBNode,
-    rng: ref HmacDrbgContext,
-) {.async: (raises: [CancelledError]).} =
-  template config(): auto = node.config
-
-  proc eventWaiter(): Future[void] {.async: (raises: [CancelledError]).} =
-    await node.shutdownEvent.wait()
-    ProcessState.scheduleStop("shutdownEvent")
-
-  asyncSpawn eventWaiter()
-
 proc init*(
     T: type LBNode,
     rng: ref HmacDrbgContext,
@@ -227,7 +215,6 @@ proc onSecond(node: LBNode, time: Moment) =
 proc runOnSecondLoop(node: LBNode) {.async.} =
   const
     sleepTime = chronos.seconds(1)
-    nanosecondsIn1s = float(sleepTime.nanoseconds)
   while true:
     let start = chronos.now(chronos.Moment)
     await chronos.sleepAsync(sleepTime)

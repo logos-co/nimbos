@@ -48,7 +48,6 @@ type
     TrailingBytes
     BufferExceeded
     InvalidFieldElement
-    InvalidPublicKey
     InvalidSignature
     InvalidServiceType
     LocatorLengthExceeded
@@ -87,10 +86,10 @@ const
   DefaultZkSignature* = DefaultCompressedGroth16Proof
   DefaultEd25519Signature* = default(Ed25519Signature)
   DefaultEd25519PublicKey* = default(Ed25519PublicKey)
-  DefaultFieldElement* = default(FieldElement)
+  DefaultFieldElement = default(FieldElement)
 
 let
-  KDF*: FieldElement =
+  KDF: FieldElement =
     # Domain separator for the zksign key-derivation primitive: literal bytes
     # "KDF" interpreted as a little-endian Fr (auto-padded to 32 bytes).
     frFromBytesLE([byte 'K', byte 'D', byte 'F']).get

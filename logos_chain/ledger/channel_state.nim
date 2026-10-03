@@ -40,7 +40,7 @@ func checkedAdd(a, b: TokenValue): Result[TokenValue, LedgerError] =
   let (res, didOverflow) = overflowingAdd(a, b)
   if didOverflow: err(BalanceOutOfRange) else: ok(res)
 
-func default_channel*(
+func default_channel(
     blockSlot: SlotNumber, keys: openArray[Ed25519PublicKey]
 ): ChannelState =
   ## Factory for a brand-new channel: thresholds = 1, no rotation, no

@@ -17,11 +17,11 @@ import std/[bitops, hashes, sequtils]
 import results
 
 const
-  BranchBits* = 5
+  BranchBits = 5
     ## Bits of hash consumed per trie level. 5 ⇒ 32-way branching.
   BranchCount* = 1 shl BranchBits
     ## Slots per branch node (= 32).
-  MaxDepth* =
+  MaxDepth =
     (sizeof(Hash) * 8 + BranchBits - 1) div BranchBits
     ## Past this depth, same-hash entries share a ``Collision`` node.
 

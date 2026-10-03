@@ -23,9 +23,9 @@ import
 export tx_validation.StatelessLedgerError
 
 from ../core/types import
-  Block, Header, Proposal, References, createBlockRoot, ExpectedBedrockVersion,
-  MaxBlockSize, header, txs, blockId, Hash32, ValidBlock
-from ../core/mantle/primitives import MaxBlockTxs, SlotNumber
+  Block, createBlockRoot, ExpectedBedrockVersion,
+  MaxBlockSize, header, txs, blockId, ValidBlock
+from ../core/mantle/primitives import MaxBlockTxs
 from ../core/mantle/tx_types import SignedMantleTx, ValidSignedMantleTx, byteLen
 
 type

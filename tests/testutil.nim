@@ -22,7 +22,7 @@ import
   ../logos_chain/core/[types, local_tree],
   ../logos_chain/core/mantle/[operations, tx_types, tx_validation, utxo],
   ../logos_chain/chain/genesis,
-  ../logos_chain/ledger/[pol_verifier, types],
+  ../logos_chain/ledger/pol_verifier,
   ./core/mantle/test_helpers
 
 from ../logos_chain/core/crypto/types import
@@ -286,9 +286,6 @@ proc childBlock*(
   ).get
   let sig = testBlockKeyPair.seckey.sign(blockId(h))
   initBlock(h, signature = sig, txs = txs)
-
-func singleTxRefs*(hash: Hash32): References {.inline.} =
-  result[0] = hash
 
 type BootstrapPeers* = object
   listener*, dialer*: LBP2PNode

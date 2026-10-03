@@ -49,7 +49,7 @@ type
   SyncResponseKind* {.pure.} = enum
     Good, Empty
 
-  SyncResponseStats* = array[int(high(SyncResponseKind)) + 1, uint64]
+  SyncResponseStats = array[int(high(SyncResponseKind)) + 1, uint64]
 
 template get*(a: SyncResponseStats, index: SyncResponseKind): uint64 =
   a[int(index)]

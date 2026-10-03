@@ -25,7 +25,7 @@ const
   MaxBlockSize* = 1_048_576
 
 type
-  ProofOfLeadershipProof* = CompressedGroth16Proof
+  ProofOfLeadershipProof = CompressedGroth16Proof
 
   ProofOfLeadership* = object
     # Declaration order IS the bincode wire order (the derive serializes
@@ -60,7 +60,7 @@ type
     signature*: Ed25519Signature
 
 const
-  DefaultHash32* = default(Hash32)
+  DefaultHash32 = default(Hash32)
   DefaultBlockId* = default(BlockId)
 
 deriveBincode(ProofOfLeadership)
