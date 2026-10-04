@@ -308,3 +308,5 @@ suite "chain/orphan_pool":
     check pool.len == 1
     check not pool.hasOrphan(b1Id)
     check pool.hasOrphan(b2Id)
+
+{.pop.}

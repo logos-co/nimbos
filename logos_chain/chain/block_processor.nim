@@ -35,7 +35,7 @@ type
   BlockApplyResult = Result[void, BlockApplyError]
   BlockApplyFuture = Future[BlockApplyResult].Raising([CancelledError])
 
-  BlockEntryKind = enum
+  BlockEntryKind {.pure.} = enum
     RawIncoming
     PromotedOrphan
 
@@ -43,10 +43,10 @@ type
     queueTick: Moment
     resfut: Opt[BlockApplyFuture]
     case kind: BlockEntryKind
-    of RawIncoming:
+    of BlockEntryKind.RawIncoming:
       blk: Block
       src: BlockSource
-    of PromotedOrphan:
+    of BlockEntryKind.PromotedOrphan:
       admittedBlk: AdmittedBlock
 
   BlockProcessor* = ref object
@@ -98,7 +98,7 @@ proc addBlock*(
     return resfut
 
   let entry = BlockEntry(
-    kind: RawIncoming,
+    kind: BlockEntryKind.RawIncoming,
     blk: blk,
     src: src,
     resfut: Opt.some(resfut),
@@ -118,12 +118,12 @@ proc enqueueOrphanBlock(bp: BlockProcessor, child: AdmittedBlock) =
 
   bp.inFlight.withValue(childId, existing):
     # A raw copy is queued — supersede it and steal its caller future.
-    if existing[].kind == RawIncoming:
+    if existing[].kind == BlockEntryKind.RawIncoming:
       stolenResfut = existing[].resfut
       existing[].resfut = Opt.none(BlockApplyFuture)
 
   let entry = BlockEntry(
-    kind: PromotedOrphan,
+    kind: BlockEntryKind.PromotedOrphan,
     queueTick: Moment.now(),
     admittedBlk: child,
     resfut: stolenResfut,
@@ -136,30 +136,30 @@ proc enqueueOrphanBlock(bp: BlockProcessor, child: AdmittedBlock) =
     raiseAssert "unbounded queue cannot be full"
 
 proc processBlock(bp: BlockProcessor, entry: BlockEntry) =
-  if entry.kind == RawIncoming and entry.resfut.isNone:
+  if entry.kind == BlockEntryKind.RawIncoming and entry.resfut.isNone:
     return
 
   let id = case entry.kind
-    of RawIncoming: blockId(header(entry.blk))
-    of PromotedOrphan: blockId(header(entry.admittedBlk))
+    of BlockEntryKind.RawIncoming: blockId(header(entry.blk))
+    of BlockEntryKind.PromotedOrphan: blockId(header(entry.admittedBlk))
   defer:
     bp.inFlight.del(id)
 
   let
     startTick = Moment.now()
     res = case entry.kind
-      of RawIncoming: bp.chain.tryApplyBlock(entry.blk)
-      of PromotedOrphan: bp.chain.tryApplyAdmittedBlock(entry.admittedBlk)
+      of BlockEntryKind.RawIncoming: bp.chain.tryApplyBlock(entry.blk)
+      of BlockEntryKind.PromotedOrphan: bp.chain.tryApplyAdmittedBlock(entry.admittedBlk)
     applyDur = Moment.now() - startTick
     queueDur = startTick - entry.queueTick
 
   res.isOkOr:
     case entry.kind
-    of RawIncoming:
+    of BlockEntryKind.RawIncoming:
       debug "Block rejected",
         id = toHex(id), slot = header(entry.blk).slot,
         src = entry.src, queueDur, applyDur, err = error.kind
-    of PromotedOrphan:
+    of BlockEntryKind.PromotedOrphan:
       debug "Promoted orphan rejected",
         id = toHex(id), slot = header(entry.admittedBlk).slot,
         queueDur, applyDur, err = error.kind
@@ -171,11 +171,11 @@ proc processBlock(bp: BlockProcessor, entry: BlockEntry) =
     bp.enqueueOrphanBlock(child)
 
   case entry.kind
-  of RawIncoming:
+  of BlockEntryKind.RawIncoming:
     debug "Block applied",
       id = toHex(id), slot = header(entry.blk).slot,
       src = entry.src, queueDur, applyDur
-  of PromotedOrphan:
+  of BlockEntryKind.PromotedOrphan:
     debug "Promoted orphan applied",
       id = toHex(id), slot = header(entry.admittedBlk).slot,
       queueDur, applyDur

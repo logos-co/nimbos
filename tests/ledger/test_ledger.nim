@@ -150,7 +150,6 @@ suite "tryApplyTx — channel ops":
           .expect("fresh note")
     s
 
-
   test "ChannelWithdraw contributes nothing to the transaction balance":
     let
       rng = HmacDrbgContext.new()

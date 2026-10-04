@@ -439,7 +439,6 @@ suite "chain/orphan_resolution":
       a3 = childBlock(a2.header, idA2, SlotNumber(5), [])
       idA3 = blockId(a3.header)
       a4 = childBlock(a3.header, idA3, SlotNumber(6), [])
-      idA4 = blockId(a4.header)
 
     check chain.tryApplyBlock(a1).isOk
     check chain.tryApplyBlock(a2).isOk
@@ -460,3 +459,5 @@ suite "chain/orphan_resolution":
     # With the fix, tryApplyAdmittedBlock pruned descendants of b2 upon failure -> b3 is purged!
     check not chain.orphanPool.hasOrphan(idB3)
     check chain.orphanPool.len == 0
+
+{.pop.}

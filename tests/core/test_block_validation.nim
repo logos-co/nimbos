@@ -51,7 +51,7 @@ proc mkSizedTx(bytes: int): SignedMantleTx =
 proc validate(genesis: Block, blk: Block): Result[ValidBlock, BlockValidationError] =
   let tree = newLocalTree(genesis, 1'u64)
   let state = LedgerState.fromGenesis(
-    genesis.txs, default(FieldElement), testSdpRegistry(), testLedgerConfig
+    testGenesisTx(), default(FieldElement), testSdpRegistry(), testLedgerConfig
   ).valueOr:
     raiseAssert "validate helper init: " & $error
   let ledger = Ledger[BlockId].init(
@@ -281,7 +281,7 @@ suite "core/block_validation — multi-tier evaluation order":
       (tree, _, b2) = treeWithLib(genesis)
       blk = childBlock(b2.header, blockId(b2.header), SlotNumber(4), [minimalSignedTx()])
       state = LedgerState.fromGenesis(
-        genesis.txs, default(FieldElement), testSdpRegistry(), testLedgerConfig
+        testGenesisTx(), default(FieldElement), testSdpRegistry(), testLedgerConfig
       ).expect("genesis state")
     var ledger = Ledger[BlockId].init(
       blockId(genesis.header), state, testLedgerConfig, mockVerifyLeaderProof)
@@ -339,7 +339,7 @@ suite "core/block_validation — multi-tier evaluation order":
       gid = blockId(genesis.header)
       tree = newLocalTree(genesis, 1'u64)
       state = LedgerState.fromGenesis(
-        genesis.txs, default(FieldElement), testSdpRegistry(), testLedgerConfig
+        testGenesisTx(), default(FieldElement), testSdpRegistry(), testLedgerConfig
       ).expect("genesis state")
       ledger = Ledger[BlockId].init(gid, state, testLedgerConfig, failingPolVerifier)
       blk = childBlock(genesis.header, gid, SlotNumber(1), [badTx])
@@ -398,7 +398,7 @@ suite "core/block_validation — multi-tier evaluation order":
       tree = newLocalTree(genesis, 1'u64)
       blk = childBlock(genesis.header, gid, SlotNumber(1), [sm])
       state = LedgerState.fromGenesis(
-        genesis.txs, default(FieldElement), testSdpRegistry(), testLedgerConfig
+        testGenesisTx(), default(FieldElement), testSdpRegistry(), testLedgerConfig
       ).expect("genesis state")
       ledger = Ledger[BlockId].init(gid, state, testLedgerConfig, mockVerifyLeaderProof)
     var mempool = Mempool.init()
@@ -440,7 +440,7 @@ suite "core/block_validation — multi-tier evaluation order":
       genesis = createGenesisBlock(minimalSignedTx()).get
       tree = newLocalTree(genesis, 1'u64)
       state = LedgerState.fromGenesis(
-        genesis.txs, default(FieldElement), testSdpRegistry(), testLedgerConfig
+        testGenesisTx(), default(FieldElement), testSdpRegistry(), testLedgerConfig
       ).expect("genesis state")
       ledger = Ledger[BlockId].init(blockId(genesis.header), state, testLedgerConfig, mockVerifyLeaderProof)
       orphanParent = Hash32([1'u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
