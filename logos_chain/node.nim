@@ -231,6 +231,10 @@ proc installMessageValidators(node: LBNode) =
     node.network.addValidator(blockTopic) do (
         proposal: Proposal, src: PeerId
     ) -> ValidationResult:
+      if node.syncer != nil and not node.syncer.isSynced():
+        debug "GossipSub ignored proposal during IBD / syncing",
+          blockSlot = proposal.header.slot, src
+        return ValidationResult.Ignore
       node.processor.processProposal(proposal, src)
     node.network.subscribe(blockTopic, TopicParams.init())
     debug "Subscribed to gossip topic", topic = blockTopic

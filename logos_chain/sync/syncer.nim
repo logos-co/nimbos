@@ -17,6 +17,9 @@ import
 
 export syncer_types
 
+func isSynced*(syncer: Syncer): bool =
+  syncer != nil and syncer.ibdFut != nil and syncer.ibdFut.completed
+
 func init*(
     T: type Syncer, sw: Switch, processor: BlockProcessor, protocol: string): T =
   T(sw: sw, processor: processor, chainSyncProtocol: protocol)
