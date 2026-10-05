@@ -79,7 +79,7 @@ suite "mempool":
     check m.add(tx2, SlotNumber(0)).get == true
 
     var blk: Block
-    blk.txs = @[SignedMantleTx(tx1)]
+    blk.txs = BlockTxs(@[SignedMantleTx(tx1)])
 
     m.pruneBlockTxs(blk)
 

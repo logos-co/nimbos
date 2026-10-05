@@ -64,7 +64,7 @@ func validateBlockHeader(blk: Block): bool =
   # Only the commitment to the carried uncle list is checked here; the uncle
   # validity rules (Cryptarchia "Block Header Validation") are not
   # implemented yet.
-  let root = body_root(blk.uncleHeaders.asSeq, blk.txs).valueOr:
+  let root = body_root(blk.uncleHeaders.asSeq, blk.txs.asSeq).valueOr:
     return false
   if root != h.bodyRoot:
     return false
@@ -85,7 +85,7 @@ func validateBlockStructure(blk: Block): bool =
     return false
 
   # The spec bounds uncles by count only; MaxBlockSize covers the transactions.
-  if txBytesLen(blk.txs) > MaxBlockSize:
+  if txBytesLen(blk.txs.asSeq) > MaxBlockSize:
     return false
 
   true
@@ -186,7 +186,7 @@ proc prepareBlockUpdate*(
     headerState: LedgerState,
 ): Result[LedgerState, BlockValidationError] =
   ## Executes state transitions via `ledger.prepareUpdate` on a validated block.
-  template validTxs: untyped = cast[seq[ValidSignedMantleTx]](blk.txs)
+  template validTxs: untyped = cast[seq[ValidSignedMantleTx]](blk.txs.asSeq)
 
   let prepared = ledger.prepareUpdate(
     blk.header.slot, headerState, validTxs

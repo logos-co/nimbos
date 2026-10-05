@@ -100,8 +100,7 @@ func buildKnownBlocks*(
   )
 
 func decodeSyncBlock(wire: openArray[byte]): Result[Block, string] =
-  # Decodes a sync-wire block; the decoder rejects an uncle list above
-  # `MaxUncles`.
+  # Decodes a sync-wire block; `UncleHeaders` and `BlockTxs` bound both lists.
   try:
     ok(decode(wire, Block, cryptarchiaSyncBincodeConfig))
   except BincodeError as exc:

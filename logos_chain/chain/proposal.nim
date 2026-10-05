@@ -154,7 +154,7 @@ func reconstructBlock*(
     header: proposal.header,
     signature: proposal.signature,
     uncleHeaders: proposal.uncleHeaders,
-    txs: txs
+    txs: BlockTxs(txs)
   ))
 
 {.pop.}

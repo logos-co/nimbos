@@ -11,15 +11,15 @@
 {.push raises: [], gcsafe.}
 
 import
-  std/typetraits,
   results,
   stew/[assign2, bitops2],
   bincode,
+  bincode/types as bincodeTypes,
   libp2p/crypto/ed25519/ed25519,
   ./crypto/hashing,
   ./mantle/[tx_types, tx_hashing]
 
-export hashing, tx_types, tx_hashing, results
+export hashing, tx_types, tx_hashing, results, bincodeTypes
 
 const
   MaxUncles* = 4
@@ -51,14 +51,14 @@ type
     header*: Header
     signature*: Ed25519Signature
 
-  UncleHeaders* = distinct seq[SignedHeader]
-    ## Uncle headers of a block; the decoder accepts ``MaxUncles`` at most.
+  UncleHeaders* = BoundedSeq[SignedHeader, MaxUncles]
+  BlockTxs* = BoundedSeq[SignedMantleTx, MaxBlockTxs]
 
   Block* = object
     header*: Header
     signature*: Ed25519Signature
     uncleHeaders*: UncleHeaders
-    txs*: seq[SignedMantleTx]
+    txs*: BlockTxs
 
   AdmittedBlock* = distinct Block
     ## A ``Block`` that has successfully passed structural, topology,
@@ -86,27 +86,8 @@ const
 deriveBincode(ProofOfLeadership)
 deriveBincode(Header)
 deriveBincode(SignedHeader)
-
-# The uncle bound is a constraint of the serialization schema, so the decoder
-# rejects a longer list before it allocates. This overload must stay before
-# every other use of `UncleHeaders`: a generic decoder that is instantiated
-# for the type first is not bounded.
-func decodeAt*(
-    data: openArray[byte],
-    tParam: typedesc[UncleHeaders],
-    config: BincodeConfig = standard(),
-    start: int = 0,
-): (UncleHeaders, int) {.raises: [BincodeError].} =
-  let (uncles, used) =
-    decodeBoundedSeqAt(data, SignedHeader, MaxUncles, config, start)
-  (UncleHeaders(uncles), used)
-
 deriveBincode(Block)
 deriveBincode(Proposal)
-
-template asSeq*(uncles: UncleHeaders): auto = distinctBase(uncles)
-template len*(uncles: UncleHeaders): auto = len(distinctBase(uncles))
-template `==`*(a, b: UncleHeaders): bool = distinctBase(a) == distinctBase(b)
 
 template header*(blk: Block): auto = blk.header
 template header*(blk: AdmittedBlock): auto = Block(blk).header
@@ -186,7 +167,7 @@ func body_root*(uncles: openArray[SignedHeader], txRoot: Hash32): Hash32 =
   ## blake2b256("BODY_ROOT_V1" ‖ u8 uncle count ‖ 361-byte entries ‖ merkle root).
   ## Spec: [Cryptarchia Protocol v1.2.4, Block Header Validation](https://github.com/logos-co/logos-lips/blob/4deef612ce1ae1776167daf8779d4abae953201b/docs/blockchain/raw/cryptarchia-v1-protocol.md#block-header-validation)
   # Every input path bounds the count first (`validateBlockStructure`,
-  # `initBlock`, `initProposal`, the `UncleHeaders` decoder). A longer list
+  # `initBlock`, `initProposal`, the `BoundedSeq` decoder). A longer list
   # here is a programming error, not input.
   doAssert uncles.len <= MaxUncles,
     "uncle count exceeds MaxUncles (" & $MaxUncles & "): " & $uncles.len
@@ -261,7 +242,7 @@ func initBlock*(
     "block tx count exceeds MaxBlockTxs (" & $MaxBlockTxs & "): " & $txs.len
   Block(
     header: header, signature: signature,
-    uncleHeaders: UncleHeaders(@uncleHeaders), txs: @txs)
+    uncleHeaders: UncleHeaders(@uncleHeaders), txs: BlockTxs(@txs))
 
 func initHeader*(
     bedrockVersion: uint8,

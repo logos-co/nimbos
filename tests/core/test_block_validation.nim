@@ -61,7 +61,7 @@ proc validate(genesis: Block, blk: Block): Result[ValidBlock, BlockValidationErr
   let (admittedBlk, isOrphan) = ?validateBlockHeaderAndTopology(blk, tree, ledger)
   if isOrphan:
     return err(BlockValidationError(kind: BlockValidationErrorKind.UnviableFork))
-  let (validBlk, _) = ?validatePolAndStatelessTransactions(admittedBlk, ledger, blk.txs)
+  let (validBlk, _) = ?validatePolAndStatelessTransactions(admittedBlk, ledger, blk.txs.asSeq)
   ok(validBlk)
 
 proc treeWithLib(genesis: Block): tuple[tree: LocalTree, b1, b2: Block] =
@@ -233,7 +233,7 @@ suite "core/block_validation — inclusive size and count bounds":
       overLong = Block(
         header: b1.header,
         signature: b1.signature,
-        txs: newSeq[SignedMantleTx](MaxBlockTxs + 1),
+        txs: BlockTxs(newSeq[SignedMantleTx](MaxBlockTxs + 1)),
       )
     check validate(genesis, overLong).isErr
 
@@ -385,7 +385,7 @@ suite "core/block_validation — multi-tier evaluation order":
 
     let (admittedBlk, isOrphan) = validateBlockHeaderAndTopology(blk, tree, ledger).expect("header valid")
     check not isOrphan
-    let res = validatePolAndStatelessTransactions(admittedBlk, ledger, blk.txs)
+    let res = validatePolAndStatelessTransactions(admittedBlk, ledger, blk.txs.asSeq)
     check res.isErr
     # PoL failure at Tier 3a triggers HeaderRejected, BEFORE reaching Tier 3b StatelessTxRejected
     check res.error.kind == BlockValidationErrorKind.HeaderRejected
@@ -443,7 +443,7 @@ suite "core/block_validation — multi-tier evaluation order":
     var mempool = Mempool.init()
     check mempool.add(ValidSignedMantleTx(sm), SlotNumber(0)).get
 
-    let unverified = mempool.unverifiedTxs(blk.txs)
+    let unverified = mempool.unverifiedTxs(blk.txs.asSeq)
     check unverified.len == 0
     let (admittedBlk2, isOrphan2) = validateBlockHeaderAndTopology(blk, tree, ledger).expect("header valid")
     check not isOrphan2

@@ -240,7 +240,7 @@ proc applyAdmittedBlock(
 ): Result[void, BlockApplyError] =
   # Tier 3: PoL against parent state and stateless transaction validation
   let
-    unverified = chain.mempool.unverifiedTxs(admittedBlk.txs)
+    unverified = chain.mempool.unverifiedTxs(admittedBlk.txs.asSeq)
     (validBlk, headerState) = validatePolAndStatelessTransactions(
       admittedBlk, chain.ledger, unverified
     ).valueOr:

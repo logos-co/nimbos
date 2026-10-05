@@ -210,4 +210,20 @@ suite "core/block bincode (cryptarchia sync)":
       var decoded = new(Proposal)
       decoded[] = decode(wire, Proposal, cfg)
 
+  test "decode rejects more than MaxBlockTxs transactions":
+    let
+      sm = minimalSignedTx()
+      h = sampleHeader([])
+    var atLimit, tooMany: seq[byte]
+    try:
+      atLimit = encode(
+        Block(header: h, txs: BlockTxs(newSeqWith(MaxBlockTxs, sm))), cfg)
+      tooMany = encode(
+        Block(header: h, txs: BlockTxs(newSeqWith(MaxBlockTxs + 1, sm))), cfg)
+      check decode(atLimit, Block, cfg).txs.len == MaxBlockTxs
+    except BincodeError:
+      fail getCurrentExceptionMsg()
+    expect BincodeError:
+      discard decode(tooMany, Block, cfg)
+
 {.pop.}
