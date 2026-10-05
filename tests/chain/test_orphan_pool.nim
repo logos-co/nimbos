@@ -10,29 +10,28 @@
 
 import
   unittest2,
-  results,
   ../logos_chain/sync/helpers,
   ../../logos_chain/core/types,
   ../../logos_chain/core/local_tree,
   ../../logos_chain/chain/orphan_pool
+
+converter toAdmittedBlock(b: Block): AdmittedBlock =
+  AdmittedBlock(b)
 
 suite "chain/orphan_pool":
   test "empty pool properties":
     let pool = OrphanPool()
     check pool.len == 0
     check not pool.hasOrphan(default(BlockId))
-    check pool.getOrphan(default(BlockId)).isNone
     check pool.takeChildren(default(BlockId)).len == 0
 
-  test "addOrphan and getOrphan":
+  test "addOrphan buffers block":
     let pool = OrphanPool()
     let parentId = exampleBlockId(1)
-    let blk = ValidBlock(
-      Block(
-        header: Header(
-          slot: 1,
-          parentBlock: parentId,
-        )
+    let blk = Block(
+      header: Header(
+        slot: 1,
+        parentBlock: parentId,
       )
     )
     let bId = blockId(blk.header)
@@ -40,8 +39,6 @@ suite "chain/orphan_pool":
     check pool.addOrphan(blk)
     check pool.len == 1
     check pool.hasOrphan(bId)
-    check pool.getOrphan(bId).isSome
-    check pool.getOrphan(bId).get().header.slot == 1
 
     # duplicate add returns false and does not change pool len
     check not pool.addOrphan(dupBlk)
@@ -50,8 +47,8 @@ suite "chain/orphan_pool":
   test "takeChildren removes and returns waiting children":
     let pool = OrphanPool()
     let parentId = exampleBlockId(1)
-    let child1 = ValidBlock(Block(header: Header(slot: 1, parentBlock: parentId)))
-    let child2 = ValidBlock(Block(header: Header(slot: 2, parentBlock: parentId)))
+    let child1 = Block(header: Header(slot: 1, parentBlock: parentId))
+    let child2 = Block(header: Header(slot: 2, parentBlock: parentId))
     let c1Id = blockId(child1.header)
     let c2Id = blockId(child2.header)
 
@@ -71,8 +68,8 @@ suite "chain/orphan_pool":
   test "removeOrphan removes orphan and cleans up parent mapping":
     let pool = OrphanPool()
     let parentId = exampleBlockId(1)
-    let child1 = ValidBlock(Block(header: Header(slot: 1, parentBlock: parentId)))
-    let child2 = ValidBlock(Block(header: Header(slot: 2, parentBlock: parentId)))
+    let child1 = Block(header: Header(slot: 1, parentBlock: parentId))
+    let child2 = Block(header: Header(slot: 2, parentBlock: parentId))
     let c1Id = blockId(child1.header)
     let c2Id = blockId(child2.header)
 
@@ -91,10 +88,10 @@ suite "chain/orphan_pool":
   test "maxOrphans capacity eviction (FIFO)":
     let pool = OrphanPool()
     let p0 = exampleBlockId(1)
-    var blocks: seq[ValidBlock]
+    var blocks: seq[Block]
     var ids: seq[BlockId]
     for i in 1 .. MaxOrphans + 1:
-      let blk = ValidBlock(Block(header: Header(slot: uint64(i), parentBlock: p0)))
+      let blk = Block(header: Header(slot: uint64(i), parentBlock: p0))
       ids.add(blockId(blk.header))
       blocks.add(blk)
 
@@ -116,11 +113,11 @@ suite "chain/orphan_pool":
     let pool = OrphanPool()
     let p0 = exampleBlockId(1)
     let p1 = exampleBlockId(2)
-    var blocks: seq[ValidBlock]
+    var blocks: seq[Block]
     var ids: seq[BlockId]
     for i in 1 .. MaxOrphans + 3:
       let parent = if i <= 2: p0 else: p1
-      let blk = ValidBlock(Block(header: Header(slot: uint64(i), parentBlock: parent)))
+      let blk = Block(header: Header(slot: uint64(i), parentBlock: parent))
       ids.add(blockId(blk.header))
       blocks.add(blk)
 
@@ -148,10 +145,10 @@ suite "chain/orphan_pool":
   test "re-ingesting an evicted orphan succeeds":
     let pool = OrphanPool()
     let p0 = exampleBlockId(1)
-    var blocks: seq[ValidBlock]
+    var blocks: seq[Block]
     var ids: seq[BlockId]
     for i in 1 .. MaxOrphans + 1:
-      let blk = ValidBlock(Block(header: Header(slot: uint64(i), parentBlock: p0)))
+      let blk = Block(header: Header(slot: uint64(i), parentBlock: p0))
       ids.add(blockId(blk.header))
       blocks.add(blk)
 
@@ -177,10 +174,10 @@ suite "chain/orphan_pool":
     let p1 = exampleBlockId(2)
 
     # Multiple children sharing same parent (siblings)
-    let b1 = ValidBlock(Block(header: Header(slot: 1, parentBlock: p0)))
-    let b2 = ValidBlock(Block(header: Header(slot: 2, parentBlock: p0)))
-    let b3 = ValidBlock(Block(header: Header(slot: 3, parentBlock: p1)))
-    let b4 = ValidBlock(Block(header: Header(slot: 4, parentBlock: p1)))
+    let b1 = Block(header: Header(slot: 1, parentBlock: p0))
+    let b2 = Block(header: Header(slot: 2, parentBlock: p0))
+    let b3 = Block(header: Header(slot: 3, parentBlock: p1))
+    let b4 = Block(header: Header(slot: 4, parentBlock: p1))
     let b1Id = blockId(b1.header)
     let b2Id = blockId(b2.header)
     let b3Id = blockId(b3.header)
@@ -218,7 +215,7 @@ suite "chain/orphan_pool":
     for round in 1 .. 50:
       let parent = exampleBlockId(byte(round))
       for slot in 1 .. 3:
-        let blk = ValidBlock(Block(header: Header(slot: uint64(round * 10 + slot), parentBlock: parent)))
+        let blk = Block(header: Header(slot: uint64(round * 10 + slot), parentBlock: parent))
         # addOrphan must ALWAYS succeed on novel blocks (never fail due to stale queue entries)
         check pool.addOrphan(blk)
         # Capacity invariant strictly enforced
@@ -244,10 +241,10 @@ suite "chain/orphan_pool":
     check tree.latestImmutableBlockId == id1
 
     # Orphan o1 has slot 1 <= LIB slot 1 (incompatible)
-    let o1 = ValidBlock(Block(header: Header(slot: 1, parentBlock: exampleBlockId(99))))
+    let o1 = Block(header: Header(slot: 1, parentBlock: exampleBlockId(99)))
     let o1Id = blockId(o1.header)
     # Orphan o2 has slot 3 > LIB slot 1 (compatible)
-    let o2 = ValidBlock(Block(header: Header(slot: 3, parentBlock: exampleBlockId(99))))
+    let o2 = Block(header: Header(slot: 3, parentBlock: exampleBlockId(99)))
     let o2Id = blockId(o2.header)
 
     check pool.addOrphan(o1)
@@ -263,13 +260,13 @@ suite "chain/orphan_pool":
     let pool = OrphanPool()
     let
       rootId = exampleBlockId(1)
-      c1 = ValidBlock(Block(header: Header(slot: 2, parentBlock: rootId)))
+      c1 = Block(header: Header(slot: 2, parentBlock: rootId))
       c1Id = blockId(c1.header)
-      d1 = ValidBlock(Block(header: Header(slot: 3, parentBlock: c1Id)))
+      d1 = Block(header: Header(slot: 3, parentBlock: c1Id))
       d1Id = blockId(d1.header)
-      d2 = ValidBlock(Block(header: Header(slot: 4, parentBlock: d1Id)))
+      d2 = Block(header: Header(slot: 4, parentBlock: d1Id))
       d2Id = blockId(d2.header)
-      unrelated = ValidBlock(Block(header: Header(slot: 2, parentBlock: exampleBlockId(99))))
+      unrelated = Block(header: Header(slot: 2, parentBlock: exampleBlockId(99)))
       unrelatedId = blockId(unrelated.header)
 
     check pool.addOrphan(c1)
@@ -289,8 +286,8 @@ suite "chain/orphan_pool":
   test "compactQueue removes stale deque entries":
     let pool = OrphanPool()
     let parent = exampleBlockId(1)
-    let b1 = ValidBlock(Block(header: Header(slot: 1, parentBlock: parent)))
-    let b2 = ValidBlock(Block(header: Header(slot: 2, parentBlock: parent)))
+    let b1 = Block(header: Header(slot: 1, parentBlock: parent))
+    let b2 = Block(header: Header(slot: 2, parentBlock: parent))
     let b1Id = blockId(b1.header)
     let b2Id = blockId(b2.header)
 
@@ -307,3 +304,5 @@ suite "chain/orphan_pool":
     check pool.len == 1
     check not pool.hasOrphan(b1Id)
     check pool.hasOrphan(b2Id)
+
+{.pop.}

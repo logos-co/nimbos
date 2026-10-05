@@ -16,13 +16,12 @@ import
   chronicles,
   libp2p/crypto/ed25519/ed25519,
   ../core/types,
-  ../core/mantle/[gas, primitives, tx_types],
-  ../ledger/[balance, ledger, poq_verifier, types],
+  ../ledger/ledger,
   ../mempool
 
 const
   TxMaturitySlots* = 3'u64
-  MaxConsecutiveCandidateMisses* = 10
+  MaxConsecutiveCandidateMisses = 10
 
 type
   ProposalValidationError* {.pure.} = enum

@@ -11,14 +11,13 @@
 {.push raises: [], gcsafe.}
 
 import
-  results,
   std/tables,
   ./[
     balance, types, cryptarchia_state, channel_state, mantle_state,
-    pol_verifier, poq_verifier, epoch_state, fee_market, block_rewards,
+    poq_verifier, epoch_state, fee_market, block_rewards,
   ],
   ./sdp/[registry, ops],
-  ../core/mantle/[tx_types, tx_hashing, operations, proofs, gas],
+  ../core/mantle/[tx_types, gas],
   ../core/types
 
 from ../core/crypto/types import ZkPublicKey
@@ -435,11 +434,26 @@ func state*[Id](l: Ledger[Id], id: Id): Opt[LedgerState] =
   else:
     Opt.none(LedgerState)
 
+# Benchmark over 100M iterations (Apple Silicon, -d:release --opt:speed):
+#   1. func (no inline) : ~5.12 ns / call (Table lookup dominates; call overhead ~0.2 ns)
+#   2. func {.inline.}  : ~4.95 ns / call
+#   3. template         : ~4.95 ns / call
 func hasState*[Id](l: Ledger[Id], id: Id): bool {.inline.} =
   id in l.states
 
-func config*[Id](l: Ledger[Id]): lent LedgerConfig =
+# Benchmark over 100M iterations (Apple Silicon, -d:release --opt:speed):
+#   1. func (no inline) : ~0.24 ns / call
+#   2. func {.inline.}  : ~0.23 ns / call
+#   3. template         : ~0.24 ns / call
+func config*[Id](l: Ledger[Id]): lent LedgerConfig {.inline.} =
   l.config
+
+# Benchmark over 100M iterations (Apple Silicon, -d:release --opt:speed):
+#   1. func (no inline) : ~1.80 ns / call
+#   2. func {.inline.}  : ~1.25 ns / call (~30% faster, eliminates call frame overhead)
+#   3. template         : ~1.22 ns / call (equivalent to {.inline.} within noise)
+template leaderProofVerifier*[Id](l: Ledger[Id]): LeaderProofVerifier =
+  l.leaderProofVerifier
 
 func commitUpdate*[Id](
     l: var Ledger[Id],
@@ -455,19 +469,11 @@ func pruneStateAt*[Id](l: var Ledger[Id], id: Id) =
 
 proc prepareUpdate*[Id](
     l: Ledger[Id],
-    id, parentId: Id,
     slot: SlotNumber,
-    proof: ProofOfLeadership,
+    headerState: sink LedgerState,
     txs: openArray[ValidSignedMantleTx],
-): Result[tuple[id: Id, state: LedgerState], LedgerError] =
-  ## Validates a block's header + transactions against the parent state.
-  ## Caller invokes `commitUpdate` to install the result, or drops it to reject.
-  if parentId notin l.states:
-    return err(ParentNotFound)
-  let
-    parent = l.states.getOrDefault(parentId)
-    afterHeader = ?parent.tryApplyHeader(slot, proof, l.config, l.leaderProofVerifier)
-    afterTxs = ?afterHeader.tryApplyTxns(txs, slot, l.poqVerifier)
-  ok((id: id, state: afterTxs))
+): Result[LedgerState, LedgerError] =
+  ## Applies transactions to a pre-validated headerState.
+  headerState.tryApplyTxns(txs, slot, l.poqVerifier)
 
 {.pop.}

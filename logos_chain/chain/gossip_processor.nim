@@ -11,14 +11,12 @@
 
 import
   chronicles,
-  results,
   stew/byteutils,
   libp2p/peerid,
   libp2p/protocols/pubsub/pubsub,
   ./block_processor,
   ./proposal,
-  ../core/types,
-  ../core/mantle/[tx_hashing, tx_types, tx_validation]
+  ../core/mantle/tx_validation
 
 logScope:
   topics = "gossip_processor"
@@ -29,8 +27,10 @@ proc processProposal*(
   let id = blockId(proposal.header)
   let idHex = toHex(id)
 
-  if bp.localTree.hasBlock(id):
-    trace "GossipSub ignored already applied proposal", blockId = idHex, src
+  # 1. Scalar slot checks (~2-20 ns)
+  if proposal.header.slot <= bp.localTree.latestImmutableSlot():
+    debug "GossipSub ignored proposal at or behind immutable slot",
+      blockId = idHex, src
     return ValidationResult.Ignore
 
   let nowSlot = bp.currentWallclockSlot()
@@ -39,22 +39,18 @@ proc processProposal*(
       blockId = idHex, blockSlot = proposal.header.slot, wallclockSlot = nowSlot, src
     return ValidationResult.Ignore
 
-  if proposal.header.slot <= bp.localTree.latestImmutableSlot():
-    debug "GossipSub ignored proposal at or behind immutable slot",
-      blockId = idHex, src
+  # 2. Ingestion deduplication (in-flight, localTree, orphanPool) (~20-40 ns)
+  if bp.checkDeduplication(id, proposal.signature).isErr:
+    trace "GossipSub ignored duplicate proposal", blockId = idHex, src
     return ValidationResult.Ignore
 
-  if not bp.localTree.hasBlock(proposal.header.parentBlock):
-    debug "GossipSub ignored proposal with unknown parent",
-      blockId = idHex, parent = toHex(proposal.header.parentBlock), src
-    return ValidationResult.Ignore
-
+  # 3. Block reconstruction from mempool (~2 µs)
   let blk = reconstructBlock(proposal, bp.mempool).valueOr:
     debug "GossipSub cannot reconstruct block from proposal: missing tx in mempool",
       blockId = idHex, error = $error, src
     return ValidationResult.Ignore
 
-  discard bp.addBlock(BlockSource.Gossip, blk)
+  discard bp.addBlock(BlockSource.Gossip, blk, id)
 
   debug "GossipSub accepted reconstructed block into local tree",
     blockId = idHex, slot = blk.header.slot, src
