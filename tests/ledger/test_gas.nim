@@ -21,7 +21,7 @@ import
   ./sdp/test_helpers,
   ../core/mantle/test_helpers
 
-from ./test_helpers import testLedgerConfig
+import ./test_helpers
 
 const
   testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]

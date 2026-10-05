@@ -12,8 +12,7 @@
 import
   std/times,
   chronicles,
-  results,
-  ../core/[local_tree, types],
+  ../core/local_tree,
   ../core/mantle/tx_validation,
   ../deployment/deployment_settings,
   ../ledger/[ledger, stake_inference],
@@ -242,7 +241,7 @@ proc applyAdmittedBlock(
     ).valueOr:
       chain.orphanPool.pruneDescendants(id)
       return err(toBlockApplyError(error))
-    prepared = prepareBlockUpdate(validBlk, chain.ledger, headerState).valueOr:
+    preparedState = prepareBlockUpdate(validBlk, chain.ledger, headerState).valueOr:
       chain.orphanPool.pruneDescendants(id)
       return err(BlockApplyError(kind: LedgerRejected, ledgerError: error.ledgerError))
     oldTip = chain.localTree.localTipId()
@@ -250,7 +249,7 @@ proc applyAdmittedBlock(
   if not chain.localTree.addBlockToTree(validBlk):
     chain.orphanPool.pruneDescendants(id)
     return err(BlockApplyError(kind: UnviableFork))
-  chain.ledger.commitUpdate(prepared.id, prepared.state)
+  chain.ledger.commitUpdate(id, preparedState)
   let newTip = chain.localTree.localTipId()
   chain.handleTipChange(oldTip, newTip)
   chain.mempool.pruneExpiredTxs(curSlot)

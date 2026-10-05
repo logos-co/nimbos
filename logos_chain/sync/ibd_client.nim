@@ -202,15 +202,15 @@ proc sendDownloadBlocksRequest*(
     await noCancel conn.close()
 
 proc onBlock(
-    syncer: Syncer, blk: Block
+    syncer: Syncer, blk: Block, id: BlockId
 ): Future[Result[void, BlockApplyError]] {.async: (raises: [CancelledError]).} =
-  let res = await syncer.processor.addBlock(BlockSource.Sync, blk)
+  let res = await syncer.processor.addBlock(BlockSource.Sync, blk, id)
   res.isOkOr:
     return res
   var leaderKeyBytes: array[EdPublicKeySize, byte]
   doAssert toBytes(header(blk).proofOfLeadership.leaderKey, leaderKeyBytes) == EdPublicKeySize
   info "IBD ingested block",
-    id = sbyteutils.toHex(blockId(header(blk))),
+    id = sbyteutils.toHex(id),
     bedrockVersion = header(blk).bedrockVersion,
     parent = sbyteutils.toHex(header(blk).parentBlock),
     slot = header(blk).slot,
@@ -284,12 +284,13 @@ proc downloadBlocks(
     for blk in blocks:
       latestDownloaded = Opt.some(blk)
       let id = blockId(blk.header)
-      (await onBlock(syncer, blk)).isOkOr:
+      (await onBlock(syncer, blk, id)).isOkOr:
         # IBD streams blocks in parent order, so even a recoverable error
-        # means this peer's stream is unusable.
+        # means this peer's stream is unusable (unless already applied or in flight).
         case error.kind
-        of BlockApplyErrorKind.AlreadyApplied:
-          debug "IBD: block already applied", peer, blockId = sbyteutils.toHex(id)
+        of BlockApplyErrorKind.AlreadyApplied, BlockApplyErrorKind.InFlight:
+          debug "IBD: block already applied or in flight",
+            peer, blockId = sbyteutils.toHex(id), kind = error.kind
         elif error.kind.isRecoverable:
           debug "IBD: block deferred, cancelling download",
             peer, blockId = sbyteutils.toHex(id), err = error.kind

@@ -10,7 +10,6 @@
 
 import
   unittest2,
-  results,
   ../logos_chain/sync/helpers,
   ../../logos_chain/core/types,
   ../../logos_chain/core/local_tree,
@@ -24,10 +23,9 @@ suite "chain/orphan_pool":
     let pool = OrphanPool()
     check pool.len == 0
     check not pool.hasOrphan(default(BlockId))
-    check pool.getOrphan(default(BlockId)).isNone
     check pool.takeChildren(default(BlockId)).len == 0
 
-  test "addOrphan and getOrphan":
+  test "addOrphan buffers block":
     let pool = OrphanPool()
     let parentId = exampleBlockId(1)
     let blk = Block(
@@ -41,8 +39,6 @@ suite "chain/orphan_pool":
     check pool.addOrphan(blk)
     check pool.len == 1
     check pool.hasOrphan(bId)
-    check pool.getOrphan(bId).isSome
-    check pool.getOrphan(bId).get().header.slot == 1
 
     # duplicate add returns false and does not change pool len
     check not pool.addOrphan(dupBlk)

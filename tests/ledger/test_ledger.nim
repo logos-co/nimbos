@@ -37,15 +37,15 @@ func initLedger(
 
 proc prepareUpdateWithHeader[Id](
     l: Ledger[Id],
-    id, parentId: Id,
+    parentId: Id,
     slot: SlotNumber,
     proof: ProofOfLeadership,
     txs: openArray[ValidSignedMantleTx],
-): Result[tuple[id: Id, state: LedgerState], LedgerError] =
+): Result[LedgerState, LedgerError] =
   let parent = l.state(parentId).valueOr:
     return err(ParentNotFound)
   let afterHeader = ?parent.tryApplyHeader(slot, proof, l.config, l.leaderProofVerifier)
-  l.prepareUpdate(id, slot, afterHeader, txs)
+  l.prepareUpdate(slot, afterHeader, txs)
 
 from ./test_helpers import testLedgerConfig
 
@@ -257,7 +257,6 @@ suite "prepareUpdate — no-verify paths":
     let
       l = initLedger(mkId(0x01), mkState(@[]), testLedgerConfig)
       r = l.prepareUpdateWithHeader(
-        id = mkId(0x02),
         parentId = mkId(0xff),
         slot = 1'u64,
         proof = mkProof(),
@@ -273,16 +272,14 @@ suite "prepareUpdate — no-verify paths":
       l = initLedger(id0, parent, testLedgerConfig)
       id1 = mkId(0x02)
       r = l.prepareUpdateWithHeader(
-        id = id1,
         parentId = id0,
         slot = 1'u64,
         proof = mkProof(),
         txs = @[],
       )
     check r.isOk
-    let prepared = r.get
-    check prepared.id == id1
-    check prepared.state.latestUtxos == parent.latestUtxos
+    let preparedState = r.get
+    check preparedState.latestUtxos == parent.latestUtxos
     check l.state(id1).isNone # not committed
 
 suite "tryApplyTx — happy path (Rust-generated fixture)":
@@ -438,15 +435,13 @@ when false:
         input = mkUtxo(value = 100, pkSeed = 1)
         tx = mkTransferTx([input.id], [mkNote(100, pkSeed = 2)])
         r = l.prepareUpdateWithHeader(
-          id = mkId(0x02),
           parentId = mkId(0x01),
           slot = 1'u64,
           proof = mkProof(),
           txs = [ValidSignedMantleTx(tx)],
         )
       check r.isOk
-      let prepared = r.get
-      l.commitUpdate(prepared.id, prepared.state)
+      l.commitUpdate(mkId(0x02), r.get)
       check l.state(mkId(0x02)).isSome
       check l.state(mkId(0x02)).get.latestUtxos.len == 1
       check not l.state(mkId(0x02)).get.latestUtxos.contains(input.id)
@@ -457,7 +452,6 @@ when false:
         l = initLedger(mkId(0x01), mkState([input]), testLedgerConfig)
         tx = mkTransferTx([input.id], [mkNote(50, pkSeed = 2)]) # 100 in, 50 out
         r = l.prepareUpdateWithHeader(
-          id = mkId(0x02),
           parentId = mkId(0x01),
           slot = 1'u64,
           proof = mkProof(),
@@ -477,14 +471,13 @@ when false:
         input1 = mkUtxo(value = 100, pkSeed = 1)
         tx1 = mkTransferTx([input1.id], [mkNote(100, pkSeed = 2)])
         r1 = l.prepareUpdateWithHeader(
-          id = mkId(0x01),
           parentId = mkId(0x00),
           slot = 1'u64,
           proof = mkProof(),
           txs = [ValidSignedMantleTx(tx1)],
         )
       check r1.isOk
-      l.commitUpdate(r1.get.id, r1.get.state)
+      l.commitUpdate(mkId(0x01), r1.get)
 
       let
         tx1OpId = opId(
@@ -501,14 +494,13 @@ when false:
       let
         tx2 = mkTransferTx([utxoAfter1.id], [mkNote(100, pkSeed = 3)])
         r2 = l.prepareUpdateWithHeader(
-          id = mkId(0x02),
           parentId = mkId(0x01),
           slot = 2'u64,
           proof = mkProof(),
           txs = [ValidSignedMantleTx(tx2)],
         )
       check r2.isOk
-      l.commitUpdate(r2.get.id, r2.get.state)
+      l.commitUpdate(mkId(0x02), r2.get)
 
       let
         tx2OpId = opId(
@@ -526,14 +518,13 @@ when false:
           [utxoAfter2.id], [mkNote(60, pkSeed = 4), mkNote(40, pkSeed = 5)]
         )
         r3 = l.prepareUpdateWithHeader(
-          id = mkId(0x03),
           parentId = mkId(0x02),
           slot = 3'u64,
           proof = mkProof(),
           txs = [ValidSignedMantleTx(tx3)],
         )
       check r3.isOk
-      l.commitUpdate(r3.get.id, r3.get.state)
+      l.commitUpdate(mkId(0x03), r3.get)
 
       check l.state(mkId(0x00)).isSome
       check l.state(mkId(0x01)).isSome
@@ -600,14 +591,13 @@ suite "tryApplyTx — SDP":
     let id0 = mkId(0x10)
     var l = initLedger(id0, parent, testLedgerConfig)
     let r = l.prepareUpdateWithHeader(
-      id = mkId(0x11),
       parentId = id0,
       slot = 1'u64,
       proof = mkProof(),
       txs = @[],
     )
     check r.isOk
-    l.commitUpdate(r.get.id, r.get.state)
+    l.commitUpdate(mkId(0x11), r.get)
     check declarationId(declaration).get in l.state(mkId(0x11)).get.sdp.state.declarations
 
 const noTxs: seq[ValidSignedMantleTx] = @[]

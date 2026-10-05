@@ -11,7 +11,6 @@
 
 import
   std/[deques, tables],
-  results,
   ../core/types,
   ../core/local_tree
 
@@ -33,13 +32,6 @@ func hasOrphan*(pool: OrphanPool, id: BlockId): bool =
   ## Checks if a block ID exists in the orphan pool.
   ## Time: O(1) avg | Space: O(1)
   pool.byBlockId.hasKey(id)
-
-func getOrphan*(pool: OrphanPool, id: BlockId): Opt[AdmittedBlock] =
-  ## Retrieves an orphan block by its ID if present.
-  ## Time: O(1) avg | Space: O(1)
-  pool.byBlockId.withValue(id, blk):
-    return Opt.some(blk[])
-  Opt.none(AdmittedBlock)
 
 proc pruneDescendants*(pool: OrphanPool, rootId: BlockId) =
   ## Purges all descendant subtrees waiting on `rootId` via iterative BFS traversal.

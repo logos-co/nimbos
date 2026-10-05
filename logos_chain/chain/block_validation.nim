@@ -14,7 +14,6 @@
 {.push raises: [], gcsafe.}
 
 import
-  results,
   libp2p/crypto/ed25519/ed25519,
   ../core/local_tree,
   ../core/mantle/tx_validation,
@@ -23,9 +22,8 @@ import
 export tx_validation.StatelessLedgerError
 
 from ../core/types import
-  Block, Header, Proposal, References, createBlockRoot, ExpectedBedrockVersion,
-  MaxBlockSize, header, txs, blockId, Hash32, ValidBlock, AdmittedBlock
-from ../core/mantle/primitives import MaxBlockTxs, SlotNumber
+  Block, createBlockRoot, ExpectedBedrockVersion,
+  MaxBlockSize, header, txs, blockId, ValidBlock, AdmittedBlock
 from ../core/mantle/tx_types import SignedMantleTx, ValidSignedMantleTx, byteLen
 
 type
@@ -181,13 +179,12 @@ proc prepareBlockUpdate*(
     blk: ValidBlock,
     ledger: Ledger[BlockId],
     headerState: LedgerState,
-): Result[tuple[id: BlockId, state: LedgerState], BlockValidationError] =
+): Result[LedgerState, BlockValidationError] =
   ## Executes state transitions via `ledger.prepareUpdate` on a validated block.
-  let id = blockId(blk.header)
   template validTxs: untyped = cast[seq[ValidSignedMantleTx]](blk.txs)
 
   let prepared = ledger.prepareUpdate(
-    id, blk.header.slot, headerState, validTxs
+    blk.header.slot, headerState, validTxs
   ).valueOr:
     return err(BlockValidationError(
       kind: BlockValidationErrorKind.TransactionsRejected,

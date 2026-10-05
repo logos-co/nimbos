@@ -202,6 +202,27 @@ suite "sync/initial_block_download (IBD requester loop)":
       check clientChain.localTree.hasBlock(b1id)
       check clientChain.localTree.localTipId == b1id
 
+  asyncTest "initialBlockDownload continues gracefully when downloaded block is in flight":
+    let
+      genesis = createGenesisBlock(SignedMantleTx(testGenesisTx())).get
+      gid = blockId(genesis.header)
+      b1 = childBlock(genesis.header, gid, SlotNumber(1), [])
+      b1id = blockId(b1.header)
+      b2 = childBlock(b1.header, b1id, SlotNumber(2), [])
+      b2id = blockId(b2.header)
+      serverChain = initTestChain(genesis)
+      clientChain = initTestChain(genesis)
+    check serverChain.localTree.addBlockToTree(b1)
+    check serverChain.localTree.addBlockToTree(b2)
+    withSyncPair(serverChain, clientChain):
+      # Queue b1 via Gossip ahead of time so it is in-flight when IBD processes the downloaded batch
+      let fGossip = clientSyncer.processor.addBlock(BlockSource.Gossip, b1, b1id)
+      await initialBlockDownload(clientSyncer, Opt.some(peerProvider(server.peerInfo.peerId)))
+      check (await fGossip).isOk
+      check clientChain.localTree.hasBlock(b1id)
+      check clientChain.localTree.hasBlock(b2id)
+      check clientChain.localTree.localTipId == b2id
+
   asyncTest "initialBlockDownload fails over to secondary peer when primary peer fails":
     let
       genesis = createGenesisBlock(SignedMantleTx(testGenesisTx())).get

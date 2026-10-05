@@ -68,7 +68,7 @@ func blockHeight*(localTree: LocalTree, blockId: BlockId): Opt[BlockNumber] =
     return Opt.some(node.height)
   Opt.none(BlockNumber)
 
-func latestImmutableHeight*(localTree: LocalTree): BlockNumber =
+func latestImmutableHeight(localTree: LocalTree): BlockNumber =
   localTree.blocksById.withValue(localTree.latestImmutableId, node):
     return node.height
   0'u64
