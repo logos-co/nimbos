@@ -18,3 +18,9 @@ const
     "Peer not found"
   BlocksUnavailable* =
     "Requested block slot is unavailable"
+  ChainNotReadyError* =
+    "Chain is not ready"
+  NetworkNotReadyError* =
+    "Network is not ready"
+
+{.pop.}
