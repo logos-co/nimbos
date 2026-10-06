@@ -272,6 +272,47 @@ func outboundStage*(node: LBP2PNode, pid: PeerId): Opt[OutboundConnStage] {.inli
   do:
     return Opt.none(OutboundConnStage)
 
+func pendingDialCount*(node: LBP2PNode): uint64 =
+  ## Number of outbound dials that a connect worker runs now.
+  uint64(node.outboundTable.values.countIt(it == OutboundConnStage.Dialing))
+
+proc wildcardFamily(ma: MultiAddress): Opt[AddressFamily] =
+  ## Address family of ``ma`` when its IP is a wildcard.
+  let address = initTAddress(? ma.getIp(), Port(0))
+  if address.isAnyLocal():
+    Opt.some(address.family)
+  else:
+    Opt.none(AddressFamily)
+
+proc interfaceHosts(): seq[TransportAddress] =
+  ## Hosts of the loopback and up interfaces. A peer cannot dial an IPv6
+  ## link-local host without a zone ID, so these hosts are not included.
+  var hosts: seq[TransportAddress]
+  for networkInterface in getInterfaces():
+    if networkInterface.ifType == IfSoftwareLoopback or
+        networkInterface.state == StatusUp:
+      hosts.add networkInterface.addresses.mapIt(it.host).filterIt(
+        not (it.family == AddressFamily.IPv6 and it.isUnicastLinkLocal()))
+  hosts
+
+proc listenAddresses*(node: LBP2PNode): seq[MultiAddress] =
+  ## Bound listen addresses, with each wildcard IP replaced by the local
+  ## interface addresses.
+  let listenAddrs = node.switch.peerInfo.listenAddrs
+  if not listenAddrs.anyIt(it.wildcardFamily().isSome()):
+    return listenAddrs
+  let hosts = interfaceHosts()
+  var addresses: seq[MultiAddress]
+  for listenAddr in listenAddrs:
+    let family = listenAddr.wildcardFamily().valueOr:
+      addresses.add listenAddr
+      continue
+    for host in hosts:
+      if host.family == family:
+        listenAddr.replaceIp(host.toIpAddress()).withValue(remapped):
+          addresses.add remapped
+  addresses
+
 proc checkPeer(node: LBP2PNode, peerAddr: PeerAddr): bool =
   logScope: peer = peerAddr.peerId
   let peerId = peerAddr.peerId
