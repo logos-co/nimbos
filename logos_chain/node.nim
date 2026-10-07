@@ -231,13 +231,7 @@ proc installMessageValidators(node: LBNode) =
     node.network.addValidator(blockTopic) do (
         proposal: Proposal, src: PeerId
     ) -> ValidationResult:
-      if node.syncer != nil and not node.syncer.isSynced():
-        debug "GossipSub ignored proposal during IBD / syncing",
-          blockSlot = proposal.header.slot, src
-        return ValidationResult.Ignore
       node.processor.processProposal(proposal, src)
-    node.network.subscribe(blockTopic, TopicParams.init())
-    debug "Subscribed to gossip topic", topic = blockTopic
   else:
     warn "Cryptarchia block gossipsub protocol topic is empty, validator not installed"
 
@@ -248,9 +242,27 @@ proc installMessageValidators(node: LBNode) =
     ) -> ValidationResult:
       node.processor.processTx(tx, src)
     node.network.subscribe(mempoolTopic, TopicParams.init())
-    debug "Subscribed to gossip topic", topic = mempoolTopic
+    debug "Subscribed to mempool gossip topic", topic = mempoolTopic
   else:
     warn "Mempool pubsub topic is empty, validator not installed"
+
+proc subscribeBlockTopic(node: LBNode) =
+  let blockTopic = node.deploymentSettings.cryptarchia.gossipsubProtocol
+  if blockTopic.len > 0:
+    node.network.subscribe(blockTopic, TopicParams.init())
+    debug "Subscribed to block gossip topic", topic = blockTopic
+
+proc monitorSyncerAndSubscribe(node: LBNode) {.async: (raises: [CancelledError]).} =
+  if node.syncer == nil:
+    return
+  if node.syncer.ibdFut != nil:
+    try:
+      await node.syncer.ibdFut
+    except CancelledError as exc:
+      raise exc
+  if ProcessState.stopping().isNone:
+    notice "Syncer completed initial block download; subscribing to block gossip topic"
+    node.subscribeBlockTopic()
 
 proc stop(node: LBNode) =
   # The IBD task may be awaiting a queued result. Cancel it before the
@@ -293,6 +305,9 @@ proc initializeNetworking*(node: LBNode) {.async: (raises: [CancelledError]).} =
     else:
       node.syncer.start()
 
+    asyncSpawn node.monitorSyncerAndSubscribe()
+  else:
+    node.subscribeBlockTopic()
 type StopFuture = Future[void].Raising([CancelledError])
 
 proc run*(node: LBNode, stopper: StopFuture) {.raises: [CatchableError].} =
