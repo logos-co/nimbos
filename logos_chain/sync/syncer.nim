@@ -17,9 +17,6 @@ import
 
 export syncer_types
 
-func isSynced*(syncer: Syncer): bool =
-  syncer != nil and syncer.ibdFut != nil and syncer.ibdFut.completed
-
 func init*(
     T: type Syncer, sw: Switch, processor: BlockProcessor, protocol: string): T =
   T(sw: sw, processor: processor, chainSyncProtocol: protocol)
@@ -50,8 +47,8 @@ proc start*(
     syncer: Syncer,
     peerProvider: Opt[PeerProvider] = Opt.none(PeerProvider),
 ) =
-  doAssert syncer.ibdFut == nil, "syncer already started"
-  syncer.ibdFut = syncer.runAtStartup(peerProvider)
+  if syncer.ibdFut == nil:
+    syncer.ibdFut = syncer.runAtStartup(peerProvider)
 
 proc stop*(syncer: Syncer) {.async: (raises: []).} =
   ## Cancel the initial block download if it still runs.
