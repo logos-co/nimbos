@@ -22,7 +22,9 @@ func init*(
   T(sw: sw, processor: processor, chainSyncProtocol: protocol)
 
 proc runAtStartup(
-    syncer: Syncer, peerProvider: Opt[PeerProvider]
+    syncer: Syncer,
+    onIbdComplete: OnIbdComplete,
+    peerProvider: Opt[PeerProvider],
 ) {.async: (raises: [CancelledError]).} =
   try:
     mountCryptarchiaSyncHandler(syncer)
@@ -37,6 +39,8 @@ proc runAtStartup(
     await initialBlockDownload(syncer, peerProvider)
     notice "Syncer completed initial block download",
       protocol = syncer.chainSyncProtocol
+    if onIbdComplete != nil:
+      onIbdComplete()
   except IBDFailure as exc:
     fatal "Syncer initial block download failed: unable to catch up with any IBD peer",
       msg = exc.msg, protocol = syncer.chainSyncProtocol
@@ -45,10 +49,11 @@ proc runAtStartup(
 
 proc start*(
     syncer: Syncer,
+    onIbdComplete: OnIbdComplete,
     peerProvider: Opt[PeerProvider] = Opt.none(PeerProvider),
 ) =
   if syncer.ibdFut == nil:
-    syncer.ibdFut = syncer.runAtStartup(peerProvider)
+    syncer.ibdFut = syncer.runAtStartup(onIbdComplete, peerProvider)
 
 proc stop*(syncer: Syncer) {.async: (raises: []).} =
   ## Cancel the initial block download if it still runs.

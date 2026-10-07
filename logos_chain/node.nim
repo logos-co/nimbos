@@ -252,18 +252,6 @@ proc subscribeBlockTopic(node: LBNode) =
     node.network.subscribe(blockTopic, TopicParams.init())
     debug "Subscribed to block gossip topic", topic = blockTopic
 
-proc monitorSyncerAndSubscribe(node: LBNode) {.async: (raises: [CancelledError]).} =
-  if node.syncer == nil:
-    return
-  if node.syncer.ibdFut != nil:
-    try:
-      await node.syncer.ibdFut
-    except CancelledError as exc:
-      raise exc
-  if ProcessState.stopping().isNone:
-    notice "Syncer completed initial block download; subscribing to block gossip topic"
-    node.subscribeBlockTopic()
-
 proc stop(node: LBNode) =
   # The IBD task may be awaiting a queued result. Cancel it before the
   # processor cancels that future, so the cancellation comes from its owner.
@@ -290,6 +278,10 @@ proc initializeNetworking*(node: LBNode) {.async: (raises: [CancelledError]).} =
 
   await node.network.start()
   if node.syncer != nil:
+    let onIbdComplete: OnIbdComplete = proc() =
+      notice "Syncer completed initial block download; subscribing to block gossip topic"
+      node.subscribeBlockTopic()
+
     if node.network.bootstrapPeerIds.len > 0:
       debug "Waiting for bootstrap peer readiness before starting syncer",
         timeout = node.network.bootstrapTimeout
@@ -300,12 +292,11 @@ proc initializeNetworking*(node: LBNode) {.async: (raises: [CancelledError]).} =
         ProcessState.scheduleStop("Bootstrap peer connection timeout")
         return
       node.syncer.start(
-        Opt.some(proc(): seq[PeerId] = node.network.connectedBootstrapPeerIds())
+        onIbdComplete,
+        Opt.some(proc(): seq[PeerId] = node.network.connectedBootstrapPeerIds()),
       )
     else:
-      node.syncer.start()
-
-    asyncSpawn node.monitorSyncerAndSubscribe()
+      node.syncer.start(onIbdComplete)
   else:
     node.subscribeBlockTopic()
 type StopFuture = Future[void].Raising([CancelledError])
