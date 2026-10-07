@@ -22,11 +22,10 @@ import
   ../../logos_chain/core/mantle/[operations, tx_types, tx_hashing],
   ../../logos_chain/networking/[network, protocols],
   ../../logos_chain/chain/genesis,
-  ../../logos_chain/sync/[types, syncer],
+  ../../logos_chain/sync/[types, syncer, ibd_server],
   ../../logos_chain/node,
   ../../logos_chain/deployment/deployment_settings
 
-from std/times import getTime, toUnix
 from libp2p/protocols/connectivity/autonat/types import NetworkReachability
 from libp2p/crypto/ed25519/ed25519 import sign
 
@@ -248,6 +247,31 @@ proc initTestLBNode(
   )
 
 suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
+  asyncTest "GossipSub: mempool topic is subscribed immediately on startup":
+    const mempoolTopic = "/logos-blockchain/mempool/1.0.0"
+    let
+      peers = await createBootstrapPeers()
+      genesis = createGenesisBlock(SignedMantleTx(testGenesisTx())).get
+      listenerNode = initTestLBNode(peers.listener, genesis, mempoolTopic = mempoolTopic)
+      dialerNode = initTestLBNode(peers.dialer, genesis, mempoolTopic = mempoolTopic)
+    try:
+      await listenerNode.initializeNetworking()
+      await dialerNode.initializeNetworking()
+
+      check:
+        waitUntil(peers.dialer.switch.isConnected(peers.listenerPeerId))
+        listenerNode.network.isSubscribed(mempoolTopic)
+
+      let sampleTx = signedTxWithOps(1, 1)
+      check:
+        waitUntil((await peers.dialer.broadcast(mempoolTopic, sampleTx)).isOk)
+        waitUntil(listenerNode.processor.mempool.len > 0)
+    finally:
+      await dialerNode.processor.stop()
+      await listenerNode.processor.stop()
+      await peers.dialer.stop()
+      await peers.listener.stop()
+
   asyncTest "GossipSub: subscribes, broadcasts, and ingests transactions":
     const topic = "/logos-blockchain/mempool/1.0.0"
     let
@@ -377,49 +401,19 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
       await peers.dialer.stop()
       await peers.listener.stop()
 
-  asyncTest "GossipSub deferred topic subscription: defers block topic while syncing, subscribes mempool immediately":
+  asyncTest "GossipSub deferred topic subscription: defers block topic while IBD is in progress":
     const
-      blockTopic = "/logos-blockchain/cryptarchia/1.0.0"
       mempoolTopic = "/logos-blockchain/mempool/1.0.0"
+      blockTopic = "/logos-blockchain/cryptarchia/1.0.0"
     let
       peers = await createBootstrapPeers()
       genesis = createGenesisBlock(SignedMantleTx(testGenesisTx())).get
       gid = blockId(genesis.header)
-      # 1. Create listener node with a syncer in running IBD state
-      genesisTime = uint64(max(getTime().toUnix() - 2, 0'i64))
-      listenerChain = initTestChain(genesis, genesisTime = genesisTime)
-      listenerBp = BlockProcessor.new(listenerChain)
-    listenerBp.start()
-
-    let
-      listenerSyncer = Syncer.init(peers.listener.switch, listenerBp, testChainSyncProtocol)
+      listenerNode = initTestLBNode(peers.listener, genesis, mempoolTopic = mempoolTopic, proposalTopic = blockTopic)
+      dialerNode = initTestLBNode(peers.dialer, genesis, mempoolTopic = mempoolTopic, proposalTopic = blockTopic)
       ibdSimFut = Future[void].Raising([CancelledError]).init("ibd_sim")
-    listenerSyncer.ibdFut = ibdSimFut
-
-    var ds = DeploymentSettings(
-      time: TimeDeploymentSettings(slotDuration: chronos.seconds(1))
-    )
-    ds.cryptarchia.gossipsubProtocol = blockTopic
-    ds.mempool.pubsubTopic = mempoolTopic
-
-    let
-      listenerNode = LBNode(
-        network: peers.listener,
-        config: LBNodeConf(),
-        deploymentSettings: ds,
-        processor: listenerBp,
-        syncer: listenerSyncer,
-        shutdownEvent: newAsyncEvent(),
-      )
-      dialerBp = BlockProcessor.new(initTestChain(genesis, genesisTime = genesisTime))
-    dialerBp.start()
-    let dialerNode = LBNode(
-      network: peers.dialer,
-      config: LBNodeConf(),
-      deploymentSettings: ds,
-      processor: dialerBp,
-      shutdownEvent: newAsyncEvent(),
-    )
+    listenerNode.syncer = Syncer.init(peers.listener.switch, listenerNode.processor, testChainSyncProtocol)
+    listenerNode.syncer.ibdFut = ibdSimFut
 
     try:
       await listenerNode.initializeNetworking()
@@ -427,52 +421,69 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
 
       check:
         waitUntil(peers.dialer.switch.isConnected(peers.listenerPeerId))
-        # 2. Node is currently syncing (IBD running):
-        # - Block topic is NOT subscribed
-        # - Mempool topic IS subscribed immediately
-        not listenerSyncer.ibdFut.completed
-        not listenerNode.network.isSubscribed(blockTopic)
+        # Mempool topic is subscribed immediately on startup
         listenerNode.network.isSubscribed(mempoolTopic)
+        # Block topic is NOT subscribed while IBD is in progress
+        not listenerNode.network.isSubscribed(blockTopic)
 
-      # Mempool transactions are received and ingested during IBD
-      let sampleTx = signedTxWithOps(1, 1)
-      check:
-        waitUntil((await peers.dialer.broadcast(mempoolTopic, sampleTx)).isOk)
-        waitUntil(listenerNode.processor.mempool.len > 0)
-
+      # Broadcasting on block topic fails because listener is not subscribed
       let
         b1 = childBlock(genesis.header, gid, SlotNumber(1), [])
         id1 = blockId(b1.header)
         p1 = Proposal(header: b1.header, references: default(References), signature: b1.signature)
-        # Broadcast proposal while listener is syncing -> dialer has no subscribed peers on blockTopic
         bcastRes = await peers.dialer.broadcast(blockTopic, p1)
 
       check:
         bcastRes.isErr
+        bcastRes.error == "No peers on libp2p topic"
         not listenerNode.processor.localTree.hasBlock(id1)
-        listenerChain.orphanPool.len == 0
-        # 3. Simulate IBD catching up: listener applies b1 via sync stream, then completes IBD
-        (await listenerBp.addBlock(BlockSource.Sync, b1, id1)).isOk
-        listenerNode.processor.localTree.hasBlock(id1)
-        listenerNode.processor.localTree.localTipId == id1
+    finally:
+      ibdSimFut.cancelSoon()
+      await dialerNode.processor.stop()
+      await listenerNode.processor.stop()
+      await peers.dialer.stop()
+      await peers.listener.stop()
 
-      ibdSimFut.complete()
+  asyncTest "GossipSub deferred topic subscription: subscribes block topic and ingests proposals after IBD completes":
+    const blockTopic = "/logos-blockchain/cryptarchia/1.0.0"
+    let
+      peers = await createBootstrapPeers()
+      genesis = createGenesisBlock(SignedMantleTx(testGenesisTx())).get
+      gid = blockId(genesis.header)
+      listenerNode = initTestLBNode(peers.listener, genesis, proposalTopic = blockTopic)
+      dialerNode = initTestLBNode(peers.dialer, genesis, proposalTopic = blockTopic)
+
+    # Add block b1 to listener (serving bootstrap node) and mount sync server on listener
+    let
+      b1 = childBlock(genesis.header, gid, SlotNumber(1), [])
+      id1 = blockId(b1.header)
+    check (await listenerNode.processor.addBlock(BlockSource.Sync, b1, id1)).isOk
+    mountCryptarchiaSyncHandler(Syncer.init(peers.listener.switch, listenerNode.processor, testChainSyncProtocol))
+
+    dialerNode.syncer = Syncer.init(peers.dialer.switch, dialerNode.processor, testChainSyncProtocol)
+
+    try:
+      await listenerNode.initializeNetworking()
+      await dialerNode.initializeNetworking()
 
       check:
-        listenerSyncer.ibdFut.completed
-        # 4. Once IBD is complete, monitor subscribes to block gossip topic
-        waitUntil(listenerNode.network.isSubscribed(blockTopic))
+        waitUntil(peers.dialer.switch.isConnected(peers.listenerPeerId))
+        # 1. Dialer syncs b1 from listener via IBD
+        waitUntil(dialerNode.processor.localTree.hasBlock(id1))
+        dialerNode.processor.localTree.localTipId == id1
+        # 2. Upon IBD completion, syncer callback automatically subscribes to block gossip topic
+        waitUntil(dialerNode.network.isSubscribed(blockTopic))
 
-      # 5. Create and broadcast proposal p2 (child of b1) now that node is Synced and subscribed
+      # 3. Subsequent proposals broadcast on blockTopic are received and applied
       let
         b2 = childBlock(b1.header, id1, SlotNumber(2), [])
         id2 = blockId(b2.header)
         p2 = Proposal(header: b2.header, references: default(References), signature: b2.signature)
 
       check:
-        waitUntil((await peers.dialer.broadcast(blockTopic, p2)).isOk)
-        waitUntil(listenerNode.processor.localTree.hasBlock(id2))
-        listenerNode.processor.localTree.localTipId == id2
+        waitUntil((await peers.listener.broadcast(blockTopic, p2)).isOk)
+        waitUntil(dialerNode.processor.localTree.hasBlock(id2))
+        dialerNode.processor.localTree.localTipId == id2
     finally:
       await dialerNode.processor.stop()
       await listenerNode.processor.stop()
