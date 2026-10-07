@@ -54,7 +54,7 @@ const deploymentGenesisBlockMin = """
       version: Bedrock
       parent_block: '0000000000000000000000000000000000000000000000000000000000000000'
       slot: 0
-      block_root: '0000000000000000000000000000000000000000000000000000000000000000'
+      body_root: '0000000000000000000000000000000000000000000000000000000000000000'
       proof_of_leadership:
         proof: '0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000'
         entropy_contribution: '0000000000000000000000000000000000000000000000000000000000000000'
@@ -393,6 +393,37 @@ mempool:
       v = validateDeploymentSettings(ds)
     check v.isErr
     check "empty blend.common.protocol_name" in v.error
+
+  test "parseDeploymentSettings: genesis header still uses block_root":
+    let badYaml = deploymentSettingsBlendBlock & """
+network:
+  kademlia_protocol_name: /a/kad
+  identify_protocol_name: /a/id
+  chain_sync_protocol_name: /a/sync
+""" & "\n" & deploymentSettingsCryptarchiaBlock.replace("body_root:", "block_root:") &
+      "\n" & deploymentSettingsTimeBlock & """
+mempool:
+  pubsub_topic: /a/mem
+"""
+    let r = parseDeploymentSettings(badYaml)
+    check r.isErr
+    check "block_root was renamed to body_root" in r.error
+
+  test "parseDeploymentSettings: genesis block with a non-empty uncle list":
+    let badYaml = deploymentSettingsBlendBlock & """
+network:
+  kademlia_protocol_name: /a/kad
+  identify_protocol_name: /a/id
+  chain_sync_protocol_name: /a/sync
+""" & "\n" & deploymentSettingsCryptarchiaBlock.replace(
+        "    transactions:", "    uncle_headers: [x]\n    transactions:") &
+      "\n" & deploymentSettingsTimeBlock & """
+mempool:
+  pubsub_topic: /a/mem
+"""
+    let r = parseDeploymentSettings(badYaml)
+    check r.isErr
+    check "uncle_headers must be an empty sequence" in r.error
 
   test "validateDeploymentSettings: zero cryptarchia slot coeff denominator":
     let badYaml = deploymentSettingsBlendBlock & """

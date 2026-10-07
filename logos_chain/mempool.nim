@@ -22,7 +22,7 @@ import
 export results
 
 from ./core/mantle/primitives import MaxBlockTxs, SlotNumber
-from ./core/types import Block
+from ./core/types import Block, items
 
 const
   DefaultMempoolCapacity = 10_240

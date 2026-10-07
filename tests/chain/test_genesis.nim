@@ -22,11 +22,12 @@ const deploymentSettingsPath = testsDir / "../../config/deployment-settings.yaml
 
 suite "chain/genesis":
   test "createGenesisBlock wraps a minimal signed mantle tx":
-    let tx = MantleTx(ops: @[])
-    let sm = SignedMantleTx(tx: tx, opProofs: @[])
-    let h = createGenesisBlock(sm).get.header
-    let b = createGenesisBlock(sm).get
-    check h.blockRoot == createBlockRoot([sm]).get
+    let
+      tx = MantleTx(ops: @[])
+      sm = SignedMantleTx(tx: tx, opProofs: @[])
+      h = createGenesisBlock(sm).get.header
+      b = createGenesisBlock(sm).get
+    check h.bodyRoot == body_root([], [sm]).get
     check b.txs.len == 1
     check b.header.bedrockVersion == GenesisBedrockVersion
     check b.txs[0].tx.ops.len == sm.tx.ops.len
@@ -67,7 +68,7 @@ suite "chain/genesis":
     check gb.header.bedrockVersion == GenesisBedrockVersion
     check gb.header.parentBlock == default(BlockId)
     check gb.header.slot == 0'u64
-    check gb.header.blockRoot == createBlockRoot([genesisTx]).get
+    check gb.header.bodyRoot == body_root([], [genesisTx]).get
     check gb.header == gstate.header
     check gb.signature == gstate.blockSignature
 
@@ -81,7 +82,7 @@ suite "chain/genesis":
     let
       gstate = ds.cryptarchia.genesisState
       fromTx = createGenesisBlock(gstate.signedMantleTx).get
-      fromState = initBlock(gstate.header, gstate.blockSignature, [gstate.signedMantleTx])
+      fromState = initBlock(gstate.header, gstate.blockSignature, [], [gstate.signedMantleTx])
 
     check fromTx.header == fromState.header
     check blockId(fromTx.header) == blockId(fromState.header)

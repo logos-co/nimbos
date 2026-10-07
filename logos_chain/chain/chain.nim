@@ -119,6 +119,11 @@ proc init*(
       return err("chain: " & $error)
     genesisBlock = createGenesisBlock(SignedMantleTx(validTx)).valueOr:
       return err("chain: genesis block encoding failed: " & $error)
+  # A stale body_root in the settings file must fail at start-up, not later.
+  if genesisBlock.header != settings.cryptarchia.genesisState.header:
+    return err(
+      "chain: genesis header in deployment settings does not match the genesis transaction")
+  let
     cfg = ledgerConfig(settings)
     sdp = SdpRegistry.init(
       settings.cryptarchia.sdpConfig,
@@ -235,7 +240,7 @@ proc applyAdmittedBlock(
 ): Result[void, BlockApplyError] =
   # Tier 3: PoL against parent state and stateless transaction validation
   let
-    unverified = chain.mempool.unverifiedTxs(admittedBlk.txs)
+    unverified = chain.mempool.unverifiedTxs(admittedBlk.txs.asSeq)
     (validBlk, headerState) = validatePolAndStatelessTransactions(
       admittedBlk, chain.ledger, unverified
     ).valueOr:
@@ -275,7 +280,7 @@ proc tryApplyBlock*(
     curSlot = chain.currentWallclockSlot()
     id = ?chain.checkViability(header(blk), curSlot)
 
-  # Tiers 0-2: Structure, Topology Viability, Merkle Root, Header Signature
+  # Tiers 0-2: Structure, Topology Viability, Body Root, Header Signature
   let (admittedBlk, isOrphan) = validateBlockHeaderAndTopology(
     blk, chain.localTree, chain.ledger
   ).valueOr:

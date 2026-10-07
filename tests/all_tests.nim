@@ -36,6 +36,7 @@ import # Unit test
   ./core/test_block_types,
   ./core/test_block_bincode,
   ./core/test_block_validation,
+  ./core/test_body_root,
   ./core/test_mempool,
   ./core/test_local_tree,
   ./core/test_utils,

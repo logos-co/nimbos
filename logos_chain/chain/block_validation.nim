@@ -9,7 +9,7 @@
 ## half (parent linkage, slot ordering, wallclock bound, leader proof verification
 ## called during `tryApplyHeader` in `ledger.nim`) is owned by the `Chain.tryApplyBlock`
 ## composition: ledger `prepareUpdate` plus `LocalTree.addBlockToTree`.
-## Spec: [Block Construction, Validation and Execution v1.1.2](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/bedrock-v1.1-block-construction.md)
+## Spec: [Block Construction, Validation and Execution v1.3.0](https://github.com/logos-co/logos-lips/blob/4deef612ce1ae1776167daf8779d4abae953201b/docs/blockchain/raw/bedrock-v1.1-block-construction.md)
 
 {.push raises: [], gcsafe.}
 
@@ -22,8 +22,9 @@ import
 export tx_validation.StatelessLedgerError
 
 from ../core/types import
-  Block, createBlockRoot, ExpectedBedrockVersion,
-  MaxBlockSize, header, txs, blockId, ValidBlock, AdmittedBlock
+  Block, body_root, ExpectedBedrockVersion,
+  MaxBlockSize, MaxUncles, asSeq, len, header, txs, blockId, ValidBlock,
+  AdmittedBlock
 from ../core/mantle/tx_types import SignedMantleTx, ValidSignedMantleTx, byteLen
 
 type
@@ -60,12 +61,12 @@ func validateBlockHeader(blk: Block): bool =
   if h.slot > 0 and h.parentBlock.isZero:
     return false
 
-  if blk.txs.len > 0 and h.blockRoot.isZero:
+  # Only the commitment to the carried uncle list is checked here; the uncle
+  # validity rules (Cryptarchia "Block Header Validation") are not
+  # implemented yet.
+  let root = body_root(blk.uncleHeaders.asSeq, blk.txs.asSeq).valueOr:
     return false
-
-  let root = createBlockRoot(blk.txs).valueOr:
-    return false
-  if root != h.blockRoot:
+  if root != h.bodyRoot:
     return false
 
   if not verify(blk.signature, blockId(h), h.proofOfLeadership.leaderKey):
@@ -77,10 +78,14 @@ func validateBlockStructure(blk: Block): bool =
   if blk.txs.len > MaxBlockTxs:
     return false
 
+  if blk.uncleHeaders.len > MaxUncles:
+    return false
+
   if blk.signature == DefaultEd25519Signature:
     return false
 
-  if txBytesLen(blk.txs) > MaxBlockSize:
+  # The spec bounds uncles by count only; MaxBlockSize covers the transactions.
+  if txBytesLen(blk.txs.asSeq) > MaxBlockSize:
     return false
 
   true
@@ -152,7 +157,7 @@ proc validateBlockHeaderAndTopology*(
   ## Multi-tier block admission and staged header/topology validation:
   ## Tier 0: Structural & size bounds (~1 µs)
   ## Tier 1: Topology & parent existence in localTree/ledger (< 5 µs)
-  ## Tier 2a: Merkle root verification (~20 µs)
+  ## Tier 2a: Body root verification (~20 µs)
   ## Tier 2b: Header Ed25519 signature verification (~0.8 ms)
   ##
   ## Returns ok((admittedBlk, isOrphan: true)) if the block is an orphan (parent state not yet in ledger),
@@ -181,7 +186,7 @@ proc prepareBlockUpdate*(
     headerState: LedgerState,
 ): Result[LedgerState, BlockValidationError] =
   ## Executes state transitions via `ledger.prepareUpdate` on a validated block.
-  template validTxs: untyped = cast[seq[ValidSignedMantleTx]](blk.txs)
+  template validTxs: untyped = cast[seq[ValidSignedMantleTx]](blk.txs.asSeq)
 
   let prepared = ledger.prepareUpdate(
     blk.header.slot, headerState, validTxs

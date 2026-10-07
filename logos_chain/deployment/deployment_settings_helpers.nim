@@ -237,9 +237,9 @@ func parseGenesisBlockHeaderFromYaml(hdr: YamlNode, pathPrefix: string): Result[
   let slotNode = yamlGetPathNode(hdr, ["slot"]).valueOr:
     return err("deployment-settings: missing " & pathPrefix & ".slot")
   let slot = SlotNumber(? parseUIntNode(slotNode, pathPrefix & ".slot"))
-  let rootNode = yamlGetPathNode(hdr, ["block_root"]).valueOr:
-    return err("deployment-settings: missing " & pathPrefix & ".block_root")
-  let blockRoot = ? parseHex32Node(rootNode, pathPrefix & ".block_root")
+  let rootNode = yamlGetPathNode(hdr, ["body_root"]).valueOr:
+    return err("deployment-settings: missing " & pathPrefix & ".body_root")
+  let bodyRoot = ? parseHex32Node(rootNode, pathPrefix & ".body_root")
   let pol = yamlGetPathNode(hdr, ["proof_of_leadership"]).valueOr:
     return err("deployment-settings: missing " & pathPrefix & ".proof_of_leadership")
   if pol.kind != yMapping:
@@ -261,7 +261,7 @@ func parseGenesisBlockHeaderFromYaml(hdr: YamlNode, pathPrefix: string): Result[
     bedrockVersion: bedrockVer,
     parentBlock: parentBlock,
     slot: slot,
-    blockRoot: blockRoot,
+    bodyRoot: bodyRoot,
     proofOfLeadership: ProofOfLeadership(
       leaderVoucher: voucher,
       entropyContribution: entropy,
@@ -472,6 +472,11 @@ func validateCryptarchiaGenesisYaml*(root: YamlNode): Result[void, string] =
       return err("deployment-settings: missing " & ctx)
   needUnder(blockNode, ["header"], "cryptarchia.genesis_block.header")
   needUnder(blockNode, ["signature"], "cryptarchia.genesis_block.signature")
+  let unclesNode = yamlGetPathNode(blockNode, ["uncle_headers"])
+  if unclesNode.isSome and
+      (unclesNode[].kind != ySequence or unclesNode[].len != 0):
+    return err(
+      "deployment-settings: cryptarchia.genesis_block.uncle_headers must be an empty sequence")
   let hdr = yamlGetPathNode(blockNode, ["header"]).valueOr:
     return err("deployment-settings: missing cryptarchia.genesis_block.header")
   if hdr.kind != yMapping:
@@ -479,7 +484,10 @@ func validateCryptarchiaGenesisYaml*(root: YamlNode): Result[void, string] =
   needUnder(hdr, ["version"], "cryptarchia.genesis_block.header.version")
   needUnder(hdr, ["parent_block"], "cryptarchia.genesis_block.header.parent_block")
   needUnder(hdr, ["slot"], "cryptarchia.genesis_block.header.slot")
-  needUnder(hdr, ["block_root"], "cryptarchia.genesis_block.header.block_root")
+  if yamlGetPathNode(hdr, ["block_root"]).isSome:
+    return err(
+      "deployment-settings: cryptarchia.genesis_block.header.block_root was renamed to body_root")
+  needUnder(hdr, ["body_root"], "cryptarchia.genesis_block.header.body_root")
   needUnder(hdr, ["proof_of_leadership"], "cryptarchia.genesis_block.header.proof_of_leadership")
   let pol = yamlGetPathNode(hdr, ["proof_of_leadership"]).valueOr:
     return err("deployment-settings: missing cryptarchia.genesis_block.header.proof_of_leadership")

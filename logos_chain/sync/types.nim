@@ -86,11 +86,18 @@ type
 type
   IBDFailure* = object of CatchableError
 
-const cryptarchiaSyncBincodeConfig* = BincodeConfig(
-  byteOrder: LittleEndian,
-  intSize: 8,
-  sizeLimit: high(uint64),
-)
+const
+  MaxSyncBlockWireSize = uint64(
+    MaxBlockSize + (1 + MaxUncles) * SignedHeaderSize +
+    (2 + MaxBlockTxs) * sizeof(uint64))
+    ## Largest sync-wire block: a signed header, ``MaxUncles`` uncles, and the
+    ## transactions, plus the uncle count, the tx count, and a u64 prefix per tx.
+
+  cryptarchiaSyncBincodeConfig* = BincodeConfig(
+    byteOrder: LittleEndian,
+    intSize: 8,
+    sizeLimit: MaxSyncBlockWireSize,
+  )
 
 deriveBincode(KnownBlocks)
 deriveBincode(DownloadBlocksRequest)

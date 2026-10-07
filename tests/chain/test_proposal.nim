@@ -291,6 +291,7 @@ suite "chain/proposal":
     check proposal.header.parentBlock == gid
     check proposal.header.proofOfLeadership.leaderKey == testTxKeyPair.pubkey
     check proposal.references[0] == mantleTxHash(tx.tx).get
+    check proposal.uncleHeaders.len == 0
 
     # Reconstruct the proposal
     let reconstructedRes = reconstructBlock(proposal, m)
@@ -298,6 +299,7 @@ suite "chain/proposal":
     let blk = reconstructedRes.get()
     check blk.txs.len == 1
     check mantleTxHash(blk.txs[0].tx).get == mantleTxHash(tx.tx).get
+    check blk.uncleHeaders.len == 0
 
   test "reconstructBlock succeeds for orphan proposal":
     var m = Mempool.init()
