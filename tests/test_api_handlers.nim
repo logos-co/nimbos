@@ -161,3 +161,8 @@ suite "Logos REST node API stub endpoints":
     check res.status == 200
     check res.data.len == 0
     check res.headers.getString("content-type") == "application/json"
+
+  test "teardown rest server":
+    {.gcsafe.}:
+      waitFor server.stop()
+      waitFor server.closeWait()

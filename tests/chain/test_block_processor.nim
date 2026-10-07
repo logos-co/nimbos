@@ -272,8 +272,7 @@ suite "chain/block_processor":
       let
         b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
         f = bp.addBlock(BlockSource.Sync, b1)
-      await sleepAsync(1.milliseconds)
-      check f.cancelled()
+      check waitUntil(f.cancelled())
 
   asyncTest "cascaded orphan promotions apply multiple levels of buffered orphans":
     withProcessor(chain):

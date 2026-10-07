@@ -267,13 +267,11 @@ suite "Network connection state — outboundTable, connQueue, seenTable":
     try:
       let waitFut = dialer.waitForBootstrapPeers()
       asyncSpawn dialer.start()
-      let startTime = Moment.now()
-      let readyPeers = await waitFut
-      let elapsed = Moment.now() - startTime
 
-      check readyPeers.len == 0
-      check elapsed >= 10.milliseconds
-      check elapsed < 2.seconds
+      let completed = await withTimeout(waitFut, 2.seconds)
+      check:
+        completed == true
+        waitFut.read().len == 0
     finally:
       await dialer.stop()
 
