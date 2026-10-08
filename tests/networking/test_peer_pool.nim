@@ -11,6 +11,7 @@
 import std/[random, heapqueue, tables, sequtils, strutils]
 import chronos, chronos/unittest2/asynctests
 import ../../logos_chain/networking/peer_pool
+import ../testutil
 
 type
   PeerTestID = string
@@ -87,9 +88,9 @@ suite "PeerPool testing suite":
       doAssert(fut1.finished == false)
       doAssert(fut2.finished == false)
       peer0.close()
-      await sleepAsync(1.milliseconds)
+      doAssert waitUntil(fut2.finished)
       doAssert(fut1.finished == false)
-      doAssert(fut2.finished == true and fut2.failed == false)
+      doAssert not fut2.failed
       result = true
 
     proc testAddPeer2(): Future[bool] {.async.} =
@@ -109,12 +110,12 @@ suite "PeerPool testing suite":
       doAssert(fut2.finished == false)
       doAssert(fut3.finished == false)
       peer0.close()
-      await sleepAsync(1.milliseconds)
-      doAssert(fut2.finished == true and fut2.failed == false)
+      doAssert waitUntil(fut2.finished)
+      doAssert not fut2.failed
       doAssert(fut3.finished == false)
       peer1.close()
-      await sleepAsync(1.milliseconds)
-      doAssert(fut3.finished == true and fut3.failed == false)
+      doAssert waitUntil(fut3.finished)
+      doAssert not fut3.failed
       result = true
 
     proc testAddPeer3(): Future[bool] {.async.} =
@@ -135,12 +136,12 @@ suite "PeerPool testing suite":
       doAssert(fut2.finished == true and fut2.failed == false)
       doAssert(fut3.finished == false)
       peer0.close()
-      await sleepAsync(1.milliseconds)
-      doAssert(fut1.finished == true and fut1.failed == false)
+      doAssert waitUntil(fut1.finished)
+      doAssert not fut1.failed
       doAssert(fut3.finished == false)
       peer2.close()
-      await sleepAsync(1.milliseconds)
-      doAssert(fut3.finished == true and fut3.failed == false)
+      doAssert waitUntil(fut3.finished)
+      doAssert not fut3.failed
       result = true
 
     proc testAddPeer4(): Future[bool] {.async.} =
@@ -172,17 +173,17 @@ suite "PeerPool testing suite":
       doAssert(fut4.finished == false)
       doAssert(fut5.finished == false)
       peer0.close()
-      await sleepAsync(1.milliseconds)
-      doAssert(fut3.finished == true and fut3.failed == false)
+      doAssert waitUntil(fut3.finished)
+      doAssert not fut3.failed
       doAssert(fut4.finished == false)
       doAssert(fut5.finished == false)
       peer1.close()
-      await sleepAsync(1.milliseconds)
-      doAssert(fut4.finished == true and fut4.failed == false)
+      doAssert waitUntil(fut4.finished)
+      doAssert not fut4.failed
       doAssert(fut5.finished == false)
       peer2.close()
-      await sleepAsync(1.milliseconds)
-      doAssert(fut5.finished == true and fut5.failed == false)
+      doAssert waitUntil(fut5.finished)
+      doAssert not fut5.failed
       result = true
 
     check:
@@ -460,8 +461,7 @@ suite "PeerPool testing suite":
       doAssert(pool.lenAvailable({PeerType.Incoming}) == 1)
       close(peer)
       # We need to wait next callback scheduler
-      await sleepAsync(1.milliseconds)
-      doAssert(pool.len == 0)
+      doAssert waitUntil(pool.len == 0)
       doAssert(pool.lenAvailable == 0)
       doAssert(pool.lenAvailable({PeerType.Outgoing}) == 0)
       doAssert(pool.lenAvailable({PeerType.Incoming}) == 0)
@@ -874,27 +874,24 @@ suite "PeerPool testing suite":
       fut4.finished == false
 
     pool.release(tpeer2)
-    await sleepAsync(1.milliseconds)
+    check waitUntil(fut1.finished)
     check:
-      fut1.finished == true
       fut1.value.getKey() == "peer4"
       fut2.finished == false
       fut3.finished == false
       fut4.finished == false
 
     pool.release(tpeer3)
-    await sleepAsync(1.milliseconds)
+    check waitUntil(fut3.finished)
     check:
       fut2.finished == false
-      fut3.finished == true
       fut3.value.getKey() == "peer6"
       fut4.finished == false
 
     pool.release(tpeer5)
-    await sleepAsync(1.milliseconds)
+    check waitUntil(fut4.finished)
     check:
       fut2.finished == false
-      fut4.finished == true
       fut4.value.getKey() == "peer7"
 
     pool.release(tpeer4)
@@ -906,9 +903,8 @@ suite "PeerPool testing suite":
       fut2.finished == false
 
     pool.release(tpeer7)
-    await sleepAsync(1.milliseconds)
+    check waitUntil(fut2.finished)
     check:
-      fut2.finished == true
       fut2.value.getKey() == "peer5"
 
   test "Score check test":
