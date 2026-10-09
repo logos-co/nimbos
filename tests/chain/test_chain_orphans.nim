@@ -20,9 +20,9 @@ from ../../logos_chain/core/mantle/primitives import SlotNumber
 
 proc setupChain(
     securityParam: uint64 = 10'u64,
-): tuple[chain: Chain, genesis: Block, gid: BlockId] =
+): tuple[chain: Chain, genesis: ValidBlock, gid: BlockId] =
   let
-    genesis = createGenesisBlock(SignedMantleTx(testGenesisTx())).get
+    genesis = createGenesisBlock(testValidGenesisTx())
     gid = blockId(genesis.header)
   var c = initTestChain(genesis, securityParam = securityParam)
   c.slotConfig.genesisTime = uint64(getTime().toUnix() - 500)
@@ -334,12 +334,12 @@ suite "chain/orphan_resolution":
   test "orphan cascade triggering a reorg restores mempool transactions from abandoned branch":
     var (chain, genesis, gid) = setupChain(securityParam = 1)
 
-    let txA = minimalSignedTx()
-    check chain.mempool.add(ValidSignedMantleTx(txA), SlotNumber(1)).get
+    let txA = minimalValidSignedTx()
+    check chain.mempool.add(txA, SlotNumber(1))
     check chain.mempool.len == 1
 
     # Branch A: block a1 with txA
-    let a1 = childBlock(genesis.header, gid, SlotNumber(1), [txA])
+    let a1 = childBlock(genesis.header, gid, SlotNumber(1), [txA.signedTx])
     let resA1 = chain.tryApplyBlock(a1)
     check resA1.isOk
     check chain.localTree.localTipId == blockId(a1.header)

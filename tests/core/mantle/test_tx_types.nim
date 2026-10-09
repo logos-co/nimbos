@@ -158,7 +158,21 @@ suite "core/mantle/tx_types":
     for tx in allTxs:
       let enc = encodeSignedMantleTx(tx).get
       check byteLen(tx) == enc.len
-      check byteLen(ValidSignedMantleTx(tx)) == enc.len
+      let htx = HashedSignedMantleTx(signedTx: tx, hash: default(Hash32))
+      check byteLen(htx) == enc.len
+      check encodeSignedMantleTx(htx).get == enc
+      check htx.tx.ops.len == tx.tx.ops.len
+      check htx.opProofs.len == tx.opProofs.len
+      let vtx = ValidSignedMantleTx(htx)
+      check byteLen(vtx) == enc.len
+      check encodeSignedMantleTx(vtx).get == enc
+      check vtx.tx.ops.len == tx.tx.ops.len
+      check vtx.opProofs.len == tx.opProofs.len
+      let gtx = ValidGenesisMantleTx(vtx)
+      check byteLen(gtx) == enc.len
+      check encodeSignedMantleTx(gtx).get == enc
+      check gtx.tx.ops.len == tx.tx.ops.len
+      check gtx.opProofs.len == tx.opProofs.len
 
   test "encodeSignedMantleTx returns error on proof count mismatch":
     let tx = SignedMantleTx(

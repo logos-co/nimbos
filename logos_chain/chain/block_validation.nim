@@ -22,10 +22,12 @@ import
 export tx_validation.StatelessLedgerError
 
 from ../core/types import
-  Block, body_root, ExpectedBedrockVersion,
-  MaxBlockSize, MaxUncles, asSeq, len, header, txs, blockId, ValidBlock,
+  Block, body_root, ExpectedBedrockVersion, MaxBlockSize, MaxUncles,
+  asSeq, len, header, blockId, ValidBlock,
   AdmittedBlock
-from ../core/mantle/tx_types import SignedMantleTx, ValidSignedMantleTx, byteLen
+from ../core/mantle/tx_types import
+  HashedSignedMantleTx, ValidSignedMantleTx, AnySignedMantleTx,
+  byteLen
 
 type
   BlockValidationErrorKind* {.pure.} = enum
@@ -44,13 +46,13 @@ type
     else:
       discard
 
-func txBytesLen(txs: openArray[SignedMantleTx]): int =
+func txBytesLen[T: AnySignedMantleTx](txs: openArray[T]): int =
   var total = 0
   for i in 0 ..< txs.len:
     total += byteLen(txs[i])
   total
 
-func validateBlockHeader(blk: Block): bool =
+func validateBlockHeader(blk: Block, txs: openArray[HashedSignedMantleTx]): bool =
   let h = header(blk)
   if h.bedrockVersion != ExpectedBedrockVersion:
     return false
@@ -64,8 +66,8 @@ func validateBlockHeader(blk: Block): bool =
   # Only the commitment to the carried uncle list is checked here; the uncle
   # validity rules (Cryptarchia "Block Header Validation") are not
   # implemented yet.
-  let root = body_root(blk.uncleHeaders.asSeq, blk.txs.asSeq).valueOr:
-    return false
+  # Body root computed directly from precomputed tx hashes in txs
+  let root = body_root(blk.uncleHeaders.asSeq, txs)
   if root != h.bodyRoot:
     return false
 
@@ -74,8 +76,11 @@ func validateBlockHeader(blk: Block): bool =
 
   true
 
-func validateBlockStructure(blk: Block): bool =
-  if blk.txs.len > MaxBlockTxs:
+func validateBlockStructure[T: AnySignedMantleTx](
+    blk: Block,
+    txs: openArray[T],
+): bool =
+  if txs.len > MaxBlockTxs:
     return false
 
   if blk.uncleHeaders.len > MaxUncles:
@@ -85,22 +90,24 @@ func validateBlockStructure(blk: Block): bool =
     return false
 
   # The spec bounds uncles by count only; MaxBlockSize covers the transactions.
-  if txBytesLen(blk.txs.asSeq) > MaxBlockSize:
+  if txBytesLen(txs) > MaxBlockSize:
     return false
 
   true
 
 proc validateStatelessTransactions(
-    txs: openArray[SignedMantleTx],
+    htxs: openArray[HashedSignedMantleTx],
+    unverifiedIndices: openArray[int],
 ): Result[void, BlockValidationError] =
   ## Validates mantle transactions statelessly using a 2-pass light-first scan:
   ## Pass 1: Light (non-ZK) transactions (~130 ns per tx)
   ## Pass 2: Heavy ZK transactions (LeaderClaim Groth16 proofs, ~1.13 ms per tx)
-  if txs.len == 0:
+  ## Only validates transactions at `unverifiedIndices`.
+  if unverifiedIndices.len == 0:
     return ok()
 
-  template validateTx(tx: SignedMantleTx): untyped =
-    validateMantleTxStateless(tx).isOkOr:
+  template validateTx(htx: HashedSignedMantleTx): untyped =
+    validateMantleTxStateless(htx).isOkOr:
       return err(BlockValidationError(
         kind: BlockValidationErrorKind.StatelessTxRejected,
         statelessError: error,
@@ -108,23 +115,22 @@ proc validateStatelessTransactions(
 
   var heavyIndices: seq[int]
 
-  # Pass 1: Validate light txs, record heavy ZK txs without running heavy verifications
-  for i in 0 ..< txs.len:
-    if txs[i].hasHeavyZkProof():
-      heavyIndices.add(i)
+  # Pass 1: Validate unverified light txs, record heavy ZK txs without running heavy verifications
+  for idx in unverifiedIndices:
+    if htxs[idx].signedTx.hasHeavyZkProof():
+      heavyIndices.add(idx)
     else:
-      validateTx(txs[i])
+      validateTx(htxs[idx])
 
-  # Pass 2: Validate heavy ZK txs (only if any exist)
+  # Pass 2: Validate unverified heavy ZK txs (only if any exist)
   for idx in heavyIndices:
-    validateTx(txs[idx])
+    validateTx(htxs[idx])
 
   ok()
 
 proc validatePolAndStatelessTransactions*(
-    blk: AdmittedBlock,
+    blk: sink AdmittedBlock,
     ledger: Ledger[BlockId],
-    txsToVerify: openArray[SignedMantleTx],
 ): Result[tuple[validBlk: ValidBlock, headerState: LedgerState], BlockValidationError] =
   ## Tier 3a: Verify PoL against parent state before touching any transactions
   let parentState = ledger.state(blk.header.parentBlock).valueOr:
@@ -145,14 +151,24 @@ proc validatePolAndStatelessTransactions*(
     ))
 
   # Tier 3b: Stateless transaction validation
-  ?validateStatelessTransactions(txsToVerify)
+  ?validateStatelessTransactions(blk.txs, blk.unverifiedIndices)
 
-  ok((validBlk: ValidBlock(Block(blk)), headerState: afterHeader))
+  ok((
+    validBlk: ValidBlock(
+      header: blk.header,
+      signature: blk.signature,
+      uncleHeaders: blk.uncleHeaders,
+      txs: cast[seq[ValidSignedMantleTx]](blk.txs),
+    ),
+    headerState: afterHeader,
+  ))
 
 proc validateBlockHeaderAndTopology*(
     blk: Block,
     localTree: LocalTree,
     ledger: Ledger[BlockId],
+    htxs: sink seq[HashedSignedMantleTx],
+    unverifiedIndices: sink seq[int],
 ): Result[tuple[admittedBlk: AdmittedBlock, isOrphan: bool], BlockValidationError] =
   ## Multi-tier block admission and staged header/topology validation:
   ## Tier 0: Structural & size bounds (~1 µs)
@@ -162,7 +178,7 @@ proc validateBlockHeaderAndTopology*(
   ##
   ## Returns ok((admittedBlk, isOrphan: true)) if the block is an orphan (parent state not yet in ledger),
   ## or ok((admittedBlk, isOrphan: false)) if the parent state is present.
-  if not validateBlockStructure(blk):
+  if not validateBlockStructure(blk, htxs):
     return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))
 
   let isOrphan = not ledger.hasState(blk.header.parentBlock)
@@ -175,10 +191,19 @@ proc validateBlockHeaderAndTopology*(
   if not localTree.canDescendFromImmutable(blk.header):
     return err(BlockValidationError(kind: BlockValidationErrorKind.UnviableFork))
 
-  if not validateBlockHeader(blk):
+  if not validateBlockHeader(blk, htxs):
     return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))
 
-  ok((admittedBlk: AdmittedBlock(blk), isOrphan: isOrphan))
+  ok((
+    admittedBlk: AdmittedBlock(
+      header: blk.header,
+      signature: blk.signature,
+      uncleHeaders: blk.uncleHeaders,
+      txs: htxs,
+      unverifiedIndices: unverifiedIndices,
+    ),
+    isOrphan: isOrphan,
+  ))
 
 proc prepareBlockUpdate*(
     blk: ValidBlock,
@@ -186,10 +211,8 @@ proc prepareBlockUpdate*(
     headerState: LedgerState,
 ): Result[LedgerState, BlockValidationError] =
   ## Executes state transitions via `ledger.prepareUpdate` on a validated block.
-  template validTxs: untyped = cast[seq[ValidSignedMantleTx]](blk.txs.asSeq)
-
   let prepared = ledger.prepareUpdate(
-    blk.header.slot, headerState, validTxs
+    blk.header.slot, headerState, blk.txs
   ).valueOr:
     return err(BlockValidationError(
       kind: BlockValidationErrorKind.TransactionsRejected,

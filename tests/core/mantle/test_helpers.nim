@@ -69,17 +69,21 @@ func mkId*(seed: byte): TestId =
 
 func mkTransferTx*(
     inputs: openArray[NoteId], outputs: openArray[Note]
-): SignedMantleTx =
+): HashedSignedMantleTx =
   let op = createTransferOp(
     TransferPayload(inputs: Inputs(noteIds: @inputs), outputs: Outputs(notes: @outputs))
   )
-  SignedMantleTx(
+  let stx = SignedMantleTx(
     tx: MantleTx(ops: @[op]),
     opProofs: @[OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))],
   )
+  HashedSignedMantleTx(signedTx: stx, hash: mantleTxHash(stx.tx).expect("valid tx"))
 
 func mkProof*(): ProofOfLeadership =
   default(ProofOfLeadership)
+
+func mkHashedSignedTx*(stx: SignedMantleTx, hash: Hash32 = default(Hash32)): HashedSignedMantleTx =
+  HashedSignedMantleTx(signedTx: stx, hash: hash)
 
 proc mkEdKeyPair*(rng: ref HmacDrbgContext): EdKeyPair =
   ## Random Ed25519 keypair. Caller provides the rng so all keypairs minted

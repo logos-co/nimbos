@@ -20,7 +20,7 @@ import
   ../../logos_chain/deployment/[deployment_settings, deployment_settings_helpers],
   ../../logos_chain/chain/genesis,
   ../../logos_chain/core/[types, crypto/hashing],
-  ../../logos_chain/core/mantle/[tx_types, tx_hashing]
+  ../../logos_chain/core/mantle/[tx_types, tx_hashing, tx_validation]
 
 const
   testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
@@ -67,7 +67,7 @@ suite "devnet genesis mantle_tx body root":
       smt = signedMantleTxFromDevnetFixture(text).valueOr:
         check false
         return
-      txRoot = merkle_root([smt]).get
+      txRoot = merkle_root([mantleTxHash(smt.tx).get])
       bodyRoot = body_root([], txRoot)
       dsText = readAllChars(deploymentSettingsPath).valueOr:
         check false
@@ -78,7 +78,7 @@ suite "devnet genesis mantle_tx body root":
       gstate = ds.cryptarchia.genesisState
       smtFromDeployment = gstate.signedMantleTx
     check mantleTxHash(smt.tx).get == mantleTxHash(smtFromDeployment.tx).get
-    check txRoot == merkle_root([smtFromDeployment]).get
+    check txRoot == merkle_root([mantleTxHash(smtFromDeployment.tx).get])
     check txRoot == mantleTxHash(smt.tx).get
     check toHex(txRoot) == expectedDevnetMantleTxHash
     check toHex(bodyRoot) == expectedDevnetGenesisBodyRoot
@@ -92,8 +92,9 @@ suite "devnet genesis mantle_tx body root":
       ds = parseDeploymentSettings(dsText).valueOr:
         check false
         return
-    check validateDeploymentSettings(ds).isOk
-    let gb = createGenesisBlock(ds.cryptarchia.genesisState.signedMantleTx).get
+    let
+      validGenesisTx = validateGenesisTxStateless(ds.cryptarchia.genesisState.signedMantleTx).get
+      gb = createGenesisBlock(validGenesisTx)
     check toHex(gb.header.bodyRoot) == expectedDevnetGenesisBodyRoot
     check toHex(blockId(gb.header)) == expectedDevnetGenesisBlockId
 

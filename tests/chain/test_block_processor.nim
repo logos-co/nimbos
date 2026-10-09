@@ -16,19 +16,22 @@ import
   results,
   ../testutil,
   ../logos_chain/sync/helpers,
-  ../../logos_chain/chain/block_processor,
-  ../../logos_chain/core/types
-from ../../logos_chain/core/mantle/primitives import SlotNumber
+  ../../logos_chain/chain/block_processor
 
 template addBlock(
-    bp: BlockProcessor, src: BlockSource, blk: Block
+    bp: BlockProcessor, blk: Block
 ): BlockApplyFuture =
-  bp.addBlock(src, blk, blockId(header(blk)))
+  bp.addBlock(blk, blockId(header(blk)))
+
+template addBlock(
+    bp: BlockProcessor, proposal: Proposal
+): BlockApplyFuture =
+  bp.addBlock(proposal, blockId(proposal.header))
 
 suite "chain/block_processor":
   setup:
     let
-      genesisBlk = createGenesisBlock(SignedMantleTx(testGenesisTx())).get
+      genesisBlk = createGenesisBlock(testValidGenesisTx())
       gid = blockId(genesisBlk.header)
       chain = initTestChain(genesisBlk)
 
@@ -36,7 +39,7 @@ suite "chain/block_processor":
     withProcessor(chain):
       let
         b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
-        r = await bp.addBlock(BlockSource.Sync, b1)
+        r = await bp.addBlock(b1)
       check r.isOk
       check bp.localTree.localTipId == blockId(b1.header)
       check bp.ledger.state(blockId(b1.header)).isSome
@@ -44,8 +47,8 @@ suite "chain/block_processor":
   asyncTest "addBlock on an applied block completes with AlreadyApplied":
     withProcessor(chain):
       let b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
-      check (await bp.addBlock(BlockSource.Sync, b1)).isOk
-      let r = await bp.addBlock(BlockSource.Gossip, b1)
+      check (await bp.addBlock(b1)).isOk
+      let r = await bp.addBlock(b1)
       check r.isErr and r.error.kind == BlockApplyErrorKind.AlreadyApplied
 
   asyncTest "addBlock on a buffered orphan completes immediately with OrphanAlreadyBuffered":
@@ -54,18 +57,18 @@ suite "chain/block_processor":
         b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
         b2 = childBlock(b1.header, blockId(b1.header), SlotNumber(2), [])
       # Buffer b2 as orphan
-      check (await bp.addBlock(BlockSource.Sync, b2)).error.kind == BlockApplyErrorKind.OrphanBuffered
+      check (await bp.addBlock(b2)).error.kind == BlockApplyErrorKind.OrphanBuffered
       check chain.orphanPool.hasOrphan(blockId(b2.header))
       # Ingesting duplicate b2 while in orphanPool returns OrphanAlreadyBuffered immediately
-      let fDup = bp.addBlock(BlockSource.Gossip, b2)
+      let fDup = bp.addBlock(b2)
       check fDup.finished
       check (await fDup).error.kind == BlockApplyErrorKind.OrphanAlreadyBuffered
 
   asyncTest "addBlock deduplicates in-flight blocks immediately":
     withProcessor(chain):
       let b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
-      let f1 = bp.addBlock(BlockSource.Sync, b1)
-      let f2 = bp.addBlock(BlockSource.Gossip, b1)
+      let f1 = bp.addBlock(b1)
+      let f2 = bp.addBlock(b1)
       check f2.finished
       check (await f2).error.kind == BlockApplyErrorKind.InFlight
       check (await f1).isOk
@@ -96,12 +99,12 @@ suite "chain/block_processor":
       # 1. Tamper R-half (byte index < 32)
       var badB1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
       badB1.signature.data[0] = badB1.signature.data[0] xor 0xff'u8
-      let fBad = bp.addBlock(BlockSource.Sync, badB1)
+      let fBad = bp.addBlock(badB1)
 
       # 2. Tamper S-half (byte index >= 32)
       var badB1_S = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
       badB1_S.signature.data[45] = badB1_S.signature.data[45] xor 0xff'u8
-      let fBad_S = bp.addBlock(BlockSource.Sync, badB1_S)
+      let fBad_S = bp.addBlock(badB1_S)
 
       # 3. Legitimate block with valid signature is queued without InFlight collision
       let goodB1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
@@ -110,7 +113,7 @@ suite "chain/block_processor":
       check bp.checkDeduplication(id1, badB1_S.signature).error == BlockApplyErrorKind.InFlight
       check bp.checkDeduplication(id1, goodB1.signature).isOk
 
-      let fGood = bp.addBlock(BlockSource.Gossip, goodB1)
+      let fGood = bp.addBlock(goodB1)
 
       check (await fBad).error.kind == BlockApplyErrorKind.InvalidStructure
       check (await fBad_S).error.kind == BlockApplyErrorKind.InvalidStructure
@@ -122,8 +125,8 @@ suite "chain/block_processor":
       let
         b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
         b2 = childBlock(b1.header, blockId(b1.header), SlotNumber(2), [])
-        f2 = bp.addBlock(BlockSource.Sync, b2)
-        f1 = bp.addBlock(BlockSource.Sync, b1)
+        f2 = bp.addBlock(b2)
+        f1 = bp.addBlock(b1)
       check not f1.finished
       check not f2.finished
       check (await f2).error.kind == BlockApplyErrorKind.OrphanBuffered
@@ -131,7 +134,7 @@ suite "chain/block_processor":
       # b2 is promoted asynchronously across event-loop turns
       check waitUntil(bp.localTree.hasBlock(blockId(b2.header)))
       check bp.localTree.localTipId == blockId(b2.header)
-      check (await bp.addBlock(BlockSource.Sync, b2)).error.kind == BlockApplyErrorKind.AlreadyApplied
+      check (await bp.addBlock(b2)).error.kind == BlockApplyErrorKind.AlreadyApplied
 
   asyncTest "orphan cascade yields cooperatively between each promoted orphan":
     withProcessor(chain):
@@ -147,7 +150,7 @@ suite "chain/block_processor":
 
       # Buffer blocks 2..5 as orphans first
       for i in 1 .. 5:
-        check (await bp.addBlock(BlockSource.Sync, blocks[i])).error.kind ==
+        check (await bp.addBlock(blocks[i])).error.kind ==
           BlockApplyErrorKind.OrphanBuffered
       check chain.orphanPool.len == 5
 
@@ -162,7 +165,7 @@ suite "chain/block_processor":
       let tickerFut = ticker()
 
       # Ingest parent block 0 -> triggers cascade promotion of blocks 1..5
-      check (await bp.addBlock(BlockSource.Sync, blocks[0])).isOk
+      check (await bp.addBlock(blocks[0])).isOk
 
       # Wait for all orphans to be promoted
       check waitUntil(bp.localTree.hasBlock(lastId))
@@ -189,13 +192,13 @@ suite "chain/block_processor":
         id4 = blockId(b4.header)
 
       # Buffer b4, b3, b2 as orphans
-      check (await bp.addBlock(BlockSource.Sync, b4)).error.kind == BlockApplyErrorKind.OrphanBuffered
-      check (await bp.addBlock(BlockSource.Sync, b3)).error.kind == BlockApplyErrorKind.OrphanBuffered
-      check (await bp.addBlock(BlockSource.Sync, b2)).error.kind == BlockApplyErrorKind.OrphanBuffered
+      check (await bp.addBlock(b4)).error.kind == BlockApplyErrorKind.OrphanBuffered
+      check (await bp.addBlock(b3)).error.kind == BlockApplyErrorKind.OrphanBuffered
+      check (await bp.addBlock(b2)).error.kind == BlockApplyErrorKind.OrphanBuffered
       check chain.orphanPool.len == 3
 
       # Ingest parent b1 -> triggers promotion of b2 which fails and prunes b3, b4
-      check (await bp.addBlock(BlockSource.Sync, b1)).isOk
+      check (await bp.addBlock(b1)).isOk
 
       # Allow event loop to process the promoted orphan failure and prune descendants
       check waitUntil(chain.orphanPool.len == 0)
@@ -223,7 +226,7 @@ suite "chain/block_processor":
       # runs while results are pending. With it, each poll pass promotes one
       # idler after due timers, so the ticker fires at least once per block
       # and in practice about every second poll pass. Expect a count near 23.
-      let futs = blocks.mapIt(bp.addBlock(BlockSource.Sync, it))
+      let futs = blocks.mapIt(bp.addBlock(it))
       var ticksWhileBusy = 0
       proc ticker() {.async: (raises: [CancelledError]).} =
         while true:
@@ -244,8 +247,8 @@ suite "chain/block_processor":
       let
         orphan = childBlock(genesisBlk.header, fakeParentId, SlotNumber(1), [])
         b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
-      discard bp.addBlock(BlockSource.Gossip, orphan)
-      check (await bp.addBlock(BlockSource.Sync, b1)).isOk
+      discard bp.addBlock(orphan)
+      check (await bp.addBlock(b1)).isOk
       check not bp.localTree.hasBlock(blockId(orphan.header))
 
   asyncTest "error kinds: OrphanBuffered and InvalidStructure":
@@ -258,11 +261,32 @@ suite "chain/block_processor":
         # Same slot as its parent, but above the LIB slot so the fork gate
         # does not fire first.
         stale = childBlock(b1.header, blockId(b1.header), SlotNumber(1), [])
-      check (await bp.addBlock(BlockSource.Sync, orphan)).error.kind ==
+      check (await bp.addBlock(orphan)).error.kind ==
         BlockApplyErrorKind.OrphanBuffered
-      check (await bp.addBlock(BlockSource.Sync, b1)).isOk
-      check (await bp.addBlock(BlockSource.Sync, stale)).error.kind ==
+      check (await bp.addBlock(b1)).isOk
+      check (await bp.addBlock(stale)).error.kind ==
         BlockApplyErrorKind.InvalidStructure
+
+  asyncTest "addBlock on Proposal reconstructs, validates, and applies child of genesis":
+    withProcessor(chain):
+      let
+        b1 = childValidBlock(genesisBlk.header, gid, SlotNumber(1), [])
+        p1 = Proposal(header: b1.header, references: default(References), signature: b1.signature)
+        r = await bp.addBlock(p1)
+      check r.isOk
+      check bp.localTree.localTipId == blockId(p1.header)
+      check bp.ledger.state(blockId(p1.header)).isSome
+
+  asyncTest "addBlock on Proposal with missing tx reference fails with MissingReference":
+    withProcessor(chain):
+      var refs: References
+      refs[0] = minimalValidSignedTx().hash
+      let
+        b1 = childValidBlock(genesisBlk.header, gid, SlotNumber(1), [])
+        p1 = Proposal(header: b1.header, references: refs, signature: b1.signature)
+        r = await bp.addBlock(p1)
+      check r.isErr
+      check r.error.kind == BlockApplyErrorKind.MissingReference
 
   asyncTest "stop ends the loop and cancels later addBlock calls":
     withProcessor(chain):
@@ -271,7 +295,7 @@ suite "chain/block_processor":
       check not bp.running
       let
         b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
-        f = bp.addBlock(BlockSource.Sync, b1)
+        f = bp.addBlock(b1)
       check waitUntil(f.cancelled())
 
   asyncTest "cascaded orphan promotions apply multiple levels of buffered orphans":
@@ -285,13 +309,13 @@ suite "chain/block_processor":
         id3 = blockId(b3.header)
 
       # Queue b2 and b3 as orphans
-      let f3 = bp.addBlock(BlockSource.Sync, b3)
-      let f2 = bp.addBlock(BlockSource.Sync, b2)
+      let f3 = bp.addBlock(b3)
+      let f2 = bp.addBlock(b2)
       check (await f3).error.kind == BlockApplyErrorKind.OrphanBuffered
       check (await f2).error.kind == BlockApplyErrorKind.OrphanBuffered
 
       # Ingest root b1
-      let f1 = bp.addBlock(BlockSource.Sync, b1)
+      let f1 = bp.addBlock(b1)
       check (await f1).isOk
 
       # Both b2 and b3 are promoted and applied
@@ -311,14 +335,14 @@ suite "chain/block_processor":
         id2 = blockId(b2.header)
 
       # 1. Queue b1 first (it sits at front of queue)
-      let f1 = bp.addBlock(BlockSource.Sync, b1)
+      let f1 = bp.addBlock(b1)
 
       # 2. Queue raw b2 next (it sits behind b1 in queue as RawIncoming)
-      let fRawB2 = bp.addBlock(BlockSource.Sync, b2)
+      let fRawB2 = bp.addBlock(b2)
       check not fRawB2.finished
 
       # 3. Buffer admitted copy of b2 in orphanPool before b1 finishes processing
-      let (admittedB2, isOrphan) = validateBlockHeaderAndTopology(b2, bp.localTree, bp.ledger).get()
+      let (admittedB2, isOrphan) = validateBlockHeaderAndTopology(b2, bp.localTree, bp.ledger, newSeq[HashedSignedMantleTx](), @[]).get()
       check isOrphan
       check chain.orphanPool.addOrphan(admittedB2)
 
@@ -343,11 +367,11 @@ suite "chain/block_processor":
         b2 = childBlock(b1.header, id1, SlotNumber(2), [])
         id2 = blockId(b2.header)
 
-      let f1 = bp.addBlock(BlockSource.Sync, b1)
-      let fRawB2 = bp.addBlock(BlockSource.Sync, b2)
+      let f1 = bp.addBlock(b1)
+      let fRawB2 = bp.addBlock(b2)
       check not fRawB2.finished
 
-      let (admittedB2, isOrphan) = validateBlockHeaderAndTopology(b2, bp.localTree, bp.ledger).get()
+      let (admittedB2, isOrphan) = validateBlockHeaderAndTopology(b2, bp.localTree, bp.ledger, newSeq[HashedSignedMantleTx](), @[]).get()
       check isOrphan
       check chain.orphanPool.addOrphan(admittedB2)
 

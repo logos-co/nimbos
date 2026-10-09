@@ -9,6 +9,7 @@
 {.used.}
 
 import
+  std/sequtils,
   unittest2,
   ../logos_chain/sync/helpers,
   ../../logos_chain/core/types,
@@ -16,7 +17,19 @@ import
   ../../logos_chain/chain/orphan_pool
 
 converter toAdmittedBlock(b: Block): AdmittedBlock =
-  AdmittedBlock(b)
+  let htxs = b.txs.asSeq.mapIt(
+    HashedSignedMantleTx(
+      signedTx: it,
+      hash: mantleTxHash(it.tx).valueOr(default(Hash32))
+    )
+  )
+  AdmittedBlock(
+    header: b.header,
+    signature: b.signature,
+    uncleHeaders: b.uncleHeaders,
+    txs: htxs,
+    unverifiedIndices: toSeq(0 ..< htxs.len),
+  )
 
 suite "chain/orphan_pool":
   test "empty pool properties":
@@ -226,15 +239,15 @@ suite "chain/orphan_pool":
 
   test "pruneIncompatibleWithImmutable removes orphans incompatible with advancing LIB":
     let pool = OrphanPool()
-    let genesis = Block(header: Header(slot: 0))
+    let genesis = ValidBlock(header: Header(slot: 0))
     let tree = newLocalTree(genesis, securityParam = 1'u64)
     let gid = blockId(genesis.header)
 
-    let b1 = Block(header: Header(slot: 1, parentBlock: gid))
+    let b1 = ValidBlock(header: Header(slot: 1, parentBlock: gid))
     let id1 = blockId(b1.header)
     check tree.addBlockToTree(b1)
 
-    let b2 = Block(header: Header(slot: 2, parentBlock: id1))
+    let b2 = ValidBlock(header: Header(slot: 2, parentBlock: id1))
     check tree.addBlockToTree(b2)
     # LIB advances to b1 (height 2 - 1 = 1, slot 1)
     discard tree.tryUpdateLib()

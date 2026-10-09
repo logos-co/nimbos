@@ -9,8 +9,7 @@
 {.used.}
 
 import
-  unittest2,
-  ../../logos_chain/core/mantle/[tx_types, tx_hashing],
+  ../testutil,
   ../../logos_chain/core/types
 
 suite "core/types":
@@ -21,20 +20,19 @@ suite "core/types":
 
   test "initBlock accepts empty tx list":
     let
-      tx = MantleTx(ops: @[])
       h = initHeader(
         bedrockVersion = testBedrockVersion,
         parentBlock = default(BlockId),
         slot = 0'u64,
         uncleHeaders = [],
-        txs = [SignedMantleTx(tx: tx, opProofs: @[])],
+        txHashes = openArray[Hash32]([]),
         proofOfLeadership = ProofOfLeadership(
           leaderVoucher: default(RewardVoucher),
           entropyContribution: default(ZkHash),
           proof: DefaultCompressedGroth16Proof,
           leaderKey: default(Ed25519PublicKey),
         ),
-      ).get
+      )
       b = initBlock(h, uncleHeaders = [], txs = [])
     check b.txs.len == 0
     check b.header.slot == 0'u64
@@ -42,19 +40,20 @@ suite "core/types":
   test "blockId returns 32-byte hash":
     let
       tx = MantleTx(ops: @[])
+      hx = mantleTxHash(tx).get
       h = initHeader(
         bedrockVersion = testBedrockVersion,
         parentBlock = default(BlockId),
         slot = 0'u64,
         uncleHeaders = [],
-        txs = [SignedMantleTx(tx: tx, opProofs: @[])],
+        txHashes = [hx],
         proofOfLeadership = ProofOfLeadership(
           leaderVoucher: default(RewardVoucher),
           entropyContribution: default(ZkHash),
           proof: DefaultCompressedGroth16Proof,
           leaderKey: default(Ed25519PublicKey),
         ),
-      ).get
+      )
       id = blockId(h)
     check id.len == 32
 
@@ -128,19 +127,20 @@ suite "core/types":
           outputs: Outputs(notes: @[]),
         )),
       )
+      hx = mantleTxHash(tx.tx).get
       h = initHeader(
         bedrockVersion = 1'u8,
         parentBlock = default(BlockId),
         slot = SlotNumber(100),
         uncleHeaders = [],
-        txs = [tx],
+        txHashes = [hx],
         proofOfLeadership = ProofOfLeadership(
           leaderVoucher: default(RewardVoucher),
           entropyContribution: default(ZkHash),
           proof: DefaultCompressedGroth16Proof,
           leaderKey: default(Ed25519PublicKey),
         ),
-      ).get
+      )
     check blockId(h) == blockId(h)
 
   test "merkle_root directly accepts list of hashes":
@@ -151,16 +151,21 @@ suite "core/types":
       hB = mantleTxHash(txB.tx).get
       hashes = [hA, hB]
     check merkle_root(hashes) == hashPair(hA, hB)
-    check merkle_root([txA, txB]).get == merkle_root(hashes)
+    let
+      htxA = HashedSignedMantleTx(signedTx: txA, hash: hA)
+      htxB = HashedSignedMantleTx(signedTx: txB, hash: hB)
+      expectedRoot = body_root(openArray[SignedHeader]([]), merkle_root(hashes))
+    check body_root(openArray[SignedHeader]([]), [htxA, htxB]) == expectedRoot
+    let
+      vtxA = ValidSignedMantleTx(htxA)
+      vtxB = ValidSignedMantleTx(htxB)
+    check body_root(openArray[SignedHeader]([]), [vtxA, vtxB]) == expectedRoot
+    let
+      gtxA = ValidGenesisMantleTx(vtxA)
+      gtxB = ValidGenesisMantleTx(vtxB)
+    check body_root(openArray[SignedHeader]([]), [gtxA, gtxB]) == expectedRoot
     check merkle_root(openArray[Hash32]([])) == default(Hash32)
     check merkle_root([hA]) == hA
-
-    # Malformed tx (e.g. inputs exceeding uint8 limit) returns EncodingError
-    let malformedTx = sampleTx(createTransferOp(TransferPayload(
-      inputs: Inputs(noteIds: newSeq[NoteId](256)),
-      outputs: Outputs(notes: @[]),
-    )))
-    check merkle_root([malformedTx]).error == EncodingError.InputsCountExceeded
 
   test "initHeader accepts openArray[Hash32]":
     let
@@ -172,25 +177,9 @@ suite "core/types":
         proof: DefaultCompressedGroth16Proof,
         leaderKey: default(Ed25519PublicKey),
       )
-      hFromHashes = initHeader(1'u8, default(BlockId), SlotNumber(10), [], [hx], pol)
-      hFromTxs = initHeader(1'u8, default(BlockId), SlotNumber(10), [], [tx], pol).get
-    check hFromHashes == hFromTxs
+      h = initHeader(1'u8, default(BlockId), SlotNumber(10), [], [hx], pol)
+    check h.bodyRoot == body_root([], hx)
 
-  test "initHeader returns error for malformed tx":
-    var invalidInputs: seq[NoteId]
-    for i in 0 .. 255:
-      invalidInputs.add(default(NoteId))
-    let
-      malformedTx = sampleTx(createTransferOp(TransferPayload(
-        inputs: Inputs(noteIds: invalidInputs), outputs: Outputs(notes: @[])
-      )))
-      pol = ProofOfLeadership(
-        leaderVoucher: default(RewardVoucher),
-        entropyContribution: default(ZkHash),
-        proof: DefaultCompressedGroth16Proof,
-        leaderKey: default(Ed25519PublicKey),
-      )
-    check initHeader(1'u8, default(BlockId), SlotNumber(10), [], [malformedTx], pol).error == EncodingError.InputsCountExceeded
 
   test "initProposal accepts References directly":
     var refs: References

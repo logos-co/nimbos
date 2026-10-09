@@ -17,16 +17,16 @@ import
   ../deployment/deployment_settings,
   ../ledger/[ledger, stake_inference],
   ../mempool,
-  ./[block_validation, genesis, orphan_pool]
+  ./[block_validation, genesis, orphan_pool, proposal]
 
-export genesis, local_tree, mempool, block_validation, orphan_pool
+export genesis, local_tree, mempool, block_validation, orphan_pool, proposal
 export ledger except config
 
 const DefaultSecurityParam*: uint64 = 1'u64
 
 type
   Chain* = object
-    genesisBlock*: Block
+    genesisBlock*: ValidBlock
     localTree*: LocalTree
     ledger*: Ledger[BlockId]
     mempool*: Mempool
@@ -39,6 +39,7 @@ type
     InFlight
     FutureSlot
     InvalidStructure
+    MissingReference
     UnviableFork
     LedgerRejected
     StatelessTxRejected
@@ -65,7 +66,8 @@ func isRecoverable*(kind: BlockApplyErrorKind): bool =
   case kind
   of BlockApplyErrorKind.AlreadyApplied, BlockApplyErrorKind.InFlight,
       BlockApplyErrorKind.FutureSlot, BlockApplyErrorKind.OrphanBuffered,
-      BlockApplyErrorKind.OrphanAlreadyBuffered:
+      BlockApplyErrorKind.OrphanAlreadyBuffered,
+      BlockApplyErrorKind.MissingReference:
     true
   of BlockApplyErrorKind.InvalidStructure, BlockApplyErrorKind.UnviableFork,
       BlockApplyErrorKind.LedgerRejected, BlockApplyErrorKind.StatelessTxRejected:
@@ -89,7 +91,7 @@ func ledgerConfig*(settings: DeploymentSettings): LedgerConfig =
 
 func init*(
     T: type Chain,
-    genesisBlock: Block,
+    genesisBlock: ValidBlock,
     ledger: Ledger[BlockId],
     slotConfig: SlotConfig,
     securityParam: uint64 = DefaultSecurityParam,
@@ -112,13 +114,13 @@ proc init*(
     poqVerifier: ProofOfQuotaVerifier = verifyProofOfQuota,
 ): Result[T, string] =
   let
-    validTx = validateGenesisTxStateless(
-        settings.cryptarchia.genesisState.signedMantleTx).valueOr:
+    validGenesisTx = validateGenesisTxStateless(
+      settings.cryptarchia.genesisState.signedMantleTx
+    ).valueOr:
       return err("chain: invalid genesis transaction: " & $error)
-    param = cryptarchiaParameter(validTx).valueOr:
+    param = cryptarchiaParameter(validGenesisTx).valueOr:
       return err("chain: " & $error)
-    genesisBlock = createGenesisBlock(SignedMantleTx(validTx)).valueOr:
-      return err("chain: genesis block encoding failed: " & $error)
+    genesisBlock = createGenesisBlock(validGenesisTx)
   # A stale body_root in the settings file must fail at start-up, not later.
   if genesisBlock.header != settings.cryptarchia.genesisState.header:
     return err(
@@ -129,7 +131,7 @@ proc init*(
       settings.cryptarchia.sdpConfig,
       blendRewardsParams(settings, cfg.epochSchedule.epochLength))
     genesisState = LedgerState.fromGenesis(
-        validTx, param.epochNonce, sdp, cfg).valueOr:
+        validGenesisTx, param.epochNonce, sdp, cfg).valueOr:
       return err("chain: failed to build the genesis state: " & $error)
   ok(T.init(
     genesisBlock,
@@ -153,8 +155,8 @@ proc readdBranchTxs(chain: var Chain, fromId, toId: BlockId) =
       warn "Missing block during reorg transaction re-addition",
           missingBlockId = curr, toId = toId
       break
-    for stx in b.txs:
-      discard chain.mempool.add(ValidSignedMantleTx(stx), nowSlot)
+    for vtx in b.txs:
+      discard chain.mempool.add(vtx, nowSlot)
     curr = header(b).parentBlock
 
 proc removeBranchTxs(chain: var Chain, fromId, toId: BlockId) =
@@ -234,15 +236,14 @@ func checkViability(
 
 proc applyAdmittedBlock(
     chain: var Chain,
-    admittedBlk: AdmittedBlock,
+    admittedBlk: sink AdmittedBlock,
     id: BlockId,
     curSlot: SlotNumber,
 ): Result[void, BlockApplyError] =
   # Tier 3: PoL against parent state and stateless transaction validation
   let
-    unverified = chain.mempool.unverifiedTxs(admittedBlk.txs.asSeq)
     (validBlk, headerState) = validatePolAndStatelessTransactions(
-      admittedBlk, chain.ledger, unverified
+      admittedBlk, chain.ledger
     ).valueOr:
       chain.orphanPool.pruneDescendants(id)
       return err(toBlockApplyError(error))
@@ -262,27 +263,33 @@ proc applyAdmittedBlock(
 
 proc tryApplyAdmittedBlock*(
     chain: var Chain,
-    admittedBlk: AdmittedBlock,
+    admittedBlk: sink AdmittedBlock,
 ): Result[void, BlockApplyError] =
+  ## Directly applies an admitted block promoted from the orphan pool.
   let
     curSlot = chain.currentWallclockSlot()
     id = chain.checkViability(header(admittedBlk), curSlot).valueOr:
       chain.orphanPool.pruneDescendants(blockId(header(admittedBlk)))
       return err(error)
+
+  # Re-check mempool for transactions that entered the pool while this block
+  # was buffered in the orphan pool, avoiding redundant stateless validation.
+  if admittedBlk.unverifiedIndices.len > 0 and chain.mempool != nil:
+    chain.mempool.updateUnverifiedIndices(
+      admittedBlk.txs, admittedBlk.unverifiedIndices
+    )
+
   chain.applyAdmittedBlock(admittedBlk, id, curSlot)
 
-proc tryApplyBlock*(
-    chain: var Chain,
-    blk: Block,
-): Result[void, BlockApplyError] =
-  ## Full block ingestion in `valid_header` order, with automatic orphan buffering.
+template tryApplyIncoming(chain: var Chain, item: untyped, body: untyped): untyped =
   let
     curSlot = chain.currentWallclockSlot()
-    id = ?chain.checkViability(header(blk), curSlot)
+    id = ?chain.checkViability(item.header, curSlot)
+  let (blk, htxs, unverified) = body
 
   # Tiers 0-2: Structure, Topology Viability, Body Root, Header Signature
   let (admittedBlk, isOrphan) = validateBlockHeaderAndTopology(
-    blk, chain.localTree, chain.ledger
+    blk, chain.localTree, chain.ledger, htxs, unverified
   ).valueOr:
     return err(toBlockApplyError(error))
 
@@ -292,5 +299,30 @@ proc tryApplyBlock*(
     return err(BlockApplyError(kind: OrphanBuffered))
 
   chain.applyAdmittedBlock(admittedBlk, id, curSlot)
+
+proc tryApplyBlock*(
+    chain: var Chain,
+    blk: Block,
+): Result[void, BlockApplyError] =
+  ## Full block ingestion in `valid_header` order, with automatic orphan buffering.
+  tryApplyIncoming(chain, blk):
+    let (htxs, unverified) = chain.mempool.classifyBlockTxs(blk.txs.asSeq).valueOr:
+      return err(BlockApplyError(
+        kind: StatelessTxRejected,
+        statelessError: toStatelessLedgerError(error),
+      ))
+    (blk, htxs, unverified)
+
+proc tryApplyProposal*(
+    chain: var Chain,
+    proposal: Proposal,
+): Result[void, BlockApplyError] =
+  ## Full proposal ingestion: reconstructs transactions from the mempool,
+  ## validates through the multi-tier pipeline without redundant transaction
+  ## classification, and applies the resulting AdmittedBlock.
+  tryApplyIncoming(chain, proposal):
+    let (blk, vtxs) = proposal.reconstructBlock(chain.mempool).valueOr:
+      return err(BlockApplyError(kind: MissingReference))
+    (blk, cast[seq[HashedSignedMantleTx]](vtxs), static(seq[int](@[])))
 
 {.pop.}

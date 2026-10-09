@@ -231,8 +231,6 @@ proc tryApplyTx*(
   ## Note: Structural and cryptographic validation is guaranteed at compile-time
   ## via `ValidSignedMantleTx`.
   var balance = Balance.zero
-  let txHash = mantleTxHash(tx.tx).valueOr:
-    return err(error.toLedgerError)
   for i in 0 ..< tx.tx.ops.len:
     let
       op = tx.tx.ops[i]
@@ -242,7 +240,7 @@ proc tryApplyTx*(
       let r =
         ?s.cryptarchiaLedger.tryApplyTransfer(
           s.sdp.state.lockedNotes, s.mantleLedger.channelNotes,
-          op.payload.transfer, proof.transferProof, txHash,
+          op.payload.transfer, proof.transferProof, tx.hash,
         )
       s.cryptarchiaLedger = r.state
       balance = ?balance.checkedAdd(r.balance)
@@ -251,7 +249,7 @@ proc tryApplyTx*(
         s.sdp,
         op.payload.sdpDeclare,
         proof.declarationProof,
-        txHash,
+        tx.hash,
         s.cryptarchiaLedger.latestUtxos,
         s.mantleLedger.channelNotes,
         epoch,
@@ -261,7 +259,7 @@ proc tryApplyTx*(
         s.sdp,
         op.payload.sdpWithdraw,
         proof.sdpWithdrawProof,
-        txHash,
+        tx.hash,
         s.cryptarchiaLedger.latestUtxos,
         epoch,
       )
@@ -270,7 +268,7 @@ proc tryApplyTx*(
         s.sdp,
         op.payload.sdpActive,
         proof.sdpActiveProof,
-        txHash,
+        tx.hash,
         epoch,
         verifyPoq,
       )
@@ -280,12 +278,12 @@ proc tryApplyTx*(
       )
     of ChannelConfig:
       s.mantleLedger = ?s.mantleLedger.tryApplyChannelConfig(
-        op.payload.channelConfig, proof.channelConfigOpProof, txHash, slot,
+        op.payload.channelConfig, proof.channelConfigOpProof, tx.hash, slot,
       )
     of ChannelDeposit:
       let r = ?s.mantleLedger.tryApplyChannelDeposit(
         s.cryptarchiaLedger, s.sdp.state.lockedNotes,
-        op.payload.channelDeposit, proof.channelDepositProof, txHash,
+        op.payload.channelDeposit, proof.channelDepositProof, tx.hash,
       )
       # Field-wise update: a whole-object constructor would reset omitted fields.
       s.cryptarchiaLedger = r.cs
@@ -293,12 +291,12 @@ proc tryApplyTx*(
     of ChannelWithdraw:
       s.mantleLedger = ?s.mantleLedger.tryApplyChannelWithdraw(
         s.cryptarchiaLedger, s.sdp.state.lockedNotes,
-        op.payload.channelWithdraw, proof.channelWithdrawOpProof, txHash,
+        op.payload.channelWithdraw, proof.channelWithdrawOpProof, tx.hash,
       )
     of ChannelTransfer:
       let r = ?s.mantleLedger.tryApplyChannelTransfer(
         s.cryptarchiaLedger, s.sdp.state.lockedNotes,
-        op.payload.channelTransfer, proof.channelTransferOpProof, txHash,
+        op.payload.channelTransfer, proof.channelTransferOpProof, tx.hash,
       )
       s.cryptarchiaLedger = r.cs
       s.mantleLedger = r.ms
@@ -308,8 +306,8 @@ proc tryApplyTx*(
       )
   ok(balance)
 
-proc txExecutionGas*(
-    tx: ValidSignedMantleTx,
+proc txExecutionGas*[T: AnySignedMantleTx](
+    tx: T,
 ): Result[Gas, LedgerError] =
   var total = Gas(0)
   for i in 0 ..< tx.tx.ops.len:
