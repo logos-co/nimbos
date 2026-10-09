@@ -287,6 +287,28 @@ let testBlockKeyPair* = block:
   rngRef[] = HmacDrbgContext.init([9'u8])
   EdKeyPair.random(newBearSslRng(rngRef))
 
+func initBlock*(
+    header: Header,
+    signature: Ed25519Signature = DefaultEd25519Signature,
+    uncleHeaders: openArray[SignedHeader],
+    txs: openArray[SignedMantleTx],
+): Block =
+  Block(
+    header: header,
+    signature: signature,
+    uncleHeaders: UncleHeaders(@uncleHeaders),
+    txs: BlockTxs(@txs),
+  )
+
+func toBlock*(blk: ValidBlock): Block =
+  ## Converts a ValidBlock to a wire/storage Block with SignedMantleTx.
+  initBlock(
+    blk.header,
+    blk.signature,
+    blk.uncleHeaders.asSeq,
+    blk.txs.mapIt(it.signedTx),
+  )
+
 proc childBlock*(
     parentHdr: Header,
     parentId: BlockId,

@@ -190,7 +190,7 @@ proc downloadBlocksResponsesForRequest*(
     let blk = tree.getBlock(sendIds[i]).valueOr:
       fail "block not in tree"
     let innerWire = try:
-      encode(blk.toBlock(), cryptarchiaSyncBincodeConfig)
+      encode(blk, cryptarchiaSyncBincodeConfig)
     except BincodeError:
       fail getCurrentExceptionMsg()
     check innerWire.len > 0 and innerWire.len <= MaxBlockSize

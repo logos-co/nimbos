@@ -59,7 +59,7 @@ suite "sync/initial_block_download (download blocks)":
     let
       genesis = createGenesisBlock(testValidGenesisTx())
       genesisWire = try:
-        encode(genesis.toBlock(), cryptarchiaSyncBincodeConfig)
+        encode(genesis, cryptarchiaSyncBincodeConfig)
       except BincodeError:
         fail getCurrentExceptionMsg()
     let blks = decodeBlocksFromDownloadResponses(@[

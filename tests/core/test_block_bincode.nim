@@ -74,12 +74,24 @@ suite "core/block bincode (cryptarchia sync)":
       fail getCurrentExceptionMsg()
 
   test "encode / decode roundtrip (genesis block)":
-    let
-      validGenesisTx = testValidGenesisTx()
-      genesis = createGenesisBlock(validGenesisTx).toBlock()
+    let genesis = createGenesisBlock(testValidGenesisTx()).toBlock()
     try:
       checkBlockEqual(roundtrip(genesis), genesis)
       check genesis.signature == DefaultEd25519Signature
+    except BincodeError:
+      fail getCurrentExceptionMsg()
+
+  test "encode(ValidBlock) matches encode(Block) exactly":
+    let
+      validGenesis = createGenesisBlock(testValidGenesisTx())
+      blockGenesis = validGenesis.toBlock()
+    try:
+      let
+        vWire = encode(validGenesis, cfg)
+        bWire = encode(blockGenesis, cfg)
+      check vWire == bWire
+      let decoded = decode(vWire, Block, cfg)
+      checkBlockEqual(decoded, blockGenesis)
     except BincodeError:
       fail getCurrentExceptionMsg()
 

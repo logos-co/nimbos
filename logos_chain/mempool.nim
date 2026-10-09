@@ -37,7 +37,7 @@ type
     TxNotFound
 
   MempoolItem = ref object
-    tx*: SignedMantleTx
+    tx*: ValidSignedMantleTx
     addedAtSlot*: SlotNumber
     byteSize*: Opt[int] ## Lazily computed serialized byte length; cached on first proposal evaluation to avoid re-encoding
     execGas*: Opt[Gas]  ## Lazily computed execution gas; cached on first proposal evaluation to avoid repeated gas checks
@@ -99,7 +99,7 @@ proc add*(
     m.compactQueue()
 
   m.txs[hash] = MempoolItem(
-    tx: tx.signedTx,
+    tx: tx,
     addedAtSlot: effectiveSlot,
     byteSize: Opt.none(int),
     execGas: Opt.none(Gas),
@@ -115,10 +115,10 @@ func contains*(m: Mempool, hash: Hash32): bool =
 
 func get*(m: Mempool, hash: Hash32): Result[ValidSignedMantleTx, MempoolError] =
   m.txs.withValue(hash, item):
-    return ok(ValidSignedMantleTx(HashedSignedMantleTx(signedTx: item[].tx, hash: hash)))
+    return ok(item[].tx)
   let item = m.graceCache.peek(hash).valueOr:
     return err(MempoolError.TxNotFound)
-  ok(ValidSignedMantleTx(HashedSignedMantleTx(signedTx: item.tx, hash: hash)))
+  ok(item.tx)
 
 proc pruneExpiredTxs*(m: Mempool, currentSlot: SlotNumber) =
   while m.queue.len > 0:
@@ -155,7 +155,7 @@ func isKnownValid*(m: Mempool, htx: HashedSignedMantleTx): bool =
   ## 3. Opcode-to-proof kind matching (< 5 ns)
   ## Lookup & verification:
   ## 4. Mempool lookup using precomputed txHash (~10 ns)
-  ## 5. Proof equivalence memory comparison (~10-20 ns, requires poolTx from lookup)
+  ## 5. Proof equivalence memory comparison (~10-20 ns, requires cached mempool item from lookup)
   if m == nil or m.len == 0:
     return false
 

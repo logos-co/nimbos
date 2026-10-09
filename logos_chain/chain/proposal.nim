@@ -86,8 +86,7 @@ proc selectProposalReferences*(
         continue
 
       var candidate = workingLedger
-      let vtx = ValidSignedMantleTx(HashedSignedMantleTx(signedTx: item.tx, hash: hash))
-      let balance = candidate.tryApplyTx(vtx, epoch, currentSlot, verifyPoq).valueOr:
+      let balance = candidate.tryApplyTx(item.tx, epoch, currentSlot, verifyPoq).valueOr:
         if error == LedgerError.PermanentInvalidTxProof:
           toEvict.add(hash)
         continue
@@ -143,7 +142,7 @@ func reconstructBlock*(
   ## Note: `blk.txs` is intentionally left empty because after validation, `vtxs` are directly
   ## used to assemble the resulting `ValidBlock`. Since transactions in the mempool are already
   ## statelessly validated, allocating and copying `SignedMantleTx` into `blk.txs` is unnecessary overhead.
-  var vtxs = newSeqOfCap[ValidSignedMantleTx](MaxBlockTxs)
+  var vtxs = newSeqOfCap[ValidSignedMantleTx](proposal.references.len)
   for r in proposal.references:
     if r.isZero():
       break

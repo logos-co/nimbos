@@ -12,6 +12,7 @@
 
 import
   std/sequtils,
+  faststreams,
   results,
   stew/[assign2, bitops2],
   bincode,
@@ -101,6 +102,25 @@ deriveBincode(SignedHeader)
 deriveBincode(Block)
 deriveBincode(Proposal)
 
+# `ValidBlock` is explicitly encoded rather than derived via `deriveBincode` because:
+# 1. Wire compatibility: `ValidBlock` contains `seq[ValidSignedMantleTx]`, which hold
+#    precomputed transaction hashes in memory. Encoding emits only `vtx.signedTx`, producing
+#    identical wire bytes to `Block` with zero intermediate allocations or conversions.
+# 2. Typestate safety: `ValidBlock` is strictly an outgoing/verified representation and
+#    must not provide a deserializer (`decode`), ensuring untrusted wire bytes always decode
+#    into `Block` and pass full validation before becoming `ValidBlock`.
+proc encode*(
+    stream: OutputStreamHandle,
+    blk: ValidBlock,
+    config: BincodeConfig,
+) {.raises: [BincodeError, IOError].} =
+  encode(stream, blk.header, config)
+  encode(stream, blk.signature, config)
+  encode(stream, blk.uncleHeaders, config)
+  encodeLength(stream, blk.txs.len.uint64, config)
+  for vtx in blk.txs:
+    encode(stream, vtx.signedTx, config)
+
 template header*(blk: Block): auto = blk.header
 template header*(blk: AdmittedBlock): auto = blk.header
 template header*(blk: ValidBlock): auto = blk.header
@@ -165,7 +185,7 @@ func body_root*(uncles: openArray[SignedHeader], txRoot: Hash32): Hash32 =
   ## blake2b256("BODY_ROOT_V1" ‖ u8 uncle count ‖ 361-byte entries ‖ merkle root).
   ## Spec: [Cryptarchia Protocol v1.2.4, Block Header Validation](https://github.com/logos-co/logos-lips/blob/4deef612ce1ae1776167daf8779d4abae953201b/docs/blockchain/raw/cryptarchia-v1-protocol.md#block-header-validation)
   # Every input path bounds the count first (`validateBlockStructure`,
-  # `initBlock`, `initProposal`, the `BoundedSeq` decoder). A longer list
+  # `initHeader`, `initProposal`, the `BoundedSeq` decoder). A longer list
   # here is a programming error, not input.
   doAssert uncles.len <= MaxUncles,
     "uncle count exceeds MaxUncles (" & $MaxUncles & "): " & $uncles.len
@@ -227,21 +247,6 @@ func blockId*(header: Header): Hash32 =
 
   blake2b256Hash(preimage)
 
-func initBlock*(
-    header: Header,
-    signature: Ed25519Signature = DefaultEd25519Signature,
-    uncleHeaders: openArray[SignedHeader],
-    txs: openArray[SignedMantleTx],
-): Block =
-  ## Canonical constructor; bounds the uncle and transaction counts.
-  doAssert uncleHeaders.len <= MaxUncles,
-    "uncle count exceeds MaxUncles (" & $MaxUncles & "): " & $uncleHeaders.len
-  doAssert txs.len <= MaxBlockTxs,
-    "block tx count exceeds MaxBlockTxs (" & $MaxBlockTxs & "): " & $txs.len
-  Block(
-    header: header, signature: signature,
-    uncleHeaders: UncleHeaders(@uncleHeaders), txs: BlockTxs(@txs))
-
 func initHeader*(
     bedrockVersion: uint8,
     parentBlock: BlockId,
@@ -250,7 +255,11 @@ func initHeader*(
     txHashes: openArray[Hash32],
     proofOfLeadership: ProofOfLeadership,
 ): Header =
-  ## Header over transaction hashes; used for proposal construction.
+  ## Canonical constructor over transaction hashes; used for proposal construction.
+  doAssert uncleHeaders.len <= MaxUncles,
+    "uncle count exceeds MaxUncles (" & $MaxUncles & "): " & $uncleHeaders.len
+  doAssert txHashes.len <= MaxBlockTxs,
+    "block tx count exceeds MaxBlockTxs (" & $MaxBlockTxs & "): " & $txHashes.len
   Header(
     bedrockVersion: bedrockVersion,
     parentBlock: parentBlock,
@@ -267,7 +276,11 @@ func initHeader*(
     txs: openArray[ValidSignedMantleTx],
     proofOfLeadership: ProofOfLeadership,
 ): Header =
-  ## Header over valid transactions.
+  ## Canonical constructor over valid transactions.
+  doAssert uncleHeaders.len <= MaxUncles,
+    "uncle count exceeds MaxUncles (" & $MaxUncles & "): " & $uncleHeaders.len
+  doAssert txs.len <= MaxBlockTxs,
+    "block tx count exceeds MaxBlockTxs (" & $MaxBlockTxs & "): " & $txs.len
   Header(
     bedrockVersion: bedrockVersion,
     parentBlock: parentBlock,
@@ -276,14 +289,6 @@ func initHeader*(
     proofOfLeadership: proofOfLeadership,
   )
 
-func toBlock*(blk: ValidBlock): Block =
-  ## Converts a ValidBlock to a wire/storage Block with SignedMantleTx.
-  initBlock(
-    blk.header,
-    blk.signature,
-    blk.uncleHeaders.asSeq,
-    blk.txs.mapIt(it.signedTx),
-  )
 
 func initProposal*(
     header: Header,

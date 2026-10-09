@@ -171,7 +171,7 @@ suite "sync/types (download RequestMessage / request & response payloads)":
       validGenesisTx = testValidGenesisTx()
       genesis = createGenesisBlock(validGenesisTx)
     let blockWire = try:
-      encode(genesis.toBlock(), cryptarchiaSyncBincodeConfig)
+      encode(genesis, cryptarchiaSyncBincodeConfig)
     except BincodeError:
       fail getCurrentExceptionMsg()
     let msg = DownloadBlocksResponse(kind: dbrBlock, downloadedBlock: blockWire)
@@ -289,7 +289,7 @@ suite "sync/types (cryptarchia u32 length-prefixed wire fixtures 1-9)":
     let genesisFromDeployment =
       createGenesisBlock(validGenesisTx)
     let genesisWire = try:
-      encode(genesisFromDeployment.toBlock(), cryptarchiaSyncBincodeConfig)
+      encode(genesisFromDeployment, cryptarchiaSyncBincodeConfig)
     except BincodeError:
       fail getCurrentExceptionMsg()
     let inner5 = try:

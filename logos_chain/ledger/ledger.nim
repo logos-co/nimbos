@@ -306,8 +306,8 @@ proc tryApplyTx*(
       )
   ok(balance)
 
-proc txExecutionGas*(
-    tx: SignedMantleTx,
+proc txExecutionGas*[T: AnySignedMantleTx](
+    tx: T,
 ): Result[Gas, LedgerError] =
   var total = Gas(0)
   for i in 0 ..< tx.tx.ops.len:
@@ -339,7 +339,7 @@ proc mandatory_fees*(
     s: LedgerState,
     tx: ValidSignedMantleTx,
 ): Result[tuple[totalCost: GasCost, executionGas, storageGas: Gas], LedgerError] =
-  let execGas = ? txExecutionGas(tx.signedTx)
+  let execGas = ? txExecutionGas(tx)
   let txByteLen = byteLen(tx)
   s.mandatory_fees(execGas, txByteLen)
 
