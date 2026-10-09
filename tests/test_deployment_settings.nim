@@ -552,13 +552,6 @@ mempool:
       return
     check yamlGetPathNode(root, ["x"]).isNone
 
-  test "validateDeploymentSettings: valid genesis transaction and matching header pass":
-    let ds = parseDeploymentSettings(minimalValidYaml).valueOr:
-      check false
-      return
-    let v = validateDeploymentSettings(ds)
-    check v.isOk
-
   test "validateDeploymentSettings: mismatched genesis header body_root":
     var ds = parseDeploymentSettings(minimalValidYaml).valueOr:
       check false

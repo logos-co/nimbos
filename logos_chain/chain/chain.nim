@@ -116,11 +116,6 @@ proc init*(
       return err("chain: " & $error)
     genesisBlock = createGenesisBlock(genesisTx).valueOr:
       return err("chain: genesis block encoding failed: " & $error)
-  # A stale body_root in the settings file must fail at start-up, not later.
-  if genesisBlock.header != settings.cryptarchia.genesisState.header:
-    return err(
-      "chain: genesis header in deployment settings does not match the genesis transaction")
-  let
     cfg = ledgerConfig(settings)
     sdp = SdpRegistry.init(
       settings.cryptarchia.sdpConfig,

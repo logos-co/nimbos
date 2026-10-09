@@ -19,7 +19,7 @@ import
   ../core/[types, mantle/tx_types],
   ../zk/poseidon2/hasher
 
-from ../core/mantle/tx_validation import validateGenesisTxStateless
+from ../core/mantle/tx_structural_validation import validateGenesisTxStateless
 from ../core/utils import NonNegativeRatio
 
 export genesis, chronos, NonNegativeRatio

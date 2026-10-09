@@ -21,7 +21,7 @@ const testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
 const deploymentSettingsPath = testsDir / "../../config/deployment-settings.yaml"
 
 suite "chain/genesis":
-  test "createGenesisBlock wraps a minimal signed mantle tx":
+  test "createGenesisBlock wraps a valid genesis mantle tx":
     let
       sm = testGenesisTx()
       h = createGenesisBlock(sm).get.header
