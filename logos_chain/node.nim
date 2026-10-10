@@ -279,7 +279,6 @@ proc initializeNetworking*(node: LBNode) {.async: (raises: [CancelledError]).} =
   await node.network.start()
   if node.syncer != nil:
     let onIbdComplete: OnIbdComplete = proc() =
-      notice "Syncer completed initial block download; subscribing to block gossip topic"
       node.subscribeBlockTopic()
 
     if node.network.bootstrapPeerIds.len > 0:

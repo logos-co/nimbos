@@ -52,8 +52,8 @@ proc start*(
     onIbdComplete: OnIbdComplete,
     peerProvider: Opt[PeerProvider] = Opt.none(PeerProvider),
 ) =
-  if syncer.ibdFut == nil:
-    syncer.ibdFut = syncer.runAtStartup(onIbdComplete, peerProvider)
+  doAssert syncer.ibdFut == nil, "syncer already started"
+  syncer.ibdFut = syncer.runAtStartup(onIbdComplete, peerProvider)
 
 proc stop*(syncer: Syncer) {.async: (raises: []).} =
   ## Cancel the initial block download if it still runs.

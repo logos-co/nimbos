@@ -247,31 +247,6 @@ proc initTestLBNode(
   )
 
 suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
-  asyncTest "GossipSub: mempool topic is subscribed immediately on startup":
-    const mempoolTopic = "/logos-blockchain/mempool/1.0.0"
-    let
-      peers = await createBootstrapPeers()
-      genesis = createGenesisBlock(SignedMantleTx(testGenesisTx())).get
-      listenerNode = initTestLBNode(peers.listener, genesis, mempoolTopic = mempoolTopic)
-      dialerNode = initTestLBNode(peers.dialer, genesis, mempoolTopic = mempoolTopic)
-    try:
-      await listenerNode.initializeNetworking()
-      await dialerNode.initializeNetworking()
-
-      check:
-        waitUntil(peers.dialer.switch.isConnected(peers.listenerPeerId))
-        listenerNode.network.isSubscribed(mempoolTopic)
-
-      let sampleTx = signedTxWithOps(1, 1)
-      check:
-        waitUntil((await peers.dialer.broadcast(mempoolTopic, sampleTx)).isOk)
-        waitUntil(listenerNode.processor.mempool.len > 0)
-    finally:
-      await dialerNode.processor.stop()
-      await listenerNode.processor.stop()
-      await peers.dialer.stop()
-      await peers.listener.stop()
-
   asyncTest "GossipSub: subscribes, broadcasts, and ingests transactions":
     const topic = "/logos-blockchain/mempool/1.0.0"
     let
@@ -283,7 +258,9 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
       await listenerNode.initializeNetworking()
       await dialerNode.initializeNetworking()
 
-      check waitUntil(peers.dialer.switch.isConnected(peers.listenerPeerId))
+      check:
+        waitUntil(peers.dialer.switch.isConnected(peers.listenerPeerId))
+        listenerNode.network.isSubscribed(topic)
 
       let sampleTx = signedTxWithOps(1, 1)
 
@@ -411,9 +388,18 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
       gid = blockId(genesis.header)
       listenerNode = initTestLBNode(peers.listener, genesis, mempoolTopic = mempoolTopic, proposalTopic = blockTopic)
       dialerNode = initTestLBNode(peers.dialer, genesis, mempoolTopic = mempoolTopic, proposalTopic = blockTopic)
-      ibdSimFut = Future[void].Raising([CancelledError]).init("ibd_sim")
-    listenerNode.syncer = Syncer.init(peers.listener.switch, listenerNode.processor, testChainSyncProtocol)
-    listenerNode.syncer.ibdFut = ibdSimFut
+      pendingFut = Future[void].Raising([CancelledError]).init("ibd_pending")
+
+    # Mount a pending sync handler on listener so dialer's IBD stays in progress
+    let pendingProto = LPProtocol.new(
+      codecs = @[testChainSyncProtocol],
+      handler = proc(conn: Connection, proto: string) {.async: (raises: [CancelledError]).} =
+        await pendingFut
+    )
+    pendingProto.started = true
+    peers.listener.switch.mount(pendingProto)
+
+    dialerNode.syncer = Syncer.init(peers.dialer.switch, dialerNode.processor, testChainSyncProtocol)
 
     try:
       await listenerNode.initializeNetworking()
@@ -422,23 +408,23 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
       check:
         waitUntil(peers.dialer.switch.isConnected(peers.listenerPeerId))
         # Mempool topic is subscribed immediately on startup
-        listenerNode.network.isSubscribed(mempoolTopic)
+        dialerNode.network.isSubscribed(mempoolTopic)
         # Block topic is NOT subscribed while IBD is in progress
-        not listenerNode.network.isSubscribed(blockTopic)
+        not dialerNode.network.isSubscribed(blockTopic)
 
-      # Broadcasting on block topic fails because listener is not subscribed
+      # Broadcasting on block topic fails because dialer is not subscribed
       let
         b1 = childBlock(genesis.header, gid, SlotNumber(1), [])
         id1 = blockId(b1.header)
         p1 = Proposal(header: b1.header, references: default(References), signature: b1.signature)
-        bcastRes = await peers.dialer.broadcast(blockTopic, p1)
+        bcastRes = await peers.listener.broadcast(blockTopic, p1)
 
       check:
         bcastRes.isErr
         bcastRes.error == "No peers on libp2p topic"
-        not listenerNode.processor.localTree.hasBlock(id1)
+        not dialerNode.processor.localTree.hasBlock(id1)
     finally:
-      ibdSimFut.cancelSoon()
+      pendingFut.cancelSoon()
       await dialerNode.processor.stop()
       await listenerNode.processor.stop()
       await peers.dialer.stop()
