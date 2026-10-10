@@ -9,30 +9,22 @@
 {.used.}
 
 import
-  chronos,
   chronos/unittest2/asynctests,
-  ../testutil
-
-import
+  ../testutil,
   ../../logos_chain/conf,
-  ../../logos_chain/networking/[
-    network,
-    discovery,
-    protocols,
-    peer_pool,
-    bootstrap_nodes
-  ],
-  libp2p/[switch, peerid, peerinfo, peerstore, multiaddress],
+  ../../logos_chain/networking/network,
+  libp2p/switch,
   libp2p/protocols/kademlia
 
 suite "Kad discovery — peerstore, rtable, peer pool":
   asyncTest "AddressBook extend merges multiaddrs without duplicates":
-    let keysSw = getRandomNetKeys()
-    let pid = getRandomPeerId()
-    let ma1 = MultiAddress.init("/ip4/127.0.0.1/udp/4111/quic-v1").tryGet()
-    let ma2 = MultiAddress.init("/ip4/127.0.0.1/udp/4222/quic-v1").tryGet()
+    let
+      keysSw = getRandomNetKeys()
+      pid = getRandomPeerId()
+      ma1 = MultiAddress.init("/ip4/127.0.0.1/udp/4111/quic-v1").tryGet()
+      ma2 = MultiAddress.init("/ip4/127.0.0.1/udp/4222/quic-v1").tryGet()
 
-    let sw = await startQuicTestSwitch(keysSw)
+      sw = await startQuicTestSwitch(keysSw)
     try:
       sw.peerStore[AddressBook].extend(pid, @[ma1])
       sw.peerStore[AddressBook].extend(pid, @[ma1, ma2])
@@ -42,25 +34,29 @@ suite "Kad discovery — peerstore, rtable, peer pool":
       await sw.stop()
 
   asyncTest "enqueueKadDiscoveredPeers: nil Kad returns (0, 0)":
-    let pool = newPeerPool[network.Peer, PeerId]()
-    let (disc, q) = await enqueueKadDiscoveredPeers(
-      nil, nil, pool,
-      proc(p: DiscoveredPeerAddr): Future[bool] {.async: (raises: [CancelledError]).} = true
-    )
-    check disc == 0
-    check q == 0
-    check not hasRoutingPeers(nil)
+    let
+      pool = newPeerPool[network.Peer, PeerId]()
+      (disc, q) = await enqueueKadDiscoveredPeers(
+        nil, nil, pool,
+        proc(p: DiscoveredPeerAddr): Future[bool] {.async: (raises: [CancelledError]).} = true
+        )
+    check:
+      disc == 0
+      q == 0
+      not hasRoutingPeers(nil)
 
   asyncTest "enqueueKadDiscoveredPeers respects rtable, AddressBook, and peer pool":
-    let node = await startTestNode("kad-discovery-rtable-test", maxPeers = 16)
+    let
+      node = await startTestNode("kad-discovery-rtable-test", maxPeers = 16)
 
-    let kad = node.mountedProtocols.kad
-    check not isNil(kad)
-    check not hasRoutingPeers(kad)
+      kad = node.mountedProtocols.kad
+    check:
+      not isNil(kad)
+      not hasRoutingPeers(kad)
 
-    let remotePeerId = getRandomPeerId()
-    let remoteAddr =
-      MultiAddress.init("/ip4/127.0.0.1/udp/4333/quic-v1").tryGet()
+    let
+      remotePeerId = getRandomPeerId()
+      remoteAddr = MultiAddress.init("/ip4/127.0.0.1/udp/4333/quic-v1").tryGet()
 
     try:
       var enqueueCalls = 0
@@ -71,18 +67,19 @@ suite "Kad discovery — peerstore, rtable, peer pool":
 
       let (emptyDisc, emptyQ) = await enqueueKadDiscoveredPeers(
         kad, node.switch, node.peerPool, enqueueAll)
-      check emptyDisc == 0
-      check emptyQ == 0
-
-      check kad.rtable.insert(remotePeerId)
-      check hasRoutingPeers(kad)
+      check:
+        emptyDisc == 0
+        emptyQ == 0
+        kad.rtable.insert(remotePeerId)
+        hasRoutingPeers(kad)
       node.switch.peerStore[AddressBook].extend(remotePeerId, @[remoteAddr])
 
       let (disc1, q1) = await enqueueKadDiscoveredPeers(
         kad, node.switch, node.peerPool, enqueueAll)
-      check disc1 == 1
-      check q1 == 1
-      check enqueueCalls == 1
+      check:
+        disc1 == 1
+        q1 == 1
+        enqueueCalls == 1
 
       let remotePeer = node.getPeer(remotePeerId)
       remotePeer.setDirection(PeerType.Outgoing)
@@ -92,9 +89,10 @@ suite "Kad discovery — peerstore, rtable, peer pool":
       enqueueCalls = 0
       let (disc2, q2) = await enqueueKadDiscoveredPeers(
         kad, node.switch, node.peerPool, enqueueAll)
-      check disc2 == 0
-      check q2 == 0
-      check enqueueCalls == 0
+      check:
+        disc2 == 0
+        q2 == 0
+        enqueueCalls == 0
     finally:
       await node.stop()
 
@@ -104,10 +102,11 @@ suite "Kad discovery — peerstore, rtable, peer pool":
     await kadDiscoveryLookupWalk(nil, nil)
 
   asyncTest "kadDiscoveryLookupWalk: executes lookup walk on populated rtable":
-    let node = await startTestNode("kad-lookup-walk-test", maxPeers = 8)
+    let
+      node = await startTestNode("kad-lookup-walk-test", maxPeers = 8)
 
-    let kad = node.mountedProtocols.kad
-    let remotePeerId = getRandomPeerId()
+      kad = node.mountedProtocols.kad
+      remotePeerId = getRandomPeerId()
     check kad.rtable.insert(remotePeerId)
 
     try:
@@ -120,14 +119,15 @@ suite "Kad discovery — peerstore, rtable, peer pool":
     await kadBootstrap(nil, @[], nil)
 
   asyncTest "kadBootstrap: dials bootstrap nodes and runs lookup on success":
-    let listener = await startTestNode("kad-boot-listener", maxPeers = 8)
-    let dialer = await startTestNode("kad-boot-dialer", maxPeers = 8)
+    let
+      listener = await startTestNode("kad-boot-listener", maxPeers = 8)
+      dialer = await startTestNode("kad-boot-dialer", maxPeers = 8)
 
-    let kad = dialer.mountedProtocols.kad
-    let bInfo = PeerInfo(
-      peerId: listener.switch.peerInfo.peerId,
-      addrs: listener.switch.peerInfo.addrs
-    )
+      kad = dialer.mountedProtocols.kad
+      bInfo = PeerInfo(
+        peerId: listener.switch.peerInfo.peerId,
+        addrs: listener.switch.peerInfo.addrs
+        )
 
     var dialed = false
     proc dialPeer(b: PeerInfo): Future[bool] {.async: (raises: [CancelledError]).} =
@@ -149,11 +149,12 @@ suite "Kad discovery — peerstore, rtable, peer pool":
       await listener.stop()
 
   asyncTest "kadBootstrap: handles failed bootstrap dial without error":
-    let node = await startTestNode("kad-bootstrap-fail-test", maxPeers = 8)
-    let kad = node.mountedProtocols.kad
-    let bPid = getRandomPeerId()
-    let bAddr = MultiAddress.init("/ip4/127.0.0.1/udp/4333/quic-v1").tryGet()
-    let bInfo = PeerInfo(peerId: bPid, addrs: @[bAddr])
+    let
+      node = await startTestNode("kad-bootstrap-fail-test", maxPeers = 8)
+      kad = node.mountedProtocols.kad
+      bPid = getRandomPeerId()
+      bAddr = MultiAddress.init("/ip4/127.0.0.1/udp/4333/quic-v1").tryGet()
+      bInfo = PeerInfo(peerId: bPid, addrs: @[bAddr])
 
     proc mockDialFail(b: PeerInfo): Future[bool] {.async: (raises: [CancelledError]).} =
       false
@@ -165,108 +166,113 @@ suite "Kad discovery — peerstore, rtable, peer pool":
 
 suite "Bootstrap multiaddress parsing":
   test "parseBootstrapAddress: valid /ip4/ and /dns4/ addresses":
-    let pid = getRandomPeerId()
-    let pidStr = $pid
+    let
+      pid = getRandomPeerId()
+      pidStr = $pid
 
-    let ip4AddrStr = "/ip4/127.0.0.1/udp/9000/quic-v1/p2p/" & pidStr
-    let (ip4Pid, ip4Addr) = parseBootstrapAddress(ip4AddrStr).tryGet()
-    check ip4Pid == pid
-    check $ip4Addr == "/ip4/127.0.0.1/udp/9000/quic-v1"
+      ip4AddrStr = "/ip4/127.0.0.1/udp/9000/quic-v1/p2p/" & pidStr
+      (ip4Pid, ip4Addr) = parseBootstrapAddress(ip4AddrStr).tryGet()
+    check:
+      ip4Pid == pid
+      $ip4Addr == "/ip4/127.0.0.1/udp/9000/quic-v1"
 
-    let dnsAddrStr = "/dns4/boot.logos.co/udp/9000/quic-v1/p2p/" & pidStr
-    let (dnsPid, dnsAddr) = parseBootstrapAddress(dnsAddrStr).tryGet()
-    check dnsPid == pid
-    check $dnsAddr == "/dns4/boot.logos.co/udp/9000/quic-v1"
+    let
+      dnsAddrStr = "/dns4/boot.logos.co/udp/9000/quic-v1/p2p/" & pidStr
+      (dnsPid, dnsAddr) = parseBootstrapAddress(dnsAddrStr).tryGet()
+    check:
+      dnsPid == pid
+      $dnsAddr == "/dns4/boot.logos.co/udp/9000/quic-v1"
 
   test "parseBootstrapAddress: rejects invalid or non-QUIC addresses":
-    let pid = getRandomPeerId()
-    let pidStr = $pid
+    let
+      pid = getRandomPeerId()
+      pidStr = $pid
 
     # Empty
-    check parseBootstrapAddress("").isErr
-    check parseBootstrapAddress("   ").isErr
-
-    # Not starting with /
-    check parseBootstrapAddress("127.0.0.1:9000").isErr
-
-    # Missing /p2p/
-    check parseBootstrapAddress("/ip4/127.0.0.1/udp/9000/quic-v1").isErr
-
-    # TCP instead of UDP/QUIC
-    check parseBootstrapAddress("/ip4/127.0.0.1/tcp/9000/p2p/" & pidStr).isErr
-
-    # Missing quic-v1
-    check parseBootstrapAddress("/ip4/127.0.0.1/udp/9000/p2p/" & pidStr).isErr
+    check:
+      parseBootstrapAddress("").isErr
+      parseBootstrapAddress("   ").isErr
+      # Not starting with /
+      parseBootstrapAddress("127.0.0.1:9000").isErr
+      # Missing /p2p/
+      parseBootstrapAddress("/ip4/127.0.0.1/udp/9000/quic-v1").isErr
+      # TCP instead of UDP/QUIC
+      parseBootstrapAddress("/ip4/127.0.0.1/tcp/9000/p2p/" & pidStr).isErr
+      # Missing quic-v1
+      parseBootstrapAddress("/ip4/127.0.0.1/udp/9000/p2p/" & pidStr).isErr
 
   test "loadBootstrapNodes: filters valid nodes from NetworkConfig":
-    let pid1 = getRandomPeerId()
-    let pid2 = getRandomPeerId()
+    let
+      pid1 = getRandomPeerId()
+      pid2 = getRandomPeerId()
 
-    let conf = NetworkConfig(
-      bootstrapNodes: @[
+      conf = NetworkConfig(
+        bootstrapNodes: @[
         "/ip4/127.0.0.1/udp/9001/quic-v1/p2p/" & $pid1,
         "# this is a comment",
         "invalid-addr",
         "/ip4/127.0.0.1/udp/9002/quic-v1/p2p/" & $pid2,
         "/ip4/127.0.0.1/tcp/9003/p2p/" & $pid1 # rejected because TCP
-      ]
-    )
-    let parsedNodes = loadBootstrapNodes(conf)
-    check parsedNodes.len == 2
-    check parsedNodes[0][0] == pid1
-    check parsedNodes[1][0] == pid2
+        ]
+        )
+      parsedNodes = loadBootstrapNodes(conf)
+    check:
+      parsedNodes.len == 2
+      parsedNodes[0][0] == pid1
+      parsedNodes[1][0] == pid2
 
   test "loadBootstrapNodes: handles missing file gracefully":
-    let confMissing = NetworkConfig(
-      bootstrapNodesFile: InputFile("non_existent_bootstrap_file_12345.txt")
-    )
-    let nodesMissing = loadBootstrapNodes(confMissing)
+    let
+      confMissing = NetworkConfig(
+        bootstrapNodesFile: InputFile("non_existent_bootstrap_file_12345.txt")
+        )
+      nodesMissing = loadBootstrapNodes(confMissing)
     check nodesMissing.len == 0
 
   test "loadBootstrapNodes: deduplicates duplicate bootstrap nodes by peerId":
-    let pid = getRandomPeerId()
+    let
+      pid = getRandomPeerId()
 
-    let conf = NetworkConfig(
-      bootstrapNodes: @[
+      conf = NetworkConfig(
+        bootstrapNodes: @[
         "/ip4/127.0.0.1/udp/9001/quic-v1/p2p/" & $pid,
         "/ip4/127.0.0.1/udp/9001/quic-v1/p2p/" & $pid,
         "/ip4/127.0.0.2/udp/9002/quic-v1/p2p/" & $pid
-      ]
-    )
-    let parsedNodes = loadBootstrapNodes(conf)
-    check parsedNodes.len == 1
-    check parsedNodes[0][0] == pid
+        ]
+        )
+      parsedNodes = loadBootstrapNodes(conf)
+    check:
+      parsedNodes.len == 1
+      parsedNodes[0][0] == pid
 
 suite "Bootstrap link maintenance and disconnection":
   test "shouldDisconnectBootstrap: predicate boundaries":
     # Below target -> do not disconnect
-    check not shouldDisconnectBootstrap(
-      peerPoolLen = 1, wantedPeers = 4, bootstrapPeersInPool = 1)
-    check not shouldDisconnectBootstrap(
-      peerPoolLen = 3, wantedPeers = 4, bootstrapPeersInPool = 1)
-
-    # At or above target, but all peers in pool are bootstrap nodes -> do not disconnect
-    check not shouldDisconnectBootstrap(
-      peerPoolLen = 4, wantedPeers = 4, bootstrapPeersInPool = 4)
-    check not shouldDisconnectBootstrap(
-      peerPoolLen = 6, wantedPeers = 4, bootstrapPeersInPool = 6)
-
-    # At target with at least 1 non-bootstrap peer -> disconnect
-    check shouldDisconnectBootstrap(
-      peerPoolLen = 4, wantedPeers = 4, bootstrapPeersInPool = 1)
-    check shouldDisconnectBootstrap(
-      peerPoolLen = 4, wantedPeers = 4, bootstrapPeersInPool = 3)
-
-    # Above target with non-bootstrap peers -> disconnect
-    check shouldDisconnectBootstrap(
+    check:
+      not shouldDisconnectBootstrap(
+        peerPoolLen = 1, wantedPeers = 4, bootstrapPeersInPool = 1)
+      not shouldDisconnectBootstrap(
+        peerPoolLen = 3, wantedPeers = 4, bootstrapPeersInPool = 1)
+      # At or above target, but all peers in pool are bootstrap nodes -> do not disconnect
+      not shouldDisconnectBootstrap(
+        peerPoolLen = 4, wantedPeers = 4, bootstrapPeersInPool = 4)
+      not shouldDisconnectBootstrap(
+        peerPoolLen = 6, wantedPeers = 4, bootstrapPeersInPool = 6)
+      # At target with at least 1 non-bootstrap peer -> disconnect
+      shouldDisconnectBootstrap(
+        peerPoolLen = 4, wantedPeers = 4, bootstrapPeersInPool = 1)
+      shouldDisconnectBootstrap(
+        peerPoolLen = 4, wantedPeers = 4, bootstrapPeersInPool = 3)
+      # Above target with non-bootstrap peers -> disconnect
+      shouldDisconnectBootstrap(
       peerPoolLen = 8, wantedPeers = 4, bootstrapPeersInPool = 2)
 
   asyncTest "runBootstrapLinkMaintenanceTick: disconnects bootstrap peer when pool target is met":
-    let bootNode = await startTestNode("bootstrap-node", maxPeers = 8)
-    let bootPid = bootNode.switch.peerInfo.peerId
-    let bootAddrStr = bootNode.fullAddress()
-
-    let clientNode = await startTestNode("client-node", @[bootAddrStr], maxPeers = 2)
+    let
+      bootNode = await startTestNode("bootstrap-node", maxPeers = 8)
+      bootPid = bootNode.switch.peerInfo.peerId
+      bootAddrStr = bootNode.fullAddress()
+      clientNode = await startTestNode("client-node", @[bootAddrStr], maxPeers = 2)
     await clientNode.start()
 
     try:
@@ -277,21 +283,25 @@ suite "Bootstrap link maintenance and disconnection":
         alwaysAllowPeer,
         3.seconds
       )
-      check connected
-      check clientNode.switch.isConnected(bootPid)
+      check:
+        connected
+        clientNode.switch.isConnected(bootPid)
 
       let bootPeer = clientNode.getPeer(bootPid)
-      check clientNode.peerPool.hasPeer(bootPid)
-      check bootPeer.connectionState == ConnectionState.Connected
+      check:
+        clientNode.peerPool.hasPeer(bootPid)
+        bootPeer.connectionState == ConnectionState.Connected
 
       # With only 1 peer in pool (which is bootstrap) and wantedPeers=2 -> tick does not disconnect
       await runBootstrapLinkMaintenanceTick(clientNode)
-      check clientNode.switch.isConnected(bootPid)
-      check bootPeer.connectionState == ConnectionState.Connected
+      check:
+        clientNode.switch.isConnected(bootPid)
+        bootPeer.connectionState == ConnectionState.Connected
 
       # Add a second regular (non-bootstrap) peer to meet wantedPeers target (2)
-      let regPid = getRandomPeerId()
-      let regPeer = clientNode.getPeer(regPid)
+      let
+        regPid = getRandomPeerId()
+        regPeer = clientNode.getPeer(regPid)
       regPeer.connectionState = ConnectionState.Connected
       check clientNode.peerPool.addPeerNoWait(regPeer, PeerType.Outgoing) == PeerStatus.Success
 

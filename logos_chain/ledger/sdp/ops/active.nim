@@ -11,10 +11,9 @@
 {.push raises: [], gcsafe.}
 
 import
-  results,
   ./util,
   ../[registry, state],
-  ../../../core/mantle/[blend_activity, operations, proofs]
+  ../../../core/mantle/[operations, proofs]
 
 export util, registry, state
 

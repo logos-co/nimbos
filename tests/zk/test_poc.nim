@@ -28,9 +28,10 @@ suite "zk/poc — loadVk":
 
   test "rejects garbage JSON":
     let dir = uniqueTmpDir("bad-vk")
-    check createPath(dir / "poc").isOk
-    check io2.writeFile(dir / "poc" / "verification_key.json", "not json {").isOk
-    check loadVk(dir).error == VkInvalid
+    check:
+      createPath(dir / "poc").isOk
+      io2.writeFile(dir / "poc" / "verification_key.json", "not json {").isOk
+      loadVk(dir).error == VkInvalid
 
   test "accepts canonical fixture":
     let
@@ -38,10 +39,10 @@ suite "zk/poc — loadVk":
       vkBytes = readAllChars(fixtureVk).valueOr:
         check false
         return
-    check createPath(dir / "poc").isOk
-    check io2.writeFile(dir / "poc" / "verification_key.json", vkBytes).isOk
+    check:
+      createPath(dir / "poc").isOk
+      io2.writeFile(dir / "poc" / "verification_key.json", vkBytes).isOk
     let r = loadVk(dir)
-    check r.isOk
     check r.get.curve == "bn128"
 
 suite "zk/poc — verify":
@@ -51,18 +52,19 @@ suite "zk/poc — verify":
 
   setup:
     poc.resetVkForTesting()
-    let vkText = readAllChars(fixtureVk).valueOr:
-      check false
-      return
-    let proofText = readAllChars(fixtureProof).valueOr:
-      check false
-      return
-    let publicText = readAllChars(fixturePublic).valueOr:
-      check false
-      return
-    let vk = parseVk(vkText).valueOr:
-      check false
-      return
+    let
+      vkText = readAllChars(fixtureVk).valueOr:
+        check false
+        return
+      proofText = readAllChars(fixtureProof).valueOr:
+        check false
+        return
+      publicText = readAllChars(fixturePublic).valueOr:
+        check false
+        return
+      vk = parseVk(vkText).valueOr:
+        check false
+        return
     check poc.initVk(vk).isOk
     proofBytes = proofJsonToBytes(proofText).valueOr:
       check false
@@ -78,12 +80,13 @@ suite "zk/poc — verify":
     check r.error == VkNotLoaded
 
   test "double initVk returns VkAlreadyLoaded":
-    let vkText = readAllChars(fixtureVk).valueOr:
-      check false
-      return
-    let vk = parseVk(vkText).valueOr:
-      check false
-      return
+    let
+      vkText = readAllChars(fixtureVk).valueOr:
+        check false
+        return
+      vk = parseVk(vkText).valueOr:
+        check false
+        return
     check poc.initVk(vk).error == VkAlreadyLoaded
 
   test "accepts canonical PoC test vector":

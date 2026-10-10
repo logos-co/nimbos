@@ -10,13 +10,8 @@
 
 import
   std/[os, strutils, tables],
-  results,
   libp2p/crypto/ed25519/ed25519,
-  unittest2,
   ../../logos_chain/chain/[genesis, proposal],
-  ../../logos_chain/core/types,
-  ../../logos_chain/core/crypto/types,
-  ../../logos_chain/core/mantle/[operations, primitives, proofs, tx_types],
   ../../logos_chain/ledger/ledger,
   ../../logos_chain/mempool,
   ../core/mantle/test_helpers,
@@ -31,13 +26,14 @@ const
 suite "chain/proposal":
   test "selectTxsForProposal lazily caches byteSize and execGas":
     var m = Mempool.init()
-    let tx1 = signedTxWithOps(1, 1)
-    let hash1 = mantleTxHash(tx1.tx).get
-    check m.add(ValidSignedMantleTx(tx1), SlotNumber(1)).get == true
-
-    # Initially metrics are uncomputed (Opt.none)
-    check m.txs[hash1].byteSize.isNone
-    check m.txs[hash1].execGas.isNone
+    let
+      tx1 = signedTxWithOps(1, 1)
+      hash1 = mantleTxHash(tx1.tx).get
+    check:
+      m.add(ValidSignedMantleTx(tx1), SlotNumber(1)).get == true
+      # Initially metrics are uncomputed (Opt.none)
+      m.txs[hash1].byteSize.isNone
+      m.txs[hash1].execGas.isNone
 
     var state = LedgerState.fromGenesis(
       testGenesisTx(), default(FieldElement), testSdpRegistry(),
@@ -47,20 +43,21 @@ suite "chain/proposal":
 
     let (_, count) = m.selectProposalReferences(
       state, testLedgerConfig, SlotNumber(10), verifyPoq = acceptAllPoq)
-    check count == 1
-
-    # After selection, metrics are cached
-    check m.txs[hash1].byteSize.isSome
-    check m.txs[hash1].execGas.isSome
-    check m.txs[hash1].byteSize.get == encodeSignedMantleTx(tx1).get.len
+    check:
+      count == 1
+      # After selection, metrics are cached
+      m.txs[hash1].execGas.isSome
+      m.txs[hash1].byteSize.get == encodeSignedMantleTx(tx1).get.len
 
   test "selectProposalReferences enforces maxBytes budget":
-    var m = Mempool.init()
-    let tx1 = signedTxWithOps(1, 1)
-    let tx2 = signedTxWithOps(1, 2)
+    let
+      m = Mempool.init()
+      tx1 = signedTxWithOps(1, 1)
+      tx2 = signedTxWithOps(1, 2)
 
-    check m.add(ValidSignedMantleTx(tx1), SlotNumber(1)).get == true
-    check m.add(ValidSignedMantleTx(tx2), SlotNumber(2)).get == true
+    check:
+      m.add(ValidSignedMantleTx(tx1), SlotNumber(1)).get == true
+      m.add(ValidSignedMantleTx(tx2), SlotNumber(2)).get == true
 
     var state = LedgerState.fromGenesis(
       testGenesisTx(), default(FieldElement), testSdpRegistry(),
@@ -68,30 +65,33 @@ suite "chain/proposal":
     state.feeMarket.executionBaseFee = 0
     state.feeMarket.storageGasPrice = 0
 
-    let tx1Bytes = encodeSignedMantleTx(tx1).get.len
-    let tx2Bytes = encodeSignedMantleTx(tx2).get.len
-
-    # With byte limit allowing only 1 tx
-    let (refs, count) = m.selectProposalReferences(
-      state, testLedgerConfig, SlotNumber(10),
-      maxBytes = tx1Bytes + tx2Bytes - 1, verifyPoq = acceptAllPoq
-    )
-    check count == 1
-    check refs[0] == mantleTxHash(tx1.tx).get
+    let
+      tx1Bytes = encodeSignedMantleTx(tx1).get.len
+      tx2Bytes = encodeSignedMantleTx(tx2).get.len
+      # With byte limit allowing only 1 tx
+      (refs, count) = m.selectProposalReferences(
+        state, testLedgerConfig, SlotNumber(10),
+        maxBytes = tx1Bytes + tx2Bytes - 1, verifyPoq = acceptAllPoq
+      )
+    check:
+      count == 1
+      refs[0] == mantleTxHash(tx1.tx).get
 
     # With byte limit allowing both txs
     let (refsAll, countAll) = m.selectProposalReferences(
       state, testLedgerConfig, SlotNumber(10),
       maxBytes = tx1Bytes + tx2Bytes, verifyPoq = acceptAllPoq
     )
-    check countAll == 2
-    check refsAll[0] == mantleTxHash(tx1.tx).get
-    check refsAll[1] == mantleTxHash(tx2.tx).get
+    check:
+      countAll == 2
+      refsAll[0] == mantleTxHash(tx1.tx).get
+      refsAll[1] == mantleTxHash(tx2.tx).get
 
   test "selectProposalReferences stops search after MaxConsecutiveCandidateMisses":
-    var m = Mempool.init()
-    let initialTx = signedTxWithOps(1, 1)
-    let initialTxBytes = encodeSignedMantleTx(initialTx).get.len
+    let
+      m = Mempool.init()
+      initialTx = signedTxWithOps(1, 1)
+      initialTxBytes = encodeSignedMantleTx(initialTx).get.len
     check m.add(ValidSignedMantleTx(initialTx), SlotNumber(1)).get == true
 
     # Add 10 oversized transactions that exceed budget (10 consecutive misses)
@@ -100,8 +100,9 @@ suite "chain/proposal":
       check m.add(ValidSignedMantleTx(overTx), SlotNumber(1)).get == true
 
     # Add 1 tiny transaction at the end that would fit within budget if search continued
-    let tinyTx = signedTxWithOps(1, 12)
-    let tinyTxBytes = encodeSignedMantleTx(tinyTx).get.len
+    let
+      tinyTx = signedTxWithOps(1, 12)
+      tinyTxBytes = encodeSignedMantleTx(tinyTx).get.len
     check m.add(ValidSignedMantleTx(tinyTx), SlotNumber(1)).get == true
 
     var state = LedgerState.fromGenesis(
@@ -115,13 +116,15 @@ suite "chain/proposal":
       maxBytes = initialTxBytes + tinyTxBytes, verifyPoq = acceptAllPoq,
     )
     # Search terminated after MaxConsecutiveCandidateMisses (10 misses), tinyTx was not evaluated
-    check count == 1
-    check refs[0] == mantleTxHash(initialTx.tx).get
+    check:
+      count == 1
+      refs[0] == mantleTxHash(initialTx.tx).get
 
   test "selectProposalReferences continues search when misses < MaxConsecutiveCandidateMisses":
-    var m = Mempool.init()
-    let initialTx = signedTxWithOps(1, 1)
-    let initialTxBytes = encodeSignedMantleTx(initialTx).get.len
+    let
+      m = Mempool.init()
+      initialTx = signedTxWithOps(1, 1)
+      initialTxBytes = encodeSignedMantleTx(initialTx).get.len
     check m.add(ValidSignedMantleTx(initialTx), SlotNumber(1)).get == true
 
     # Add 9 oversized transactions that exceed budget (9 misses < MaxConsecutiveCandidateMisses)
@@ -130,8 +133,9 @@ suite "chain/proposal":
       check m.add(ValidSignedMantleTx(overTx), SlotNumber(1)).get == true
 
     # Add 1 tiny transaction at the end that fits within budget
-    let tinyTx = signedTxWithOps(1, 11)
-    let tinyTxBytes = encodeSignedMantleTx(tinyTx).get.len
+    let
+      tinyTx = signedTxWithOps(1, 11)
+      tinyTxBytes = encodeSignedMantleTx(tinyTx).get.len
     check m.add(ValidSignedMantleTx(tinyTx), SlotNumber(1)).get == true
 
     var state = LedgerState.fromGenesis(
@@ -145,63 +149,69 @@ suite "chain/proposal":
       maxBytes = initialTxBytes + tinyTxBytes, verifyPoq = acceptAllPoq,
     )
     # Search did not cut off (9 misses < 10), so tinyTx was evaluated and included
-    check count == 2
-    check refs[0] == mantleTxHash(initialTx.tx).get
-    check refs[1] == mantleTxHash(tinyTx.tx).get
+    check:
+      count == 2
+      refs[0] == mantleTxHash(initialTx.tx).get
+      refs[1] == mantleTxHash(tinyTx.tx).get
 
   proc testTransientRetention(
       transientTx: ValidSignedMantleTx,
       setupState: proc(s: var LedgerState) {.gcsafe, raises: [].} = nil,
   ) =
-    var m = Mempool.init()
-    var state = LedgerState.fromGenesis(
-      testGenesisTx(), default(FieldElement), testSdpRegistry(),
-      testLedgerConfig).expect("genesis state")
+    var
+      m = Mempool.init()
+      state = LedgerState.fromGenesis(
+        testGenesisTx(), default(FieldElement), testSdpRegistry(),
+        testLedgerConfig).expect("genesis state")
     state.feeMarket.executionBaseFee = 0
     state.feeMarket.storageGasPrice = 0
 
     if setupState != nil:
       setupState(state)
 
-    check m.add(transientTx, SlotNumber(1)).get == true
-    check m.len == 1
+    check:
+      m.add(transientTx, SlotNumber(1)).get == true
+      m.len == 1
 
     let (_, count) = m.selectProposalReferences(
       state, testLedgerConfig, SlotNumber(10), verifyPoq = acceptAllPoq,
     )
     # Not selected because prerequisite condition is not yet satisfied
-    check count == 0
-
-    # Transient transaction is NOT purged; it remains in active mempool for subsequent blocks
-    check mantleTxHash(transientTx.tx).get in m.txs
-    check m.len == 1
+    check:
+      count == 0
+      # Transient transaction is NOT purged; it remains in active mempool for subsequent blocks
+      mantleTxHash(transientTx.tx).get in m.txs
+      m.len == 1
 
   test "selectTxsForProposal retains transactions with transient InvalidNote in mempool":
-    let u = mkUtxo(value = 100, pkSeed = 1, opIdSeed = 99)
-    let pk = mkZkPubKey(1)
     # txTransient spends note 'u.id' which does not exist in genesis state (InvalidNote)
-    let txTransient = mkTransferTx([u.id], [Note(value: 50, zkPublicKey: pk)])
+    let
+      u = mkUtxo(value = 100, pkSeed = 1, opIdSeed = 99)
+      pk = mkZkPubKey(1)
+      txTransient = mkTransferTx([u.id], [Note(value: 50, zkPublicKey: pk)])
     testTransientRetention(ValidSignedMantleTx(txTransient))
 
   test "selectTxsForProposal retains transactions with transient InvalidParent in mempool":
-    var cid: ChannelId
+    var
+      cid: ChannelId
+      parentHash: Hash32
     cid[0] = 42
-    var parentHash: Hash32
     parentHash[0] = 99 # Non-zero parent for brand-new channel -> InvalidParent (parent tip not confirmed yet)
-    let payload = ChannelInscribePayload(
-      channelId: cid,
-      inscription: @[byte 0x01, 0x02],
-      parent: parentHash,
-      signer: testTxKeyPair.pubkey,
-    )
-    let op = createChannelInscribeOp(payload)
-    let mtx = MantleTx(ops: @[op])
-    let txHash = mantleTxHash(mtx).get
-    let sig = sign(testTxKeyPair.seckey, txHash)
-    let txTransient = SignedMantleTx(
-      tx: mtx,
-      opProofs: @[OpProof(kind: opfChannelInscribe, ed25519SigProof: sig)],
-    )
+    let
+      payload = ChannelInscribePayload(
+        channelId: cid,
+        inscription: @[byte 0x01, 0x02],
+        parent: parentHash,
+        signer: testTxKeyPair.pubkey,
+      )
+      op = createChannelInscribeOp(payload)
+      mtx = MantleTx(ops: @[op])
+      txHash = mantleTxHash(mtx).get
+      sig = sign(testTxKeyPair.seckey, txHash)
+      txTransient = SignedMantleTx(
+        tx: mtx,
+        opProofs: @[OpProof(kind: opfChannelInscribe, ed25519SigProof: sig)],
+      )
     testTransientRetention(ValidSignedMantleTx(txTransient))
 
   test "selectTxsForProposal retains transactions with state-dependent InvalidTxProof in mempool":
@@ -229,40 +239,44 @@ suite "chain/proposal":
 
   test "selectProposalReferences evicts transactions with permanent PermanentInvalidTxProof from mempool":
     check installZksignVk(zksignFixtureVk)
-    var m = Mempool.init()
-    var state = LedgerState.fromGenesis(
-      testGenesisTx(), default(FieldElement), testSdpRegistry(),
-      testLedgerConfig).expect("genesis state")
+    var
+      m = Mempool.init()
+      state = LedgerState.fromGenesis(
+        testGenesisTx(), default(FieldElement), testSdpRegistry(),
+        testLedgerConfig).expect("genesis state")
     state.feeMarket.executionBaseFee = 0
     state.feeMarket.storageGasPrice = 0
 
     let u = mkUtxo(value = 100, pkSeed = 1, opIdSeed = 42)
     state.cryptarchiaLedger = state.cryptarchiaLedger.insertMintedUtxos(@[u])
 
-    let pk = mkZkPubKey(1)
     # txInvalid spends note 'u.id' which exists in state, but carries default (all-zero) ZkSigProof,
     # causing LedgerError.PermanentInvalidTxProof during tryApplyTx
-    let txInvalid = mkTransferTx([u.id], [Note(value: 50, zkPublicKey: pk)])
-    let txHash = mantleTxHash(txInvalid.tx).get
+    let
+      pk = mkZkPubKey(1)
+      txInvalid = mkTransferTx([u.id], [Note(value: 50, zkPublicKey: pk)])
+      txHash = mantleTxHash(txInvalid.tx).get
 
-    check m.add(ValidSignedMantleTx(txInvalid), SlotNumber(1)).get == true
-    check txHash in m
-    check m.len == 1
+    check:
+      m.add(ValidSignedMantleTx(txInvalid), SlotNumber(1)).get == true
+      txHash in m
+      m.len == 1
 
     let (_, count) = m.selectProposalReferences(
       state, testLedgerConfig, SlotNumber(10), verifyPoq = acceptAllPoq,
     )
     # Transaction rejected from proposal
-    check count == 0
-
-    # Cryptographically invalid transaction is permanently evicted from mempool
-    check txHash notin m.txs
-    check txHash notin m
-    check m.len == 0
+    check:
+      count == 0
+      # Cryptographically invalid transaction is permanently evicted from mempool
+      txHash notin m.txs
+      txHash notin m
+      m.len == 0
 
   test "constructProposal selects from mempool, creates header, and signs with leader key":
-    var m = Mempool.init()
-    let tx = signedTxWithOps(1, 1)
+    let
+      m = Mempool.init()
+      tx = signedTxWithOps(1, 1)
     check m.add(ValidSignedMantleTx(tx), SlotNumber(1)).get == true
 
     let
@@ -287,44 +301,44 @@ suite "chain/proposal":
       leaderSecKey = testTxKeyPair.seckey,
       verifyPoq = acceptAllPoq,
     )
-    check proposal.header.slot == SlotNumber(10)
-    check proposal.header.parentBlock == gid
-    check proposal.header.proofOfLeadership.leaderKey == testTxKeyPair.pubkey
-    check proposal.references[0] == mantleTxHash(tx.tx).get
-    check proposal.uncleHeaders.len == 0
+    check:
+      proposal.header.slot == SlotNumber(10)
+      proposal.header.parentBlock == gid
+      proposal.header.proofOfLeadership.leaderKey == testTxKeyPair.pubkey
+      proposal.references[0] == mantleTxHash(tx.tx).get
+      proposal.uncleHeaders.len == 0
 
     # Reconstruct the proposal
-    let reconstructedRes = reconstructBlock(proposal, m)
-    check reconstructedRes.isOk
-    let blk = reconstructedRes.get()
-    check blk.txs.len == 1
-    check mantleTxHash(blk.txs[0].tx).get == mantleTxHash(tx.tx).get
-    check blk.uncleHeaders.len == 0
+    let blk = reconstructBlock(proposal, m).get()
+    check:
+      blk.txs.len == 1
+      mantleTxHash(blk.txs[0].tx).get == mantleTxHash(tx.tx).get
+      blk.uncleHeaders.len == 0
 
   test "reconstructBlock succeeds for orphan proposal":
-    var m = Mempool.init()
-    let tx = signedTxWithOps(1, 1)
+    let
+      m = Mempool.init()
+      tx = signedTxWithOps(1, 1)
     check m.add(ValidSignedMantleTx(tx), SlotNumber(1)).get == true
     var state = LedgerState.fromGenesis(
       testGenesisTx(), default(FieldElement), testSdpRegistry(),
       testLedgerConfig).expect("genesis state")
     state.feeMarket.executionBaseFee = 0
     state.feeMarket.storageGasPrice = 0
-    let orphanParent = Hash32([1'u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+    const orphanParent = Hash32([1'u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
     var pol = default(ProofOfLeadership)
     pol.leaderKey = testTxKeyPair.pubkey
-    let proposal = m.constructProposal(
-      tipLedgerState = state,
-      cfg = testLedgerConfig,
-      currentSlot = SlotNumber(10),
-      parentBlock = orphanParent,
-      proofOfLeadership = pol,
-      leaderSecKey = testTxKeyPair.seckey,
-      verifyPoq = acceptAllPoq,
-    )
-    let res = reconstructBlock(proposal, m)
-    check res.isOk
-    let blk = res.get
+    let
+      proposal = m.constructProposal(
+        tipLedgerState = state,
+        cfg = testLedgerConfig,
+        currentSlot = SlotNumber(10),
+        parentBlock = orphanParent,
+        proofOfLeadership = pol,
+        leaderSecKey = testTxKeyPair.seckey,
+        verifyPoq = acceptAllPoq,
+      )
+      blk = reconstructBlock(proposal, m).get
     check blk.header == proposal.header
 
 {.pop.}

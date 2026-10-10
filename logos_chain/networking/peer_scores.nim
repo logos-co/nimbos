@@ -46,7 +46,7 @@ const
     ## different chain?
 
 type
-  SyncResponseKind* {.pure.} = enum
+  SyncResponseKind {.pure.} = enum
     Good, Empty
 
   SyncResponseStats = array[int(high(SyncResponseKind)) + 1, uint64]

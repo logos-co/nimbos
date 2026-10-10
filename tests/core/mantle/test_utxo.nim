@@ -11,9 +11,7 @@
 import
   std/options,
   unittest2,
-  results,
   constantine/math/[arithmetic, io/io_bigints],
-  poseidon2/types,
   ../../../logos_chain/core/mantle/[primitives, utxo],
   ./test_helpers
 

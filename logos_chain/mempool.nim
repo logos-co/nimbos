@@ -16,17 +16,15 @@ import
   std/[deques, tables],
   minilru,
   results,
-  ./core/crypto/types,
-  ./core/mantle/[gas, proofs, tx_hashing, tx_types]
+  ./core/mantle/[gas, tx_hashing, tx_types]
 
 export results
 
-from ./core/mantle/primitives import MaxBlockTxs, SlotNumber
 from ./core/types import Block, items
 
 const
   DefaultMempoolCapacity = 10_240
-  MempoolMaxAgeSlots* = 100'u64
+  MempoolMaxAgeSlots = 100'u64
 
 func maxMempoolCapacity*(securityParam: uint64 = 1): uint64 {.inline.} =
   ## Returns mempool capacity as 10x the maximum unfinalized branch transactions.
@@ -45,8 +43,8 @@ type
   Mempool* = ref object
     txs*: Table[Hash32, MempoolItem]
     queue*: Deque[Hash32]
-    graceCache*: LruCache[Hash32, MempoolItem]
-    capacity*: uint64
+    graceCache: LruCache[Hash32, MempoolItem]
+    capacity: uint64
     lastAddedSlot*: SlotNumber
 
 func len*(m: Mempool): int =
@@ -79,9 +77,9 @@ proc add*(
     currentSlot: SlotNumber,
 ): Result[bool, EncodingError] =
   # Clamp to lastAddedSlot to preserve monotonic insertion order against minor clock skew/NTP slewing
-  let effectiveSlot = max(currentSlot, m.lastAddedSlot)
-
-  let hash = ?mantleTxHash(tx.tx)
+  let
+    effectiveSlot = max(currentSlot, m.lastAddedSlot)
+    hash = ?mantleTxHash(tx.tx)
   if hash in m.txs:
     return ok(false)
 
@@ -123,8 +121,9 @@ func get*(m: Mempool, hash: Hash32): Result[ValidSignedMantleTx, MempoolError] =
 proc pruneExpiredTxs*(m: Mempool, currentSlot: SlotNumber) =
   while m.queue.len > 0:
     let hash = m.queue.peekFirst()
-    var isExpired = false
-    var found = false
+    var
+      isExpired = false
+      found = false
     m.txs.withValue(hash, item):
       found = true
       if currentSlot > item[].addedAtSlot + MempoolMaxAgeSlots:
@@ -170,10 +169,11 @@ func isKnownValid*(m: Mempool, tx: SignedMantleTx): bool =
     if tx.opProofs[i].kind != expectedKind:
       return false
 
-  let hash = mantleTxHash(tx.tx).valueOr:
-    return false
-  let poolTx = m.get(hash).valueOr:
-    return false
+  let
+    hash = mantleTxHash(tx.tx).valueOr:
+      return false
+    poolTx = m.get(hash).valueOr:
+      return false
 
   sameOpProofs(SignedMantleTx(poolTx).opProofs, tx.opProofs)
 

@@ -10,7 +10,6 @@
 
 import
   unittest2,
-  results,
   libp2p/crypto/ed25519/ed25519,
   ../../../logos_chain/core/crypto/types,
   ../../../logos_chain/core/mantle/blend_activity
@@ -32,11 +31,12 @@ proc mkActivityProof(seed: byte = 1): ActivityProof =
 suite "core/mantle/blend_activity":
   test "encode produces the 230-byte layout":
     let encoded = encodeActivityMetadata(mkActivityProof())
-    check encoded.len == ActivityMetadataLen
-    check encoded[0] == ActiveMetadataBlendType
-    check encoded[1] == BlendActiveMetadataVersion
-    check encoded[2] == 7'u8 # epoch u32 LE, low byte first
-    check encoded[3 .. 5] == @[0'u8, 0, 0]
+    check:
+      encoded.len == ActivityMetadataLen
+      encoded[0] == ActiveMetadataBlendType
+      encoded[1] == BlendActiveMetadataVersion
+      encoded[2] == 7'u8 # epoch u32 LE, low byte first
+      encoded[3 .. 5] == @[0'u8, 0, 0]
 
   test "decode round-trips an encoded proof":
     let
@@ -48,9 +48,10 @@ suite "core/mantle/blend_activity":
   test "decode rejects a wrong length":
     var encoded = encodeActivityMetadata(mkActivityProof())
     encoded.add 0'u8
-    check decodeActivityMetadata(encoded).isErr
-    check decodeActivityMetadata(encoded.toOpenArray(0, ActivityMetadataLen - 2)).isErr
-    check decodeActivityMetadata(newSeq[byte]()).isErr
+    check:
+      decodeActivityMetadata(encoded).isErr
+      decodeActivityMetadata(encoded.toOpenArray(0, ActivityMetadataLen - 2)).isErr
+      decodeActivityMetadata(newSeq[byte]()).isErr
 
   test "decode rejects an unknown metadata type":
     var encoded = encodeActivityMetadata(mkActivityProof())

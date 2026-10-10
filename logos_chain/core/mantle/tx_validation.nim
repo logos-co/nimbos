@@ -15,9 +15,6 @@ import
   results,
   libp2p/crypto/ed25519/ed25519,
   ./poc_verifier,
-  ./primitives,
-  ./operations,
-  ./proofs,
   ./tx_hashing,
   ./tx_types
 
@@ -104,9 +101,10 @@ proc validateMantleTxStateless*(
   if tx.tx.ops.len != tx.opProofs.len:
     return err(StatelessLedgerError.InvalidProof)
 
-  var allInputs: HashSet[NoteId]
-  var hasSigCrypto = false
-  var hasHeavyZk = false
+  var
+    allInputs: HashSet[NoteId]
+    hasSigCrypto = false
+    hasHeavyZk = false
 
   template checkInputs(inputs: Inputs): untyped =
     if inputs.noteIds.len == 0:
@@ -197,9 +195,10 @@ proc validateMantleTxStateless*(
     template proof: untyped = tx.opProofs[i]
     if op.payload.kind == LeaderClaim:
       template claim: untyped = op.payload.leaderClaim
-      let public = proofOfClaimPublic(claim, claim.rewardsRoot, getTxHash())
-      let verified = verifyProof(proof.proofOfClaimProof, public).valueOr:
-        return err(StatelessLedgerError.VerifierNotInitialised)
+      let
+        public = proofOfClaimPublic(claim, claim.rewardsRoot, getTxHash())
+        verified = verifyProof(proof.proofOfClaimProof, public).valueOr:
+          return err(StatelessLedgerError.VerifierNotInitialised)
       if not verified:
         return err(StatelessLedgerError.InvalidProof)
 

@@ -11,9 +11,8 @@
 {.push raises: [], gcsafe.}
 
 import
-  results,
-  ./[channel_state, cryptarchia_state, types],
-  ../core/mantle/[primitives, operations, proofs]
+  ./[channel_state, cryptarchia_state],
+  ../core/mantle/[operations, proofs]
 
 export channel_state
 

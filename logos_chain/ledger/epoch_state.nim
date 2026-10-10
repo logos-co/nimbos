@@ -8,7 +8,6 @@
 {.push raises: [], gcsafe.}
 
 import
-  results,
   ../consensus/clock,
   ../zk/pol_lottery,
   ../zk/poseidon2/hasher,
@@ -155,9 +154,9 @@ func rotate(
     promotedDifficulty = compute_epoch_blend_difficulty(
       density.lastClosedOrEmpty(), promotedDifficulty)
   density = density.closeEpoch()
-  let seedDifficulty = compute_epoch_blend_difficulty(
-    density.lastClosedOrEmpty(), promotedDifficulty)
   let
+    seedDifficulty = compute_epoch_blend_difficulty(
+      density.lastClosedOrEmpty(), promotedDifficulty)
     values = lottery_constants(cfg.slotActivationCoeff, stake).valueOr:
       return err(UnsupportedLotteryF)
     promoted =

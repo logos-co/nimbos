@@ -8,29 +8,22 @@
 {.push raises: [].}
 
 import
-  std/[net, sequtils, times],
+  std/[sequtils, times],
   bearssl/rand,
-  chronos,
-  libp2p/[switch, builders, peerid, multiaddress],
-  libp2p/crypto/rng,
+  libp2p/builders,
   libp2p/crypto/ed25519/ed25519,
   stew/[byteutils, endians2],
   testutils/markdown_reports,
   unittest2,
   ../logos_chain/conf,
   ../logos_chain/networking/network,
-  ../logos_chain/core/[types, local_tree],
-  ../logos_chain/core/mantle/[operations, tx_types, tx_validation, utxo],
-  ../logos_chain/chain/genesis,
+  ../logos_chain/core/local_tree,
+  ../logos_chain/core/mantle/[tx_validation, utxo],
   ../logos_chain/ledger/pol_verifier,
   ./core/mantle/test_helpers
 
-from ../logos_chain/core/crypto/types import
-  DefaultEd25519PublicKey, Hash32, ZkPublicKey, encodeFieldElement
-from ../logos_chain/core/mantle/primitives import SlotNumber
 from std/algorithm import SortOrder, sort
 from std/strformat import `&`
-from std/tables import OrderedTable, `[]=`, initOrderedTable, mgetOrPut
 
 export unittest2
 
@@ -43,8 +36,9 @@ template fail*(msg: string) =
 
 type TestDuration = tuple[duration: float, label: string]
 
-var testTimes: seq[TestDuration]
-var status = initOrderedTable[string, OrderedTable[string, Status]]()
+var
+  testTimes: seq[TestDuration]
+  status = initOrderedTable[string, OrderedTable[string, Status]]()
 
 type TimingCollector = ref object of OutputFormatter
 
@@ -85,10 +79,11 @@ proc summarizeLongTests*(name: string) =
   except IOError, OSError, ValueError:
     raiseAssert getCurrentExceptionMsg()
 
-const TestLoopbackIp* = parseIpAddress("127.0.0.1")
-const TestQuicAnyPort* = Port(0)
+const
+  TestLoopbackIp = parseIpAddress("127.0.0.1")
+  TestQuicAnyPort = Port(0)
 
-template loopbackQuicMultiAddr*(port: Port): string =
+template loopbackQuicMultiAddr(port: Port): string =
   "/ip4/" & $TestLoopbackIp & "/udp/" & $port & "/quic-v1"
 
 template waitUntil*(cond: untyped, timeout: chronos.Duration = chronos.seconds(3)): bool =
@@ -101,8 +96,9 @@ template waitUntil*(cond: untyped, timeout: chronos.Duration = chronos.seconds(3
     await sleepAsync(chronos.milliseconds(10))
   res
 
-let testHmacRng = HmacDrbgContext.new()
-let testRng = newBearSslRng(testHmacRng)
+let
+  testHmacRng = HmacDrbgContext.new()
+  testRng = newBearSslRng(testHmacRng)
 
 proc getTestHmacRng*(): ref HmacDrbgContext =
   {.gcsafe.}:
@@ -239,8 +235,9 @@ let testTxKeyPair* = block:
   EdKeyPair.random(newBearSslRng(rngRef))
 
 proc signedTxWithOps*(opsCount: int = 1, txIndex: int = 1): SignedMantleTx =
-  var ops: seq[Op]
-  var proofs: seq[OpProof]
+  var
+    ops: seq[Op]
+    proofs: seq[OpProof]
   for i in 0 ..< opsCount:
     var cid: ChannelId
     cid[0] = byte(txIndex mod 256)
@@ -255,9 +252,10 @@ proc signedTxWithOps*(opsCount: int = 1, txIndex: int = 1): SignedMantleTx =
     )
     ops.add(createChannelInscribeOp(payload))
 
-  let mtx = MantleTx(ops: ops)
-  let txHash = mantleTxHash(mtx).get
-  let sig = sign(testTxKeyPair.seckey, txHash)
+  let
+    mtx = MantleTx(ops: ops)
+    txHash = mantleTxHash(mtx).get
+    sig = sign(testTxKeyPair.seckey, txHash)
   for _ in 0 ..< opsCount:
     proofs.add(OpProof(kind: opfChannelInscribe, ed25519SigProof: sig))
 
@@ -290,14 +288,15 @@ proc childBlock*(
     sig = testBlockKeyPair.seckey.sign(blockId(h))
   initBlock(h, signature = sig, uncleHeaders = uncleHeaders, txs = txs)
 
-type BootstrapPeers* = object
+type BootstrapPeers = object
   listener*, dialer*: LBP2PNode
   listenerPeerId*: PeerId
 
 proc createBootstrapPeers*(): Future[BootstrapPeers] {.async.} =
-  let listener = await startTestNode("p2p-bootstrap-listener", maxPeers = 8)
-  let listenerPeerId = listener.switch.peerInfo.peerId
-  let dialer = await startTestNode("p2p-bootstrap-dialer", @[listener.fullAddress()], maxPeers = 8)
+  let
+    listener = await startTestNode("p2p-bootstrap-listener", maxPeers = 8)
+    listenerPeerId = listener.switch.peerInfo.peerId
+    dialer = await startTestNode("p2p-bootstrap-dialer", @[listener.fullAddress()], maxPeers = 8)
 
   BootstrapPeers(
     listener: listener,
@@ -311,3 +310,5 @@ func mockVerifyLeaderProof*(
   ok(true)
 
 addOutputFormatter(new TimingCollector)
+
+{.pop.}

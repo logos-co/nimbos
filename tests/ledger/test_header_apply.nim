@@ -10,7 +10,6 @@
 
 import
   unittest2,
-  results,
   ../../logos_chain/ledger/ledger,
   ../core/mantle/test_helpers,
   ./sdp/test_helpers as sdp_test_helpers,
@@ -185,9 +184,7 @@ suite "ledger/header apply (epoch pipeline)":
     s = s.tryApplyHeader(100, sentinelProof(), testLedgerConfig).expect(
       "rotation")
     check s.epochs.activeEpoch.nonce != outgoingNonce
-    let target = s.sdp.blendRewards.target
-    check target.isSome
-    let public = target.get.state.poqPublic
+    let public = s.sdp.blendRewards.target.get.state.poqPublic
     check:
       public.chain.polEpochNonce == outgoingNonce
       public.chain.polEpochNonce != s.epochs.activeEpoch.nonce

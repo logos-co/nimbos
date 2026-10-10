@@ -10,19 +10,16 @@
 
 import
   std/[os, strutils],
-  ../../testutil,
   stew/byteutils as byteutils,
-  results,
   bincode,
-  ../../../logos_chain/core/[types, local_tree],
-  ../../../logos_chain/chain/genesis,
+  ../../testutil,
   ../../../logos_chain/deployment/deployment_settings,
   ../../../logos_chain/sync/[types, ibd_client],
   ./helpers
-from ../../../logos_chain/core/mantle/primitives import SlotNumber
 
-const testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
-const deploymentSettingsPath = testsDir / "../../../config/deployment-settings.yaml"
+const
+  testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
+  deploymentSettingsPath = testsDir / "../../../config/deployment-settings.yaml"
 
 suite "sync/types (GetTip RequestMessage / response wire)":
   test "GetTip request body is RequestMessage GetTip bincode discriminant (u32 LE = 1)":
@@ -30,13 +27,14 @@ suite "sync/types (GetTip RequestMessage / response wire)":
       encode(RequestMessage(kind: rmGetTip), cryptarchiaSyncBincodeConfig)
     except BincodeError:
       fail getCurrentExceptionMsg()
-    check body.len == 4
-    check body == @[1'u8, 0'u8, 0'u8, 0'u8]
+    check:
+      body.len == 4
+      body == @[1'u8, 0'u8, 0'u8, 0'u8]
     let m = try:
       Opt.some(decode(body, RequestMessage, cryptarchiaSyncBincodeConfig))
     except BincodeError as exc:
       fail exc.msg
-    check m.isSome and m.get.kind == rmGetTip
+    check m.get.kind == rmGetTip
 
   test "encode(GetTip RequestMessage) inner bincode hex":
     let body =
@@ -48,13 +46,11 @@ suite "sync/types (GetTip RequestMessage / response wire)":
 
   test "Example GetTipResponse Tip wire (tip=[0xAB;32], slot=12345, height=999)":
     let wOpt = exampleSerializedGetTipResponseTipWire()
-    check wOpt.isSome
     check byteutils.toHex(wOpt.get) ==
       "00000000abababababababababababababababababababababababababababababababab3930000000000000e703000000000000"
 
   test "Example GetTipResponse Failure wire (example: tip unavailable)":
     let wOpt = exampleSerializedGetTipResponseFailureWire("example: tip unavailable")
-    check wOpt.isSome
     check byteutils.toHex(wOpt.get) ==
       "0100000018000000000000006578616d706c653a2074697020756e617661696c61626c65"
 
@@ -65,50 +61,58 @@ suite "sync/types (GetTip RequestMessage / response wire)":
     let
       tip = Tip(tip: bid, slot: SlotNumber(9), height: 123'u64)
       resp = GetTipResponse(kind: gtrTip, tipData: tip)
-    let wire = try:
-      encode(resp, cryptarchiaSyncBincodeConfig)
-    except BincodeError:
-      fail getCurrentExceptionMsg()
-    let d = try:
-      Opt.some(decode(wire, GetTipResponse, cryptarchiaSyncBincodeConfig))
-    except BincodeError as exc:
-      fail exc.msg
-    check d.isSome and d.get.kind == gtrTip and d.get.tipData == tip
+      wire = try:
+        encode(resp, cryptarchiaSyncBincodeConfig)
+      except BincodeError:
+        fail getCurrentExceptionMsg()
+      d = try:
+        Opt.some(decode(wire, GetTipResponse, cryptarchiaSyncBincodeConfig))
+      except BincodeError as exc:
+        fail exc.msg
+    check:
+      d.get.kind == gtrTip
+      d.get.tipData == tip
 
   test "GetTip failure response roundtrips":
-    let resp = GetTipResponse(kind: gtrFailure, failureMessage: "no tip for you")
-    let wire = try:
-      encode(resp, cryptarchiaSyncBincodeConfig)
-    except BincodeError:
-      fail getCurrentExceptionMsg()
-    let d = try:
-      Opt.some(decode(wire, GetTipResponse, cryptarchiaSyncBincodeConfig))
-    except BincodeError as exc:
-      fail exc.msg
-    check d.isSome and d.get.kind == gtrFailure and d.get.failureMessage == "no tip for you"
+    let
+      resp = GetTipResponse(kind: gtrFailure, failureMessage: "no tip for you")
+      wire = try:
+        encode(resp, cryptarchiaSyncBincodeConfig)
+      except BincodeError:
+        fail getCurrentExceptionMsg()
+      d = try:
+        Opt.some(decode(wire, GetTipResponse, cryptarchiaSyncBincodeConfig))
+      except BincodeError as exc:
+        fail exc.msg
+    check:
+      d.get.kind == gtrFailure
+      d.get.failureMessage == "no tip for you"
 
   test "Fixture GetTipResponse Tip wire roundtrips":
     let tip = exampleGetTipTipFixture()
-    check tip.tip[0] == 0xAB'u8 and tip.tip[^1] == 0xAB'u8
-    check tip.slot == SlotNumber(12_345'u64) and tip.height == 999'u64
-    let wOpt = exampleSerializedGetTipResponseTipWire()
-    check wOpt.isSome
-    let wire = wOpt.get
-    let d = try:
-      Opt.some(decode(wire, GetTipResponse, cryptarchiaSyncBincodeConfig))
-    except BincodeError as exc:
-      fail exc.msg
-    check d.isSome and d.get.kind == gtrTip and d.get.tipData == tip
+    check:
+      tip.tip[0] == 0xAB'u8 and tip.tip[^1] == 0xAB'u8
+      tip.slot == SlotNumber(12_345'u64) and tip.height == 999'u64
+    let
+      wire = exampleSerializedGetTipResponseTipWire().get
+      d = try:
+        Opt.some(decode(wire, GetTipResponse, cryptarchiaSyncBincodeConfig))
+      except BincodeError as exc:
+        fail exc.msg
+    check:
+      d.get.kind == gtrTip
+      d.get.tipData == tip
 
   test "Example GetTipResponse Failure wire roundtrips":
-    let wOpt = exampleSerializedGetTipResponseFailureWire("example: tip unavailable")
-    check wOpt.isSome
-    let wire = wOpt.get
-    let d = try:
-      Opt.some(decode(wire, GetTipResponse, cryptarchiaSyncBincodeConfig))
-    except BincodeError as exc:
-      fail exc.msg
-    check d.isSome and d.get.kind == gtrFailure and d.get.failureMessage == "example: tip unavailable"
+    let
+      wire = exampleSerializedGetTipResponseFailureWire("example: tip unavailable").get
+      d = try:
+        Opt.some(decode(wire, GetTipResponse, cryptarchiaSyncBincodeConfig))
+      except BincodeError as exc:
+        fail exc.msg
+    check:
+      d.get.kind == gtrFailure
+      d.get.failureMessage == "example: tip unavailable"
 
 suite "sync/types (download RequestMessage / request & response payloads)":
   test "encode / decode DownloadBlocksRequest roundtrip":
@@ -118,16 +122,16 @@ suite "sync/types (download RequestMessage / request & response payloads)":
       gid = blockId(genesis.header)
       tree = newLocalTree(genesis, 1'u64)
       req = DownloadBlocksRequest(targetBlock: gid, knownBlocks: buildKnownBlocks(tree))
-    let inner = try:
-      encode(req, cryptarchiaSyncBincodeConfig)
-    except BincodeError:
-      fail getCurrentExceptionMsg()
-    let dec =
-      try:
-        Opt.some(decode(inner, DownloadBlocksRequest, cryptarchiaSyncBincodeConfig))
-      except BincodeError as exc:
-        fail exc.msg
-    check dec.isSome and downloadBlocksRequestEqual(dec.get, req)
+      inner = try:
+        encode(req, cryptarchiaSyncBincodeConfig)
+      except BincodeError:
+        fail getCurrentExceptionMsg()
+      dec =
+        try:
+          Opt.some(decode(inner, DownloadBlocksRequest, cryptarchiaSyncBincodeConfig))
+        except BincodeError as exc:
+          fail exc.msg
+    check downloadBlocksRequestEqual(dec.get, req)
 
   test "RequestMessage download discriminant roundtrips":
     let
@@ -136,59 +140,61 @@ suite "sync/types (download RequestMessage / request & response payloads)":
       gid = blockId(genesis.header)
       tree = newLocalTree(genesis, 1'u64)
       req = DownloadBlocksRequest(targetBlock: gid, knownBlocks: buildKnownBlocks(tree))
-    let wire = try:
-      encode(
-        RequestMessage(kind: rmDownloadBlocksRequest, downloadBlocksRequest: req),
-        cryptarchiaSyncBincodeConfig,
-      )
-    except BincodeError:
-      fail getCurrentExceptionMsg()
+      wire = try:
+        encode(
+          RequestMessage(kind: rmDownloadBlocksRequest, downloadBlocksRequest: req),
+          cryptarchiaSyncBincodeConfig,
+        )
+      except BincodeError:
+        fail getCurrentExceptionMsg()
     check wire.len >= 4
     let m =
       try:
         Opt.some(decode(wire, RequestMessage, cryptarchiaSyncBincodeConfig))
       except BincodeError as exc:
         fail exc.msg
-    check m.isSome and m.get.kind == rmDownloadBlocksRequest
-    check downloadBlocksRequestEqual(m.get.downloadBlocksRequest, req)
+    check:
+      m.get.kind == rmDownloadBlocksRequest
+      downloadBlocksRequestEqual(m.get.downloadBlocksRequest, req)
 
   test "encode / decode DownloadBlocksResponse roundtrip (NoMore)":
-    let msg = DownloadBlocksResponse(kind: dbrNoMoreBlocks)
-    let inner = try:
-      encode(msg, cryptarchiaSyncBincodeConfig)
-    except BincodeError:
-      fail getCurrentExceptionMsg()
-    let dec =
-      try:
-        Opt.some(decode(inner, DownloadBlocksResponse, cryptarchiaSyncBincodeConfig))
-      except BincodeError as exc:
-        fail exc.msg
-    check dec.isSome and downloadBlocksResponseEqual(dec.get, msg)
+    let
+      msg = DownloadBlocksResponse(kind: dbrNoMoreBlocks)
+      inner = try:
+        encode(msg, cryptarchiaSyncBincodeConfig)
+      except BincodeError:
+        fail getCurrentExceptionMsg()
+      dec =
+        try:
+          Opt.some(decode(inner, DownloadBlocksResponse, cryptarchiaSyncBincodeConfig))
+        except BincodeError as exc:
+          fail exc.msg
+    check downloadBlocksResponseEqual(dec.get, msg)
 
   test "encode / decode DownloadBlocksResponse roundtrip (one block)":
     let
       sm = minimalSignedTx()
       genesis = createGenesisBlock(sm).get
-    let blockWire = try:
-      encode(genesis, cryptarchiaSyncBincodeConfig)
-    except BincodeError:
-      fail getCurrentExceptionMsg()
-    let msg = DownloadBlocksResponse(kind: dbrBlock, downloadedBlock: blockWire)
-    let inner = try:
-      encode(msg, cryptarchiaSyncBincodeConfig)
-    except BincodeError:
-      fail getCurrentExceptionMsg()
-    let backOpt =
-      try:
-        Opt.some(decode(inner, DownloadBlocksResponse, cryptarchiaSyncBincodeConfig))
-      except BincodeError as exc:
-        fail exc.msg
-    check backOpt.isSome
-    let back = backOpt.get
+      blockWire = try:
+        encode(genesis, cryptarchiaSyncBincodeConfig)
+      except BincodeError:
+        fail getCurrentExceptionMsg()
+      msg = DownloadBlocksResponse(kind: dbrBlock, downloadedBlock: blockWire)
+      inner = try:
+        encode(msg, cryptarchiaSyncBincodeConfig)
+      except BincodeError:
+        fail getCurrentExceptionMsg()
+      backOpt =
+        try:
+          Opt.some(decode(inner, DownloadBlocksResponse, cryptarchiaSyncBincodeConfig))
+        except BincodeError as exc:
+          fail exc.msg
+      back = backOpt.get
     check back.kind == dbrBlock
     let blksOpt = decodeBlocksFromDownloadResponses(@[back])
-    check blksOpt.isSome and blksOpt.unsafeGet.len == 1
-    check blockId(blksOpt.unsafeGet[0].header) == blockId(genesis.header)
+    check:
+      blksOpt.get.len == 1
+      blockId(blksOpt.get[0].header) == blockId(genesis.header)
 
   test "encode / decode DownloadBlocksResponse (Failure reasons)":
     let cases = @[
@@ -214,7 +220,7 @@ suite "sync/types (download RequestMessage / request & response payloads)":
           Opt.some(decode(inner, DownloadBlocksResponse, cryptarchiaSyncBincodeConfig))
         except BincodeError as exc:
           fail exc.msg
-      check dec.isSome and downloadBlocksResponseEqual(dec.get, msg)
+      check downloadBlocksResponseEqual(dec.get, msg)
 
   test "deserialize Rust Failure(Unknown) download response":
     const rustInnerHex =
@@ -226,23 +232,24 @@ suite "sync/types (download RequestMessage / request & response payloads)":
           Opt.some(decode(inner, DownloadBlocksResponse, cryptarchiaSyncBincodeConfig))
         except BincodeError as exc:
           fail exc.msg
-    check dec.isSome
-    check dec.get.kind == dbrFailure
-    check dec.get.blocksUnavailableReason.kind == burUnknown
-    check dec.get.blocksUnavailableReason.message ==
-      "Failed to create a block stream: StartBlockNotFound"
+    check:
+      dec.get.kind == dbrFailure
+      dec.get.blocksUnavailableReason.kind == burUnknown
+      dec.get.blocksUnavailableReason.message ==
+        "Failed to create a block stream: StartBlockNotFound"
 
 suite "sync/types (cryptarchia u32 length-prefixed wire fixtures 1-9)":
   test "u32 length-prefixed hex matches cryptarchia sync wire fixtures (1-9)":
-    const exp1 = "0400000001000000"
-    const exp2 = "3400000000000000abababababababababababababababababababababababababababababababab3930000000000000e703000000000000"
-    const exp3 = "240000000100000018000000000000006578616d706c653a2074697020756e617661696c61626c65"
-    const exp4 = "6c000000000000001111111111111111111111111111111111111111111111111111111111111111222222222222222222222222222222222222222222222222222222222222222233333333333333333333333333333333333333333333333333333333333333330000000000000000"
-    const exp5 = "e304000000000000d704000000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000085418723f6c3119fbaa51768de28a6c077be6fdaddb965690a5f74be21c621ef00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000000000560300000000000003000005a086010000000000e3635f207984ae779cf76b5f20714b514373f61ff96260879fe0a6d71f2dce07640000000000000039e16b432574571a6bcd8ee36e370589641bd9f35367f6f97a972453c46c322564000000000000009750fa86471fddc69749aa9f8568ef6635e64d9f9aa815e8cb932cea183c8e180100000000000000852efb444db8c3c811625850df39425f43aeffc69571192c0be9f72523256e0affffffffffffffffd2a1977db29daf6691f7ce897fe7b666ec964b1bf027814cacd1a2c141b12f1011000000000000000000000000000000000000000000000000000000000000000035000000107374616e64616c6f6e652d6c6f63616c9169fe692d2ddf918544bca603c5a291c7dd1b902d6769ff4b00021506780e075c06051a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002000010b00047f00000191020d48cd03aa70aafc48536ae13168ed4845981a40cbd2dc1c38df88d04c46250e9ad65ce0852efb444db8c3c811625850df39425f43aeffc69571192c0be9f72523256e0aa4405fdbd782bd39c4e388ac470c98fdca3e9edfdf7d2672bc63223d75dab721000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
-    const exp6 = "0400000001000000"
-    const exp7 = "2800000002000000000000000404040404040404040404040404040404040404040404040404040404040404"
-    const exp8 = "080000000200000001000000"
-    const exp9 = "28000000020000000200000018000000000000006578616d706c653a20646f776e6c6f6164206661696c6564"
+    const
+      exp1 = "0400000001000000"
+      exp2 = "3400000000000000abababababababababababababababababababababababababababababababab3930000000000000e703000000000000"
+      exp3 = "240000000100000018000000000000006578616d706c653a2074697020756e617661696c61626c65"
+      exp4 = "6c000000000000001111111111111111111111111111111111111111111111111111111111111111222222222222222222222222222222222222222222222222222222222222222233333333333333333333333333333333333333333333333333333333333333330000000000000000"
+      exp5 = "e304000000000000d704000000000000010000000000000000000000000000000000000000000000000000000000000000000000000000000085418723f6c3119fbaa51768de28a6c077be6fdaddb965690a5f74be21c621ef00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000000000560300000000000003000005a086010000000000e3635f207984ae779cf76b5f20714b514373f61ff96260879fe0a6d71f2dce07640000000000000039e16b432574571a6bcd8ee36e370589641bd9f35367f6f97a972453c46c322564000000000000009750fa86471fddc69749aa9f8568ef6635e64d9f9aa815e8cb932cea183c8e180100000000000000852efb444db8c3c811625850df39425f43aeffc69571192c0be9f72523256e0affffffffffffffffd2a1977db29daf6691f7ce897fe7b666ec964b1bf027814cacd1a2c141b12f1011000000000000000000000000000000000000000000000000000000000000000035000000107374616e64616c6f6e652d6c6f63616c9169fe692d2ddf918544bca603c5a291c7dd1b902d6769ff4b00021506780e075c06051a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002000010b00047f00000191020d48cd03aa70aafc48536ae13168ed4845981a40cbd2dc1c38df88d04c46250e9ad65ce0852efb444db8c3c811625850df39425f43aeffc69571192c0be9f72523256e0aa4405fdbd782bd39c4e388ac470c98fdca3e9edfdf7d2672bc63223d75dab721000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+      exp6 = "0400000001000000"
+      exp7 = "2800000002000000000000000404040404040404040404040404040404040404040404040404040404040404"
+      exp8 = "080000000200000001000000"
+      exp9 = "28000000020000000200000018000000000000006578616d706c653a20646f776e6c6f6164206661696c6564"
 
     let inner1 = try:
       encode(RequestMessage(kind: rmGetTip), cryptarchiaSyncBincodeConfig)
@@ -266,36 +273,38 @@ suite "sync/types (cryptarchia u32 length-prefixed wire fixtures 1-9)":
       fail getCurrentExceptionMsg()
     check u32LengthPrefixedHex(inner3) == exp3
 
-    let dlReqMsg = RequestMessage(
-      kind: rmDownloadBlocksRequest,
-      downloadBlocksRequest: DownloadBlocksRequest(
-        targetBlock: exampleBlockId(0x11),
-        knownBlocks: KnownBlocks(
-          localTip: exampleBlockId(0x22),
-          latestImmutableBlock: exampleBlockId(0x33),
-          additionalBlocks: @[],
-        ),
-      ))
-    let inner4 = try:
-      encode(dlReqMsg, cryptarchiaSyncBincodeConfig)
-    except BincodeError:
-      fail getCurrentExceptionMsg()
+    let
+      dlReqMsg = RequestMessage(
+        kind: rmDownloadBlocksRequest,
+        downloadBlocksRequest: DownloadBlocksRequest(
+          targetBlock: exampleBlockId(0x11),
+          knownBlocks: KnownBlocks(
+            localTip: exampleBlockId(0x22),
+            latestImmutableBlock: exampleBlockId(0x33),
+            additionalBlocks: @[],
+          ),
+        ))
+      inner4 = try:
+        encode(dlReqMsg, cryptarchiaSyncBincodeConfig)
+      except BincodeError:
+        fail getCurrentExceptionMsg()
     check u32LengthPrefixedHex(inner4) == exp4
 
     let pr = parseDeploymentSettings(readFile(deploymentSettingsPath))
     require pr.isOk
-    let genesisFromDeployment =
-      createGenesisBlock(pr.get.cryptarchia.genesisState.signedMantleTx).get
-    let genesisWire = try:
-      encode(genesisFromDeployment, cryptarchiaSyncBincodeConfig)
-    except BincodeError:
-      fail getCurrentExceptionMsg()
-    let inner5 = try:
-      encode(DownloadBlocksResponse(
-          kind: dbrBlock, downloadedBlock: genesisWire),
-        cryptarchiaSyncBincodeConfig)
-    except BincodeError:
-      fail getCurrentExceptionMsg()
+    let
+      genesisFromDeployment =
+        createGenesisBlock(pr.get.cryptarchia.genesisState.signedMantleTx).get
+      genesisWire = try:
+        encode(genesisFromDeployment, cryptarchiaSyncBincodeConfig)
+      except BincodeError:
+        fail getCurrentExceptionMsg()
+      inner5 = try:
+        encode(DownloadBlocksResponse(
+            kind: dbrBlock, downloadedBlock: genesisWire),
+          cryptarchiaSyncBincodeConfig)
+      except BincodeError:
+        fail getCurrentExceptionMsg()
     check u32LengthPrefixedHex(inner5) == exp5
 
     let inner6 = try:

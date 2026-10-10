@@ -11,7 +11,6 @@
 
 import
   std/tables,
-  results,
   ./blend_rewards,
   ./state as sdpState,
   ../../deployment/deployment_settings as deploy
@@ -132,7 +131,6 @@ func onEpochStarted*(
   registry.state = finalizeWithdrawals(registry.state, epoch)
   registry.lastEpochStarted = Opt.some(epoch)
   registry
-
 
 func getEpochSnapshot*(
     snapshots: SdpSnapshots,

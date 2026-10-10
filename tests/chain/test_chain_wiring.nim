@@ -17,16 +17,12 @@
 
 import
   std/[os, strutils, tables, times],
-  results,
-  unittest2,
   stew/[byteutils, io2],
   libp2p/crypto/ed25519/ed25519,
   ../testutil,
   ../../logos_chain/chain/[chain, proposal],
   ../../logos_chain/core/mantle/tx_validation,
-  ../../logos_chain/deployment/deployment_settings,
-  ../../logos_chain/ledger/poq_verifier,
-  ../../logos_chain/zk/poseidon2/hasher
+  ../../logos_chain/deployment/deployment_settings
 
 const
   testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
@@ -63,8 +59,8 @@ suite "chain/epoch wiring (devnet deployment settings)":
 
   test "ledgerConfig derives the devnet schedule":
     let cfg = ledgerConfig(ds)
+    # k = 30, f = 1/20 → base period 600, epoch length 6000, TSI window 3600
     check:
-      # k = 30, f = 1/20 → base period 600, epoch length 6000, TSI window 3600
       cfg.epochSchedule.basePeriodLength == 600
       cfg.epochSchedule.epochLength == 6000
       cfg.epochSchedule.nonceContributionPeriod == 3600
@@ -93,8 +89,8 @@ suite "chain/epoch wiring (devnet deployment settings)":
           blendRewardsParams(ds, cfg.epochSchedule.epochLength)), cfg).valueOr:
         check false
         return
+    # Standalone ceremony notes (100000 + 100 + 100 + 1) plus the faucet note.
     check:
-      # Standalone ceremony notes (100000 + 100 + 100 + 1) plus the faucet note.
       state.latestUtxos.len == 5
       state.epochs.activeEpoch.epoch == 0
       state.epochs.nextEpoch.epoch == 1
@@ -110,13 +106,14 @@ suite "chain/epoch wiring (devnet deployment settings)":
       check state.latestUtxos.get(info.lockedNoteId).isSome
 
   test "Chain.init wires ledger, epoch state and clock from settings":
-    let chain = Chain.init(ds, mockVerifyLeaderProof).valueOr:
-      check false
-      return
-    let genesisState = chain.ledger.state(
-      blockId(chain.genesisBlock.header)).valueOr:
-      check false
-      return
+    let
+      chain = Chain.init(ds, mockVerifyLeaderProof).valueOr:
+        check false
+        return
+      genesisState = chain.ledger.state(
+        blockId(chain.genesisBlock.header)).valueOr:
+        check false
+        return
     check:
       chain.slotConfig.genesisTime == 0x69fe6991'u64
       chain.slotConfig.slotDurationSeconds == 1
@@ -152,8 +149,9 @@ suite "chain/epoch wiring (devnet deployment settings)":
     check r.isErr and r.error.kind == BlockApplyErrorKind.FutureSlot
 
   test "tryApplyBlock buffers an unknown parent into orphan pool":
-    var chain = initZeroFeeChain(ds)
-    var fakeParent: BlockId
+    var
+      chain = initZeroFeeChain(ds)
+      fakeParent: BlockId
     fakeParent[0] = 7'u8
     let
       orphan = childBlock(
@@ -168,38 +166,44 @@ suite "chain/epoch wiring (devnet deployment settings)":
     var chain = initZeroFeeChain(ds)
 
     # 1. Add tx to mempool
-    let dummyTx = signedTxWithOps(1, 1)
-    let txHash = mantleTxHash(dummyTx.tx).get
-    check chain.mempool.add(ValidSignedMantleTx(dummyTx), SlotNumber(0)).get == true
-    check txHash in chain.mempool
+    let
+      dummyTx = signedTxWithOps(1, 1)
+      txHash = mantleTxHash(dummyTx.tx).get
+    check:
+      chain.mempool.add(ValidSignedMantleTx(dummyTx), SlotNumber(0)).get == true
+      txHash in chain.mempool
 
     # 2. Ingest block b1 containing dummyTx
-    let gid = blockId(chain.genesisBlock.header)
-    let b1 = childBlock(chain.genesisBlock.header, gid, SlotNumber(1), [dummyTx])
-    let id1 = blockId(b1.header)
-    check chain.tryApplyBlock(b1).isOk
-    check chain.localTree.localTipId == id1
-
-    # Immediate removal from active mempool upon block addition
-    check txHash notin chain.mempool.txs
-    check chain.mempool.get(txHash).isOk # Retained in graceCache for fork proposals
+    let
+      gid = blockId(chain.genesisBlock.header)
+      b1 = childBlock(chain.genesisBlock.header, gid, SlotNumber(1), [dummyTx])
+      id1 = blockId(b1.header)
+    check:
+      chain.tryApplyBlock(b1).isOk
+      chain.localTree.localTipId == id1
+      # Immediate removal from active mempool upon block addition
+      txHash notin chain.mempool.txs
+      chain.mempool.get(txHash).isOk # Retained in graceCache for fork proposals
 
     # 3. Build a longer fork (b2_fork at slot 2 from genesis, b3_fork at slot 3 from b2_fork)
-    let b2_fork = childBlock(chain.genesisBlock.header, gid, SlotNumber(2), [])
-    let id2_fork = blockId(b2_fork.header)
-    check chain.tryApplyBlock(b2_fork).isOk
-    # b2_fork height 1 is not strictly higher than b1 height 1, so tip remains id1
-    check chain.localTree.localTipId == id1
-    check txHash notin chain.mempool.txs
+    let
+      b2_fork = childBlock(chain.genesisBlock.header, gid, SlotNumber(2), [])
+      id2_fork = blockId(b2_fork.header)
+    check:
+      chain.tryApplyBlock(b2_fork).isOk
+      # b2_fork height 1 is not strictly higher than b1 height 1, so tip remains id1
+      chain.localTree.localTipId == id1
+      txHash notin chain.mempool.txs
 
     # Add b3_fork extending b2_fork -> height 2 > height 1, triggering fork switch!
-    let b3_fork = childBlock(b2_fork.header, id2_fork, SlotNumber(3), [])
-    let id3_fork = blockId(b3_fork.header)
-    check chain.tryApplyBlock(b3_fork).isOk
-    check chain.localTree.localTipId == id3_fork
-
-    # Fork switch re-added dummyTx from the forked-off branch b1 back into active mempool!
-    check txHash in chain.mempool.txs
+    let
+      b3_fork = childBlock(b2_fork.header, id2_fork, SlotNumber(3), [])
+      id3_fork = blockId(b3_fork.header)
+    check:
+      chain.tryApplyBlock(b3_fork).isOk
+      chain.localTree.localTipId == id3_fork
+      # Fork switch re-added dummyTx from the forked-off branch b1 back into active mempool!
+      txHash in chain.mempool.txs
 
     # Proposal selection on the new tip picks up the restored dummyTx
     let (refs, count) = chain.mempool.selectProposalReferences(
@@ -207,107 +211,118 @@ suite "chain/epoch wiring (devnet deployment settings)":
       chain.currentWallclockSlot() + TxMaturitySlots,
       verifyPoq = verifyProofOfQuota,
     )
-    check count == 1
-    check refs[0] == txHash
+    check:
+      count == 1
+      refs[0] == txHash
 
   test "multi-fork reorg correctly handles multiple competing branches":
     var chain = initZeroFeeChain(ds)
 
-    let gid = blockId(chain.genesisBlock.header)
-    let tx1 = signedTxWithOps(1, 101)
-    let tx2 = signedTxWithOps(1, 102)
-    let tx3 = signedTxWithOps(1, 103)
-    let h1 = mantleTxHash(tx1.tx).get
-    let h2 = mantleTxHash(tx2.tx).get
-    let h3 = mantleTxHash(tx3.tx).get
+    let
+      gid = blockId(chain.genesisBlock.header)
+      tx1 = signedTxWithOps(1, 101)
+      tx2 = signedTxWithOps(1, 102)
+      tx3 = signedTxWithOps(1, 103)
+      h1 = mantleTxHash(tx1.tx).get
+      h2 = mantleTxHash(tx2.tx).get
+      h3 = mantleTxHash(tx3.tx).get
 
-    check chain.mempool.add(ValidSignedMantleTx(tx1), SlotNumber(0)).get
-    check chain.mempool.add(ValidSignedMantleTx(tx2), SlotNumber(0)).get
-    check chain.mempool.add(ValidSignedMantleTx(tx3), SlotNumber(0)).get
+    check:
+      chain.mempool.add(ValidSignedMantleTx(tx1), SlotNumber(0)).get
+      chain.mempool.add(ValidSignedMantleTx(tx2), SlotNumber(0)).get
+      chain.mempool.add(ValidSignedMantleTx(tx3), SlotNumber(0)).get
 
     # Branch A: Genesis -> A1 (contains tx1) -> A2 (contains tx2) (height 2)
-    let a1 = childBlock(chain.genesisBlock.header, gid, SlotNumber(1), [tx1])
-    let idA1 = blockId(a1.header)
+    let
+      a1 = childBlock(chain.genesisBlock.header, gid, SlotNumber(1), [tx1])
+      idA1 = blockId(a1.header)
     check chain.tryApplyBlock(a1).isOk
-    let a2 = childBlock(a1.header, idA1, SlotNumber(2), [tx2])
-    let idA2 = blockId(a2.header)
-    check chain.tryApplyBlock(a2).isOk
-    check chain.localTree.localTipId == idA2
-
-    # tx1 and tx2 removed from active mempool (retained in graceCache)
-    check h1 notin chain.mempool.txs
-    check h2 notin chain.mempool.txs
-    check h1 in chain.mempool # in graceCache
-    check h2 in chain.mempool # in graceCache
-    check h3 in chain.mempool.txs
+    let
+      a2 = childBlock(a1.header, idA1, SlotNumber(2), [tx2])
+      idA2 = blockId(a2.header)
+    check:
+      chain.tryApplyBlock(a2).isOk
+      chain.localTree.localTipId == idA2
+      # tx1 and tx2 removed from active mempool (retained in graceCache)
+      h1 notin chain.mempool.txs
+      h2 notin chain.mempool.txs
+      h1 in chain.mempool # in graceCache
+      h2 in chain.mempool # in graceCache
+      h3 in chain.mempool.txs
 
     # Branch B: Genesis -> B1 -> B2 -> B3 (contains tx3) (height 3 > height 2)
-    let b1 = childBlock(chain.genesisBlock.header, gid, SlotNumber(3), [])
-    let idB1 = blockId(b1.header)
+    let
+      b1 = childBlock(chain.genesisBlock.header, gid, SlotNumber(3), [])
+      idB1 = blockId(b1.header)
     check chain.tryApplyBlock(b1).isOk
-    let b2 = childBlock(b1.header, idB1, SlotNumber(4), [])
-    let idB2 = blockId(b2.header)
+    let
+      b2 = childBlock(b1.header, idB1, SlotNumber(4), [])
+      idB2 = blockId(b2.header)
     check chain.tryApplyBlock(b2).isOk
-    let b3 = childBlock(b2.header, idB2, SlotNumber(5), [tx3])
-    let idB3 = blockId(b3.header)
-    check chain.tryApplyBlock(b3).isOk
-    check chain.localTree.localTipId == idB3
-
-    # Reorg from Branch A to Branch B: tx1 and tx2 restored to active mempool, tx3 removed
-    check h1 in chain.mempool.txs
-    check h2 in chain.mempool.txs
-    check h3 notin chain.mempool.txs
-    check h3 in chain.mempool # in graceCache
+    let
+      b3 = childBlock(b2.header, idB2, SlotNumber(5), [tx3])
+      idB3 = blockId(b3.header)
+    check:
+      chain.tryApplyBlock(b3).isOk
+      chain.localTree.localTipId == idB3
+      # Reorg from Branch A to Branch B: tx1 and tx2 restored to active mempool, tx3 removed
+      h1 in chain.mempool.txs
+      h2 in chain.mempool.txs
+      h3 notin chain.mempool.txs
+      h3 in chain.mempool # in graceCache
 
   test "tryApplyBlock prunes orphaned fork states from localTree and ledger upon finalization":
     var dsSmallSec = ds
     dsSmallSec.cryptarchia.securityParam = 2
     var chain = initZeroFeeChain(dsSmallSec)
-    let gid = blockId(chain.genesisBlock.header)
-
-    # Branch A: Genesis -> A1 (slot 1) (height 1)
-    let a1 = childBlock(chain.genesisBlock.header, gid, SlotNumber(1), [])
-    let idA1 = blockId(a1.header)
-    check chain.tryApplyBlock(a1).isOk
-    check chain.localTree.localTipId == idA1
+    let
+      gid = blockId(chain.genesisBlock.header)
+      # Branch A: Genesis -> A1 (slot 1) (height 1)
+      a1 = childBlock(chain.genesisBlock.header, gid, SlotNumber(1), [])
+      idA1 = blockId(a1.header)
+    check:
+      chain.tryApplyBlock(a1).isOk
+      chain.localTree.localTipId == idA1
 
     # Branch B: Genesis -> B1 (slot 2) -> B2 (slot 3) -> B3 (slot 4)
-    let b1 = childBlock(chain.genesisBlock.header, gid, SlotNumber(2), [])
-    let idB1 = blockId(b1.header)
+    let
+      b1 = childBlock(chain.genesisBlock.header, gid, SlotNumber(2), [])
+      idB1 = blockId(b1.header)
     check chain.tryApplyBlock(b1).isOk
-    let b2 = childBlock(b1.header, idB1, SlotNumber(3), [])
-    let idB2 = blockId(b2.header)
+    let
+      b2 = childBlock(b1.header, idB1, SlotNumber(3), [])
+      idB2 = blockId(b2.header)
     check chain.tryApplyBlock(b2).isOk
-    let b3 = childBlock(b2.header, idB2, SlotNumber(4), [])
-    let idB3 = blockId(b3.header)
-    check chain.tryApplyBlock(b3).isOk
-    check chain.localTree.localTipId == idB3
-
-    # With securityParam = 2 and tip height = 3, LIB advances to B1 (height 3 - 2 = 1).
-    # Orphaned Fork A block A1 at height 1 is pruned from both tree and ledger.
-    check not chain.localTree.hasBlock(idA1)
-    check chain.ledger.state(idA1).isNone
-
-    # Genesis at height 0 (strictly older than LIB at height 1) has its state pruned from ledger,
-    # while its Block remains in localTree for IBD syncing.
-    check chain.ledger.state(gid).isNone
-    check chain.localTree.hasBlock(gid)
-
-    # Canonical branch B blocks remain in both tree and ledger.
-    check chain.localTree.hasBlock(idB1)
-    check chain.localTree.hasBlock(idB2)
-    check chain.localTree.hasBlock(idB3)
-    check chain.ledger.state(idB1).isSome
-    check chain.ledger.state(idB2).isSome
-    check chain.ledger.state(idB3).isSome
+    let
+      b3 = childBlock(b2.header, idB2, SlotNumber(4), [])
+      idB3 = blockId(b3.header)
+    check:
+      chain.tryApplyBlock(b3).isOk
+      chain.localTree.localTipId == idB3
+      # With securityParam = 2 and tip height = 3, LIB advances to B1 (height 3 - 2 = 1).
+      # Orphaned Fork A block A1 at height 1 is pruned from both tree and ledger.
+      not chain.localTree.hasBlock(idA1)
+      chain.ledger.state(idA1).isNone
+      # Genesis at height 0 (strictly older than LIB at height 1) has its state pruned from ledger,
+      # while its Block remains in localTree for IBD syncing.
+      chain.ledger.state(gid).isNone
+      chain.localTree.hasBlock(gid)
+      # Canonical branch B blocks remain in both tree and ledger.
+      chain.localTree.hasBlock(idB1)
+      chain.localTree.hasBlock(idB2)
+      chain.localTree.hasBlock(idB3)
+      chain.ledger.state(idB1).isSome
+      chain.ledger.state(idB2).isSome
+      chain.ledger.state(idB3).isSome
 
   test "selectTxsForProposal automatically advances epochs across boundaries":
     var chain = initZeroFeeChain(ds)
     # Set genesis in the past so slot 6500 is within current wallclock
     chain.slotConfig.genesisTime = uint64(getTime().toUnix() - 7000)
 
-    let gid = blockId(chain.genesisBlock.header)
-    let tx = signedTxWithOps(1, 101)
+    let
+      gid = blockId(chain.genesisBlock.header)
+      tx = signedTxWithOps(1, 101)
     check chain.mempool.add(ValidSignedMantleTx(tx), SlotNumber(0)).get
 
     let tipState = chain.ledger.state(gid).get()
@@ -317,20 +332,24 @@ suite "chain/epoch wiring (devnet deployment settings)":
     let (refs, count) = chain.mempool.selectProposalReferences(
       tipState, ledgerConfig(ds), SlotNumber(6500), verifyPoq = verifyProofOfQuota
     )
-    check count == 1
-    check refs[0] == mantleTxHash(tx.tx).get
+    check:
+      count == 1
+      refs[0] == mantleTxHash(tx.tx).get
 
     # Verify that a block constructed from this proposal is valid and admitted to localTree & ledger
-    let blk = childBlock(chain.genesisBlock.header, gid, SlotNumber(6500), [tx])
-    let blkId = blockId(blk.header)
-    check chain.tryApplyBlock(blk).isOk
-    check chain.localTree.hasBlock(blkId)
-    check chain.localTree.localTipId == blkId
+    let
+      blk = childBlock(chain.genesisBlock.header, gid, SlotNumber(6500), [tx])
+      blkId = blockId(blk.header)
+    check:
+      chain.tryApplyBlock(blk).isOk
+      chain.localTree.hasBlock(blkId)
+      chain.localTree.localTipId == blkId
 
     # Verify that the post-application ledger state has officially transitioned to Epoch 1
     let appliedState = chain.ledger.state(blkId).get()
-    check appliedState.epochs.activeEpoch.epoch == 1
-    check appliedState.epochs.nextEpoch.epoch == 2
+    check:
+      appliedState.epochs.activeEpoch.epoch == 1
+      appliedState.epochs.nextEpoch.epoch == 2
 
   test "tryApplyBlock rejects statelessly invalid transaction with detailed error":
     var chain = Chain.init(ds, mockVerifyLeaderProof).valueOr:

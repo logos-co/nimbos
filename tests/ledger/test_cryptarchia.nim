@@ -11,11 +11,8 @@
 import
   std/[os, sets, strutils],
   unittest2,
-  results,
-  poseidon2/types,          # `==` for F
-  ../../logos_chain/ledger/
-    [balance, cryptarchia_state, types, utxo_store],
-  ../../logos_chain/core/mantle/[primitives, operations, proofs, tx_hashing, utxo],
+  ../../logos_chain/ledger/[balance, cryptarchia_state],
+  ../../logos_chain/core/mantle/[operations, proofs, tx_hashing],
   ../../logos_chain/zk/zksign,
   ../zk/zksign_helpers,
   ../core/mantle/test_helpers
@@ -30,9 +27,10 @@ const
 suite "CryptarchiaState init":
   test "empty init has no utxos":
     let s = CryptarchiaState.init()
-    check s.len == 0
-    check s.isEmpty
-    check s.root == UtxoStore.init().root
+    check:
+      s.len == 0
+      s.isEmpty
+      s.root == UtxoStore.init().root
 
   test "init from empty UtxoStore equivalent to empty init":
     let
@@ -46,10 +44,11 @@ suite "CryptarchiaState init":
       u2 = mkUtxo(value = 100, pkSeed = 2)
       u3 = mkUtxo(value = 150, pkSeed = 3)
       s = CryptarchiaState.init([u1, u2, u3])
-    check s.len == 3
-    check s.utxos.contains(u1.id)
-    check s.utxos.contains(u2.id)
-    check s.utxos.contains(u3.id)
+    check:
+      s.len == 3
+      s.utxos.contains(u1.id)
+      s.utxos.contains(u2.id)
+      s.utxos.contains(u3.id)
 
   test "two empty states are equal":
     check CryptarchiaState.init() == CryptarchiaState.init()
@@ -93,8 +92,9 @@ suite "tryApplyTransfer — error paths":
           sig = default(ZkSigProof),
           txHash = mkTxHash(),
         )
-      check r.isErr
-      check r.error == InvalidNote
+      check:
+        r.isErr
+        r.error == InvalidNote
 
   test "duplicate input in one op → InvalidNote":
     # The first removal consumes the note, so the duplicate fails the UTXO
@@ -114,8 +114,9 @@ suite "tryApplyTransfer — error paths":
         sig = default(ZkSigProof),
         txHash = mkTxHash(),
       )
-    check r.isErr
-    check r.error == InvalidNote
+    check:
+      r.isErr
+      r.error == InvalidNote
 
   test "locked input → LockedNote":
     let
@@ -134,8 +135,9 @@ suite "tryApplyTransfer — error paths":
       sig = default(ZkSigProof),
       txHash = mkTxHash(),
     )
-    check r.isErr
-    check r.error == LockedNote
+    check:
+      r.isErr
+      r.error == LockedNote
 
   test "channel-note input → ChannelNoteSpend":
     # Bridged funds stay in the UTXO set and keep earning, but only the
@@ -156,8 +158,9 @@ suite "tryApplyTransfer — error paths":
         sig = default(ZkSigProof),
         txHash = mkTxHash(),
       )
-    check r.isErr
-    check r.error == ChannelNoteSpend
+    check:
+      r.isErr
+      r.error == ChannelNoteSpend
 
   test "bad signature → PermanentInvalidTxProof":
     let
@@ -174,8 +177,9 @@ suite "tryApplyTransfer — error paths":
         sig = default(ZkSigProof),
         txHash = mkTxHash(),
       )
-    check r.isErr
-    check r.error == PermanentInvalidTxProof
+    check:
+      r.isErr
+      r.error == PermanentInvalidTxProof
 
   test "verify before VK install → VerifierNotInitialised":
     zksign.resetVkForTesting()
@@ -193,8 +197,9 @@ suite "tryApplyTransfer — error paths":
         sig = default(ZkSigProof),
         txHash = mkTxHash(),
       )
-    check r.isErr
-    check r.error == VerifierNotInitialised
+    check:
+      r.isErr
+      r.error == VerifierNotInitialised
 
 suite "tryApplyTransfer — happy paths (fixture-driven)":
   # All tests in this suite use the 1-key zksign fixture (`PK(SK=1)`-signed).
@@ -224,9 +229,10 @@ suite "tryApplyTransfer — happy paths (fixture-driven)":
     check r.isOk
 
     let (s1, balance) = r.get
-    check balance == Balance.zero
-    check s1.len == 1
-    check not s1.utxos.contains(input.id)
+    check:
+      balance == Balance.zero
+      s1.len == 1
+      not s1.utxos.contains(input.id)
 
   test "split (1 input, 3 outputs)":
     let
@@ -243,9 +249,10 @@ suite "tryApplyTransfer — happy paths (fixture-driven)":
     check r.isOk
 
     let (s1, balance) = r.get
-    check balance == Balance.zero
-    check s1.len == 3
-    check not s1.utxos.contains(input.id)
+    check:
+      balance == Balance.zero
+      s1.len == 3
+      not s1.utxos.contains(input.id)
 
   test "no outputs → balance equals full input value":
     let
@@ -258,9 +265,10 @@ suite "tryApplyTransfer — happy paths (fixture-driven)":
     check r.isOk
 
     let (s1, balance) = r.get
-    check balance == i128(100)
-    check s1.len == 0
-    check not s1.utxos.contains(input.id)
+    check:
+      balance == i128(100)
+      s1.len == 0
+      not s1.utxos.contains(input.id)
 
   test "outputs exceed input → returns negative balance":
     let
@@ -274,8 +282,9 @@ suite "tryApplyTransfer — happy paths (fixture-driven)":
     check r.isOk
 
     let (s1, balance) = r.get
-    check balance == i128(-1)
-    check s1.len == 2
+    check:
+      balance == i128(-1)
+      s1.len == 2
 
   test "unbalanced (input > output) returns positive balance":
     let
@@ -290,8 +299,9 @@ suite "tryApplyTransfer — happy paths (fixture-driven)":
     check r.isOk
 
     let (s1, balance) = r.get
-    check balance == i128(11000 - 4000 - 3000) # = 4000 surplus
-    check s1.len == 2
+    check:
+      balance == i128(11000 - 4000 - 3000) # = 4000 surplus
+      s1.len == 2
 
   test "parent state unchanged when child applies a transfer":
     let
@@ -305,9 +315,10 @@ suite "tryApplyTransfer — happy paths (fixture-driven)":
       )
     discard s0.tryApplyTransfer(LockedNotes.init(), ChannelNotes.init(), op, sig, txHash)
 
-    check s0.len == preLen
-    check s0.root == preRoot
-    check s0.utxos.contains(input.id)
+    check:
+      s0.len == preLen
+      s0.root == preRoot
+      s0.utxos.contains(input.id)
 
 suite "applyTransferState — multi-input":
   test "multi-input combine (2 inputs, 1 output)":
@@ -323,11 +334,12 @@ suite "applyTransferState — multi-input":
     check r.isOk
 
     let (s1, balance, pks) = r.get
-    check balance == Balance.zero
-    check s1.len == 1
-    check not s1.utxos.contains(a.id)
-    check not s1.utxos.contains(b.id)
-    check pks.len == 2
+    check:
+      balance == Balance.zero
+      s1.len == 1
+      not s1.utxos.contains(a.id)
+      not s1.utxos.contains(b.id)
+      pks.len == 2
 
 suite "applyTransferState — chain":
   test "chain of txs: tx2 spends outputs created by tx1":
@@ -349,8 +361,9 @@ suite "applyTransferState — chain":
       outUtxo1 =
         Utxo(opId: tx1OpId, outputIndex: 1, note: mkNote(40, pkSeed = 3))
 
-    check s1.utxos.contains(outUtxo0.id)
-    check s1.utxos.contains(outUtxo1.id)
+    check:
+      s1.utxos.contains(outUtxo0.id)
+      s1.utxos.contains(outUtxo1.id)
 
     let
       tx2 = TransferPayload(
@@ -361,10 +374,11 @@ suite "applyTransferState — chain":
     check r2.isOk
 
     let (s2, balance2, pks2) = r2.get
-    check balance2 == Balance.zero
-    check s2.len == 1
-    check not s2.utxos.contains(outUtxo0.id)
-    check not s2.utxos.contains(outUtxo1.id)
-    check pks2.len == 2
+    check:
+      balance2 == Balance.zero
+      s2.len == 1
+      not s2.utxos.contains(outUtxo0.id)
+      not s2.utxos.contains(outUtxo1.id)
+      pks2.len == 2
 
 {.pop.}

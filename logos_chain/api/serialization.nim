@@ -147,8 +147,9 @@ func strictParse*[bits: static[int]](input: string,
 
 template withRestJsonWriter(w, typ, body: untyped): untyped =
   try:
-    var stream = memoryOutput()
-    var w = JsonWriter[RestJson].init(stream)
+    var
+      stream = memoryOutput()
+      w = JsonWriter[RestJson].init(stream)
     body
     stream.getOutput(typ)
   except IOError:

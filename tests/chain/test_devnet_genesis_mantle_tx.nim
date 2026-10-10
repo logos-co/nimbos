@@ -14,13 +14,8 @@
 import
   std/[os, strutils],
   unittest2,
-  results,
   stew/[byteutils, io2],
-  yaml/dom,
-  ../../logos_chain/deployment/[deployment_settings, deployment_settings_helpers],
-  ../../logos_chain/chain/genesis,
-  ../../logos_chain/core/[types, crypto/hashing],
-  ../../logos_chain/core/mantle/[tx_types, tx_hashing]
+  ../../logos_chain/deployment/deployment_settings
 
 const
   testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
@@ -77,12 +72,13 @@ suite "devnet genesis mantle_tx body root":
         return
       gstate = ds.cryptarchia.genesisState
       smtFromDeployment = gstate.signedMantleTx
-    check mantleTxHash(smt.tx).get == mantleTxHash(smtFromDeployment.tx).get
-    check txRoot == merkle_root([smtFromDeployment]).get
-    check txRoot == mantleTxHash(smt.tx).get
-    check toHex(txRoot) == expectedDevnetMantleTxHash
-    check toHex(bodyRoot) == expectedDevnetGenesisBodyRoot
-    check bodyRoot == gstate.header.bodyRoot
+    check:
+      mantleTxHash(smt.tx).get == mantleTxHash(smtFromDeployment.tx).get
+      txRoot == merkle_root([smtFromDeployment]).get
+      txRoot == mantleTxHash(smt.tx).get
+      toHex(txRoot) == expectedDevnetMantleTxHash
+      toHex(bodyRoot) == expectedDevnetGenesisBodyRoot
+      bodyRoot == gstate.header.bodyRoot
 
   test "deployment genesis block id matches devnet header preimage":
     let
@@ -94,8 +90,9 @@ suite "devnet genesis mantle_tx body root":
         return
     check validateDeploymentSettings(ds).isOk
     let gb = createGenesisBlock(ds.cryptarchia.genesisState.signedMantleTx).get
-    check toHex(gb.header.bodyRoot) == expectedDevnetGenesisBodyRoot
-    check toHex(blockId(gb.header)) == expectedDevnetGenesisBlockId
+    check:
+      toHex(gb.header.bodyRoot) == expectedDevnetGenesisBodyRoot
+      toHex(blockId(gb.header)) == expectedDevnetGenesisBlockId
 
   test "devnet genesis mantle tx encoding and hashes match fixed vectors":
     let
@@ -106,9 +103,10 @@ suite "devnet genesis mantle_tx body root":
         check false
         return
       txBytes = encodeMantleTx(smt.tx).get
-    check toHex(txBytes) == fixedGenesisTxBytesHex
-    check txBytes == hexToSeqByte(fixedGenesisTxBytesHex)
-    check toHex(blake2b256Hash(txBytes)) == expectedDevnetBlake2bMantleDigest
-    check toHex(mantleTxHash(smt.tx).get) == expectedDevnetMantleTxHash
+    check:
+      toHex(txBytes) == fixedGenesisTxBytesHex
+      txBytes == hexToSeqByte(fixedGenesisTxBytesHex)
+      toHex(blake2b256Hash(txBytes)) == expectedDevnetBlake2bMantleDigest
+      toHex(mantleTxHash(smt.tx).get) == expectedDevnetMantleTxHash
 
 {.pop.}

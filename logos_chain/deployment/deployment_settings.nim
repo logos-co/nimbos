@@ -14,9 +14,7 @@
 
 import
   std/strutils,
-  chronos,
   confutils/defs,
-  results,
   stew/io2,
   yaml/dom,
   ../chain/genesis,
@@ -276,12 +274,14 @@ func validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
   ok()
 
 proc loadDeploymentSettings*(deploymentSettingsFile: InputFile): Result[DeploymentSettings, string] =
-  let path = string(deploymentSettingsFile)
-  let textRes = readAllChars(path)
+  let
+    path = string(deploymentSettingsFile)
+    textRes = readAllChars(path)
   if textRes.isErr():
     return err("deployment-settings: cannot read " & path & ": " & ioErrorMsg(textRes.error))
-  let text = textRes.get()
-  let ds = ? parseDeploymentSettings(text)
+  let
+    text = textRes.get()
+    ds = ? parseDeploymentSettings(text)
   ? validateDeploymentSettings(ds)
   ok(ds)
 

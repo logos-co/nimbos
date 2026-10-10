@@ -22,14 +22,14 @@ type
   Poseidon2Hasher* = object
     s0, s1, s2: FieldElement
 
-func init*(_: type Poseidon2Hasher): Poseidon2Hasher =
+func init(_: type Poseidon2Hasher): Poseidon2Hasher =
   Poseidon2Hasher(s0: zero, s1: zero, s2: zero)
 
 func updateOne(h: var Poseidon2Hasher, x: FieldElement) =
   h.s0 += x
   permInPlace(h.s0, h.s1, h.s2, which = HorizenLabsNew)
 
-func update*(h: var Poseidon2Hasher, xs: openArray[FieldElement]) =
+func update(h: var Poseidon2Hasher, xs: openArray[FieldElement]) =
   ## SAFE (Sponge API for Field Elements) padding: absorb a domain-separating
   ## `one` after the input so distinct-length inputs cannot collide.
   for x in xs:
@@ -43,7 +43,6 @@ func digest*(_: type Poseidon2Hasher, xs: openArray[FieldElement]): FieldElement
   var h = Poseidon2Hasher.init()
   h.update(xs)
   h.finalize()
-
 
 func compress*(_: type Poseidon2Hasher, a, b: FieldElement): FieldElement =
   # Merkle compress — no SAFE padding

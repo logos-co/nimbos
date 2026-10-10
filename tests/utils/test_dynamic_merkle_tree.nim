@@ -10,8 +10,6 @@
 
 import
   unittest2,
-  results,
-  poseidon2/types,
   ../../logos_chain/utils/dynamic_merkle_tree,
   ../../logos_chain/zk/poseidon2/hasher
 
@@ -33,10 +31,11 @@ func frFomInt(n: int): F =
 suite "DynamicMerkleTree empty":
   test "fresh tree has empty root":
     let t = DynamicMerkleTree[FItem, Poseidon2Hasher].init()
-    check t.len == 0
-    check t.isEmpty
-    check t.capacity == Capacity
-    check t.path(0) == Opt.none(MerklePath)
+    check:
+      t.len == 0
+      t.isEmpty
+      t.capacity == Capacity
+      t.path(0) == Opt.none(MerklePath)
 
   test "empty trees are equal":
     let
@@ -56,10 +55,10 @@ suite "DynamicMerkleTree insert / path / verify":
       t0 = DynamicMerkleTree[FItem, Poseidon2Hasher].init()
       item = FItem(v: frFomInt(42))
       (t1, idx) = t0.insert(item)
-    check idx == 0
-    check t1.len == 1
+    check:
+      idx == 0
+      t1.len == 1
     let p = t1.path(0)
-    check p.isSome
     check Poseidon2Hasher.verifyPath(p.get, asField(item), t1.root)
 
   test "many inserts: every leaf has a verifying path":
@@ -76,7 +75,6 @@ suite "DynamicMerkleTree insert / path / verify":
     check t.len == 100
     for i in 0 ..< 100:
       let p = t.path(i)
-      check p.isSome
       check Poseidon2Hasher.verifyPath(p.get, asField(items[i]), t.root)
 
   test "batch insert matches repeated single inserts":
@@ -87,18 +85,20 @@ suite "DynamicMerkleTree insert / path / verify":
     for item in items:
       oneByOne = oneByOne.insert(item).tree
     let batch = DynamicMerkleTree[FItem, Poseidon2Hasher].init().insert(items)
-    check oneByOne == batch
-    check batch.len == items.len
+    check:
+      oneByOne == batch
+      batch.len == items.len
 
   test "persistence: parent tree unchanged by child insert":
     let
       t0 = DynamicMerkleTree[FItem, Poseidon2Hasher].init()
       r0 = t0.root
       (t1, _) = t0.insert(FItem(v: frFomInt(7)))
-    check t0.root == r0
-    check t0.len == 0
-    check t1.root != r0
-    check t1.len == 1
+    check:
+      t0.root == r0
+      t0.len == 0
+      t1.root != r0
+      t1.len == 1
 
   test "deterministic root: same inserts in two fresh trees → equal roots":
     var
@@ -108,8 +108,9 @@ suite "DynamicMerkleTree insert / path / verify":
       let item = FItem(v: frFomInt(i + 1))
       a = a.insert(item).tree
       b = b.insert(item).tree
-    check a.root == b.root
-    check a == b
+    check:
+      a.root == b.root
+      a == b
 
   test "single-item path: every sibling is (Right, emptySubtreeRoot[h])":
     let
@@ -119,29 +120,30 @@ suite "DynamicMerkleTree insert / path / verify":
       p = t1.path(0).get
       er = Poseidon2Hasher.getEmptyRoots()
     for h in 0 ..< TreeDepth:
-      check p[h].side == Right
-      check p[h].sibling == er[h]
+      check:
+        p[h].side == Right
+        p[h].sibling == er[h]
 
   test "two-item path: adjacent leaves carry each other's digest at level 0":
     let
       t0 = DynamicMerkleTree[FItem, Poseidon2Hasher].init()
       item0 = FItem(v: frFomInt(10))
       item1 = FItem(v: frFomInt(20))
-    let
       (t1, _) = t0.insert(item0)
       (t2, _) = t1.insert(item1)
       p0 = t2.path(0).get
       p1 = t2.path(1).get
     # idx 0 is a left child at the leaf level → its sibling sits on the Right
     # and carries the digest of item1.
-    check p0[0].side == Right
-    check p0[0].sibling == asField(item1)
-    # idx 1 is a right child → sibling on the Left carrying asField(item0).
-    check p1[0].side == Left
-    check p1[0].sibling == asField(item0)
-    # Both verify against the same root.
-    check Poseidon2Hasher.verifyPath(p0, asField(item0), t2.root)
-    check Poseidon2Hasher.verifyPath(p1, asField(item1), t2.root)
+    check:
+      p0[0].side == Right
+      p0[0].sibling == asField(item1)
+      # idx 1 is a right child → sibling on the Left carrying asField(item0).
+      p1[0].side == Left
+      p1[0].sibling == asField(item0)
+      # Both verify against the same root.
+      Poseidon2Hasher.verifyPath(p0, asField(item0), t2.root)
+      Poseidon2Hasher.verifyPath(p1, asField(item1), t2.root)
 
   test "persistence: parent tree unchanged by child remove":
     let
@@ -149,11 +151,12 @@ suite "DynamicMerkleTree insert / path / verify":
       (t1, _) = t.insert(FItem(v: frFomInt(5)))
       r1 = t1.root
       t2 = t1.remove(0)
-    check t1.root == r1
-    check t1.len == 1
-    check t2.len == 0
-    check t1.path(0).isSome
-    check t2.path(0).isNone
+    check:
+      t1.root == r1
+      t1.len == 1
+      t2.len == 0
+      t1.path(0).isSome
+      t2.path(0).isNone
 
 suite "DynamicMerkleTree remove + hole reuse (smallest-first)":
   test "remove nulls the leaf and drops len":
@@ -161,11 +164,12 @@ suite "DynamicMerkleTree remove + hole reuse (smallest-first)":
       t = DynamicMerkleTree[FItem, Poseidon2Hasher].init()
       (t1, _) = t.insert(FItem(v: frFomInt(1)))
       t2 = t1.remove(0)
-    check t2.len == 0
-    check t2.path(0) == Opt.none(MerklePath)
-    # Root differs from initial empty-tree root only by the hole bookkeeping
-    # — the leaf array is the same all-empty state, so the root must match.
-    check t2.root == DynamicMerkleTree[FItem, Poseidon2Hasher].init().root
+    check:
+      t2.len == 0
+      t2.path(0) == Opt.none(MerklePath)
+      # Root differs from initial empty-tree root only by the hole bookkeeping
+      # — the leaf array is the same all-empty state, so the root must match.
+      t2.root == DynamicMerkleTree[FItem, Poseidon2Hasher].init().root
 
   test "smallest hole first: next insert lands at the smallest free index":
     var t = DynamicMerkleTree[FItem, Poseidon2Hasher].init()
@@ -202,8 +206,9 @@ suite "DynamicMerkleTree remove + hole reuse (smallest-first)":
       originalRoot = t1.root
       t2 = t1.remove(0)
       (t3, idx) = t2.insert(item)
-    check idx == 0
-    check t3.root == originalRoot
+    check:
+      idx == 0
+      t3.root == originalRoot
 
   test "remove out of bounds panics":
     let t = DynamicMerkleTree[FItem, Poseidon2Hasher].init()

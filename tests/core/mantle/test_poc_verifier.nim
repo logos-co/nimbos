@@ -13,10 +13,7 @@ import
   unittest2,
   stew/io2,
   ../../../logos_chain/core/crypto/types,
-  ../../../logos_chain/core/mantle/proofs,
-  ../../../logos_chain/core/mantle/poc_verifier,
-  ../../../logos_chain/zk/poc,
-  ../../../logos_chain/zk/poseidon2/hasher,
+  ../../../logos_chain/core/mantle/[proofs, poc_verifier],
   ../../zk/snarkjs_helpers
 
 const
@@ -47,19 +44,21 @@ suite "core/mantle/poc_verifier":
 
   setup:
     poc.resetVkForTesting()
-    let vkText = readAllChars(fixtureVk).valueOr:
-      check false
-      return
-    let vk = parseVk(vkText).valueOr:
-      check false
-      return
+    let
+      vkText = readAllChars(fixtureVk).valueOr:
+        check false
+        return
+      vk = parseVk(vkText).valueOr:
+        check false
+        return
     check poc.initVk(vk).isOk
-    let proofText = readAllChars(fixtureProof).valueOr:
-      check false
-      return
-    let publicText = readAllChars(fixturePublic).valueOr:
-      check false
-      return
+    let
+      proofText = readAllChars(fixtureProof).valueOr:
+        check false
+        return
+      publicText = readAllChars(fixturePublic).valueOr:
+        check false
+        return
     claimProof = proofJsonToBytes(proofText).valueOr:
       check false
       return
@@ -70,13 +69,13 @@ suite "core/mantle/poc_verifier":
 
   test "real fixture accepted end-to-end":
     let r = verifyProofOfClaim(claimProof, public)
-    check r.isOk and r.get
+    check r.get
 
   test "rejects wrong mantle tx hash":
     var badPublic = public
     badPublic.mantleTxHash = public.voucherRoot
     let r = verifyProofOfClaim(claimProof, badPublic)
-    check r.isOk and not r.get
+    check not r.get
 
   test "rejects out-of-modulus public hashes":
     # Each public ZkHash goes through frFromBytesLE; all must reject cleanly.
@@ -85,16 +84,16 @@ suite "core/mantle/poc_verifier":
       var badPublic = public
       badPublic.voucherNullifier = bad
       let r = verifyProofOfClaim(claimProof, badPublic)
-      check r.isOk and not r.get
+      check not r.get
     block:
       var badPublic = public
       badPublic.mantleTxHash = bad
       let r = verifyProofOfClaim(claimProof, badPublic)
-      check r.isOk and not r.get
+      check not r.get
     block:
       var badPublic = public
       badPublic.voucherRoot = bad
       let r = verifyProofOfClaim(claimProof, badPublic)
-      check r.isOk and not r.get
+      check not r.get
 
 {.pop.}

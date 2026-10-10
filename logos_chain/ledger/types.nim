@@ -15,7 +15,6 @@
 import
   results,
   ../core/types,
-  ../core/crypto/types,
   ../consensus/clock,
   ./pol_verifier
 

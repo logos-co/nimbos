@@ -11,8 +11,7 @@
 {.push raises: [], gcsafe.}
 
 import
-  ./[primitives, opcodes, operations],
-  ../crypto/types,
+  ./operations,
   libp2p/crypto/ed25519/ed25519
 
 type
@@ -70,10 +69,10 @@ func `==`*(a, b: ChannelMultiSigProof): bool {.raises: [].} =
       return false
   true
 
-func `==`*(a, b: ZkAndEd25519SigsProof): bool {.raises: [].} =
+func `==`(a, b: ZkAndEd25519SigsProof): bool {.raises: [].} =
   a.zkSig == b.zkSig and a.ed25519Sig == b.ed25519Sig
 
-func `==`*(a, b: OpProof): bool {.raises: [].} =
+func `==`(a, b: OpProof): bool {.raises: [].} =
   if a.kind != b.kind:
     return false
   case a.kind
@@ -245,7 +244,7 @@ func encodeOpProof*(proof: OpProof): Result[seq[byte], EncodingError] =
   of opfChannelDeposit:
     ok(@(encodeZkSigProof(proof.channelDepositProof)))
 
-func byteLen*(proof: OpProof): int =
+func byteLen(proof: OpProof): int =
   ## Exact wire byte length of an OpProof without allocating buffers.
   case proof.kind
   of opfChannelInscribe:
@@ -281,16 +280,18 @@ func readEd25519Signature(data: openArray[byte], pos: var int): Result[Ed25519Si
   ok(sig)
 
 func readIndexedEd25519Signature(data: openArray[byte], pos: var int): Result[(Ed25519Signature, ChannelKeyIndex), DecodingError] =
-  let signature = ?readEd25519Signature(data, pos)
-  let index = ChannelKeyIndex(?readLe[uint16](data, pos))
+  let
+    signature = ?readEd25519Signature(data, pos)
+    index = ChannelKeyIndex(?readLe[uint16](data, pos))
   ok((signature, index))
 
 func readChannelMultiSigProof(data: openArray[byte], pos: var int): Result[ChannelMultiSigProof, DecodingError] =
   let count = SignatureCount(?readLe[uint16](data, pos))
-  var signatures = newSeqOfCap[Ed25519Signature](count)
-  var indexes = newSeqOfCap[ChannelKeyIndex](count)
-  var prevIndex = ChannelKeyIndex(0)
-  var havePrev = false
+  var
+    signatures = newSeqOfCap[Ed25519Signature](count)
+    indexes = newSeqOfCap[ChannelKeyIndex](count)
+    prevIndex = ChannelKeyIndex(0)
+    havePrev = false
   for _ in 0 ..< int(count):
     let (signature, index) = ?readIndexedEd25519Signature(data, pos)
     if havePrev and uint16(index) <= uint16(prevIndex):
@@ -316,8 +317,9 @@ func readOpProof*(data: openArray[byte], pos: var int, kind: OpProofKind): Resul
     let proof = ?readFixed[128](data, pos)
     ok(OpProof(kind: opfSdpActive, sdpActiveProof: proof))
   of opfSdpDeclare:
-    let zkSig = ?readFixed[128](data, pos)
-    let ed25519Sig = ?readEd25519Signature(data, pos)
+    let
+      zkSig = ?readFixed[128](data, pos)
+      ed25519Sig = ?readEd25519Signature(data, pos)
     ok(OpProof(
       kind: opfSdpDeclare,
       declarationProof: ZkAndEd25519SigsProof(zkSig: zkSig, ed25519Sig: ed25519Sig),
@@ -365,8 +367,9 @@ func encodeOpsProofs*(ops: openArray[Op], proofs: openArray[OpProof]): Result[se
 func decodeOpsProofs*(ops: openArray[Op], data: openArray[byte]): Result[seq[OpProof], DecodingError] =
   if ops.len > 0 and data.len == 0:
     return err(DecodingError.ProofCountMismatch)
-  var pos = 0
-  var res = newSeqOfCap[OpProof](ops.len)
+  var
+    pos = 0
+    res = newSeqOfCap[OpProof](ops.len)
   for i in 0 ..< ops.len:
     let kind = expectedOpProofKindForOpcode(ops[i].opcode).valueOr:
       return err(DecodingError.UnsupportedOpcode)

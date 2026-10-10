@@ -23,7 +23,7 @@ const
   sourcePath = currentSourcePath.rsplit({DirSep, AltSep}, 1)[0]
   gitRevision = strip(generateGitRevision(sourcePath))[0..5]
 
-  versionAsStr* =
+  versionAsStr =
     $versionMajor & "." & $versionMinor & "." & $versionBuild
 
   fullVersionStr* = "v" & versionAsStr & "-" & gitRevision

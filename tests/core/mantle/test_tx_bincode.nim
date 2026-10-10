@@ -11,7 +11,7 @@
 import
   ../../testutil,
   bincode,
-  ../../../logos_chain/core/mantle/[operations, proofs, tx_types]
+  ../../../logos_chain/core/mantle/tx_types
 
 const allOpcodes = [
   OpTransfer,
@@ -36,14 +36,17 @@ proc checkOpProofEqual(a, b: OpProof) =
   of opfChannelDeposit:
     check a.channelDepositProof == b.channelDepositProof
   of opfChannelWithdraw:
-    check a.channelWithdrawOpProof.signatures == b.channelWithdrawOpProof.signatures
-    check a.channelWithdrawOpProof.indexes == b.channelWithdrawOpProof.indexes
+    check:
+      a.channelWithdrawOpProof.signatures == b.channelWithdrawOpProof.signatures
+      a.channelWithdrawOpProof.indexes == b.channelWithdrawOpProof.indexes
   of opfChannelTransfer:
-    check a.channelTransferOpProof.signatures == b.channelTransferOpProof.signatures
-    check a.channelTransferOpProof.indexes == b.channelTransferOpProof.indexes
+    check:
+      a.channelTransferOpProof.signatures == b.channelTransferOpProof.signatures
+      a.channelTransferOpProof.indexes == b.channelTransferOpProof.indexes
   of opfSdpDeclare:
-    check a.declarationProof.zkSig == b.declarationProof.zkSig
-    check a.declarationProof.ed25519Sig == b.declarationProof.ed25519Sig
+    check:
+      a.declarationProof.zkSig == b.declarationProof.zkSig
+      a.declarationProof.ed25519Sig == b.declarationProof.ed25519Sig
   of opfSdpWithdraw:
     check a.sdpWithdrawProof == b.sdpWithdrawProof
   of opfSdpActive:
@@ -51,20 +54,23 @@ proc checkOpProofEqual(a, b: OpProof) =
   of opfLeaderClaim:
     check a.proofOfClaimProof == b.proofOfClaimProof
   of opfChannelConfig:
-    check a.channelConfigOpProof.signatures == b.channelConfigOpProof.signatures
-    check a.channelConfigOpProof.indexes == b.channelConfigOpProof.indexes
+    check:
+      a.channelConfigOpProof.signatures == b.channelConfigOpProof.signatures
+      a.channelConfigOpProof.indexes == b.channelConfigOpProof.indexes
 
 proc checkOpEqual(a, b: Op) =
-  check a.opcode == b.opcode
-  check a.payload.kind == b.payload.kind
+  check:
+    a.opcode == b.opcode
+    a.payload.kind == b.payload.kind
   case a.payload.kind
   of Transfer:
     check a.payload.transfer == b.payload.transfer
   of ChannelInscribe:
-    check a.payload.channelInscribe.channelId == b.payload.channelInscribe.channelId
-    check a.payload.channelInscribe.inscription == b.payload.channelInscribe.inscription
-    check a.payload.channelInscribe.parent == b.payload.channelInscribe.parent
-    check a.payload.channelInscribe.signer == b.payload.channelInscribe.signer
+    check:
+      a.payload.channelInscribe.channelId == b.payload.channelInscribe.channelId
+      a.payload.channelInscribe.inscription == b.payload.channelInscribe.inscription
+      a.payload.channelInscribe.parent == b.payload.channelInscribe.parent
+      a.payload.channelInscribe.signer == b.payload.channelInscribe.signer
   of ChannelDeposit:
     check a.payload.channelDeposit == b.payload.channelDeposit
   of ChannelWithdraw:
@@ -72,11 +78,12 @@ proc checkOpEqual(a, b: Op) =
   of ChannelTransfer:
     check a.payload.channelTransfer == b.payload.channelTransfer
   of SdpDeclare:
-    check a.payload.sdpDeclare.serviceType == b.payload.sdpDeclare.serviceType
-    check a.payload.sdpDeclare.locators == b.payload.sdpDeclare.locators
-    check a.payload.sdpDeclare.providerId == b.payload.sdpDeclare.providerId
-    check a.payload.sdpDeclare.zkId == b.payload.sdpDeclare.zkId
-    check a.payload.sdpDeclare.lockedNoteId == b.payload.sdpDeclare.lockedNoteId
+    check:
+      a.payload.sdpDeclare.serviceType == b.payload.sdpDeclare.serviceType
+      a.payload.sdpDeclare.locators == b.payload.sdpDeclare.locators
+      a.payload.sdpDeclare.providerId == b.payload.sdpDeclare.providerId
+      a.payload.sdpDeclare.zkId == b.payload.sdpDeclare.zkId
+      a.payload.sdpDeclare.lockedNoteId == b.payload.sdpDeclare.lockedNoteId
   of SdpWithdraw:
     check a.payload.sdpWithdraw == b.payload.sdpWithdraw
   of SdpActive:
@@ -87,15 +94,17 @@ proc checkOpEqual(a, b: Op) =
     check a.payload.channelConfig == b.payload.channelConfig
 
 proc checkSignedMantleTxEqual(a, b: SignedMantleTx) =
-  check a.tx.ops.len == b.tx.ops.len
-  check a.opProofs.len == b.opProofs.len
+  check:
+    a.tx.ops.len == b.tx.ops.len
+    a.opProofs.len == b.opProofs.len
   for i in 0 ..< a.tx.ops.len:
     checkOpEqual(a.tx.ops[i], b.tx.ops[i])
     checkOpProofEqual(a.opProofs[i], b.opProofs[i])
 
 func signedTxWithAllOps(): SignedMantleTx =
-  var ops: seq[Op]
-  var proofs: seq[OpProof]
+  var
+    ops: seq[Op]
+    proofs: seq[OpProof]
   for opcode in allOpcodes:
     ops.add defaultOpForOpcode(opcode).get
     proofs.add defaultOpProofForOpcode(opcode).get

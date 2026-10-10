@@ -15,12 +15,10 @@
 
 import
   std/[algorithm, sequtils, tables],
-  results,
   stew/endians2,
   ../types,
   ../poq_verifier,
   ./[blend_token, rewards],
-  ../../core/crypto/hashing,
   ../../core/mantle/primitives,
   ../../core/mantle/utxo,
   ../../utils/hash_trie_map
@@ -132,11 +130,12 @@ proc verifyActivity(
   # the whole proof pipeline.
   if providerId in tracker.submitted:
     return err(DuplicateActiveMessage)
-  let provider = state.providers.get(providerId).valueOr:
-    return err(UnknownProvider)
-  let quotaProofHolds = verifyPoq(
-      proof.proofOfQuota, proof.signingKey, state.poqPublic).valueOr:
-    return err(VerifierNotInitialised)
+  let
+    provider = state.providers.get(providerId).valueOr:
+      return err(UnknownProvider)
+    quotaProofHolds = verifyPoq(
+        proof.proofOfQuota, proof.signingKey, state.poqPublic).valueOr:
+      return err(VerifierNotInitialised)
   if not quotaProofHolds:
     return err(InvalidTxProof)
   let membership = uint64(state.providers.len)
