@@ -317,8 +317,8 @@ proc txExecutionGas*(
       op = tx.tx.ops[i]
       proof = tx.opProofs[i]
       thresh = ? opMultisigThreshold(op, proof)
-    let added = checkedAdd(total, execution_gas(op, thresh)).valueOr:
-      return err(GasOverflow)
+      added = checkedAdd(total, execution_gas(op, thresh)).valueOr:
+        return err(GasOverflow)
     total = added
   ok(total)
 
@@ -327,22 +327,24 @@ func mandatory_fees*(
     execGas: Gas,
     txByteLen: int,
 ): Result[tuple[totalCost: GasCost, executionGas, storageGas: Gas], LedgerError] =
-  let storageGas = Gas(txByteLen)
-  let prices = s.feeMarket.gasPrices
-  let executionCost = execGas.checkedMul(prices.executionBaseFee).valueOr:
-    return err(GasOverflow)
-  let storageCost = storageGas.checkedMul(prices.storageGasPrice).valueOr:
-    return err(GasOverflow)
-  let totalCost = executionCost.checkedAdd(storageCost).valueOr:
-    return err(GasOverflow)
+  let
+    storageGas = Gas(txByteLen)
+    prices = s.feeMarket.gasPrices
+    executionCost = execGas.checkedMul(prices.executionBaseFee).valueOr:
+      return err(GasOverflow)
+    storageCost = storageGas.checkedMul(prices.storageGasPrice).valueOr:
+      return err(GasOverflow)
+    totalCost = executionCost.checkedAdd(storageCost).valueOr:
+      return err(GasOverflow)
   ok((totalCost: totalCost, executionGas: execGas, storageGas: storageGas))
 
 proc mandatory_fees*(
     s: LedgerState,
     tx: ValidSignedMantleTx,
 ): Result[tuple[totalCost: GasCost, executionGas, storageGas: Gas], LedgerError] =
-  let execGas = ? txExecutionGas(tx)
-  let txByteLen = byteLen(tx)
+  let
+    execGas = ? txExecutionGas(tx)
+    txByteLen = byteLen(tx)
   s.mandatory_fees(execGas, txByteLen)
 
 func creditBlockRewards*(

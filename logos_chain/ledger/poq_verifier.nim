@@ -17,7 +17,6 @@ import
   ../core/mantle/blend_activity,
   ../core/crypto/types,
   ../zk/poq,
-  ../zk/poseidon2/hasher,
   ../utils/dynamic_merkle_tree
 
 export poq, results

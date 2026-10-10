@@ -36,8 +36,9 @@ proc mkChan(
 suite "round_robin — infinite timeframe (postingTimeframe=0)":
   test "no timeout, sequencer holds forever":
     let chan = mkChan(100, 2, 80, 0, 0, 5)
-    check round_robin(SlotNumber(100), chan) == (ChannelKeyIndex(2), SlotNumber(80))
-    check round_robin(SlotNumber(999_999), chan) == (ChannelKeyIndex(2), SlotNumber(80))
+    check:
+      round_robin(SlotNumber(100), chan) == (ChannelKeyIndex(2), SlotNumber(80))
+      round_robin(SlotNumber(999_999), chan) == (ChannelKeyIndex(2), SlotNumber(80))
 
   test "not yet timed out, sequencer holds":
     let chan = mkChan(100, 1, 90, 0, 50, 4)
@@ -109,28 +110,31 @@ suite "round_robin — priority selection":
 suite "round_robin — sequencer count edge cases":
   test "single key always returns index 0":
     let chan = mkChan(100, 0, 100, 10, 20, 1)
-    check round_robin(SlotNumber(100), chan).index == ChannelKeyIndex(0)
-    check round_robin(SlotNumber(115), chan).index == ChannelKeyIndex(0)
-    check round_robin(SlotNumber(130), chan).index == ChannelKeyIndex(0)
+    check:
+      round_robin(SlotNumber(100), chan).index == ChannelKeyIndex(0)
+      round_robin(SlotNumber(115), chan).index == ChannelKeyIndex(0)
+      round_robin(SlotNumber(130), chan).index == ChannelKeyIndex(0)
 
   test "two sequencers alternate":
     let chan = mkChan(100, 0, 100, 5, 0, 2)
-    check round_robin(SlotNumber(100), chan).index == ChannelKeyIndex(0)
-    check round_robin(SlotNumber(104), chan).index == ChannelKeyIndex(0)
-    check round_robin(SlotNumber(105), chan).index == ChannelKeyIndex(1)
-    check round_robin(SlotNumber(109), chan).index == ChannelKeyIndex(1)
-    check round_robin(SlotNumber(110), chan).index == ChannelKeyIndex(0)
+    check:
+      round_robin(SlotNumber(100), chan).index == ChannelKeyIndex(0)
+      round_robin(SlotNumber(104), chan).index == ChannelKeyIndex(0)
+      round_robin(SlotNumber(105), chan).index == ChannelKeyIndex(1)
+      round_robin(SlotNumber(109), chan).index == ChannelKeyIndex(1)
+      round_robin(SlotNumber(110), chan).index == ChannelKeyIndex(0)
 
   test "fifty sequencers rotate and wrap":
     let chan = mkChan(0, 0, 0, 5, 0, 50)
-    # After 5 slots -> sequencer 1
-    check round_robin(SlotNumber(5), chan).index == ChannelKeyIndex(1)
-    # After 5*49 = 245 slots -> sequencer 49 (last)
-    check round_robin(SlotNumber(245), chan).index == ChannelKeyIndex(49)
-    # After 5*50 = 250 slots -> wrap back to 0
-    check round_robin(SlotNumber(250), chan).index == ChannelKeyIndex(0)
-    # After 5*73 = 365 slots -> (0+73)%50 = 23
-    check round_robin(SlotNumber(365), chan).index == ChannelKeyIndex(23)
+    check:
+      # After 5 slots -> sequencer 1
+      round_robin(SlotNumber(5), chan).index == ChannelKeyIndex(1)
+      # After 5*49 = 245 slots -> sequencer 49 (last)
+      round_robin(SlotNumber(245), chan).index == ChannelKeyIndex(49)
+      # After 5*50 = 250 slots -> wrap back to 0
+      round_robin(SlotNumber(250), chan).index == ChannelKeyIndex(0)
+      # After 5*73 = 365 slots -> (0+73)%50 = 23
+      round_robin(SlotNumber(365), chan).index == ChannelKeyIndex(23)
 
   test "fifty sequencers cascading timeouts":
     let chan = mkChan(1000, 10, 1000, 5, 3, 50)
@@ -140,8 +144,9 @@ suite "round_robin — sequencer count edge cases":
 suite "round_robin — state transitions":
   test "after timeout, new sequencer gets fresh starting slot":
     let chan = mkChan(110, 1, 110, 15, 10, 3)
-    check round_robin(SlotNumber(125), chan) == (ChannelKeyIndex(2), SlotNumber(120))
-    check round_robin(SlotNumber(135), chan) == (ChannelKeyIndex(0), SlotNumber(130))
+    check:
+      round_robin(SlotNumber(125), chan) == (ChannelKeyIndex(2), SlotNumber(120))
+      round_robin(SlotNumber(135), chan) == (ChannelKeyIndex(0), SlotNumber(130))
 
   test "zero elapsed (block_slot == tip_slot), no change":
     let chan = mkChan(100, 3, 95, 10, 20, 5)

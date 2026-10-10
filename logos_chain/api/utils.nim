@@ -70,7 +70,8 @@ func decodeString*(t: typedesc[Hash32], value: string): Result[Hash32, cstring] 
   decodeHash32FromHex(value)
 
 func decodeString*(t: typedesc[ZkPublicKey], value: string): Result[ZkPublicKey, cstring] =
-  let raw = ? decodeHash32FromHex(value)
-  let fe = frFromBytesLE(raw).valueOr:
-    return err("Invalid ZkPublicKey hex string")
+  let
+    raw = ? decodeHash32FromHex(value)
+    fe = frFromBytesLE(raw).valueOr:
+      return err("Invalid ZkPublicKey hex string")
   ok(fe)

@@ -11,11 +11,9 @@
 
 {.push raises: [], gcsafe.}
 
-import results
-
-import ../core/mantle/[primitives, utxo]
-import ../utils/[dynamic_merkle_tree, hash_trie_map]
-import ../zk/poseidon2/hasher
+import
+  ../core/mantle/[primitives, utxo],
+  ../utils/[dynamic_merkle_tree, hash_trie_map]
 
 type
   UtxoStoreError* {.pure.} = enum

@@ -9,22 +9,17 @@
 
 import
   std/[sequtils, times],
-  results,
   bincode,
-  libp2p/[switch, errors],
+  libp2p/switch,
   stew/byteutils as byteutils,
   ../../testutil,
   ../../ledger/sdp/test_helpers,
-  ../../../logos_chain/chain/[chain, block_processor],
-  ../../../logos_chain/core/[types, local_tree],
-  ../../../logos_chain/ledger/ledger,
+  ../../../logos_chain/chain/block_processor,
   ../../../logos_chain/sync/[framing, types, ibd_server, syncer]
-from ../../../logos_chain/core/mantle/primitives import SlotNumber
-from ../../../logos_chain/core/mantle/tx_types import encodeSignedMantleTx
 from ../../../logos_chain/core/mantle/tx_validation import validateGenesisTxStateless
 from ../../ledger/test_helpers import testLedgerConfig
 
-const testChainSyncProtocol* = "/logos-blockchain-testnet-v0.1.2/chainsync/1.0.0"
+const testChainSyncProtocol = "/logos-blockchain-testnet-v0.1.2/chainsync/1.0.0"
 
 proc initTestChain*(
     genesis: Block,
@@ -102,8 +97,9 @@ proc extendChainAfterGenesis*(
     tree: LocalTree, genesis: Block, extraBlocks: int,
 ): BlockId =
   ## Add ``extraBlocks`` descendants on top of ``genesis``; return the tip id.
-  var parentHdr = genesis.header
-  var parentId = blockId(genesis.header)
+  var
+    parentHdr = genesis.header
+    parentId = blockId(genesis.header)
   for slot in 1 .. extraBlocks:
     let blk = childBlock(parentHdr, parentId, SlotNumber(slot.uint64), [])
     check tree.addBlockToTree(blk)
@@ -187,12 +183,13 @@ proc downloadBlocksResponsesForRequest*(
     return @[DownloadBlocksResponse(kind: dbrNoMoreBlocks)]
   var responses = newSeqOfCap[DownloadBlocksResponse](sendIds.len + 1)
   for i in countdown(sendIds.high, 0):
-    let blk = tree.getBlock(sendIds[i]).valueOr:
-      fail "block not in tree"
-    let innerWire = try:
-      encode(blk, cryptarchiaSyncBincodeConfig)
-    except BincodeError:
-      fail getCurrentExceptionMsg()
+    let
+      blk = tree.getBlock(sendIds[i]).valueOr:
+        fail "block not in tree"
+      innerWire = try:
+        encode(blk, cryptarchiaSyncBincodeConfig)
+      except BincodeError:
+        fail getCurrentExceptionMsg()
     check innerWire.len > 0 and innerWire.len <= MaxBlockSize
     responses.add DownloadBlocksResponse(kind: dbrBlock,
         downloadedBlock: innerWire)

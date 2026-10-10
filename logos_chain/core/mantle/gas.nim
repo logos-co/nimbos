@@ -10,9 +10,7 @@
 
 {.push raises: [], gcsafe.}
 
-import
-  results,
-  ./operations
+import ./operations
 
 type
   Gas* = uint64        ## execution: 1 gas = 1,000 CPU cycles; storage: 1 gas = 1 byte
@@ -44,9 +42,6 @@ const
 
 func checkedAdd*(a, b: Gas): Opt[Gas] =
   if a > uint64.high - b: Opt.none(Gas) else: Opt.some(a + b)
-
-func checkedSub*(a, b: Gas): Opt[Gas] =
-  if a < b: Opt.none(Gas) else: Opt.some(a - b)
 
 func checkedMul*(a: Gas, b: GasPrice): Opt[GasCost] =
   if a != 0 and b > uint64.high div a: Opt.none(GasCost) else: Opt.some(a * b)

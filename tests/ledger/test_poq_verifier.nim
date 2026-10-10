@@ -13,10 +13,6 @@ import
   unittest2,
   stew/[endians2, io2],
   libp2p/crypto/ed25519/ed25519,
-  ../../logos_chain/ledger/sdp/blend_rewards,
-  ../../logos_chain/zk/groth16/utils,
-  ../../logos_chain/core/mantle/blend_activity,
-  ../../logos_chain/core/crypto/types,
   ./sdp/test_helpers,
   ../zk/snarkjs_helpers
 
@@ -31,7 +27,6 @@ type PoqFixture = object
   proofOfQuota: ProofOfQuota
   signingKey: Ed25519PublicKey
   public: PoqPublic
-  signals: seq[FieldElement]
 
 func frToUint64(value: FieldElement): uint64 =
   # Quota signals fit 20 bits. The low 8 little-endian bytes carry them.
@@ -71,8 +66,7 @@ proc loadFixture(tag: string): PoqFixture =
         polEpochNonce: signals[9],
         lottery0: signals[10],
         lottery1: signals[11],
-        powBlendDifficulty: signals[8])),
-    signals: signals)
+        powBlendDifficulty: signals[8])))
 
 proc installFixtureVk(): bool =
   zk_poq.resetVkForTesting()
@@ -91,7 +85,7 @@ suite "ledger/poq_verifier — verifyProofOfQuota":
   test "accepts a wire fixture with reconstructed context":
     let r = verifyProofOfQuota(
       fixture.proofOfQuota, fixture.signingKey, fixture.public)
-    check r.isOk and r.get
+    check r.get
 
   test "VkNotLoaded without startup init":
     zk_poq.resetVkForTesting()
@@ -105,7 +99,7 @@ suite "ledger/poq_verifier — verifyProofOfQuota":
     var wrongKey: Ed25519PublicKey
     check wrongKey.init(keyBytes)
     let r = verifyProofOfQuota(fixture.proofOfQuota, wrongKey, fixture.public)
-    check r.isOk and not r.get
+    check not r.get
 
   test "rejects every mutated context field":
     let other = frFromBytesLE([byte 0xEE]).get
@@ -122,13 +116,13 @@ suite "ledger/poq_verifier — verifyProofOfQuota":
       of 7: bad.chain.lottery1 = other
       else: bad.chain.powBlendDifficulty = other
       let r = verifyProofOfQuota(fixture.proofOfQuota, fixture.signingKey, bad)
-      check r.isOk and not r.get
+      check not r.get
 
   test "rejects a mutated key nullifier":
     var bad = fixture.proofOfQuota
     bad.keyNullifier = frFromBytesLE([byte 0xEE]).get
     let r = verifyProofOfQuota(bad, fixture.signingKey, fixture.public)
-    check r.isOk and not r.get
+    check not r.get
 
 suite "ledger/poq_verifier — coreZkIdRoot":
   test "empty set is an error":
@@ -150,15 +144,16 @@ suite "ledger/poq_verifier — coreZkIdRoot":
   test "reproduces the root the committed member-set proof was made against":
     # The core_set proof was made against this two-member root. The
     # meta file lists the members unsorted.
-    let metaText = readAllChars(fixtureDir / "core_set_meta.json").expect(
-      "meta readable")
-    let meta =
-      try:
-        parseJson(metaText)
-      except CatchableError:
-        checkpoint "meta must parse"
-        fail()
-        return
+    let
+      metaText = readAllChars(fixtureDir / "core_set_meta.json").expect(
+        "meta readable")
+      meta =
+        try:
+          parseJson(metaText)
+        except CatchableError:
+          checkpoint "meta must parse"
+          fail()
+          return
     var zkIds: seq[ZkPublicKey]
     for entry in meta["zk_ids"]:
       zkIds.add(frFromDecimal(entry.getStr).expect("zk id parses"))
@@ -185,13 +180,13 @@ suite "ledger/poq_verifier — end-to-end activity verification":
       fixture = loadFixture("core_set")
       metaText = readAllChars(fixtureDir / "core_set_meta.json").expect(
         "meta readable")
-    let meta =
-      try:
-        parseJson(metaText)
-      except CatchableError:
-        checkpoint "meta must parse"
-        fail()
-        return
+      meta =
+        try:
+          parseJson(metaText)
+        except CatchableError:
+          checkpoint "meta must parse"
+          fail()
+          return
     var zkIds: seq[ZkPublicKey]
     for entry in meta["zk_ids"]:
       zkIds.add(frFromDecimal(entry.getStr).expect("zk id parses"))
@@ -236,8 +231,9 @@ suite "ledger/poq_verifier — end-to-end activity verification":
       doAssert false, "no epoch randomness passes the activity lottery"
 
   test "the frozen target reproduces the fixture's public inputs":
-    let r = rotatedWith(fixture.public.chain).rewards
-    let target = r.target.get.state
+    let
+      r = rotatedWith(fixture.public.chain).rewards
+      target = r.target.get.state
     check:
       target.poqPublic.coreRoot == fixture.public.coreRoot
       target.poqPublic.coreQuota == fixture.public.coreQuota

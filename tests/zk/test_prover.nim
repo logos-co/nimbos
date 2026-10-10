@@ -68,12 +68,14 @@ suite "zk/prover — prove and verify":
     let
       start = epochTime()
       o = proveOk(ProveInput(circuit: Circuit.Signature, zksignInput: zksignFixtureInput()))
-    check epochTime() - start < 10.0
-    check o.publicSignalCount == ZkSignPublicSignals
-    check o.signals == fixtureSignals(Circuit.Signature)
+    check:
+      epochTime() - start < 10.0
+      o.publicSignalCount == ZkSignPublicSignals
+      o.signals == fixtureSignals(Circuit.Signature)
     let input = zksignVerifierInput(o.signals).expect("33 signals")
-    check accepts(zksign.verify(o.proof, input))
-    check rejects(zksign.verify(tamper(o.proof), input))
+    check:
+      accepts(zksign.verify(o.proof, input))
+      rejects(zksign.verify(tamper(o.proof), input))
     var mutated = input
     mutated.msg = fr("7")
     check rejects(zksign.verify(o.proof, mutated))
@@ -88,31 +90,37 @@ suite "zk/prover — prove and verify":
 
   test "pol":
     let o = proveOk(ProveInput(circuit: Circuit.Pol, polInput: polFixtureInput()))
-    check o.publicSignalCount == PolPublicSignals
-    check o.signals == fixtureSignals(Circuit.Pol)
+    check:
+      o.publicSignalCount == PolPublicSignals
+      o.signals == fixtureSignals(Circuit.Pol)
     let input = polVerifierInput(o.signals).expect("9 signals")
-    check accepts(pol.verify(o.proof, input))
-    check rejects(pol.verify(tamper(o.proof), input))
+    check:
+      accepts(pol.verify(o.proof, input))
+      rejects(pol.verify(tamper(o.proof), input))
     var mutated = input
     mutated.slotNumber = fr("136")
     check rejects(pol.verify(o.proof, mutated))
 
   test "poc":
     let o = proveOk(ProveInput(circuit: Circuit.Poc, pocInput: pocFixtureInput()))
-    check o.publicSignalCount == PocPublicSignals
-    check o.signals == fixtureSignals(Circuit.Poc)
+    check:
+      o.publicSignalCount == PocPublicSignals
+      o.signals == fixtureSignals(Circuit.Poc)
     let input = pocVerifierInput(o.signals).expect("3 signals")
-    check accepts(poc.verify(o.proof, input))
-    check rejects(poc.verify(tamper(o.proof), input))
+    check:
+      accepts(poc.verify(o.proof, input))
+      rejects(poc.verify(tamper(o.proof), input))
 
   test "poq (core branch)":
     let o = proveOk(ProveInput(
       circuit: Circuit.Poq, poqInput: poqCoreFixtureInput(PoqCoreFixtureIndex)))
-    check o.publicSignalCount == PoqPublicSignals
-    check o.signals == fixtureSignals(Circuit.Poq)
+    check:
+      o.publicSignalCount == PoqPublicSignals
+      o.signals == fixtureSignals(Circuit.Poq)
     let input = poqVerifierInput(o.signals).expect("12 signals")
-    check accepts(poq.verify(o.proof, input))
-    check rejects(poq.verify(tamper(o.proof), input))
+    check:
+      accepts(poq.verify(o.proof, input))
+      rejects(poq.verify(tamper(o.proof), input))
 
   test "two proofs of one input differ and both verify":
     let
@@ -120,8 +128,9 @@ suite "zk/prover — prove and verify":
       b = proveOk(ProveInput(circuit: Circuit.Signature, zksignInput: zksignFixtureInput()))
     check a.proof != b.proof
     let input = zksignVerifierInput(a.signals).expect("33 signals")
-    check accepts(zksign.verify(a.proof, input))
-    check accepts(zksign.verify(b.proof, input))
+    check:
+      accepts(zksign.verify(a.proof, input))
+      accepts(zksign.verify(b.proof, input))
 
   test "concurrent callers are serialised and both succeed":
     let
@@ -129,7 +138,8 @@ suite "zk/prover — prove and verify":
       f2 = testProver().prove(ProveInput(circuit: Circuit.Poc, pocInput: pocFixtureInput()))
       a = (try: waitFor f1 except CancelledError: raiseAssert "cancelled").expect("first")
       b = (try: waitFor f2 except CancelledError: raiseAssert "cancelled").expect("second")
-    check accepts(zksign.verify(a.proof, zksignVerifierInput(a.signals).expect("33")))
-    check accepts(poc.verify(b.proof, pocVerifierInput(b.signals).expect("3")))
+    check:
+      accepts(zksign.verify(a.proof, zksignVerifierInput(a.signals).expect("33")))
+      accepts(poc.verify(b.proof, pocVerifierInput(b.signals).expect("3")))
 
 {.pop.}

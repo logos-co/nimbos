@@ -13,13 +13,10 @@
 
 import
   std/[sequtils, strutils],
-  unittest2,
-  results,
   stew/[byteutils, endians2],
   libp2p/crypto/ed25519/ed25519,
   libp2p/multiaddress,
   ../../logos_chain/chain/chain,
-  ../../logos_chain/core/crypto/types,
   ../../logos_chain/core/mantle/tx_validation,
   ../core/mantle/test_helpers,
   ../ledger/sdp/test_helpers,
@@ -157,9 +154,10 @@ suite "chain/genesis validation: stage 1 (stateless)":
       raw: array[32, byte]
       tx = SignedMantleTx(testGenesisTx())
     raw[0] = 1
-    check tx.tx.ops[1].payload.channelInscribe.signer.init(raw)
-    check validateGenesisTxStateless(tx).error ==
-      StatelessLedgerError.GenesisInscription
+    check:
+      tx.tx.ops[1].payload.channelInscribe.signer.init(raw)
+      validateGenesisTxStateless(tx).error ==
+        StatelessLedgerError.GenesisInscription
 
   test "rejects an opcode that disagrees with its payload":
     var tx = SignedMantleTx(testGenesisTx())

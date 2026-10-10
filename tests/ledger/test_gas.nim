@@ -11,17 +11,14 @@
 import
   std/[os, strutils],
   unittest2,
-  results,
   bearssl/rand,
   libp2p/crypto/ed25519/ed25519,
-  ../../logos_chain/ledger/[balance, ledger],
-  ../../logos_chain/core/mantle/[tx_types, tx_hashing],
+  ../../logos_chain/ledger/ledger,
   ../../logos_chain/core/types,
   ../zk/zksign_helpers,
   ./sdp/test_helpers,
+  ./test_helpers,
   ../core/mantle/test_helpers
-
-import ./test_helpers
 
 const
   testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
@@ -114,23 +111,25 @@ suite "gas: per-operation execution gas":
         ChannelMultiSigProof(), default(Hash32), blockSlot = 0'u64,
       ).expect("valid config")
       chan = configured.channels.getOrDefault(cid)
-    check chan.transferThreshold == 3
-    check execution_gas(
-      createChannelWithdrawOp(
-        ChannelWithdrawPayload(channel: cid, inputs: Inputs(noteIds: @[]))),
-      chan.transferThreshold) == Gas(168)
-    check execution_gas(
-      createChannelTransferOp(
-        ChannelTransferPayload(channel: cid, inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @[]))),
-      chan.transferThreshold) == Gas(168)
+    check:
+      chan.transferThreshold == 3
+      execution_gas(
+        createChannelWithdrawOp(
+          ChannelWithdrawPayload(channel: cid, inputs: Inputs(noteIds: @[]))),
+        chan.transferThreshold) == Gas(168)
+      execution_gas(
+        createChannelTransferOp(
+          ChannelTransferPayload(channel: cid, inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @[]))),
+        chan.transferThreshold) == Gas(168)
     # A channel that doesn't exist yet bills a zero multiplier — the same
     # just-in-time path a first ChannelConfig takes.
     let absent = MantleState.init().channels.getOrDefault(mkChannelId(0x42))
-    check absent.transferThreshold == 0
-    check execution_gas(
-      createChannelTransferOp(
-        ChannelTransferPayload(channel: cid, inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @[]))),
-      absent.transferThreshold) == Gas(0)
+    check:
+      absent.transferThreshold == 0
+      execution_gas(
+        createChannelTransferOp(
+          ChannelTransferPayload(channel: cid, inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @[]))),
+        absent.transferThreshold) == Gas(0)
 
 suite "gas: fee-market genesis state":
   test "FeeMarket.init opens both markets at price 1, counters at 0":
@@ -269,18 +268,20 @@ suite "gas: tx execution gas and block limit":
       ValidSignedMantleTx(tx), epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
     check r.isOk
     let mf = s.mandatory_fees(ValidSignedMantleTx(tx))
-    check mf.isOk
-    check mf.get.executionGas == Gas(112)
+    check:
+      mf.isOk
+      mf.get.executionGas == Gas(112)
 
   test "per-block execution gas limit constant and accumulator overflow":
     # The TooMuchExecutionGas branch fires when the block's summed execution
     # gas exceeds MAX_EXECUTION_GAS_PER_BLOCK; tripping it end-to-end needs
     # ~57k verified ops, so the arithmetic path is exercised directly here.
-    check MAX_EXECUTION_GAS_PER_BLOCK == Gas(3_193_460)
-    check checkedAdd(MAX_EXECUTION_GAS_PER_BLOCK, 1'u64).isSome
-    check checkedAdd(uint64.high, 1'u64).isNone
-    check checkedMul(1000'u64, 1000'u64).isSome
-    check checkedMul(uint64.high, 2'u64).isNone
+    check:
+      MAX_EXECUTION_GAS_PER_BLOCK == Gas(3_193_460)
+      checkedAdd(MAX_EXECUTION_GAS_PER_BLOCK, 1'u64).isSome
+      checkedAdd(uint64.high, 1'u64).isNone
+      checkedMul(1000'u64, 1000'u64).isSome
+      checkedMul(uint64.high, 2'u64).isNone
 
 suite "gas: fee enforcement via committed transfer fixture":
   setup:
@@ -361,15 +362,17 @@ suite "gas: storage accumulation and epoch rotation":
       s.feeMarket.storageGasConsumedInEpoch == Gas(0)
 
   test "mandatory_fees for ValidSignedMantleTx combines execution gas and storage gas":
-    let rng = HmacDrbgContext.new()
-    let tx = mkInscribeTx(rng, mkChannelId(1))
+    let
+      rng = HmacDrbgContext.new()
+      tx = mkInscribeTx(rng, mkChannelId(1))
     var s = mkState(@[])
     s.feeMarket.executionBaseFee = 2
     s.feeMarket.storageGasPrice = 3
-    let mf = s.mandatory_fees(ValidSignedMantleTx(tx)).expect(
-      "mandatory_fees should return fee breakdown (totalCost, executionGas, storageGas) for signed mantle tx"
-    )
-    let expectedCost = (mf.executionGas * 2) + (mf.storageGas * 3)
+    let
+      mf = s.mandatory_fees(ValidSignedMantleTx(tx)).expect(
+        "mandatory_fees should return fee breakdown (totalCost, executionGas, storageGas) for signed mantle tx"
+      )
+      expectedCost = (mf.executionGas * 2) + (mf.storageGas * 3)
     check mf.totalCost == expectedCost
 
   test "advanceEpochAndMarket rotates storage market and advances epoch without proof":

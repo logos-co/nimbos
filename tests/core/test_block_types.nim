@@ -10,7 +10,6 @@
 
 import
   unittest2,
-  ../../logos_chain/core/mantle/[tx_types, tx_hashing],
   ../../logos_chain/core/types
 
 suite "core/types":
@@ -36,8 +35,9 @@ suite "core/types":
         ),
       ).get
       b = initBlock(h, uncleHeaders = [], txs = [])
-    check b.txs.len == 0
-    check b.header.slot == 0'u64
+    check:
+      b.txs.len == 0
+      b.header.slot == 0'u64
 
   test "blockId returns 32-byte hash":
     let
@@ -117,8 +117,9 @@ suite "core/types":
       hB = mantleTxHash(txB.tx).get
       hC = mantleTxHash(txC.tx).get
       zero = default(Hash32)
-    check merkle_root([hA, hB, hC]) == hashPair(hashPair(hA, hB), hashPair(hC, zero))
-    check merkle_root([hA, hB, hC]) != merkle_root([hA, hB, hC, hC])
+    check:
+      merkle_root([hA, hB, hC]) == hashPair(hashPair(hA, hB), hashPair(hC, zero))
+      merkle_root([hA, hB, hC]) != merkle_root([hA, hB, hC, hC])
 
   test "blockId is deterministic for same header":
     let
@@ -150,10 +151,11 @@ suite "core/types":
       hA = mantleTxHash(txA.tx).get
       hB = mantleTxHash(txB.tx).get
       hashes = [hA, hB]
-    check merkle_root(hashes) == hashPair(hA, hB)
-    check merkle_root([txA, txB]).get == merkle_root(hashes)
-    check merkle_root(openArray[Hash32]([])) == default(Hash32)
-    check merkle_root([hA]) == hA
+    check:
+      merkle_root(hashes) == hashPair(hA, hB)
+      merkle_root([txA, txB]).get == merkle_root(hashes)
+      merkle_root(openArray[Hash32]([])) == default(Hash32)
+      merkle_root([hA]) == hA
 
     # Malformed tx (e.g. inputs exceeding uint8 limit) returns EncodingError
     let malformedTx = sampleTx(createTransferOp(TransferPayload(

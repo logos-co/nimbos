@@ -127,22 +127,22 @@ proc validatePolAndStatelessTransactions*(
     txsToVerify: openArray[SignedMantleTx],
 ): Result[tuple[validBlk: ValidBlock, headerState: LedgerState], BlockValidationError] =
   ## Tier 3a: Verify PoL against parent state before touching any transactions
-  let parentState = ledger.state(blk.header.parentBlock).valueOr:
-    return err(BlockValidationError(
-      kind: BlockValidationErrorKind.HeaderRejected,
-      ledgerError: LedgerError.ParentNotFound,
-    ))
-
-  let afterHeader = parentState.tryApplyHeader(
-    blk.header.slot,
-    blk.header.proofOfLeadership,
-    ledger.config,
-    ledger.leaderProofVerifier,
-  ).valueOr:
-    return err(BlockValidationError(
-      kind: BlockValidationErrorKind.HeaderRejected,
-      ledgerError: error,
-    ))
+  let
+    parentState = ledger.state(blk.header.parentBlock).valueOr:
+      return err(BlockValidationError(
+        kind: BlockValidationErrorKind.HeaderRejected,
+        ledgerError: LedgerError.ParentNotFound,
+      ))
+    afterHeader = parentState.tryApplyHeader(
+      blk.header.slot,
+      blk.header.proofOfLeadership,
+      ledger.config,
+      ledger.leaderProofVerifier,
+    ).valueOr:
+      return err(BlockValidationError(
+        kind: BlockValidationErrorKind.HeaderRejected,
+        ledgerError: error,
+      ))
 
   # Tier 3b: Stateless transaction validation
   ?validateStatelessTransactions(txsToVerify)

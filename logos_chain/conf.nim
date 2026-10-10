@@ -8,18 +8,15 @@
 {.push raises: [], gcsafe.}
 
 import
-  std/[options, strutils, uri],
+  std/[strutils, uri],
   metrics,
-  results,
   chronicles, chronicles/options as chroniclesOptions,
-  confutils, confutils/defs, confutils/std/net,
+  confutils/defs, confutils/std/net,
   confutils/toml/defs as confTomlDefs,
   toml_serialization/std/net as confTomlNet,
   toml_serialization/std/uri as confTomlUri,
   stew/io2,
   json_serialization, json_serialization/std/net as jsnet,
-  chronos/transports/common,
-  chronos/transports/ipnet,
   libp2p/multiaddress,
   ./deployment/deployment_settings,
   ./binary_common,
@@ -312,8 +309,6 @@ type
     netKey*: Option[string]
     netKeyFile*: Option[string]
 
-  AnyConf = LBNodeConf
-
 func parseCmdArg*(T: type Uri, input: string): T
                  {.raises: [ValueError].} =
   parseUri(input)
@@ -324,7 +319,7 @@ func completeCmdArg*(T: type Uri, input: string): seq[string] =
 func `==`*(a, b: ThreadCount): bool {.borrow.}
 func `$`*(t: ThreadCount): string {.borrow.}
 
-func init*(T: type ThreadCount, count: int): Result[ThreadCount, string] =
+func init(T: type ThreadCount, count: int): Result[ThreadCount, string] =
   ## `0` or `minThreadCount .. maxThreadCount`, checked at config load.
   if count != 0 and (count < minThreadCount or count > maxThreadCount):
     return err("Invalid number of threads: " & $count & " (0 or " &
@@ -351,8 +346,9 @@ func announcedAddress(uri: Uri, defaultPort: Port): Result[MultiAddress, string]
   if uri.hostname.len == 0:
     return err("Missing hostname in advertised URI: " & $uri)
 
-  let proto = if uri.isIpv6: "ip6" else: "ip4"
-  let port = if uri.port.len > 0: uri.port else: $defaultPort
+  let
+    proto = if uri.isIpv6: "ip6" else: "ip4"
+    port = if uri.port.len > 0: uri.port else: $defaultPort
 
   MultiAddress.init("/" & proto & "/" & uri.hostname & "/udp/" & port & "/quic-v1")
 
@@ -395,3 +391,5 @@ proc formatIt*(v: Option[IpAddress]): string =
     $v.get()
   else:
     "*"
+
+{.pop.}

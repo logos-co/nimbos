@@ -28,29 +28,32 @@ func `==`(a, b: CollidingKey): bool =
 suite "HashTrieMap basics":
   test "init creates empty map":
     let m = HashTrieMap[int, string].init()
-    check m.len == 0
-    check m.isEmpty
-    check 1 notin m
-    check m.get(1) == Opt.none(string)
-    check m.getOrDefault(1) == ""
+    check:
+      m.len == 0
+      m.isEmpty
+      1 notin m
+      m.get(1) == Opt.none(string)
+      m.getOrDefault(1) == ""
 
   test "insert stores entry; len grows":
     var m = HashTrieMap[int, string].init()
     m = m.insert(1, "one")
-    check m.len == 1
-    check not m.isEmpty
-    check 1 in m
-    check m.get(1) == Opt.some("one")
-    check m[1] == "one"
-    check m.getOrDefault(1) == "one"
-    check m.getOrDefault(2, "fallback") == "fallback"
+    check:
+      m.len == 1
+      not m.isEmpty
+      1 in m
+      m.get(1) == Opt.some("one")
+      m[1] == "one"
+      m.getOrDefault(1) == "one"
+      m.getOrDefault(2, "fallback") == "fallback"
 
   test "insert with existing key replaces value; len unchanged":
     var m = HashTrieMap[int, string].init()
     m = m.insert(1, "one")
     m = m.insert(1, "uno")
-    check m.len == 1
-    check m.get(1) == Opt.some("uno")
+    check:
+      m.len == 1
+      m.get(1) == Opt.some("uno")
 
   test "insert many entries; all retrievable":
     var m = HashTrieMap[int, int].init()
@@ -65,17 +68,19 @@ suite "HashTrieMap basics":
     m = m.insert(1, "one")
     m = m.insert(2, "two")
     m = m.remove(1)
-    check m.len == 1
-    check 1 notin m
-    check 2 in m
-    check m.get(2) == Opt.some("two")
+    check:
+      m.len == 1
+      1 notin m
+      2 in m
+      m.get(2) == Opt.some("two")
 
   test "remove of absent key is idempotent":
     var m = HashTrieMap[int, string].init()
     m = m.insert(1, "one")
     let m2 = m.remove(99)
-    check m2.len == 1
-    check m2.get(1) == Opt.some("one")
+    check:
+      m2.len == 1
+      m2.get(1) == Opt.some("one")
 
   test "insert then remove all empties the map":
     var m = HashTrieMap[int, int].init()
@@ -83,9 +88,10 @@ suite "HashTrieMap basics":
       m = m.insert(i, i)
     for i in 0 ..< 100:
       m = m.remove(i)
-    check m.len == 0
-    check m.isEmpty
-    check m == HashTrieMap[int, int].init()
+    check:
+      m.len == 0
+      m.isEmpty
+      m == HashTrieMap[int, int].init()
 
   test "subscript raises KeyError on missing":
     let m = HashTrieMap[int, int].init()
@@ -122,8 +128,9 @@ suite "HashTrieMap withValue":
       seenVal = v
     do ():
       missingHit = true
-    check seenVal == 100
-    check not missingHit
+    check:
+      seenVal == 100
+      not missingHit
 
     seenVal = -1
     missingHit = false
@@ -131,30 +138,33 @@ suite "HashTrieMap withValue":
       seenVal = v
     do ():
       missingHit = true
-    check seenVal == -1
-    check missingHit
+    check:
+      seenVal == -1
+      missingHit
 
 suite "HashTrieMap persistence":
   test "old map unaffected after insert":
     let
       m0 = HashTrieMap[int, int].init()
       m1 = m0.insert(1, 100)
-    check m0.len == 0
-    check m1.len == 1
-    check m0.get(1) == Opt.none(int)
-    check m1.get(1) == Opt.some(100)
+    check:
+      m0.len == 0
+      m1.len == 1
+      m0.get(1) == Opt.none(int)
+      m1.get(1) == Opt.some(100)
 
   test "old map unaffected after remove":
     var m1 = HashTrieMap[int, int].init()
     m1 = m1.insert(1, 100)
     m1 = m1.insert(2, 200)
     let m2 = m1.remove(1)
-    check m1.len == 2
-    check m2.len == 1
-    check m1.get(1) == Opt.some(100)
-    check m2.get(1) == Opt.none(int)
-    check m1.get(2) == Opt.some(200)
-    check m2.get(2) == Opt.some(200)
+    check:
+      m1.len == 2
+      m2.len == 1
+      m1.get(1) == Opt.some(100)
+      m2.get(1) == Opt.none(int)
+      m1.get(2) == Opt.some(200)
+      m2.get(2) == Opt.some(200)
 
   test "many versions coexist independently":
     var versions = newSeqOfCap[HashTrieMap[int, int]](201)
@@ -166,8 +176,9 @@ suite "HashTrieMap persistence":
       check versions[i].len == i
       for j in 0 ..< i:
         check versions[i].get(j) == Opt.some(j * 3)
-      check versions[i].get(i) == Opt.none(int)
-      check versions[i].get(i + 9_999) == Opt.none(int)
+      check:
+        versions[i].get(i) == Opt.none(int)
+        versions[i].get(i + 9_999) == Opt.none(int)
 
   test "mutating one version provably leaves the other unchanged":
     var m1 = HashTrieMap[int, int].init()
@@ -178,16 +189,17 @@ suite "HashTrieMap persistence":
     m1 = m1.remove(40) # delete
     m1 = m1.insert(1000, 1234) # extend
     # Snapshot is untouched by every kind of subsequent mutation.
-    check snapshot != m1
-    check snapshot.len == 50
-    check snapshot.get(25) == Opt.some(50)
-    check snapshot.get(40) == Opt.some(80)
-    check snapshot.get(1000) == Opt.none(int)
-    # And m1 reflects every mutation.
-    check m1.len == 50
-    check m1.get(25) == Opt.some(-999)
-    check m1.get(40) == Opt.none(int)
-    check m1.get(1000) == Opt.some(1234)
+    check:
+      snapshot != m1
+      snapshot.len == 50
+      snapshot.get(25) == Opt.some(50)
+      snapshot.get(40) == Opt.some(80)
+      snapshot.get(1000) == Opt.none(int)
+      # And m1 reflects every mutation.
+      m1.len == 50
+      m1.get(25) == Opt.some(-999)
+      m1.get(40) == Opt.none(int)
+      m1.get(1000) == Opt.some(1234)
 
 suite "HashTrieMap collisions":
   test "two keys with same hash and different identity coexist":
@@ -197,9 +209,10 @@ suite "HashTrieMap collisions":
       b = CollidingKey(id: 2, bucket: 7)
     m = m.insert(a, 100)
     m = m.insert(b, 200)
-    check m.len == 2
-    check m.get(a) == Opt.some(100)
-    check m.get(b) == Opt.some(200)
+    check:
+      m.len == 2
+      m.get(a) == Opt.some(100)
+      m.get(b) == Opt.some(200)
 
   test "remove one entry from a 3-way collision":
     var m = HashTrieMap[CollidingKey, int].init()
@@ -211,10 +224,11 @@ suite "HashTrieMap collisions":
     check m.len == 3
 
     m = m.remove(b)
-    check m.len == 2
-    check m.get(a) == Opt.some(1)
-    check m.get(b) == Opt.none(int)
-    check m.get(c) == Opt.some(3)
+    check:
+      m.len == 2
+      m.get(a) == Opt.some(1)
+      m.get(b) == Opt.none(int)
+      m.get(c) == Opt.some(3)
 
   test "collapsing collision down to one entry leaves survivor accessible":
     var m = HashTrieMap[CollidingKey, int].init()
@@ -223,9 +237,10 @@ suite "HashTrieMap collisions":
       b = CollidingKey(id: 2, bucket: 99)
     m = m.insert(a, 1).insert(b, 2)
     m = m.remove(a)
-    check m.len == 1
-    check m.get(a) == Opt.none(int)
-    check m.get(b) == Opt.some(2)
+    check:
+      m.len == 1
+      m.get(a) == Opt.none(int)
+      m.get(b) == Opt.some(2)
 
   test "insert with different hash splits collision into a branch chain":
     var m = HashTrieMap[CollidingKey, int].init()
@@ -233,15 +248,17 @@ suite "HashTrieMap collisions":
     m = m.insert(CollidingKey(id: 2, bucket: 7), 2)
     # Both above share bucket 7. Add an entry in a different bucket.
     m = m.insert(CollidingKey(id: 3, bucket: 13), 3)
-    check m.len == 3
-    check m.get(CollidingKey(id: 1, bucket: 7)) == Opt.some(1)
-    check m.get(CollidingKey(id: 2, bucket: 7)) == Opt.some(2)
-    check m.get(CollidingKey(id: 3, bucket: 13)) == Opt.some(3)
+    check:
+      m.len == 3
+      m.get(CollidingKey(id: 1, bucket: 7)) == Opt.some(1)
+      m.get(CollidingKey(id: 2, bucket: 7)) == Opt.some(2)
+      m.get(CollidingKey(id: 3, bucket: 13)) == Opt.some(3)
 
   test "stress: many entries packed into a small number of hash buckets":
     # Forces deep linear search inside Collision nodes by limiting buckets.
-    const NumEntries = 10_000
-    const NumBuckets = 50
+    const
+      NumEntries = 10_000
+      NumBuckets = 50
     var m = HashTrieMap[CollidingKey, int].init()
     for i in 0 ..< NumEntries:
       m = m.insert(CollidingKey(id: i, bucket: i mod NumBuckets), i)
@@ -268,12 +285,14 @@ suite "HashTrieMap iteration":
       seen: HashSet[int]
       visited = 0
     for k, v in m.pairs:
-      check v == k * 11
-      check k notin seen
+      check:
+        v == k * 11
+        k notin seen
       seen.incl(k)
       inc visited
-    check visited == 200
-    check seen.len == 200
+    check:
+      visited == 200
+      seen.len == 200
 
   test "keys yields all distinct keys":
     var m = HashTrieMap[int, int].init()
@@ -348,8 +367,9 @@ suite "HashTrieMap iteration":
         t.del(k)
     var keys: HashSet[int]
     for k, v in m.pairs:
-      check t.hasKey(k)
-      check t[k] == v
+      check:
+        t.hasKey(k)
+        t[k] == v
       keys.incl(k)
     check keys.len == t.len
 
@@ -446,8 +466,9 @@ suite "HashTrieMap fuzz":
         # Read-check
         check m.contains(k) == t.hasKey(k)
         if t.hasKey(k):
-          check m.get(k) == Opt.some(t[k])
-          check m[k] == t[k]
+          check:
+            m.get(k) == Opt.some(t[k])
+            m[k] == t[k]
         else:
           check m.get(k) == Opt.none(int)
 
@@ -466,11 +487,12 @@ suite "HashTrieMap diverse types":
     m = m.insert("beta", 2)
     m = m.insert("gamma", 3)
     m = m.insert("beta", 20) # overwrite
-    check m.len == 3
-    check m["alpha"] == 1
-    check m["beta"] == 20
-    check m["gamma"] == 3
-    check m.get("delta") == Opt.none(int)
+    check:
+      m.len == 3
+      m["alpha"] == 1
+      m["beta"] == 20
+      m["gamma"] == 3
+      m.get("delta") == Opt.none(int)
 
   test "seq[byte] keys":
     var m = HashTrieMap[seq[byte], int].init()
@@ -481,12 +503,13 @@ suite "HashTrieMap diverse types":
     m = m.insert(k1, 1)
     m = m.insert(k2, 2)
     m = m.insert(k3, 3)
-    check m.len == 3
-    check m[k1] == 1
-    check m[k2] == 2
-    check m[k3] == 3
-    # k1 prefix doesn't accidentally hit k3
-    check m.get(@[0x01'u8, 0x02]) == Opt.none(int)
+    check:
+      m.len == 3
+      m[k1] == 1
+      m[k2] == 2
+      m[k3] == 3
+      # k1 prefix doesn't accidentally hit k3
+      m.get(@[0x01'u8, 0x02]) == Opt.none(int)
 
   test "object values":
     type Point = object
@@ -495,9 +518,10 @@ suite "HashTrieMap diverse types":
     var m = HashTrieMap[int, Point].init()
     m = m.insert(1, Point(x: 10, y: 20))
     m = m.insert(2, Point(x: -1, y: -2))
-    check m.len == 2
-    check m[1] == Point(x: 10, y: 20)
-    check m[2] == Point(x: -1, y: -2)
+    check:
+      m.len == 2
+      m[1] == Point(x: 10, y: 20)
+      m[2] == Point(x: -1, y: -2)
     # Reading a copy out and mutating it must not touch the stored value.
     var localCopy = m[1]
     localCopy.x = 999
@@ -556,22 +580,24 @@ suite "HashTrieMap scale and structure":
 suite "HashTrieMap toHashTrieMap":
   test "builds from a table-literal of pairs":
     let m = toHashTrieMap({"a": 1, "b": 2, "c": 3})
-    check m.len == 3
-    check m["a"] == 1
-    check m["b"] == 2
-    check m["c"] == 3
+    check:
+      m.len == 3
+      m["a"] == 1
+      m["b"] == 2
+      m["c"] == 3
 
   test "duplicate keys: last value wins":
     let m = toHashTrieMap({1: "first", 2: "two", 1: "second", 1: "third"})
-    check m.len == 2
-    check m[1] == "third"
-    check m[2] == "two"
+    check:
+      m.len == 2
+      m[1] == "third"
+      m[2] == "two"
 
   test "empty input yields an empty map":
-    let
-      pairs: array[0, tuple[key: int, val: int]] = []
-      m = toHashTrieMap(pairs)
-    check m.isEmpty
-    check m == HashTrieMap[int, int].init()
+    const pairs: array[0, tuple[key: int, val: int]] = []
+    let m = toHashTrieMap(pairs)
+    check:
+      m.isEmpty
+      m == HashTrieMap[int, int].init()
 
 {.pop.}

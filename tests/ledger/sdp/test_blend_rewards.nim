@@ -11,10 +11,8 @@
 import
   std/sequtils,
   unittest2,
-  results,
   libp2p/crypto/ed25519/ed25519,
-  ./test_helpers,
-  ../../../logos_chain/ledger/sdp/blend_rewards
+  ./test_helpers
 
 proc mkSnapshot(
     n: int
@@ -38,8 +36,9 @@ suite "ledger/sdp/blend_rewards":
     var r = BlendRewards()
     r = r.addIncome(30).expect("ok")
     r = r.addIncome(12).expect("ok")
-    check r.epochIncome == 42
-    check r.addIncome(high(Value)).error == BalanceOutOfRange
+    check:
+      r.epochIncome == 42
+      r.addIncome(high(Value)).error == BalanceOutOfRange
 
   test "no target epoch at genesis: submissions rejected":
     let r = BlendRewards()
@@ -49,8 +48,9 @@ suite "ledger/sdp/blend_rewards":
 
   test "rotation below minimum network size sets no target, drops income":
     let r = rotated(income = 500, n = 1)
-    check r.target.isNone
-    check r.epochIncome == 0
+    check:
+      r.target.isNone
+      r.epochIncome == 0
 
   test "a quota with no uint64 image sets no target, drops income":
     var absurdParams = testBlendLotteryParams
@@ -59,16 +59,17 @@ suite "ledger/sdp/blend_rewards":
     r = r.addIncome(500).expect("income")
     let (next, minted) = r.rotateEpoch(
       0, 1, mkSnapshot(2), frFromBytesLE([byte 99]).get, absurdParams, testPoqChain)
-    check minted.len == 0
-    check next.target.isNone
-    check next.epochIncome == 0
+    check:
+      minted.len == 0
+      next.target.isNone
+      next.epochIncome == 0
 
   test "rotation freezes the target with the accrued income":
     let r = rotated(income = 500, n = 2)
-    check r.target.isSome
-    check r.target.get.state.epoch == 0
-    check r.target.get.state.epochIncome == 500
-    check r.epochIncome == 0
+    check:
+      r.target.get.state.epoch == 0
+      r.target.get.state.epochIncome == 500
+      r.epochIncome == 0
 
   test "single valid submission collects (income div 2) * 2":
     var r = rotated(income = 1001, n = 2)
@@ -79,18 +80,20 @@ suite "ledger/sdp/blend_rewards":
     let (next, minted) = r.rotateEpoch(
       1, 2, mkSnapshot(2), frFromBytesLE([byte 98]).get,
       testBlendLotteryParams, testPoqChain)
-    check minted.len == 1
-    # base = 1001 div (1 + 1) = 500; the sole submitter is premium.
-    check minted[0].note.value == 1000
-    check minted[0].note.zkPublicKey == frFromBytesLE([byte 1]).get
-    check next.target.isSome
+    check:
+      minted.len == 1
+      # base = 1001 div (1 + 1) = 500; the sole submitter is premium.
+      minted[0].note.value == 1000
+      minted[0].note.zkPublicKey == frFromBytesLE([byte 1]).get
+      next.target.isSome
 
   test "no submissions: nothing minted, income forfeited":
     let (next, minted) = rotated(income = 700, n = 2).rotateEpoch(
       1, 2, mkSnapshot(2), frFromBytesLE([byte 98]).get,
       testBlendLotteryParams, testPoqChain)
-    check minted.len == 0
-    check next.target.get.state.epochIncome == 0
+    check:
+      minted.len == 0
+      next.target.get.state.epochIncome == 0
 
   test "multi-epoch jump pays the frozen target but sets no new one":
     var r = rotated(income = 1001, n = 2)
@@ -101,8 +104,9 @@ suite "ledger/sdp/blend_rewards":
     let (next, minted) = r.rotateEpoch(
       1, 3, mkSnapshot(2), frFromBytesLE([byte 98]).get,
       testBlendLotteryParams, testPoqChain)
-    check minted.len == 1
-    check next.target.isNone
+    check:
+      minted.len == 1
+      next.target.isNone
 
   test "duplicate submission is rejected":
     var r = rotated(income = 100, n = 2)
@@ -118,12 +122,13 @@ suite "ledger/sdp/blend_rewards":
     let
       r = rotated(income = 100, n = 2)
       rho = findRho(index = 0, membership = 2)
-    check recordActivity(
-      r, mkActivity(rho, 5, 10), mkProvider(1), acceptAllPoq
-    ).error == InvalidEpoch
-    check recordActivity(
-      r, mkActivity(rho, 0, 10), mkProvider(9), acceptAllPoq
-    ).error == UnknownProvider
+    check:
+      recordActivity(
+        r, mkActivity(rho, 5, 10), mkProvider(1), acceptAllPoq
+      ).error == InvalidEpoch
+      recordActivity(
+        r, mkActivity(rho, 0, 10), mkProvider(9), acceptAllPoq
+      ).error == UnknownProvider
 
   test "selection index and nullifier binding are verified":
     let
@@ -178,8 +183,9 @@ suite "ledger/sdp/blend_rewards":
     for i in 0 ..< 3:
       check minted[i].note.value ==
         (if distances[i] == minDistance: base * 2 else: base)
-    check minted.mapIt(it.outputIndex) == @[0'u64, 1, 2]
-    check minted.mapIt(it.note.zkPublicKey) ==
-      (1 .. 3).toSeq.mapIt(frFromBytesLE([byte it]).get)
+    check:
+      minted.mapIt(it.outputIndex) == @[0'u64, 1, 2]
+      minted.mapIt(it.note.zkPublicKey) ==
+        (1 .. 3).toSeq.mapIt(frFromBytesLE([byte it]).get)
 
 {.pop.}

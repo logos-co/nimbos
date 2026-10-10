@@ -15,8 +15,7 @@ import
   std/[json, os, strutils],
   stew/io2,
   taskpools,
-  ../../logos_chain/core/utils,
-  ../../logos_chain/zk/[circuits, pol_lottery, prover, witness_gen],
+  ../../logos_chain/zk/[pol_lottery, prover, witness_gen],
   ./[helpers, prover_fixture_inputs, snarkjs_helpers, wtns_helpers]
 
 export prover, helpers, prover_fixture_inputs, snarkjs_helpers, wtns_helpers

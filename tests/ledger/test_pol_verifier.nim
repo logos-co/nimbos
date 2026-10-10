@@ -14,10 +14,7 @@ import
   stew/io2,
   libp2p/crypto/ed25519/ed25519,
   ../../logos_chain/core/types,
-  ../../logos_chain/core/crypto/types,
-  ../../logos_chain/core/mantle/primitives,
   ../../logos_chain/ledger/pol_verifier,
-  ../../logos_chain/zk/pol,
   ../zk/snarkjs_helpers
 
 const
@@ -70,34 +67,37 @@ suite "ledger/pol_verifier":
 
   setup:
     pol.resetVkForTesting()
-    let vkText = readAllChars(fixtureVk).valueOr:
-      check false
-      return
-    let vk = parseVk(vkText).valueOr:
-      check false
-      return
+    let
+      vkText = readAllChars(fixtureVk).valueOr:
+        check false
+        return
+      vk = parseVk(vkText).valueOr:
+        check false
+        return
     check pol.initVk(vk).isOk
-    let proofText = readAllChars(fixtureProof).valueOr:
-      check false
-      return
-    let publicText = readAllChars(fixturePublic).valueOr:
-      check false
-      return
-    let proofBytes = proofJsonToBytes(proofText).valueOr:
-      check false
-      return
-    let inputsSeq = publicJsonToInputs(publicText).valueOr:
-      check false
-      return
+    let
+      proofText = readAllChars(fixtureProof).valueOr:
+        check false
+        return
+      publicText = readAllChars(fixturePublic).valueOr:
+        check false
+        return
+      proofBytes = proofJsonToBytes(proofText).valueOr:
+        check false
+        return
+      inputsSeq = publicJsonToInputs(publicText).valueOr:
+        check false
+        return
     polProof = reconstructPol(proofBytes, inputsSeq)
     public = reconstructLeaderPublic(inputsSeq)
 
   test "genesis sentinel accepted (no Groth16 invocation)":
     # All-zero / default ProofOfLeadership matches the genesis sentinel and
     # short-circuits before reaching pol.verify — VK validity irrelevant.
-    let genesis = default(ProofOfLeadership)
-    let anyPublic = default(LeaderPublic)
-    let r = verifyLeaderProof(genesis, anyPublic)
+    let
+      genesis = default(ProofOfLeadership)
+      anyPublic = default(LeaderPublic)
+      r = verifyLeaderProof(genesis, anyPublic)
     check r.isOk and r.get
 
   test "real fixture accepted end-to-end":
@@ -129,8 +129,9 @@ suite "ledger/pol_verifier":
     check r.isOk and not r.get
 
   test "rejects mutated leaderKey":
-    var badPol = polProof
-    var raw: array[32, byte]
+    var
+      badPol = polProof
+      raw: array[32, byte]
     raw[0] = 0x42  # arbitrary non-zero, non-fixture key bytes
     discard badPol.leaderKey.init(raw)
     let r = verifyLeaderProof(badPol, public)

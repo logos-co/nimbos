@@ -9,8 +9,6 @@
 
 {.push raises: [], gcsafe.}
 
-import results
-
 import
   ./[
     balance, channel_notes, types, utxo_store, zksig_verify, leader_state,
@@ -123,8 +121,8 @@ func tryApplyLeaderClaim*(
     s: sink CryptarchiaState,
     op: LeaderClaimPayload,
 ): Result[CryptarchiaState, LedgerError] =
-  let (leader, reward) = ?s.leader.tryRecordClaim(op)
   let
+    (leader, reward) = ?s.leader.tryRecordClaim(op)
     u = Utxo(
       opId: opId(op), outputIndex: 0,
       note: Note(value: reward, zkPublicKey: op.publicKey),
