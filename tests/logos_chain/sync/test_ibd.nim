@@ -44,7 +44,8 @@ proc runLbp2pIbdSyncTest(extraBlocks: int) {.async.} =
       await peers.dialer.start()
       discard await peers.dialer.waitForBootstrapPeers()
       clientSyncer.start(
-        Opt.some(proc(): seq[PeerId] = peers.dialer.connectedBootstrapPeerIds())
+        nil,
+        Opt.some(proc(): seq[PeerId] = peers.dialer.connectedBootstrapPeerIds()),
       )
 
       check waitUntil(peers.dialer.switch.isConnected(peers.listenerPeerId))

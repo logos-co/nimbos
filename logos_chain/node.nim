@@ -232,8 +232,6 @@ proc installMessageValidators(node: LBNode) =
         proposal: Proposal, src: PeerId
     ) -> ValidationResult:
       node.processor.processProposal(proposal, src)
-    node.network.subscribe(blockTopic, TopicParams.init())
-    debug "Subscribed to gossip topic", topic = blockTopic
   else:
     warn "Cryptarchia block gossipsub protocol topic is empty, validator not installed"
 
@@ -244,9 +242,15 @@ proc installMessageValidators(node: LBNode) =
     ) -> ValidationResult:
       node.processor.processTx(tx, src)
     node.network.subscribe(mempoolTopic, TopicParams.init())
-    debug "Subscribed to gossip topic", topic = mempoolTopic
+    debug "Subscribed to mempool gossip topic", topic = mempoolTopic
   else:
     warn "Mempool pubsub topic is empty, validator not installed"
+
+proc subscribeBlockTopic(node: LBNode) =
+  let blockTopic = node.deploymentSettings.cryptarchia.gossipsubProtocol
+  if blockTopic.len > 0:
+    node.network.subscribe(blockTopic, TopicParams.init())
+    debug "Subscribed to block gossip topic", topic = blockTopic
 
 proc stop(node: LBNode) =
   # The IBD task may be awaiting a queued result. Cancel it before the
@@ -274,6 +278,9 @@ proc initializeNetworking*(node: LBNode) {.async: (raises: [CancelledError]).} =
 
   await node.network.start()
   if node.syncer != nil:
+    let onIbdComplete: OnIbdComplete = proc() =
+      node.subscribeBlockTopic()
+
     if node.network.bootstrapPeerIds.len > 0:
       debug "Waiting for bootstrap peer readiness before starting syncer",
         timeout = node.network.bootstrapTimeout
@@ -284,11 +291,13 @@ proc initializeNetworking*(node: LBNode) {.async: (raises: [CancelledError]).} =
         ProcessState.scheduleStop("Bootstrap peer connection timeout")
         return
       node.syncer.start(
-        Opt.some(proc(): seq[PeerId] = node.network.connectedBootstrapPeerIds())
+        onIbdComplete,
+        Opt.some(proc(): seq[PeerId] = node.network.connectedBootstrapPeerIds()),
       )
     else:
-      node.syncer.start()
-
+      node.syncer.start(onIbdComplete)
+  else:
+    node.subscribeBlockTopic()
 type StopFuture = Future[void].Raising([CancelledError])
 
 proc run*(node: LBNode, stopper: StopFuture) {.raises: [CatchableError].} =

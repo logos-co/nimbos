@@ -1233,4 +1233,7 @@ when defined(unittest) or defined(test):
   proc setDirection*(peer: Peer, direction: PeerType) {.inline.} =
     peer.direction = direction
 
+  func isSubscribed*(node: LBP2PNode, topic: string): bool {.inline.} =
+    node.pubsub.topics.hasKey(topic)
+
 {.pop.}
