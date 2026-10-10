@@ -10,7 +10,6 @@
 
 import
   unittest2,
-  ../../../logos_chain/core/crypto/types,
   ../../../logos_chain/core/mantle/[proofs, operations]
 
 suite "core/mantle/proofs":
@@ -18,15 +17,17 @@ suite "core/mantle/proofs":
     let
       proof = ChannelMultiSigProof(signatures: @[], indexes: @[])
       encBytes = encodeChannelMultiSigProof(proof.signatures, proof.indexes).get
-    check encodeOpProof(
-      OpProof(kind: opfChannelWithdraw, channelWithdrawOpProof: proof)).get == encBytes
-    check encodeOpProof(
-      OpProof(kind: opfChannelTransfer, channelTransferOpProof: proof)).get == encBytes
-    check encodeOpProof(
-      OpProof(kind: opfChannelConfig, channelConfigOpProof: proof)).get == encBytes
+    check:
+      encodeOpProof(
+        OpProof(kind: opfChannelWithdraw, channelWithdrawOpProof: proof)).get == encBytes
+      encodeOpProof(
+        OpProof(kind: opfChannelTransfer, channelTransferOpProof: proof)).get == encBytes
+      encodeOpProof(
+        OpProof(kind: opfChannelConfig, channelConfigOpProof: proof)).get == encBytes
     var pos = 0
-    check readOpProof(encBytes, pos, opfChannelTransfer).get.channelTransferOpProof == proof
-    check pos == encBytes.len
+    check:
+      readOpProof(encBytes, pos, opfChannelTransfer).get.channelTransferOpProof == proof
+      pos == encBytes.len
 
   test "decodeOpsProofs roundtrips encodeOpsProofs and verifies wire length":
     let
@@ -48,32 +49,36 @@ suite "core/mantle/proofs":
       wire = encodeOpsProofs(ops, proofs).get
     check wire.len == 128 + 128
     let back = decodeOpsProofs(ops, wire).get
-    check back.len == proofs.len
-    check back[0].kind == proofs[0].kind
-    check back[1].kind == proofs[1].kind
-    check decodeOpsProofs(ops, []).error == DecodingError.ProofCountMismatch
+    check:
+      back.len == proofs.len
+      back[0].kind == proofs[0].kind
+      back[1].kind == proofs[1].kind
+      decodeOpsProofs(ops, []).error == DecodingError.ProofCountMismatch
 
   test "encodeChannelMultiSigProof returns error on invalid signatures/indexes":
     let sig = DefaultEd25519Signature
-    check encodeChannelMultiSigProof(@[sig], @[]).error == EncodingError.MultiSigSignaturesMismatch
-    check encodeChannelMultiSigProof(@[sig, sig], @[1'u16, 1'u16]).error == EncodingError.MultiSigIndicesNonIncreasing
-    check encodeChannelMultiSigProof(@[sig, sig], @[2'u16, 1'u16]).error == EncodingError.MultiSigIndicesNonIncreasing
-    var tooManySigs = newSeq[Ed25519Signature](65536)
+    check:
+      encodeChannelMultiSigProof(@[sig], @[]).error == EncodingError.MultiSigSignaturesMismatch
+      encodeChannelMultiSigProof(@[sig, sig], @[1'u16, 1'u16]).error == EncodingError.MultiSigIndicesNonIncreasing
+      encodeChannelMultiSigProof(@[sig, sig], @[2'u16, 1'u16]).error == EncodingError.MultiSigIndicesNonIncreasing
+    let tooManySigs = newSeq[Ed25519Signature](65536)
     var tooManyIdxs = newSeq[ChannelKeyIndex](65536)
     for i in 0 ..< 65536:
       tooManyIdxs[i] = ChannelKeyIndex(i)
     check encodeChannelMultiSigProof(tooManySigs, tooManyIdxs).error == EncodingError.MultiSigCountExceeded
 
   test "encodeOpsProofs returns error on length mismatch or proof kind mismatch":
-    let transferOp = createTransferOp(TransferPayload(
-      inputs: Inputs(noteIds: @[]),
-      outputs: Outputs(notes: @[]),
-    ))
-    let transferProof = OpProof(kind: opfTransfer, transferProof: DefaultZkSignature)
-    let activeProof = OpProof(kind: opfSdpActive, sdpActiveProof: DefaultZkSignature)
+    let
+      transferOp = createTransferOp(TransferPayload(
+        inputs: Inputs(noteIds: @[]),
+        outputs: Outputs(notes: @[]),
+      ))
+      transferProof = OpProof(kind: opfTransfer, transferProof: DefaultZkSignature)
+      activeProof = OpProof(kind: opfSdpActive, sdpActiveProof: DefaultZkSignature)
 
-    check encodeOpsProofs(@[transferOp], @[]).error == EncodingError.ProofCountMismatch
-    check encodeOpsProofs(@[transferOp], @[activeProof]).error == EncodingError.ProofKindMismatch
-    check encodeOpsProofs(@[transferOp], @[transferProof]).isOk
+    check:
+      encodeOpsProofs(@[transferOp], @[]).error == EncodingError.ProofCountMismatch
+      encodeOpsProofs(@[transferOp], @[activeProof]).error == EncodingError.ProofKindMismatch
+      encodeOpsProofs(@[transferOp], @[transferProof]).isOk
 
 {.pop.}

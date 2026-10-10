@@ -48,7 +48,7 @@ type
   BlockApplyError* = object
     case kind*: BlockApplyErrorKind
     of BlockApplyErrorKind.LedgerRejected:
-      ledgerError*: LedgerError
+      ledgerError: LedgerError
     of BlockApplyErrorKind.StatelessTxRejected:
       statelessError*: StatelessLedgerError
     else:
@@ -194,8 +194,9 @@ proc handleTipChange(chain: var Chain, oldTip, newTip: BlockId) =
   # 3. Prune fork states and canonical states older than the new immutable block (retaining latestImmutableId as anchor).
   chain.readdBranchTxs(oldTip, lcaId)
   chain.removeBranchTxs(newTip, lcaId)
-  let oldLibId = chain.localTree.latestImmutableBlockId()
-  let prunedBlockIds = chain.localTree.tryUpdateLib()
+  let
+    oldLibId = chain.localTree.latestImmutableBlockId()
+    prunedBlockIds = chain.localTree.tryUpdateLib()
   for prunedId in prunedBlockIds:
     chain.ledger.pruneStateAt(prunedId)
   let newLibId = chain.localTree.latestImmutableBlockId()
@@ -279,7 +280,6 @@ proc tryApplyBlock*(
   let
     curSlot = chain.currentWallclockSlot()
     id = ?chain.checkViability(header(blk), curSlot)
-
   # Tiers 0-2: Structure, Topology Viability, Body Root, Header Signature
   let (admittedBlk, isOrphan) = validateBlockHeaderAndTopology(
     blk, chain.localTree, chain.ledger

@@ -13,7 +13,6 @@
 
 import
   std/[algorithm, sequtils, tables],
-  ../../core/crypto/hashing,
   ../../core/mantle/[primitives, utxo]
 
 func rewardOpId*(service: ServiceType, epoch: EpochNumber): Hash32 =

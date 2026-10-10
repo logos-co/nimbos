@@ -8,17 +8,14 @@
 {.push raises: [], gcsafe.}
 
 import
-  results,
   libp2p/[crypto/ed25519/ed25519, multiaddress],
-  ../../../logos_chain/ledger/sdp/[registry, ops],
-  ../../../logos_chain/core/crypto/types,
+  ../../../logos_chain/ledger/sdp/ops,
   ../../../logos_chain/core/mantle/[operations, proofs, utxo],
   ../../../logos_chain/ledger/[channel_notes, utxo_store],
-  ../../../logos_chain/zk/poseidon2/hasher,
   ../../../logos_chain/deployment/deployment_settings as deploy,
-  ./test_utxo_helpers
+  ../../core/mantle/test_helpers
 
-export ops, utxo, utxo_store, operations, channel_notes
+export ops, utxo, utxo_store, operations, channel_notes, test_helpers
 
 # Devnet-shaped reward parameters; two providers is the smallest network
 # that can freeze a target epoch.
@@ -46,7 +43,7 @@ const testBlendLotteryParams* = BlendRewardsParams(
   minimumNetworkSize: 2,
   activityThresholdSensitivity: 0)
 
-func testSdpConfig*(): deploy.SdpConfig =
+func testSdpConfig(): deploy.SdpConfig =
   deploy.SdpConfig(
     bn: deploy.BnServiceParams(inactivityPeriod: 2, epoch: 0),
     minStake: deploy.MinStake(threshold: 100, epoch: 0),
@@ -111,9 +108,6 @@ proc mkProvider*(seed: byte): ProviderId =
   doAssert key.init(bytes)
   key
 
-proc mkLocator*(port: int): Locator =
-  MultiAddress.init("/ip4/127.0.0.1/tcp/" & $port).get()
-
 proc installTestDeclaration*(
     registry: var SdpRegistry,
     declaration: DeclarationMessage,
@@ -165,7 +159,7 @@ proc installTestWithdraw*(
     registry.state, withdraw.declarationId, declaration,
   )
 
-func mkTxHash*(seed: byte = 0x42): ZkHash =
+func mkTxHash(seed: byte = 0x42): ZkHash =
   var h: ZkHash
   h[0] = seed
   h
@@ -179,7 +173,7 @@ func defaultWithdrawProof(): ZkSigProof =
 func defaultActiveProof(): ZkSigProof =
   defaultOpProofForOpcode(OpSdpActive).get.sdpActiveProof
 
-type SeededDeclaration* = object
+type SeededDeclaration = object
   registry*: SdpRegistry
   store*: UtxoStore
   declaration*: DeclarationMessage

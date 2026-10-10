@@ -34,14 +34,15 @@ proc inputFor(c: Circuit): ProveInput =
 
 proc proveJson(input: ProveInput): ProofJsonPair =
   ## Nim proof → snarkjs-shaped JSON, through the wire bytes and back.
-  let o =
-    try:
-      (waitFor testProver().prove(input)).expect("prove " & $input.circuit)
-    except CancelledError:
-      raiseAssert "prove cancelled"
-  # Recover affine points from the 128-byte form so the JSON round-trips the
-  # exact bytes the network would carry.
-  let points = proofBytesToPoints(o.proof).expect("wire bytes decompress")
+  let
+    o =
+      try:
+        (waitFor testProver().prove(input)).expect("prove " & $input.circuit)
+      except CancelledError:
+        raiseAssert "prove cancelled"
+    # Recover affine points from the 128-byte form so the JSON round-trips the
+    # exact bytes the network would carry.
+    points = proofBytesToPoints(o.proof).expect("wire bytes decompress")
   (pointsToProofJson(points), signalsToPublicJson(o.signals))
 
 proc runBundledVerifier(c: Circuit, proofJson, publicJson: string): int =
@@ -95,11 +96,11 @@ suite "zk/prover — interop with the reference toolchain":
       let
         bytes = proofJsonToBytes(proofJson).expect("bytes")
         signals = publicJsonToInputs(publicJson).expect("public")
-      let accepted =
-        case c
-        of Circuit.Pol: pol.verify(bytes, polVerifierInput(signals).expect("9"))
-        of Circuit.Poc: poc.verify(bytes, pocVerifierInput(signals).expect("3"))
-        else: zksign.verify(bytes, zksignVerifierInput(signals).expect("33"))
+        accepted =
+          case c
+          of Circuit.Pol: pol.verify(bytes, polVerifierInput(signals).expect("9"))
+          of Circuit.Poc: poc.verify(bytes, pocVerifierInput(signals).expect("3"))
+          else: zksign.verify(bytes, zksignVerifierInput(signals).expect("33"))
       check accepts(accepted)
 
 {.pop.}

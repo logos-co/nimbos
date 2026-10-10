@@ -12,15 +12,11 @@ import
   bincode,
   chronicles,
   chronos,
-  results,
-  libp2p/[switch, peerid],
-  libp2p/stream/connection,
+  libp2p/switch,
   stew/byteutils as sbyteutils,
   ../chain/block_processor,
   ./[framing, syncer_types, types]
 
-from ../core/local_tree import
-  LocalTree, localTipId, latestImmutableBlockId, hasBlock
 from ../core/types import Block, BlockId, blockId, header
 from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
 
@@ -258,20 +254,21 @@ proc downloadBlocks(
       debug "IBD: target already local", peer, targetBlock = sbyteutils.toHex(effectiveTarget.get)
       return true
 
-    let additionalKnown = latestDownloaded
-      .map(proc (b: Block): seq[BlockId] = @[blockId(b.header)])
-      .valueOr(@[])
-    let downloadReq = DownloadBlocksRequest(
-      targetBlock: effectiveTarget.get,
-      knownBlocks: buildKnownBlocks(syncer.localTree, additionalKnown),
-    )
-    let blocks = (await sendDownloadBlocksRequest(
-      syncer,
-      peer,
-      downloadReq,
-    )).valueOr:
-      debug "IBD: download request failed", peer, targetBlock = sbyteutils.toHex(effectiveTarget.get)
-      return false
+    let
+      additionalKnown = latestDownloaded
+        .map(proc (b: Block): seq[BlockId] = @[blockId(b.header)])
+        .valueOr(@[])
+      downloadReq = DownloadBlocksRequest(
+        targetBlock: effectiveTarget.get,
+        knownBlocks: buildKnownBlocks(syncer.localTree, additionalKnown),
+      )
+      blocks = (await sendDownloadBlocksRequest(
+        syncer,
+        peer,
+        downloadReq,
+      )).valueOr:
+        debug "IBD: download request failed", peer, targetBlock = sbyteutils.toHex(effectiveTarget.get)
+        return false
 
     debug "IBD: download response ok", peer, blocks = blocks.len, targetBlock = sbyteutils.toHex(downloadReq.targetBlock)
     if blocks.len == 0:
@@ -317,8 +314,9 @@ proc initialBlockDownload*(
     return
 
   info "Starting initial block download", protocol = syncer.chainSyncProtocol
-  var attemptedPeers: seq[PeerId]
-  var numSuccess = 0
+  var
+    attemptedPeers: seq[PeerId]
+    numSuccess = 0
 
   while true:
     let currentPeers = provider()

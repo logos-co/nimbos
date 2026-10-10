@@ -17,10 +17,9 @@ import
 const
   testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
   fixtureVk = testsDir / "../../fixtures/pol/verification_key.json"
-
-# PoL circuit has 9 public inputs; snarkjs IC vector is `npub + 1` (extra slot
-# is the constant-1 variable). Sanity threshold for "looks like a real VK".
-const ExpectedIcLen = 10
+  # PoL circuit has 9 public inputs; snarkjs IC vector is `npub + 1` (extra slot
+  # is the constant-1 variable). Sanity threshold for "looks like a real VK".
+  ExpectedIcLen = 10
 
 suite "zk/groth16/vk_json":
   var fixtureText: string
@@ -31,11 +30,10 @@ suite "zk/groth16/vk_json":
       return
 
   test "parseVk accepts canonical PoL VK fixture":
-    let r = parseVk(fixtureText)
-    check r.isOk
-    let vk = r.get
-    check vk.curve == "bn128"
-    check vk.vpoints.pointsIC.len == ExpectedIcLen
+    let vk = parseVk(fixtureText).get
+    check:
+      vk.curve == "bn128"
+      vk.vpoints.pointsIC.len == ExpectedIcLen
 
   test "parseVk rejects malformed JSON":
     check parseVk("not json {").error == BadJson

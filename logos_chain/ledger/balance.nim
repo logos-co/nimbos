@@ -9,9 +9,9 @@
 
 {.push raises: [], gcsafe.}
 
-import results, stint
-
-import ./types
+import
+  stint,
+  ./types
 
 from ../core/mantle/primitives import Value
 

@@ -14,7 +14,6 @@
 {.push raises: [], gcsafe.}
 
 import
-  results,
   bincode,
   libp2p/crypto/ed25519/ed25519,
   stew/[assign2, endians2, staticfor],
@@ -234,9 +233,10 @@ func readU16LeLenPrefixed*(data: openArray[byte], pos: var int): Result[seq[byte
   ok(res)
 
 func decodeFieldElementAt*(data: openArray[byte], pos: var int): Result[FieldElement, DecodingError] =
-  let raw = ?readFixed[32](data, pos)
-  let fe = frFromBytesLE(raw).valueOr:
-    return err(DecodingError.InvalidFieldElement)
+  let
+    raw = ?readFixed[32](data, pos)
+    fe = frFromBytesLE(raw).valueOr:
+      return err(DecodingError.InvalidFieldElement)
   ok(fe)
 
 func decodeFieldElement*(data: openArray[byte]): Result[FieldElement, DecodingError] =

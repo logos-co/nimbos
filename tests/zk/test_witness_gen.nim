@@ -36,25 +36,29 @@ func signalsMatch(values: openArray[FieldElement], expected: seq[FieldElement]):
 suite "zk/witness_gen — reference vectors":
   test "signature: sks = [1, 0 × 31] reproduces the fixture public signals":
     let values = witnessValues(Circuit.Signature, toInputsJson(zksignFixtureInput()))
-    check values.len == SignatureVarsV056
-    check signalsMatch(values, fixtureSignals(Circuit.Signature))
-    check values[33] == fr(ZkSignFixtureMsg)
+    check:
+      values.len == SignatureVarsV056
+      signalsMatch(values, fixtureSignals(Circuit.Signature))
+      values[33] == fr(ZkSignFixtureMsg)
 
   test "pol: reference test_full_flow inputs reproduce the fixture public signals":
     let values = witnessValues(Circuit.Pol, toInputsJson(polFixtureInput()))
-    check values.len == PolVarsV056
-    check signalsMatch(values, fixtureSignals(Circuit.Pol))
+    check:
+      values.len == PolVarsV056
+      signalsMatch(values, fixtureSignals(Circuit.Pol))
 
   test "poc: sample.input.json reproduces the fixture public signals":
     let values = witnessValues(Circuit.Poc, toInputsJson(pocFixtureInput()))
-    check values.len == PocVarsV056
-    check signalsMatch(values, fixtureSignals(Circuit.Poc))
+    check:
+      values.len == PocVarsV056
+      signalsMatch(values, fixtureSignals(Circuit.Poc))
 
   test "poq: core-branch fixture reproduces public_core.json":
     let values = witnessValues(
       Circuit.Poq, toInputsJson(poqCoreFixtureInput(PoqCoreFixtureIndex)))
-    check values.len == PoqVarsV056
-    check signalsMatch(values, fixtureSignals(Circuit.Poq))
+    check:
+      values.len == PoqVarsV056
+      signalsMatch(values, fixtureSignals(Circuit.Poq))
 
   test "poq: a key index at the quota is rejected by the circuit":
     let r = generateWitness(Circuit.Poq,
@@ -64,8 +68,9 @@ suite "zk/witness_gen — reference vectors":
 suite "zk/witness_gen — error mapping":
   test "missing signal → InvalidInput":
     let r = generateWitness(Circuit.Signature, """{"msg": "1"}""")
-    check r.error.kind == WitnessGenError.InvalidInput
-    check messageString(r.error.message).contains("inputs")
+    check:
+      r.error.kind == WitnessGenError.InvalidInput
+      messageString(r.error.message).contains("inputs")
 
   test "malformed JSON → DynError":
     let r = generateWitness(Circuit.Signature, "{not json")

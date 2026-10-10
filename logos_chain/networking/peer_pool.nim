@@ -7,8 +7,9 @@
 
 {.push raises: [], gcsafe.}
 
-import std/[tables, heapqueue, algorithm, sequtils, typetraits]
-import chronos
+import
+  std/[tables, heapqueue, algorithm, sequtils, typetraits],
+  chronos
 
 export tables
 
@@ -63,7 +64,7 @@ type
 
 func `==`*(a, b: PeerIndex): bool {.borrow.}
 
-iterator pairs*[A, B](pool: PeerPool[A, B]): (B, A) =
+iterator pairs[A, B](pool: PeerPool[A, B]): (B, A) =
   for peerId, pindex in pool.registry:
     yield (peerId, pool.storage[distinctBase(pindex)].data)
 
@@ -189,7 +190,7 @@ proc lenAvailable*[A, B](
    else:
      0)
 
-proc lenAvailable*[A, B](
+proc lenAvailable[A, B](
     pool: PeerPool[A, B],
     filter: set[PeerType],
     customFilter: PeerCustomFilterCallback[A]
@@ -244,20 +245,6 @@ proc lenSpace*[A, B](
     incoming
   else:
     outgoing
-
-proc shortLogAvailable*[A, B](pool: PeerPool[A, B]): string =
-  $pool.lenAvailable({PeerType.Incoming}) & "/" &
-    $pool.lenAvailable({PeerType.Outgoing})
-
-proc shortLogAcquired*[A, B](pool: PeerPool[A, B]): string =
-  $pool.acqIncPeersCount & "/" & $pool.acqOutPeersCount
-
-proc shortLogSpace*[A, B](pool: PeerPool[A, B]): string =
-  $pool.lenSpace({PeerType.Incoming}) & "/" &
-    $pool.lenSpace({PeerType.Outgoing})
-
-proc shortLogCurrent*[A, B](pool: PeerPool[A, B]): string =
-  $pool.curIncPeersCount & "/" & $pool.curOutPeersCount
 
 template checkPeerScore[A, B](pool: PeerPool[A, B], peer: A): bool =
   ## Returns ``true`` if peer passing score check.
@@ -359,7 +346,7 @@ proc addPeerImpl[A, B](pool: PeerPool[A, B], peer: A, peerKey: B,
   pool.changeEvent.fire()
   pool.peerCountChanged()
 
-proc checkPeer*[A, B](pool: PeerPool[A, B], peer: A): PeerStatus {.inline.} =
+proc checkPeer[A, B](pool: PeerPool[A, B], peer: A): PeerStatus {.inline.} =
   ## Checks if peer could be added to PeerPool, e.g. it has:
   ##
   ## * Positive value of peer's score - (PeerStatus.LowScoreError)
@@ -415,16 +402,6 @@ proc addPeerNoWait*[A, B](
         PeerStatus.Success
       else:
         PeerStatus.NoSpaceError
-
-proc waitForEmptySpace*[A, B](
-    pool: PeerPool[A, B],
-    peerType: PeerType
-) {.async: (raises: [CancelledError]).} =
-  ## This procedure will block until ``pool`` will have an empty space for peer
-  ## of type ``peerType``.
-  while pool.lenSpace({peerType}) == 0:
-    await pool.changeEvent.wait()
-    pool.changeEvent.clear()
 
 proc addPeer*[A, B](
     pool: PeerPool[A, B],
@@ -562,7 +539,7 @@ proc release*[A, B](pool: PeerPool[A, B], peer: A) =
       pool.resort(pool.sorted)
       pool.changeEvent.fire()
 
-proc release*[A, B](pool: PeerPool[A, B], peers: openArray[A]) =
+proc release[A, B](pool: PeerPool[A, B], peers: openArray[A]) =
   ## Release array of peers ``peers`` back to PeerPool ``pool``.
   for item in peers:
     pool.release(item)
@@ -595,7 +572,7 @@ proc acquire*[A, B](
     raise exc
   peers
 
-proc acquire*[A, B](
+proc acquire[A, B](
     pool: PeerPool[A, B],
     number: int,
     filter: set[PeerType],
@@ -625,32 +602,6 @@ proc acquire*[A, B](
     peers.setLen(0)
     raise exc
   peers
-
-proc acquireIncomingPeer*[A, B](
-    pool: PeerPool[A, B]
-): Future[A] {.async: (raises: [CancelledError], raw: true).}  =
-  ## Acquire single incoming peer from PeerPool ``pool``.
-  pool.acquire({PeerType.Incoming})
-
-proc acquireOutgoingPeer*[A, B](
-    pool: PeerPool[A, B]
-): Future[A] {.async: (raises: [CancelledError], raw: true).}  =
-  ## Acquire single outgoing peer from PeerPool ``pool``.
-  pool.acquire({PeerType.Outgoing})
-
-proc acquireIncomingPeers*[A, B](
-    pool: PeerPool[A, B],
-    number: int
-): Future[seq[A]] {.async: (raises: [CancelledError], raw: true).}  =
-  ## Acquire ``number`` number of incoming peers from PeerPool ``pool``.
-  pool.acquire(number, {PeerType.Incoming})
-
-proc acquireOutgoingPeers*[A, B](
-    pool: PeerPool[A, B],
-    number: int
-): Future[seq[A]] {.async: (raises: [CancelledError], raw: true).}  =
-  ## Acquire ``number`` number of outgoing peers from PeerPool ``pool``.
-  pool.acquire(number, {PeerType.Outgoing})
 
 iterator peers*[A, B](
     pool: PeerPool[A, B],
@@ -781,7 +732,7 @@ iterator acquiredPeers*[A, B](
   for peer in sortedPeers:
     yield peer
 
-proc `[]`*[A, B](
+proc `[]`[A, B](
     pool: PeerPool[A, B],
     key: B
 ): A {.inline, raises: [KeyError].} =
@@ -862,3 +813,5 @@ proc setPeerCounter*[A, B](pool: PeerPool[A, B],
                            peerCounterCb: PeerCounterCallback) =
   ## Sets PeerCounter callback.
   pool.peerCounter = peerCounterCb
+
+{.pop.}

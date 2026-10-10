@@ -9,7 +9,7 @@
 
 import
   chronos,
-  libp2p/[switch, peerid],
+  libp2p/switch,
   ../chain/block_processor
 
 type

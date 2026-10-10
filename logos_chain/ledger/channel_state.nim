@@ -12,11 +12,10 @@
 import
   std/sequtils,
   intops,
-  results,
   libp2p/crypto/ed25519/ed25519,
-  ./[types, channel_notes, cryptarchia_state, zksig_verify],
+  ./[channel_notes, cryptarchia_state, zksig_verify],
   ../core/[utils],
-  ../core/mantle/[primitives, operations, proofs, tx_hashing, utxo],
+  ../core/mantle/[operations, proofs, tx_hashing],
   ../utils/hash_trie_map
 
 export hash_trie_map, channel_notes
@@ -244,9 +243,9 @@ func applyChannelDeposit*(
   let depositOpId = opId(op).valueOr:
     return err(error.toLedgerError)
   for i, inputId in op.inputs.noteIds:
-    let (newStore, removedUtxo) = cs.utxos.remove(inputId).valueOr:
-      return err(InvalidNote) # unreachable if validate passed
     let
+      (newStore, removedUtxo) = cs.utxos.remove(inputId).valueOr:
+        return err(InvalidNote) # unreachable if validate passed
       u = Utxo(opId: depositOpId, outputIndex: uint64(i), note: removedUtxo.note)
       uid = u.id
     cs.utxos = newStore.insert(uid, u).store

@@ -33,15 +33,16 @@ type
 func asField*(voucher: RewardVoucher): FieldElement =
   frFromBytesLEModOrder(voucher)
 
-type LeaderPending = object
-  vouchers: seq[RewardVoucher]
-  reward: Value
+type
+  LeaderPending = object
+    vouchers: seq[RewardVoucher]
+    reward: Value
 
-type LeaderState* = object
-  voucherTree: VoucherMerkleTree
-  spentNullifiers: HashTrieMap[VoucherNullifier, tuple[]]
-  leadersRewards: Value
-  pending: LeaderPending
+  LeaderState* = object
+    voucherTree: VoucherMerkleTree
+    spentNullifiers: HashTrieMap[VoucherNullifier, tuple[]]
+    leadersRewards: Value
+    pending: LeaderPending
 
 func init*(_: typedesc[LeaderState]): LeaderState =
   let tree = VoucherMerkleTree.init()

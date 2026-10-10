@@ -16,7 +16,6 @@ import
   ./types
 export types
 
-
 func blake2b256Hash*(domainTag: string, data: openArray[byte]): Hash32 =
   ## Spec reference (common cryptographic components):
   ## https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/common-cryptographic-components.md#blake2bgeneral-purpose-hashing
@@ -54,16 +53,6 @@ func blake2bShort*(data: openArray[byte], outLen: uint64): array[8, byte] =
       digest[0 ..< i] = ctx.finish().data
   digest
 
-func generateGroth16Proof*(): CompressedGroth16Proof =
-  ## Placeholder: return zeroed compressed Groth16 bytes.
-  static: doAssert CompressedGroth16ProofBytes == sizeof(CompressedGroth16Proof)
-  DefaultCompressedGroth16Proof
-
-func generateZkSignature*(): ZkSignature =
-  ## Placeholder: return opaque zeroed signature bytes.
-  DefaultZkSignature
-
-
 func prngBlock*(seed: Blake2bPrngSeed, index: uint64): Blake2bPrngBlock =
   ## Spec reference (BLAKE2b-based PRNG):
   ## https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/common-cryptographic-components.md#blake2b-based-prng-construction
@@ -90,12 +79,14 @@ func prngBytes*(seed: Blake2bPrngSeed, byteLen: Natural): seq[byte] =
   if byteLen == 0:
     return res
 
-  var written = 0
-  var index = 0'u64
+  var
+    written = 0
+    index = 0'u64
   while written < byteLen:
-    let blk = prngBlock(seed, index)
-    let remaining = byteLen - written
-    let take = min(64, remaining)
+    let
+      blk = prngBlock(seed, index)
+      remaining = byteLen - written
+      take = min(64, remaining)
     for j in 0 ..< take:
       res[written + j] = blk[j]
     written += take

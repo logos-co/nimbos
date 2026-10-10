@@ -10,11 +10,10 @@
 
 import
   unittest2,
-  results,
   bearssl/rand,
   libp2p/crypto/ed25519/ed25519,
-  ../../logos_chain/ledger/[channel_state, mantle_state, types],
-  ../../logos_chain/core/mantle/[primitives, operations, proofs],
+  ../../logos_chain/ledger/[mantle_state, types],
+  ../../logos_chain/core/mantle/[operations, proofs],
   ../core/mantle/test_helpers
 
 proc seedMantle(
@@ -50,12 +49,13 @@ suite "MantleState.tryApplyChannelConfig — JIT creation":
         op, ChannelMultiSigProof(), mkTxHash(), blockSlot = 5'u64)
     check r.isOk
     let chan = r.get.channels.getOrDefault(cid)
-    check chan.accreditedKeys == @[kp1.pubkey, kp2.pubkey]
-    check chan.configurationThreshold == 2
-    check chan.transferThreshold == 1
-    check chan.postingTimeframe == 100
-    check chan.postingTimeout == 10
-    check chan.tipSlot == 5'u64
+    check:
+      chan.accreditedKeys == @[kp1.pubkey, kp2.pubkey]
+      chan.configurationThreshold == 2
+      chan.transferThreshold == 1
+      chan.postingTimeframe == 100
+      chan.postingTimeout == 10
+      chan.tipSlot == 5'u64
 
   test "transferThreshold > keys.len is accepted — reconfiguration can lower it":
     let
@@ -70,8 +70,9 @@ suite "MantleState.tryApplyChannelConfig — JIT creation":
       )
       r = MantleState.init().tryApplyChannelConfig(
         op, ChannelMultiSigProof(), mkTxHash(), blockSlot = 0'u64)
-    check r.isOk
-    check r.get.channels.getOrDefault(mkChannelId(6)).transferThreshold == 3
+    check:
+      r.isOk
+      r.get.channels.getOrDefault(mkChannelId(6)).transferThreshold == 3
 
 suite "MantleState.tryApplyChannelConfig — existing channel":
   test "valid threshold signatures → config overwrites accreditedKeys":
@@ -96,8 +97,9 @@ suite "MantleState.tryApplyChannelConfig — existing channel":
       r = m.tryApplyChannelConfig(op, proof, txHash, blockSlot = 3'u64)
     check r.isOk
     let chan = r.get.channels.getOrDefault(cid)
-    check chan.accreditedKeys == @[kp3.pubkey]
-    check chan.configurationThreshold == 1
+    check:
+      chan.accreditedKeys == @[kp3.pubkey]
+      chan.configurationThreshold == 1
 
   test "signature count != configurationThreshold → ThresholdUnmet":
     let

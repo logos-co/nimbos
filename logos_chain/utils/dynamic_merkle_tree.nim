@@ -12,13 +12,10 @@
 
 {.push raises: [], gcsafe.}
 
-import std/[heapqueue, strutils]
-
 import
-  results,
-  constantine/math/io/io_fields       # toHex on FieldElement
-
-import ../core/crypto/types           # FieldElement, zero, +, *, ==
+  std/[heapqueue, strutils],
+  constantine/math/io/io_fields, # toHex on FieldElement
+  ../core/crypto/types           # FieldElement, zero, +, *, ==
 
 const
   TreeDepth* = 32

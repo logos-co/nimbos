@@ -11,8 +11,7 @@
 {.push raises: [], gcsafe.}
 
 import
-  libp2p/[switch, peerinfo, errors, peeraddrpolicy],
-  libp2p/protocols/identify,
+  libp2p/[switch, peeraddrpolicy],
   libp2p/protocols/kademlia,
   ../conf
 
@@ -43,8 +42,9 @@ func kadCodec*(network: LogosNetworkKind): string =
 proc mountIdentifyProtocol*(
     sw: Switch, peerInfo: PeerInfo, network: LogosNetworkKind
 ): Identify {.raises: [LPError].} =
-  let codec = identifyCodec(network)
-  let ident = Identify.new(peerInfo)
+  let
+    codec = identifyCodec(network)
+    ident = Identify.new(peerInfo)
   ident.codec = codec
   ident.codecs = @[codec]
   sw.mount(ident)
@@ -56,9 +56,10 @@ proc mountKadProtocol*(
     rng: Rng,
     addressPolicy: PeerAddressPolicy,
 ): KadDHT {.raises: [LPError].} =
-  let codec = kadCodec(network)
-  let config = KadDHTConfig.new(addressPolicy = addressPolicy)
-  let kad = KadDHT.new(sw, rng = rng, codec = codec, config = config)
+  let
+    codec = kadCodec(network)
+    config = KadDHTConfig.new(addressPolicy = addressPolicy)
+    kad = KadDHT.new(sw, rng = rng, codec = codec, config = config)
   kad.codecs = @[codec]
   sw.mount(kad)
   kad

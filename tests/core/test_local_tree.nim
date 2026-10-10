@@ -9,10 +9,8 @@
 {.used.}
 
 import
-  unittest2,
-  results,
   ../testutil,
-  ../../logos_chain/core/[types, local_tree],
+  ../../logos_chain/core/local_tree,
   ../../logos_chain/chain/genesis
 
 suite "core/local_tree":
@@ -22,11 +20,12 @@ suite "core/local_tree":
       genesis = createGenesisBlock(sm).get
       gid = blockId(genesis.header)
       tree = newLocalTree(genesis, 1'u64)
-    check tree.hasBlock(gid)
-    check tree.localTipId == gid
-    check tree.blockHeight(gid) == Opt.some(0'u64)
-    check tree.fetchHeader(gid).get == genesis.header
-    check tree.latestImmutableBlockId == gid
+    check:
+      tree.hasBlock(gid)
+      tree.localTipId == gid
+      tree.blockHeight(gid) == Opt.some(0'u64)
+      tree.fetchHeader(gid).get == genesis.header
+      tree.latestImmutableBlockId == gid
 
   test "addBlockToTree extends chain and moves tip":
     let
@@ -36,13 +35,14 @@ suite "core/local_tree":
       tree = newLocalTree(genesis, 1'u64)
       b1 = childBlock(genesis.header, gid, 1'u64, [sm])
       id1 = blockId(b1.header)
-    check tree.addBlockToTree(b1)
-    check tree.hasBlock(id1)
-    check tree.blockHeight(id1) == Opt.some(1'u64)
-    check tree.localTipId == id1
-    check tree.isAncestor(gid, id1)
-    check not tree.isAncestor(id1, gid)
-    check tree.isAncestor(gid, gid)
+    check:
+      tree.addBlockToTree(b1)
+      tree.hasBlock(id1)
+      tree.blockHeight(id1) == Opt.some(1'u64)
+      tree.localTipId == id1
+      tree.isAncestor(gid, id1)
+      not tree.isAncestor(id1, gid)
+      tree.isAncestor(gid, gid)
 
   test "addBlockToTree rejects duplicate id":
     let
@@ -90,8 +90,9 @@ suite "core/local_tree":
       b2 = childBlock(b1.header, id1, 2'u64, [sm])
     check tree.addBlockToTree(b1)
     tree.tryUpdateLib()
-    check tree.latestImmutableBlockId == gid
-    check tree.addBlockToTree(b2)
+    check:
+      tree.latestImmutableBlockId == gid
+      tree.addBlockToTree(b2)
     tree.tryUpdateLib()
     check tree.latestImmutableBlockId == id1
 
@@ -102,9 +103,10 @@ suite "core/local_tree (lcaBlockIdAndHeight)":
       genesis = createGenesisBlock(sm).get
       gid = blockId(genesis.header)
       tree = newLocalTree(genesis, 1'u64)
-    let (lcaId, lcaHeight) = lcaBlockIdAndHeight(tree, gid, gid).get()
-    check lcaId == gid
-    check lcaHeight == 0'u64
+      (lcaId, lcaHeight) = lcaBlockIdAndHeight(tree, gid, gid).get()
+    check:
+      lcaId == gid
+      lcaHeight == 0'u64
 
   test "lcaBlockIdAndHeight on a linear chain (depth and symmetry)":
     let
@@ -116,19 +118,23 @@ suite "core/local_tree (lcaBlockIdAndHeight)":
       id1 = blockId(b1.header)
       b2 = childBlock(b1.header, id1, 2'u64, [sm])
       id2 = blockId(b2.header)
-    check tree.addBlockToTree(b1)
-    check tree.addBlockToTree(b2)
+    check:
+      tree.addBlockToTree(b1)
+      tree.addBlockToTree(b2)
     block:
       let (lcaId, lcaHeight) = lcaBlockIdAndHeight(tree, gid, id2).get()
-      check lcaId == gid
-      check lcaHeight == 0'u64
+      check:
+        lcaId == gid
+        lcaHeight == 0'u64
     block:
       let (lcaId, lcaHeight) = lcaBlockIdAndHeight(tree, id1, id2).get()
-      check lcaId == id1
-      check lcaHeight == 1'u64
+      check:
+        lcaId == id1
+        lcaHeight == 1'u64
     block:
-      let (a, _) = lcaBlockIdAndHeight(tree, id2, id1).get()
-      let (b, _) = lcaBlockIdAndHeight(tree, id1, id2).get()
+      let
+        (a, _) = lcaBlockIdAndHeight(tree, id2, id1).get()
+        (b, _) = lcaBlockIdAndHeight(tree, id1, id2).get()
       check a == b
 
   test "lcaBlockIdAndHeight across two children of genesis is genesis":
@@ -143,12 +149,14 @@ suite "core/local_tree (lcaBlockIdAndHeight)":
       left2Id = blockId(left2.header)
       right = childBlock(genesis.header, gid, 3'u64, [sm])
       rightId = blockId(right.header)
-    check tree.addBlockToTree(left1)
-    check tree.addBlockToTree(left2)
-    check tree.addBlockToTree(right)
+    check:
+      tree.addBlockToTree(left1)
+      tree.addBlockToTree(left2)
+      tree.addBlockToTree(right)
     let (lcaId, lcaHeight) = lcaBlockIdAndHeight(tree, left2Id, rightId).get()
-    check lcaId == gid
-    check lcaHeight == 0'u64
+    check:
+      lcaId == gid
+      lcaHeight == 0'u64
 
   test "lcaBlockIdAndHeight returns none if either id is unknown":
     let
@@ -158,8 +166,9 @@ suite "core/local_tree (lcaBlockIdAndHeight)":
       tree = newLocalTree(genesis, 1'u64)
     var unknown: BlockId
     unknown[0] = 7'u8
-    check lcaBlockIdAndHeight(tree, gid, unknown).isNone
-    check lcaBlockIdAndHeight(tree, unknown, gid).isNone
+    check:
+      lcaBlockIdAndHeight(tree, gid, unknown).isNone
+      lcaBlockIdAndHeight(tree, unknown, gid).isNone
     
   test "addBlockToTree prunes side-branch nodes below finality height":
     let
@@ -173,9 +182,9 @@ suite "core/local_tree (lcaBlockIdAndHeight)":
     let
       sideB = childBlock(genesis.header, gid, 2'u64, [sm])
       idSide = blockId(sideB.header)
-    check tree.addBlockToTree(sideB)
-
-    check tree.blocksIdsAtHeight(1'u64).len == 2
+    check:
+      tree.addBlockToTree(sideB)
+      tree.blocksIdsAtHeight(1'u64).len == 2
 
     # Advance immutable block to b1 by adding b2 (height 2)
     let b2 = childBlock(b1.header, id1, 3'u64, [sm])
@@ -183,13 +192,13 @@ suite "core/local_tree (lcaBlockIdAndHeight)":
     tree.tryUpdateLib()
 
     # sideB is height 1, not ancestor of b2 -> pruned!
-    check not tree.hasBlock(idSide)
-    check tree.hasBlock(gid)
-    check tree.hasBlock(id1)
-
-    # Single-element invariant for finalized height
-    check tree.blocksIdsAtHeight(1'u64).len == 1
-    check tree.blocksIdsAtHeight(1'u64)[0] == id1
+    check:
+      not tree.hasBlock(idSide)
+      tree.hasBlock(gid)
+      tree.hasBlock(id1)
+      # Single-element invariant for finalized height
+      tree.blocksIdsAtHeight(1'u64).len == 1
+      tree.blocksIdsAtHeight(1'u64)[0] == id1
 
   test "tryUpdateLib handles linear fast-path, cascades upward orphan pruning, and terminates early":
     let
@@ -207,12 +216,13 @@ suite "core/local_tree (lcaBlockIdAndHeight)":
       b3 = childBlock(b2.header, id2, 3'u64, [sm])
       id3 = blockId(b3.header)
 
-    check tree.addBlockToTree(b1)
-    check tree.tryUpdateLib().len == 0 # Fast-path: no pruned blocks on linear chain
-    check tree.addBlockToTree(b2)
-    check tree.tryUpdateLib().len == 0 # Fast-path: no pruned blocks on linear chain
-    check tree.addBlockToTree(b3)
-    check tree.tryUpdateLib().len == 0 # Fast-path: no pruned blocks on linear chain
+    check:
+      tree.addBlockToTree(b1)
+      tree.tryUpdateLib().len == 0 # Fast-path: no pruned blocks on linear chain
+      tree.addBlockToTree(b2)
+      tree.tryUpdateLib().len == 0 # Fast-path: no pruned blocks on linear chain
+      tree.addBlockToTree(b3)
+      tree.tryUpdateLib().len == 0 # Fast-path: no pruned blocks on linear chain
 
     # 2. Build competing fork branching off b1 (height 1):
     #    f2 at height 2, f3 at height 3
@@ -222,13 +232,13 @@ suite "core/local_tree (lcaBlockIdAndHeight)":
       f3 = childBlock(f2.header, idF2, 11'u64, [sm])
       idF3 = blockId(f3.header)
 
-    check tree.addBlockToTree(f2)
-    check tree.addBlockToTree(f3)
-
-    # Before LIB update: all blocks are in the tree
-    check tree.hasBlock(idF2)
-    check tree.hasBlock(idF3)
-    check tree.blocksIdsAtHeight(3'u64).len == 2
+    check:
+      tree.addBlockToTree(f2)
+      tree.addBlockToTree(f3)
+      # Before LIB update: all blocks are in the tree
+      tree.hasBlock(idF2)
+      tree.hasBlock(idF3)
+      tree.blocksIdsAtHeight(3'u64).len == 2
 
     # 3. Add canonical b4, b5 (tip is now height 5)
     let
@@ -236,8 +246,9 @@ suite "core/local_tree (lcaBlockIdAndHeight)":
       id4 = blockId(b4.header)
       b5 = childBlock(b4.header, id4, 5'u64, [sm])
       id5 = blockId(b5.header)
-    check tree.addBlockToTree(b4)
-    check tree.addBlockToTree(b5)
+    check:
+      tree.addBlockToTree(b4)
+      tree.addBlockToTree(b5)
 
     # 4. Trigger LIB update:
     #    immHeight = 5 - 2 = 3 (new LIB is b3 at height 3).
@@ -245,13 +256,13 @@ suite "core/local_tree (lcaBlockIdAndHeight)":
     #    - Pass 2 prunes f3 at height 3 (missing parent f2).
     #    - Pass 2 checks height 4 (only canonical b4 exists, ids.len == 1) and breaks early!
     let pruned = tree.tryUpdateLib()
-    check tree.latestImmutableBlockId == id3
-    check idF2 in pruned
-    check idF3 in pruned
-
-    # Neither f2 nor the floating island f3 should remain in the tree
-    check not tree.hasBlock(idF2)
-    check not tree.hasBlock(idF3)
+    check:
+      tree.latestImmutableBlockId == id3
+      idF2 in pruned
+      idF3 in pruned
+      # Neither f2 nor the floating island f3 should remain in the tree
+      not tree.hasBlock(idF2)
+      not tree.hasBlock(idF3)
 
     # Canonical blocks at all heights are intact
     for id in [gid, id1, id2, id3, id4, id5]:

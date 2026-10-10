@@ -15,10 +15,9 @@
 
 import
   std/[sets, sequtils],
-  chronos, chronicles, results,
-  libp2p/[switch, peerinfo, multiaddress, peerid, crypto/rng],
+  chronos, chronicles,
+  libp2p/switch,
   libp2p/protocols/kademlia,
-  libp2p/peerstore,
   ./peer_pool,
   ./bootstrap_nodes
 
@@ -119,15 +118,16 @@ proc kadBootstrap*(
 
   var connectedCount = 0
   for i, fut in dialFuts:
-    let b = bootstrapNodes[i]
-    let dialSuccess =
-      if fut.completed() and not fut.failed():
-        try:
-          fut.read()
-        except FuturePendingError, CancelledError:
+    let
+      b = bootstrapNodes[i]
+      dialSuccess =
+        if fut.completed() and not fut.failed():
+          try:
+            fut.read()
+          except FuturePendingError, CancelledError:
+            false
+        else:
           false
-      else:
-        false
 
     if dialSuccess:
       inc connectedCount

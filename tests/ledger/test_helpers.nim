@@ -13,12 +13,8 @@ import
   std/sequtils,
   stew/endians2,
   libp2p/crypto/ed25519/ed25519,
-  ../../logos_chain/consensus/clock,
   ../../logos_chain/core/mantle/[primitives, proofs, utxo],
-  ../../logos_chain/ledger/[mantle_state, stake_inference, types],
-  ../../logos_chain/zk/poseidon2/hasher
-
-from ../../logos_chain/core/crypto/types import ZkPublicKey
+  ../../logos_chain/ledger/[mantle_state, stake_inference, types]
 
 const
   testSchedule* = EpochSchedule(

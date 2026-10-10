@@ -49,21 +49,23 @@ suite "zk/poq — loadVk":
 
   test "rejects garbage JSON":
     let dir = uniqueTmpDir("bad-vk")
-    check createPath(dir / "poq").isOk
-    check io2.writeFile(dir / "poq" / "verification_key.json", "not json {").isOk
-    check loadVk(dir).error == VkInvalid
+    check:
+      createPath(dir / "poq").isOk
+      io2.writeFile(dir / "poq" / "verification_key.json", "not json {").isOk
+      loadVk(dir).error == VkInvalid
 
   test "rejects JSON with wrong protocol":
     let dir = uniqueTmpDir("wrong-proto-vk")
-    check createPath(dir / "poq").isOk
-    check io2.writeFile(
-      dir / "poq" / "verification_key.json",
-      """{"protocol":"plonk","curve":"bn128","vk_alpha_1":["0","0","1"],""" &
-      """"vk_beta_2":[["0","0"],["0","0"],["1","0"]],""" &
-      """"vk_gamma_2":[["0","0"],["0","0"],["1","0"]],""" &
-      """"vk_delta_2":[["0","0"],["0","0"],["1","0"]],"IC":[]}""",
-    ).isOk
-    check loadVk(dir).error == VkInvalid
+    check:
+      createPath(dir / "poq").isOk
+      io2.writeFile(
+        dir / "poq" / "verification_key.json",
+        """{"protocol":"plonk","curve":"bn128","vk_alpha_1":["0","0","1"],""" &
+        """"vk_beta_2":[["0","0"],["0","0"],["1","0"]],""" &
+        """"vk_gamma_2":[["0","0"],["0","0"],["1","0"]],""" &
+        """"vk_delta_2":[["0","0"],["0","0"],["1","0"]],"IC":[]}""",
+      ).isOk
+      loadVk(dir).error == VkInvalid
 
   test "accepts canonical fixture":
     # Build a synthetic bundle by copying the fixture VK into <tmp>/poq/.
@@ -72,36 +74,39 @@ suite "zk/poq — loadVk":
       vkBytes = readAllChars(fixtureVk).valueOr:
         check false
         return
-    check createPath(dir / "poq").isOk
-    check io2.writeFile(dir / "poq" / "verification_key.json", vkBytes).isOk
+    check:
+      createPath(dir / "poq").isOk
+      io2.writeFile(dir / "poq" / "verification_key.json", vkBytes).isOk
     let r = loadVk(dir)
-    check r.isOk
     check r.get.curve == "bn128"
 
 suite "zk/poq — verify":
   setup:
     poq.resetVkForTesting()
-    let vkText = readAllChars(fixtureVk).valueOr:
-      check false
-      return
-    let vk = parseVk(vkText).valueOr:
-      check false
-      return
+    let
+      vkText = readAllChars(fixtureVk).valueOr:
+        check false
+        return
+      vk = parseVk(vkText).valueOr:
+        check false
+        return
     check poq.initVk(vk).isOk
 
   test "rejects when VK singleton not installed":
     poq.resetVkForTesting()
-    let core = loadBranch("core")
-    let r = verify(core.proofBytes, core.input)
+    let
+      core = loadBranch("core")
+      r = verify(core.proofBytes, core.input)
     check r.error == VkNotLoaded
 
   test "double initVk returns VkAlreadyLoaded":
-    let vkText = readAllChars(fixtureVk).valueOr:
-      check false
-      return
-    let vk = parseVk(vkText).valueOr:
-      check false
-      return
+    let
+      vkText = readAllChars(fixtureVk).valueOr:
+        check false
+        return
+      vk = parseVk(vkText).valueOr:
+        check false
+        return
     check poq.initVk(vk).error == VkAlreadyLoaded
 
   test "accepts every branch fixture — the verifier is branch-blind":

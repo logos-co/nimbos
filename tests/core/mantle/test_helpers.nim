@@ -9,11 +9,9 @@
 
 import
   bearssl/rand,
-  libp2p/crypto/ed25519/ed25519,
+  libp2p/[crypto/ed25519/ed25519, multiaddress],
   ../../../logos_chain/core/types,
-  ../../../logos_chain/core/mantle/
-    [primitives, operations, proofs, utxo],
-  ../../../logos_chain/zk/poseidon2/hasher
+  ../../../logos_chain/core/mantle/utxo
 
 from libp2p/crypto/rng import newBearSslRng
 
@@ -90,5 +88,8 @@ func mkChannelId*(seed: byte): ChannelId =
   var c: ChannelId
   c[0] = seed
   c
+
+func mkLocator*(port: int): Locator =
+  MultiAddress.init("/ip4/127.0.0.1/tcp/" & $port).get()
 
 {.pop.}

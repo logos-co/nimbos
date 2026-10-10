@@ -9,11 +9,9 @@
 
 import
   std/tables,
-  results,
   bincode,
   ./types
 from ./crypto/types as crypto_types import isZero
-from ./mantle/primitives import SlotNumber, BlockNumber
 
 export types.Block, types.Header, types.BlockId, types.ValidBlock
 
@@ -53,8 +51,9 @@ func ancestorAtHeight(node: BlockNode, targetHeight: BlockNumber): BlockNode =
   nil
 
 func newLocalTree*(genesisBlock: Block, securityParam: uint64): LocalTree =
-  let gid = blockId(genesisBlock.header)
-  let gn = BlockNode(id: gid, blk: genesisBlock, parent: nil, height: 0'u64)
+  let
+    gid = blockId(genesisBlock.header)
+    gn = BlockNode(id: gid, blk: genesisBlock, parent: nil, height: 0'u64)
   LocalTree(
     blocksById: [(gid, gn)].toTable,
     idsByHeight: [(0'u64, @[gid])].toTable,
@@ -217,8 +216,9 @@ func canDescendFromImmutable*(localTree: LocalTree, header: Header): bool =
 func lcaBlockIdAndHeight*(
     localTree: LocalTree, idA, idB: BlockId,
 ): Opt[(BlockId, BlockNumber)] =
-  var na = localTree.blocksById.getOrDefault(idA, nil)
-  var nb = localTree.blocksById.getOrDefault(idB, nil)
+  var
+    na = localTree.blocksById.getOrDefault(idA, nil)
+    nb = localTree.blocksById.getOrDefault(idB, nil)
   if na == nil or nb == nil:
     return Opt.none((BlockId, BlockNumber))
   if na.id == nb.id:

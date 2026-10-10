@@ -25,8 +25,9 @@ suite "ledger/stake_inference":
 
   test "high density raises the estimate":
     let estimate = total_stake_inference(1000, 120, testPeriod, testBeta, testF)
-    check estimate > 1000
-    check estimate == 2000 # measured = 2× expected doubles the estimate at beta = 1
+    check:
+      estimate > 1000
+      estimate == 2000 # measured = 2× expected doubles the estimate at beta = 1
 
   test "exact density keeps the estimate unchanged":
     check total_stake_inference(1000, 60, testPeriod, testBeta, testF) == 1000
@@ -47,8 +48,8 @@ suite "ledger/stake_inference":
       uint64.high div 2
 
   test "fixed-point parity per deployment":
+    # beta_p: mainnet 1/1, devnet 1/2, standalone 1/10
     check:
-      # beta_p: mainnet 1/1, devnet 1/2, standalone 1/10
       fixedPoint(NonNegativeRatio(num: 1, den: 1)) == 1000
       fixedPoint(NonNegativeRatio(num: 1, den: 2)) == 500
       fixedPoint(NonNegativeRatio(num: 1, den: 10)) == 100
@@ -58,6 +59,6 @@ suite "ledger/stake_inference":
       fixedPoint(NonNegativeRatio(num: 1, den: 10)) == 100
       # 17 fractional digits: the ×Precision product exceeds uint64
       fixedPoint(NonNegativeRatio(
-        num: 99999999999999999'u64, den: 100000000000000000'u64)) == 999
+      num: 99999999999999999'u64, den: 100000000000000000'u64)) == 999
 
 {.pop.}

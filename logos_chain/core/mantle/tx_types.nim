@@ -14,8 +14,7 @@
 
 import
   bincode,
-  ./[primitives, operations, proofs],
-  ../crypto/types
+  ./[primitives, operations, proofs]
 
 export primitives, operations, proofs
 
@@ -51,10 +50,7 @@ func encodeSignedMantleTx*(signedTx: SignedMantleTx): Result[seq[byte], Encoding
   res.add(proofsBytes)
   ok(res)
 
-template encodeSignedMantleTx*(signedTx: ValidSignedMantleTx): Result[seq[byte], EncodingError] =
-  encodeSignedMantleTx(SignedMantleTx(signedTx))
-
-func byteLen*(tx: MantleTx): int =
+func byteLen(tx: MantleTx): int =
   ## Exact wire byte length of a MantleTx without allocating buffers.
   byteLen(tx.ops)
 
@@ -74,15 +70,16 @@ func readMantleTx*(data: openArray[byte], pos: var int): Result[MantleTx, Decodi
 
 func decodeSignedMantleTx*(data: openArray[byte]): Result[SignedMantleTx, DecodingError] =
   var pos = 0
-  let tx = ?readMantleTx(data, pos)
-  let opProofs =
-    if tx.ops.len == 0:
-      ?finishDecode(data, pos)
-      @[]
-    elif pos < data.len:
-      ?decodeOpsProofs(tx.ops, data.toOpenArray(pos, data.high))
-    else:
-      return err(DecodingError.MissingProofs)
+  let
+    tx = ?readMantleTx(data, pos)
+    opProofs =
+      if tx.ops.len == 0:
+        ?finishDecode(data, pos)
+        @[]
+      elif pos < data.len:
+        ?decodeOpsProofs(tx.ops, data.toOpenArray(pos, data.high))
+      else:
+        return err(DecodingError.MissingProofs)
   ok(SignedMantleTx(tx: tx, opProofs: opProofs))
 
 func bincodeEncodeSignedMantleTx(tx: SignedMantleTx): seq[byte] {.raises: [BincodeError].} =

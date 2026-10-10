@@ -112,14 +112,15 @@ proc addBlock*(
     resfut.complete(BlockApplyResult.err(BlockApplyError(kind: error)))
     return resfut
 
-  let key = inFlightKey(id, blk.signature)
-  let entry = BlockEntry(
-    kind: BlockEntryKind.RawIncoming,
-    blk: blk,
-    src: src,
-    resfut: Opt.some(resfut),
-    queueTick: Moment.now(),
-  )
+  let
+    key = inFlightKey(id, blk.signature)
+    entry = BlockEntry(
+      kind: BlockEntryKind.RawIncoming,
+      blk: blk,
+      src: src,
+      resfut: Opt.some(resfut),
+      queueTick: Moment.now(),
+    )
   bp.inFlight[key] = entry
   try:
     bp.blockQueue.addLastNoWait(entry)
@@ -129,8 +130,9 @@ proc addBlock*(
   resfut
 
 proc enqueueOrphanBlock(bp: BlockProcessor, child: AdmittedBlock) =
-  let childId = blockId(header(child))
-  let key = inFlightKey(childId, Block(child).signature)
+  let
+    childId = blockId(header(child))
+    key = inFlightKey(childId, Block(child).signature)
   var stolenResfut = Opt.none(BlockApplyFuture)
 
   bp.inFlight.withValue(key, existing):

@@ -11,13 +11,11 @@
 {.push raises: [], gcsafe.}
 
 import
-  std/options,
   results,
   json_serialization,
   constantine/math/arithmetic,
   constantine/math/extension_fields/towers,
   constantine/math/io/io_bigints,
-  constantine/named/properties_fields,
   groth16/bn128,
   ../poseidon2/hasher
 

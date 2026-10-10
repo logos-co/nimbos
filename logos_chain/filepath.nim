@@ -7,8 +7,9 @@
 
 {.push raises: [], gcsafe.}
 
-import chronicles
-import stew/io2
+import
+  chronicles,
+  stew/io2
 
 when defined(windows):
   import stew/[windows/acl]

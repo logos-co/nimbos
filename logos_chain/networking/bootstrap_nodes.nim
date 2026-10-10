@@ -14,8 +14,8 @@
 
 import
   std/[sequtils, strutils],
-  chronicles, results,
-  libp2p/[peerid, peerinfo, multiaddress, multicodec],
+  chronicles,
+  libp2p/[peerinfo, multicodec],
   ../conf
 
 const
@@ -50,8 +50,9 @@ proc addBootstrapNode(
     bootstrapAddr: string,
     bootstrapPeers: var seq[(PeerId, MultiAddress)]
 ) =
-  let hashIdx = bootstrapAddr.find('#')
-  let cleanAddr = (if hashIdx >= 0: bootstrapAddr[0 ..< hashIdx] else: bootstrapAddr).strip()
+  let
+    hashIdx = bootstrapAddr.find('#')
+    cleanAddr = (if hashIdx >= 0: bootstrapAddr[0 ..< hashIdx] else: bootstrapAddr).strip()
   if cleanAddr.len == 0:
     return
 

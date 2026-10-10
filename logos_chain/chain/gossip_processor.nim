@@ -24,8 +24,9 @@ logScope:
 proc processProposal*(
     bp: BlockProcessor, proposal: Proposal, src: PeerId
 ): ValidationResult =
-  let id = blockId(proposal.header)
-  let idHex = toHex(id)
+  let
+    id = blockId(proposal.header)
+    idHex = toHex(id)
 
   # 1. Scalar slot checks (~2-20 ns)
   if proposal.header.slot <= bp.localTree.latestImmutableSlot():
@@ -67,11 +68,12 @@ proc processTx*(
       opCount = tx.tx.ops.len, proofCount = tx.opProofs.len, src
     return ValidationResult.Reject
 
-  let txHash = mantleTxHash(tx.tx).valueOr:
-    debug "GossipSub rejected malformed tx (hashing failed)",
-      error = $error, src
-    return ValidationResult.Reject
-  let txHashHex = toHex(txHash)
+  let
+    txHash = mantleTxHash(tx.tx).valueOr:
+      debug "GossipSub rejected malformed tx (hashing failed)",
+        error = $error, src
+      return ValidationResult.Reject
+    txHashHex = toHex(txHash)
 
   if txHash in bp.mempool:
     trace "GossipSub ignored duplicate tx already in mempool",
@@ -83,11 +85,12 @@ proc processTx*(
       txHash = txHashHex, src
     return ValidationResult.Reject
 
-  let nowSlot = bp.currentWallclockSlot()
-  let added = bp.mempool.add(ValidSignedMantleTx(tx), nowSlot).valueOr:
-    debug "GossipSub rejected tx (mempool add failed)",
-      error = $error, src
-    return ValidationResult.Reject
+  let
+    nowSlot = bp.currentWallclockSlot()
+    added = bp.mempool.add(ValidSignedMantleTx(tx), nowSlot).valueOr:
+      debug "GossipSub rejected tx (mempool add failed)",
+        error = $error, src
+      return ValidationResult.Reject
   if not added:
     trace "GossipSub ignored duplicate tx already in mempool",
       txHash = txHashHex, src

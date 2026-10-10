@@ -10,18 +10,11 @@
 
 import
   std/[os, strutils],
-  unittest2,
-  results,
   stew/io2,
   bearssl/rand,
   libp2p/crypto/ed25519/ed25519,
-  ../../logos_chain/ledger/
-    [balance, cryptarchia_state, ledger, types],
-  ../../logos_chain/ledger/sdp/[ops, registry, state],
-  ../../logos_chain/core/mantle/
-    [primitives, operations, proofs, tx_hashing, tx_types, utxo],
+  ../../logos_chain/ledger/ledger,
   ../../logos_chain/core/types,
-  ../../logos_chain/zk/pol,
   ../zk/zksign_helpers,
   ./sdp/test_helpers,
   ../core/mantle/test_helpers,
@@ -42,9 +35,10 @@ proc prepareUpdateWithHeader[Id](
     proof: ProofOfLeadership,
     txs: openArray[ValidSignedMantleTx],
 ): Result[LedgerState, LedgerError] =
-  let parent = l.state(parentId).valueOr:
-    return err(ParentNotFound)
-  let afterHeader = ?parent.tryApplyHeader(slot, proof, l.config, l.leaderProofVerifier)
+  let
+    parent = l.state(parentId).valueOr:
+      return err(ParentNotFound)
+    afterHeader = ?parent.tryApplyHeader(slot, proof, l.config, l.leaderProofVerifier)
   l.prepareUpdate(slot, afterHeader, txs)
 
 from ./test_helpers import testLedgerConfig
@@ -87,9 +81,10 @@ suite "LedgerState constructors and reads":
       u1 = mkUtxo(value = 50, pkSeed = 1)
       u2 = mkUtxo(value = 100, pkSeed = 2)
       s = mkState([u1, u2])
-    check s.latestUtxos.len == 2
-    check s.latestUtxos.contains(u1.id)
-    check s.latestUtxos.contains(u2.id)
+    check:
+      s.latestUtxos.len == 2
+      s.latestUtxos.contains(u1.id)
+      s.latestUtxos.contains(u2.id)
 
 suite "tryApplyHeader":
   test "genesis-sentinel proof returns state unchanged":
@@ -97,8 +92,9 @@ suite "tryApplyHeader":
       u = mkUtxo()
       s0 = mkState([u])
       r = s0.tryApplyHeader(slot = 1'u64, proof = mkProof(), cfg = testLedgerConfig)
-    check r.isOk
-    check r.get.latestUtxos == s0.latestUtxos
+    check:
+      r.isOk
+      r.get.latestUtxos == s0.latestUtxos
 
   test "returns VerifierNotInitialised when VK singleton missing":
     pol.resetVkForTesting()
@@ -110,12 +106,13 @@ suite "tryApplyHeader":
 
   test "returns InvalidProofOfLeadership when verifier rejects":
     pol.resetVkForTesting()
-    let vkText = readAllChars(fixtureVk).valueOr:
-      check false
-      return
-    let vk = parseVk(vkText).valueOr:
-      check false
-      return
+    let
+      vkText = readAllChars(fixtureVk).valueOr:
+        check false
+        return
+      vk = parseVk(vkText).valueOr:
+        check false
+        return
     check pol.initVk(vk).isOk
 
     let s0 = mkState([mkUtxo()])
@@ -156,8 +153,8 @@ suite "tryApplyTx — channel ops":
       kp = mkEdKeyPair(rng)
       cid = mkChannelId(2)
       note = mkUtxo(value = 100, pkSeed = 1)
-    var
-      s0 = mkChannelState([note], cid, kp.pubkey, [note])
+    var s0 = mkChannelState([note], cid, kp.pubkey, [note])
+    let
       body = MantleTx(ops: @[createChannelWithdrawOp(
         ChannelWithdrawPayload(channel: cid, inputs: Inputs(noteIds: @[note.id])))])
       txHash = mantleTxHash(body).get
@@ -175,11 +172,12 @@ suite "tryApplyTx — channel ops":
     let balance = r.get
     # Bridged funds never enter or leave the UTXO set, so a channel op can
     # never fund its own fees — a Transfer op in the same tx must.
-    check balance == Balance.zero
-    check s0.mandatory_fees(ValidSignedMantleTx(tx)).get.executionGas == Gas(56)
-    check s0.latestUtxos.len == 1
-    check s0.latestUtxos.contains(note.id)
-    check s0.mantleLedger.channelNotes.isEmpty
+    check:
+      balance == Balance.zero
+      s0.mandatory_fees(ValidSignedMantleTx(tx)).get.executionGas == Gas(56)
+      s0.latestUtxos.len == 1
+      s0.latestUtxos.contains(note.id)
+      s0.mantleLedger.channelNotes.isEmpty
 
   test "ChannelTransfer keeps the balance at zero while rewriting the notes":
     let
@@ -188,8 +186,8 @@ suite "tryApplyTx — channel ops":
       cid = mkChannelId(3)
       note = mkUtxo(value = 100, pkSeed = 1)
       reassigned = mkNote(100, pkSeed = 2)
-    var
-      s0 = mkChannelState([note], cid, kp.pubkey, [note])
+    var s0 = mkChannelState([note], cid, kp.pubkey, [note])
+    let
       op = ChannelTransferPayload(
         channel: cid, inputs: Inputs(noteIds: @[note.id]), outputs: Outputs(notes: @[reassigned]))
       body = MantleTx(ops: @[createChannelTransferOp(op)])
@@ -208,11 +206,12 @@ suite "tryApplyTx — channel ops":
     let
       balance = r.get
       minted = Utxo(opId: opId(op).get, outputIndex: 0, note: reassigned)
-    check balance == Balance.zero
-    check s0.mandatory_fees(ValidSignedMantleTx(tx)).get.executionGas == Gas(56)
-    check not s0.latestUtxos.contains(note.id)
-    check s0.latestUtxos.contains(minted.id)
-    check s0.mantleLedger.channelNotes.isChannelNoteOf(minted.id, cid)
+    check:
+      balance == Balance.zero
+      s0.mandatory_fees(ValidSignedMantleTx(tx)).get.executionGas == Gas(56)
+      not s0.latestUtxos.contains(note.id)
+      s0.latestUtxos.contains(minted.id)
+      s0.mantleLedger.channelNotes.isChannelNoteOf(minted.id, cid)
 
   test "a regular Transfer cannot spend a channel note → ChannelNoteSpend":
     let
@@ -220,8 +219,8 @@ suite "tryApplyTx — channel ops":
       kp = mkEdKeyPair(rng)
       cid = mkChannelId(4)
       note = mkUtxo(value = 100, pkSeed = 1)
-    var
-      s0 = mkChannelState([note], cid, kp.pubkey, [note])
+    var s0 = mkChannelState([note], cid, kp.pubkey, [note])
+    let
       tx = mkTransferTx([note.id], [mkNote(100, pkSeed = 2)])
       r = s0.tryApplyTx(
         ValidSignedMantleTx(tx), epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
@@ -233,8 +232,9 @@ suite "Ledger[Id] map ops":
       seed = mkState(@[mkUtxo()])
       id = mkId(0x01)
       l = initLedger(id, seed, testLedgerConfig)
-    check l.hasState(id)
-    check not l.hasState(mkId(0x02))
+    check:
+      l.hasState(id)
+      not l.hasState(mkId(0x02))
 
   test "commitUpdate overwrites":
     var l = initLedger(mkId(0x01), mkState(@[]), testLedgerConfig)
@@ -242,7 +242,6 @@ suite "Ledger[Id] map ops":
       id2 = mkId(0x02)
       st2 = mkState(@[mkUtxo(value = 7, pkSeed = 7)])
     l.commitUpdate(id2, st2)
-    check l.state(id2).isSome
     check l.state(id2).get.latestUtxos.len == 1
 
   test "pruneStateAt removes existing state; missing key is a safe no-op":
@@ -262,8 +261,9 @@ suite "prepareUpdate — no-verify paths":
         proof = mkProof(),
         txs = @[],
       )
-    check r.isErr
-    check r.error == ParentNotFound
+    check:
+      r.isErr
+      r.error == ParentNotFound
 
   test "empty tx list → state unchanged, no commit":
     let
@@ -279,8 +279,9 @@ suite "prepareUpdate — no-verify paths":
       )
     check r.isOk
     let preparedState = r.get
-    check preparedState.latestUtxos == parent.latestUtxos
-    check l.state(id1).isNone # not committed
+    check:
+      preparedState.latestUtxos == parent.latestUtxos
+      l.state(id1).isNone # not committed
 
 suite "tryApplyTx — happy path (Rust-generated fixture)":
   # Uses a pre-generated proof tied to this exact tx shape. Any change to
@@ -299,9 +300,10 @@ suite "tryApplyTx — happy path (Rust-generated fixture)":
     check r.isOk
 
     let balance = r.get
-    check balance == Balance.zero
-    check s0.latestUtxos.len == 1
-    check not s0.latestUtxos.contains(input.id)
+    check:
+      balance == Balance.zero
+      s0.latestUtxos.len == 1
+      not s0.latestUtxos.contains(input.id)
 
   test "tx application preserves the epoch tracker and SDP registry":
     # Guards against ops rebuilding LedgerState and resetting omitted fields.
@@ -318,13 +320,15 @@ suite "tryApplyTx — happy path (Rust-generated fixture)":
       zkId: lockedElsewhere.note.zkPublicKey,
     )
     discard installTestDeclaration(s0.sdp, declaration, epoch = 1)
-    let prevEpochs = s0.epochs
-    let r = s0.tryApplyTx(
-      ValidSignedMantleTx(mkFixtureTransferTx(input)), epoch = EpochNumber(0), slot = 0'u64,
-      verifyPoq = acceptAllPoq)
-    check r.isOk
-    check s0.epochs == prevEpochs
-    check declarationId(declaration).get in s0.sdp.state.declarations
+    let
+      prevEpochs = s0.epochs
+      r = s0.tryApplyTx(
+        ValidSignedMantleTx(mkFixtureTransferTx(input)), epoch = EpochNumber(0), slot = 0'u64,
+        verifyPoq = acceptAllPoq)
+    check:
+      r.isOk
+      s0.epochs == prevEpochs
+      declarationId(declaration).get in s0.sdp.state.declarations
 
 # Suites below need a valid `OpProof` per transfer op — i.e. a zksign proof
 # generated for that op's input pks + tx hash. nimbos has no Nim-side prover
@@ -361,10 +365,11 @@ when false:
           tx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
       check r.isOk
       let res = r.get
-      check res.balance == Balance.zero
-      check res.state.latestUtxos.len == 2
-      check not res.state.latestUtxos.contains(in1.id)
-      check not res.state.latestUtxos.contains(in2.id)
+      check:
+        res.balance == Balance.zero
+        res.state.latestUtxos.len == 2
+        not res.state.latestUtxos.contains(in1.id)
+        not res.state.latestUtxos.contains(in2.id)
 
     test "two ops, second has wrong proof kind → PermanentInvalidTxProof":
       let
@@ -394,8 +399,9 @@ when false:
         )
         r = s0.tryApplyTx(
           tx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
-      check r.isErr
-      check r.error == PermanentInvalidTxProof
+      check:
+        r.isErr
+        r.error == PermanentInvalidTxProof
 
   suite "tryApplyTxns":
     test "balanced tx → state advances":
@@ -404,8 +410,9 @@ when false:
         s0 = mkState([input])
         tx = mkTransferTx([input.id], [mkNote(100, pkSeed = 2)])
         r = s0.tryApplyTxns([ValidSignedMantleTx(tx)], slot = 0'u64, verifyPoq = acceptAllPoq)
-      check r.isOk
-      check r.get.latestUtxos.len == 1
+      check:
+        r.isOk
+        r.get.latestUtxos.len == 1
 
     test "underspending (output > input) → InsufficientBalance":
       let
@@ -414,8 +421,9 @@ when false:
         tx = mkTransferTx([input.id], [mkNote(60, pkSeed = 2), mkNote(50, pkSeed = 3)])
           # sum 110 > input 100
         r = s0.tryApplyTxns([ValidSignedMantleTx(tx)], slot = 0'u64, verifyPoq = acceptAllPoq)
-      check r.isErr
-      check r.error == InsufficientBalance
+      check:
+        r.isErr
+        r.error == InsufficientBalance
 
     test "surplus below fee (input > output) → InsufficientBalance":
       let
@@ -423,8 +431,9 @@ when false:
         s0 = mkState([input])
         tx = mkTransferTx([input.id], [mkNote(50, pkSeed = 2)]) # surplus 50 < fee
         r = s0.tryApplyTxns([ValidSignedMantleTx(tx)], slot = 0'u64, verifyPoq = acceptAllPoq)
-      check r.isErr
-      check r.error == InsufficientBalance
+      check:
+        r.isErr
+        r.error == InsufficientBalance
 
   suite "prepareUpdate — verify paths":
     test "happy path with one transfer + commit":
@@ -440,11 +449,10 @@ when false:
           proof = mkProof(),
           txs = [ValidSignedMantleTx(tx)],
         )
-      check r.isOk
       l.commitUpdate(mkId(0x02), r.get)
-      check l.state(mkId(0x02)).isSome
-      check l.state(mkId(0x02)).get.latestUtxos.len == 1
-      check not l.state(mkId(0x02)).get.latestUtxos.contains(input.id)
+      check:
+        l.state(mkId(0x02)).get.latestUtxos.len == 1
+        not l.state(mkId(0x02)).get.latestUtxos.contains(input.id)
 
     test "surplus below fee → InsufficientBalance":
       let
@@ -457,8 +465,9 @@ when false:
           proof = mkProof(),
           txs = [ValidSignedMantleTx(tx)],
         )
-      check r.isErr
-      check r.error == InsufficientBalance
+      check:
+        r.isErr
+        r.error == InsufficientBalance
 
     test "multi-block IBD: 3 prepare+commit cycles":
       # Walks the same prepare→commit sequence the chain module will eventually
@@ -476,7 +485,6 @@ when false:
           proof = mkProof(),
           txs = [ValidSignedMantleTx(tx1)],
         )
-      check r1.isOk
       l.commitUpdate(mkId(0x01), r1.get)
 
       let
@@ -499,7 +507,6 @@ when false:
           proof = mkProof(),
           txs = [ValidSignedMantleTx(tx2)],
         )
-      check r2.isOk
       l.commitUpdate(mkId(0x02), r2.get)
 
       let
@@ -512,8 +519,6 @@ when false:
         utxoAfter2 = Utxo(
           opId: tx2OpId, outputIndex: 0, note: mkNote(100, pkSeed = 3)
         )
-
-      let
         tx3 = mkTransferTx(
           [utxoAfter2.id], [mkNote(60, pkSeed = 4), mkNote(40, pkSeed = 5)]
         )
@@ -523,42 +528,43 @@ when false:
           proof = mkProof(),
           txs = [ValidSignedMantleTx(tx3)],
         )
-      check r3.isOk
       l.commitUpdate(mkId(0x03), r3.get)
 
-      check l.state(mkId(0x00)).isSome
-      check l.state(mkId(0x01)).isSome
-      check l.state(mkId(0x02)).isSome
-      check l.state(mkId(0x03)).isSome
-      check l.state(mkId(0x03)).get.latestUtxos.len == 2
-
-      check not l.state(mkId(0x03)).get.latestUtxos.contains(input1.id)
-      check not l.state(mkId(0x03)).get.latestUtxos.contains(utxoAfter1.id)
-      check not l.state(mkId(0x03)).get.latestUtxos.contains(utxoAfter2.id)
+      check:
+        l.state(mkId(0x00)).isSome
+        l.state(mkId(0x01)).isSome
+        l.state(mkId(0x02)).isSome
+        l.state(mkId(0x03)).get.latestUtxos.len == 2
+        not l.state(mkId(0x03)).get.latestUtxos.contains(input1.id)
+        not l.state(mkId(0x03)).get.latestUtxos.contains(utxoAfter1.id)
+        not l.state(mkId(0x03)).get.latestUtxos.contains(utxoAfter2.id)
 
 suite "tryApplyTx — SDP":
   test "declare locks note; withdraw unlocks after finalization":
     let input = mkUtxo(value = 200, pkSeed = 1)
     var state = mkState([input])
-    let declaration = DeclarationMessage(
-      serviceType: ServiceType.bn,
-      locators: @[],
-      providerId: mkProvider(1),
-      lockedNoteId: input.id,
-      zkId: input.note.zkPublicKey,
-    )
-    let declId = installTestDeclaration(state.sdp, declaration, epoch = 1)
+    let
+      declaration = DeclarationMessage(
+        serviceType: ServiceType.bn,
+        locators: @[],
+        providerId: mkProvider(1),
+        lockedNoteId: input.id,
+        zkId: input.note.zkPublicKey,
+      )
+      declId = installTestDeclaration(state.sdp, declaration, epoch = 1)
     check declId in state.sdp.state.declarations
 
-    let spendOp = TransferPayload(
-      inputs: Inputs(noteIds: @[input.id]),
-      outputs: Outputs(notes: @[mkNote(200, pkSeed = 2)]),
-    )
-    let locked = state.cryptarchiaLedger.applyTransferState(
-      state.sdp.state.lockedNotes, state.mantleLedger.channelNotes, spendOp,
-    )
-    check locked.isErr
-    check locked.error == LedgerError.LockedNote
+    let
+      spendOp = TransferPayload(
+        inputs: Inputs(noteIds: @[input.id]),
+        outputs: Outputs(notes: @[mkNote(200, pkSeed = 2)]),
+      )
+      locked = state.cryptarchiaLedger.applyTransferState(
+        state.sdp.state.lockedNotes, state.mantleLedger.channelNotes, spendOp,
+      )
+    check:
+      locked.isErr
+      locked.error == LedgerError.LockedNote
 
     let withdraw = WithdrawMessage(
       declarationId: declId,
@@ -673,14 +679,16 @@ suite "block rewards — per-block leader crediting":
     s = s.creditBlockRewards(GasCost(0), GasCost(0)).expect("credited")
     let utxosBefore = s.latestUtxos.len
     s = s.tryApplyHeader(100'u64, mkProof(), testLedgerConfig).expect("rotation")
-    check s.latestUtxos.len == utxosBefore
-    check s.sdp.blendRewards.target.isNone
-    check s.sdp.blendRewards.epochIncome == 0
+    check:
+      s.latestUtxos.len == utxosBefore
+      s.sdp.blendRewards.target.isNone
+      s.sdp.blendRewards.epochIncome == 0
 
   test "toLedgerError: maps EncodingError variants correctly":
-    check toLedgerError(EncodingError.UnsupportedOpcode) == LedgerError.UnsupportedOp
-    check toLedgerError(EncodingError.LengthExceeded) == LedgerError.PermanentInvalidTxProof
-    check toLedgerError(EncodingError.ProofCountMismatch) == LedgerError.PermanentInvalidTxProof
-    check toLedgerError(EncodingError.MultiSigCountExceeded) == LedgerError.PermanentInvalidTxProof
+    check:
+      toLedgerError(EncodingError.UnsupportedOpcode) == LedgerError.UnsupportedOp
+      toLedgerError(EncodingError.LengthExceeded) == LedgerError.PermanentInvalidTxProof
+      toLedgerError(EncodingError.ProofCountMismatch) == LedgerError.PermanentInvalidTxProof
+      toLedgerError(EncodingError.MultiSigCountExceeded) == LedgerError.PermanentInvalidTxProof
 
 {.pop.}

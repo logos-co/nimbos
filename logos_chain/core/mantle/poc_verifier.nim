@@ -13,9 +13,7 @@
 import
   results,
   ./[operations, proofs],
-  ../crypto/types,
-  ../../zk/poc,
-  ../../zk/poseidon2/hasher
+  ../../zk/poc
 
 export poc, results
 
@@ -42,12 +40,13 @@ proc verifyProofOfClaim*(
 ): Result[bool, PocLoadError] =
   ## Out-of-modulus public hashes return `ok(false)`. `err(VkNotLoaded)` only
   ## on missing startup init.
-  let voucherNullifier = frFromBytesLE(public.voucherNullifier).valueOr:
-    return ok(false)
-  let mantleTxHashFr = frFromBytesLE(public.mantleTxHash).valueOr:
-    return ok(false)
-  let voucherRoot = frFromBytesLE(public.voucherRoot).valueOr:
-    return ok(false)
+  let
+    voucherNullifier = frFromBytesLE(public.voucherNullifier).valueOr:
+      return ok(false)
+    mantleTxHashFr = frFromBytesLE(public.mantleTxHash).valueOr:
+      return ok(false)
+    voucherRoot = frFromBytesLE(public.voucherRoot).valueOr:
+      return ok(false)
   poc.verify(proof, PocVerifierInput(
     voucherNullifier: voucherNullifier,
     mantleTxHashFr: mantleTxHashFr,

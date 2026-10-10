@@ -10,12 +10,11 @@
 {.push raises: [], gcsafe.}
 
 import
-  results,
   ../crypto/[hashing, types],
   libp2p/multiaddress,
   poseidon2/[types, io]
-export hashing, types, io
 export
+  hashing, types, io,
   encodeByte, encodeEd25519PublicKey, encodeEd25519Signature, encodeFieldElement,
   encodeGroth16, encodeHash32, encodeU32LeLenPrefixed,
   encodeLe, encodeZkPublicKey, encodeZkSignature,
@@ -285,8 +284,9 @@ func readLocator*(data: openArray[byte], pos: var int): Result[Locator, Decoding
   ok(ma)
 
 func readNote(data: openArray[byte], pos: var int): Result[Note, DecodingError] =
-  let value = Value(?readLe[uint64](data, pos))
-  let zkPublicKey = ?decodeFieldElementAt(data, pos)
+  let
+    value = Value(?readLe[uint64](data, pos))
+    zkPublicKey = ?decodeFieldElementAt(data, pos)
   ok(Note(value: value, zkPublicKey: zkPublicKey))
 
 func readInputs*(data: openArray[byte], pos: var int): Result[Inputs, DecodingError] =
