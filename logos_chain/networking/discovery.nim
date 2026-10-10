@@ -48,28 +48,33 @@ proc kadDiscoveryLookupWalk*(
   debug "Kad discovery findNode lookup walk"
   discard await kad.findNode(targetKey)
 
+iterator routingTablePeers(kad: KadDHT, sw: Switch): PeerId =
+  ## Routing-table peers with a live ``AddressBook`` entry, without self.
+  if not isNil(kad) and not isNil(sw):
+    var seen: HashSet[PeerId]
+    for bucket in kad.rtable.buckets:
+      for entry in bucket.peers:
+        let peerId = entry.nodeId.toPeerId().valueOr:
+          continue
+        if peerId != sw.peerInfo.peerId and
+            peerId in sw.peerStore[AddressBook] and
+            not seen.containsOrIncl(peerId):
+          yield peerId
+
 proc collectKadDiscoveredPeers[T](
     kad: KadDHT,
     sw: Switch,
     peerPool: PeerPool[T, PeerId],
 ): seq[DiscoveredPeerAddr] =
-  if isNil(kad) or isNil(sw) or isNil(peerPool):
+  if isNil(peerPool):
     return @[]
-  var
-    seen: HashSet[PeerId]
-    discovered: seq[DiscoveredPeerAddr]
-  let selfId = sw.peerInfo.peerId
-  for bucket in kad.rtable.buckets:
-    let peers = bucket.peers
-    for entry in peers:
-      let peerId = entry.nodeId.toPeerId().valueOr:
-        continue
-      if peerId == selfId or peerPool.hasPeer(peerId) or seen.containsOrIncl(peerId):
-        continue
-      let addrs = sw.peerStore[AddressBook][peerId]
-      if addrs.len > 0:
-        discovered.add((peerId: peerId, addrs: addrs))
-  discovered
+  toSeq(routingTablePeers(kad, sw))
+    .filterIt(not peerPool.hasPeer(it))
+    .mapIt((peerId: it, addrs: sw.peerStore[AddressBook][it]))
+
+proc discoveredPeers*(kad: KadDHT, sw: Switch): seq[PeerId] =
+  ## Routing-table peers with a known address. Connected peers are included.
+  toSeq(routingTablePeers(kad, sw))
 
 proc enqueueKadDiscoveredPeers*[T](
     kad: KadDHT,
