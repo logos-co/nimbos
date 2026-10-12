@@ -9,9 +9,20 @@
 {.used.}
 
 import
+  std/algorithm,
+  stew/byteutils,
   unittest2,
   ../../../logos_chain/core/crypto/types,
   ../../../logos_chain/core/mantle/[proofs, operations]
+
+# ChannelMultiSigProof = SignatureCount *(SignerIndex Ed25519Signature),
+# Mantle Transaction Encoding 1.9.0. The spec has no vector for this
+# structure. These bytes come from an external encoder, not from this one,
+# so do not regenerate them from `encodeChannelMultiSigProof`.
+# Layout: count 2, then index 0 with 64 bytes of 0x01, then index 7 with
+# 64 bytes of 0x02.
+const channelMultiSigHex =
+  "0200000001010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101010101070002020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202"
 
 suite "core/mantle/proofs":
   test "the three channel multisig ops share one proof type on the wire":
@@ -27,6 +38,18 @@ suite "core/mantle/proofs":
     var pos = 0
     check readOpProof(encBytes, pos, opfChannelTransfer).get.channelTransferOpProof == proof
     check pos == encBytes.len
+
+  test "ChannelMultiSigProof puts each signer index before its signature":
+    var sig0, sig7: Ed25519Signature
+    sig0.data.fill(1'u8)
+    sig7.data.fill(2'u8)
+    let
+      proof = ChannelMultiSigProof(signatures: @[sig0, sig7], indexes: @[0'u16, 7'u16])
+      fixture = hexToSeqByte(channelMultiSigHex)
+    check encodeChannelMultiSigProof(proof.signatures, proof.indexes).get == fixture
+    var pos = 0
+    check readOpProof(fixture, pos, opfChannelWithdraw).get.channelWithdrawOpProof == proof
+    check pos == fixture.len
 
   test "decodeOpsProofs roundtrips encodeOpsProofs and verifies wire length":
     let
