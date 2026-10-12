@@ -287,7 +287,7 @@ proc childBlock*(
       txs = txs,
       proofOfLeadership = proofOfLeadership,
     ).get
-    sig = testBlockKeyPair.seckey.sign(blockId(h))
+    sig = signHeader(testBlockKeyPair.seckey, h)
   initBlock(h, signature = sig, uncleHeaders = uncleHeaders, txs = txs)
 
 type BootstrapPeers* = object

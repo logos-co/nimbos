@@ -131,7 +131,7 @@ proc constructProposal*(
       txHashes = refs.toOpenArray(0, count - 1),
       proofOfLeadership = proofOfLeadership,
     )
-    sig = leaderSecKey.sign(blockId(h))
+    sig = signHeader(leaderSecKey, h)
   initProposal(h, [], refs, sig)
 
 func reconstructBlock*(

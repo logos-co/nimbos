@@ -121,4 +121,9 @@ suite "core/body_root (spec vectors)":
     check wire.toOpenArray(233, 264) == hexToByteArray[32](leaderKeyHex)
     check wire[265] == 0x44'u8 and wire[296] == 0'u8
 
+  test "verify_signature checks the 297 header bytes":
+    let u0 = uncle(uncle0Hex)
+    check verify_signature(
+      u0.header, u0.signature, u0.header.proofOfLeadership.leaderKey)
+
 {.pop.}

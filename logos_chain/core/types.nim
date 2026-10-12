@@ -69,8 +69,8 @@ type
     ## (Tiers 0–2) and PoL/stateless transaction verifications (Tier 3).
 
   # Fields are in the canonical order of Block Construction 1.3.0, but the
-  # wire is still bincode (u64 counts, fixed full-hash references, signature
-  # over the block ID). The canonical proposal codec is a separate change.
+  # wire is still bincode (u64 counts, fixed full-hash references). The
+  # canonical proposal codec is a separate change.
   Proposal* = object
     header*: Header
     uncleHeaders*: UncleHeaders
@@ -116,6 +116,19 @@ func encodeHeader*(header: Header): array[HeaderSize, byte] =
     encodeEd25519PublicKey(header.proofOfLeadership.leaderKey))
   assign(res.toOpenArray(265, 296), header.proofOfLeadership.leaderVoucher)
   res
+
+func signHeader*(key: EdPrivateKey, header: Header): Ed25519Signature =
+  ## Leader signature over the canonical header encoding.
+  key.sign(encodeHeader(header))
+
+func verify_signature*(
+    header: Header, signature: Ed25519Signature,
+    leaderKey: Ed25519PublicKey): bool =
+  ## True if `signature` is the signature of `leaderKey` over the canonical
+  ## header encoding.
+  # The key is a parameter, as in Cryptarchia step 9. Each caller passes the
+  # leader key from the header that it verifies.
+  signature.verify(encodeHeader(header), leaderKey)
 
 func encodeSignedHeader*(signed: SignedHeader): array[SignedHeaderSize, byte] =
   ## Canonical 361-byte signed header encoding.
