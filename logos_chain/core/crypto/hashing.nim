@@ -6,20 +6,19 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## Hashing and PRNG over common cryptographic types (see ``encoding``).
-## Spec: [Common Cryptographic Components v1.0.2](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/common-cryptographic-components.md)
+## Spec: [Common Cryptographic Components v1.2.0](https://github.com/logos-co/logos-lips/blob/fddc2c1911626f7b1949360b8924bb6c05252bff/docs/blockchain/raw/common-cryptographic-components.md)
 
 {.push raises: [], gcsafe.}
 
 import
+  std/algorithm,
+  bearssl/blockx,
   nimcrypto/blake2,
   stew/staticfor,
   ./types
 export types
 
-
 func blake2b256Hash*(domainTag: string, data: openArray[byte]): Hash32 =
-  ## Spec reference (common cryptographic components):
-  ## https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/common-cryptographic-components.md#blake2bgeneral-purpose-hashing
   ## Returns BLAKE2b-256([domainTag ||] data) as a 32-byte **``Hash32``**.
   var ctx {.noinit.}: Blake2bContext[256]
   ctx.init()
@@ -31,13 +30,6 @@ func blake2b256Hash*(domainTag: string, data: openArray[byte]): Hash32 =
 
 template blake2b256Hash*(data: openArray[byte]): Hash32 =
   blake2b256Hash("", data)
-
-func blake2b512Hash*(data: openArray[byte]): array[64, byte] =
-  ## Returns BLAKE2b-512(data) as a 64-byte digest.
-  var ctx {.noinit.}: Blake2bContext[512]
-  ctx.init()
-  ctx.update(data)
-  ctx.finish().data
 
 func blake2bShort*(data: openArray[byte], outLen: uint64): array[8, byte] =
   ## BLAKE2b digest of ``outLen`` bytes (1..8) in a fixed buffer; bytes
@@ -63,43 +55,17 @@ func generateZkSignature*(): ZkSignature =
   ## Placeholder: return opaque zeroed signature bytes.
   DefaultZkSignature
 
-
-func prngBlock*(seed: Blake2bPrngSeed, index: uint64): Blake2bPrngBlock =
-  ## Spec reference (BLAKE2b-based PRNG):
-  ## https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/common-cryptographic-components.md#blake2b-based-prng-construction
-  ## Spec construction:
-  ## PRNG(seed, i) = BLAKE2b(seed || encode_u64_le(i), out_len=64)
-  var input: array[72, byte]
-  let indexLe = encodeLe(index)
-  for i in 0 .. 63:
-    input[i] = seed[i]
-  for i in 0 .. 7:
-    input[64 + i] = indexLe[i]
-
-  var ctx {.noinit.}: Blake2bContext[512]
-  ctx.init()
-  ctx.update(input)
-  let digest = ctx.finish()
-  digest.data
-
-func prngBytes*(seed: Blake2bPrngSeed, byteLen: Natural): seq[byte] =
-  ## Spec reference (PRNG expansion by concatenation):
-  ## https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/common-cryptographic-components.md#blake2b-based-prng-construction
-  ## Expands PRNG output by concatenating 64-byte PRNG blocks.
-  var res = newSeq[byte](byteLen)
-  if byteLen == 0:
-    return res
-
-  var written = 0
-  var index = 0'u64
-  while written < byteLen:
-    let blk = prngBlock(seed, index)
-    let remaining = byteLen - written
-    let take = min(64, remaining)
-    for j in 0 ..< take:
-      res[written + j] = blk[j]
-    written += take
-    inc index
-  res
+func prng*(seed: Hash32, output: var openArray[byte]) =
+  ## Writes the first `output.len` bytes of the ChaCha20 keystream of `seed`.
+  ## Spec: [ChaCha20-Based PRNG Construction](https://github.com/logos-co/logos-lips/blob/fddc2c1911626f7b1949360b8924bb6c05252bff/docs/blockchain/raw/common-cryptographic-components.md#chacha20-based-prng-construction)
+  # bearssl implements RFC 8439 (96-bit nonce, 32-bit counter). With a zero
+  # nonce, its keystream is equal to the original variant that the spec
+  # names, for the first 2^32 blocks.
+  const nonce = default(array[12, byte])
+  if output.len > 0:
+    output.fill(0'u8)
+    discard chacha20CtRun(
+      addr seed, addr nonce, 0'u32,
+      addr output[0], csize_t(output.len))
 
 {.pop.}

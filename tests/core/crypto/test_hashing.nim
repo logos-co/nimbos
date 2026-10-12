@@ -9,6 +9,7 @@
 {.used.}
 
 import
+  stew/byteutils,
   unittest2,
   ../../../logos_chain/core/crypto/hashing
 
@@ -27,14 +28,13 @@ suite "core/crypto/hashing":
   test "generateZkSignature placeholder is currently skipped":
     skip()
 
-  test "prngBlock is deterministic for same seed and index":
-    var seed: Blake2bPrngSeed
-    seed[0] = 7'u8
-    check prngBlock(seed, 0'u64) == prngBlock(seed, 0'u64)
-    check prngBlock(seed, 1'u64) != prngBlock(seed, 0'u64)
-
-  test "prngBytes empty yields empty":
-    var seed: Blake2bPrngSeed
-    check prngBytes(seed, 0).len == 0
+  test "prng matches the RFC 8439 ChaCha20 keystream":
+    # Test vector #1 of RFC 8439 A.1 (zero key, zero nonce, counter 0).
+    # The expected value is from the RFC, not from this code.
+    var stream: array[64, byte]
+    prng(default(Hash32), stream)
+    check stream.toHex() ==
+      "76b8e0ada0f13d90405d6ae55386bd28bdd219b8a08ded1aa836efcc8b770dc7" &
+      "da41597c5157488d7724e03fb8d84a376a43b8f41518a11cc387b669b2ee6586"
 
 {.pop.}

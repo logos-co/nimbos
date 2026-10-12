@@ -8,7 +8,7 @@
 ## Blend reward pipeline: income accumulation, activity-proof verification
 ## against the frozen target epoch, and payout at rotation.
 ## Spec: [Service Reward Distribution](https://github.com/logos-co/logos-lips/blob/a2a85cbe444e9727ae7f42b2f6d6f4c6bf8d63e9/docs/blockchain/raw/bedrock-service-reward-distribution.md),
-## [Blend Protocol](https://github.com/logos-co/logos-lips/blob/a2a85cbe444e9727ae7f42b2f6d6f4c6bf8d63e9/docs/blockchain/raw/blend-protocol.md)
+## [Blend Protocol v1.6.0](https://github.com/logos-co/logos-lips/blob/fddc2c1911626f7b1949360b8924bb6c05252bff/docs/blockchain/raw/blend-protocol.md)
 ## §Proof of Selection, §Rewarding.
 
 {.push raises: [], gcsafe.}
@@ -111,13 +111,11 @@ func expectedSelectionIndex*(
     selectionRandomness: FieldElement, membershipSize: uint64
 ): uint64 =
   ## ``CSPRNG(H_N(rho))_8 mod N`` (spec §Proof of Selection, condition 1).
-  const TagLen = SelectionDomainTag.len
-  var seedInput {.noinit.}: array[TagLen + 32, byte]
-  seedInput[0 ..< TagLen] =
-    SelectionDomainTag.toOpenArrayByte(0, SelectionDomainTag.high)
-  seedInput[TagLen ..< TagLen + 32] = encodeFieldElement(selectionRandomness)
-  let stream = prngBlock(blake2b512Hash(seedInput), 0)
-  uint64.fromBytesLE(stream.toOpenArray(0, 7)) mod membershipSize
+  let seed = blake2b256Hash(
+    SelectionDomainTag, encodeFieldElement(selectionRandomness))
+  var stream: array[8, byte]
+  prng(seed, stream)
+  uint64.fromBytesLE(stream) mod membershipSize
 
 proc verifyActivity(
     state: TargetEpoch,
