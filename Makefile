@@ -145,7 +145,7 @@ endif
 
 # logos-blockchain-circuits release bundle (VK + zkey + witness binaries).
 # Keep LBC_VERSION in sync with `ExpectedCircuitsVersion` (logos_chain/zk/circuits.nim).
-LBC_VERSION := v0.5.6
+LBC_VERSION := v0.5.7
 
 # Platform-aware data layout mirrors `std/os.getDataDir`.
 ifeq ($(OS),Windows_NT)

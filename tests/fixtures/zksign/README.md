@@ -17,7 +17,7 @@ circuits-bundle release. It must match:
 - `lbc-*-sys` tags in `logos-blockchain/Cargo.toml`
 - `ExpectedCircuitsVersion` in `logos_chain/zk/circuits.nim`
 
-Currently: **v0.5.6**. Bump all three together when the bundle moves.
+Currently: **v0.5.7**. Bump all three together when the bundle moves.
 
 ## Regenerate
 

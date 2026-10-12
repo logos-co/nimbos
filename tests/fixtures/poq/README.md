@@ -30,7 +30,7 @@ release. It must match:
 - `lbc-*-sys` tags in `logos-blockchain/Cargo.toml`
 - `ExpectedCircuitsVersion` in `logos_chain/zk/circuits.nim`
 
-Currently: **v0.5.6**. Bump all three together when the bundle moves.
+Currently: **v0.5.7**. Bump all three together when the bundle moves.
 
 ## Regenerate
 
@@ -47,11 +47,15 @@ Branch fixtures:
 - Output per branch: `proof_<branch>.bin` (160-byte wire
   `ProofOfQuota`) and `public_<branch>.json` (12 decimal signals, in
   the order above).
+- The pow fixture uses `valid_proof_of_work_quota_inputs` at b8c3c54ff.
+  Its ticket is `zkhash(pow_nonce, pol_epoch_nonce)`, with no DST (Proof
+  of Quota 1.2.0).
 
 Core-set fixture: prove the core branch against a real two-member
 registry. Pick two secret keys. Derive their zk-ids and the height-20
-root. Prove with a chosen key index. Regenerate the proof, the public
-signals, and `core_set_meta.json` together. The meta file keeps the
+root. Try key indexes from 0 and prove with the first one whose
+selection randomness selects the member index. Regenerate the proof,
+the public signals, and `core_set_meta.json` together. The meta file keeps the
 secrets out of the Nim tests.
 
 Copy `verification_key.json` from the bundle's `poq/` directory of the

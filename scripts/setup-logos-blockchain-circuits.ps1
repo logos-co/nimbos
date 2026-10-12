@@ -4,17 +4,17 @@
 #   .\setup-logos-blockchain-circuits.ps1 [-Version <ver>] [-InstallDir <path>]
 #
 # Defaults:
-#   Version    : v0.5.6
+#   Version    : v0.5.7
 #   InstallDir : $env:APPDATA\logos-blockchain-circuits\<Version>
 #
 # Examples:
 #   .\setup-logos-blockchain-circuits.ps1
-#   .\setup-logos-blockchain-circuits.ps1 -Version v0.5.6
-#   .\setup-logos-blockchain-circuits.ps1 -Version v0.5.6 -InstallDir C:\circuits
+#   .\setup-logos-blockchain-circuits.ps1 -Version v0.5.7
+#   .\setup-logos-blockchain-circuits.ps1 -Version v0.5.7 -InstallDir C:\circuits
 
 [CmdletBinding()]
 param(
-    [string]$Version = "v0.5.6",
+    [string]$Version = "v0.5.7",
     [string]$InstallDir = ""
 )
 
