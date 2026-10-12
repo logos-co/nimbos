@@ -102,4 +102,10 @@ suite "zk/prover — interop with the reference toolchain":
         else: zksign.verify(bytes, zksignVerifierInput(signals).expect("33"))
       check accepts(accepted)
 
+  test "committed fixture VKs equal the bundle VKs":
+    # The verifier tests read the fixture copies. A stale copy still
+    # accepts its own stale proofs.
+    for c in Circuit:
+      check readText(fixtureDir(c) / "verification_key.json") == vkText(c)
+
 {.pop.}
