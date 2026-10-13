@@ -176,15 +176,13 @@ func validateChannelConfig*(
     proof: ChannelMultiSigProof,
     txHash: Hash32,
 ): Result[void, LedgerError] =
-  ## Read-only checks for ChannelConfig. If the channel exists, verifies
-  ## `configuration_threshold` signatures from current accredited keys.
-  ## On JIT-create path no signature is required.
-  ## Note: Assumes config structure (non-empty keys, valid thresholds) is
-  ## verified statelessly at ingress via `validateMantleTxStateless`.
-  channels.get(op.channel).isErrOr:
-    ?verifyChannelMultiSig(
-      proof, value.accreditedKeys, value.configurationThreshold, txHash)
-  ok()
+  ## Verifies `configuration_threshold` signatures from the accredited keys.
+  ## A new channel has no key, so its proof must be empty.
+  let chan = channels.get(op.channel).valueOr:
+    # No key is accredited yet, so the threshold to verify against is 0.
+    return verifyChannelMultiSig(proof, [], 0, txHash)
+  verifyChannelMultiSig(
+    proof, chan.accreditedKeys, chan.configurationThreshold, txHash)
 
 func applyChannelConfig*(
     channels: ChannelStore,

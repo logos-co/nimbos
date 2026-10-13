@@ -73,6 +73,23 @@ suite "MantleState.tryApplyChannelConfig — JIT creation":
     check r.isOk
     check r.get.channels.getOrDefault(mkChannelId(6)).transferThreshold == 3
 
+  test "a signature in a JIT proof → ThresholdUnmet":
+    # The count check fails before any signature is verified.
+    let
+      op = ChannelConfigPayload(
+        channel: mkChannelId(7),
+        keys: @[default(Ed25519PublicKey)],
+        configurationThreshold: 1,
+        transferThreshold: 1,
+      )
+      proof = ChannelMultiSigProof(
+        signatures: @[default(Ed25519Signature)],
+        indexes: @[ChannelKeyIndex(0)],
+      )
+      r = MantleState.init().tryApplyChannelConfig(
+        op, proof, mkTxHash(), blockSlot = 0'u64)
+    check r.error == ThresholdUnmet
+
 suite "MantleState.tryApplyChannelConfig — existing channel":
   test "valid threshold signatures → config overwrites accreditedKeys":
     let

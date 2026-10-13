@@ -272,6 +272,36 @@ suite "gas: tx execution gas and block limit":
     check mf.isOk
     check mf.get.executionGas == Gas(118)
 
+  test "a JIT config then a 2-of-2 config on the same channel costs 118":
+    let
+      rng = HmacDrbgContext.new()
+      kp1 = mkEdKeyPair(rng)
+      kp2 = mkEdKeyPair(rng)
+      cid = mkChannelId(0x43)
+      create = createChannelConfigOp(ChannelConfigPayload(
+        channel: cid, keys: @[kp1.pubkey, kp2.pubkey],
+        configurationThreshold: 2, transferThreshold: 1))
+      update = createChannelConfigOp(ChannelConfigPayload(
+        channel: cid, keys: @[kp1.pubkey],
+        configurationThreshold: 1, transferThreshold: 1))
+      body = MantleTx(ops: @[create, update])
+      txHash = mantleTxHash(body).get
+      tx = SignedMantleTx(
+        tx: body,
+        opProofs: @[
+          OpProof(kind: opfChannelConfig, channelConfigOpProof: ChannelMultiSigProof()),
+          OpProof(
+            kind: opfChannelConfig,
+            channelConfigOpProof: twoOfTwo(kp1, kp2, txHash)),
+        ],
+      )
+    var s = mkState(@[])
+    let r = s.tryApplyTx(
+      ValidSignedMantleTx(tx), epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
+    check r.isOk
+    # 0 for the JIT config, plus 2 × 59 for the 2-of-2 config.
+    check txExecutionGas(ValidSignedMantleTx(tx)).get == Gas(118)
+
   test "per-block execution gas limit constant and accumulator overflow":
     # The TooMuchExecutionGas branch fires when the block's summed execution
     # gas exceeds MAX_EXECUTION_GAS_PER_BLOCK; tripping it end-to-end needs
