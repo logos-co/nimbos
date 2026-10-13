@@ -70,12 +70,12 @@ suite "gas: per-operation execution gas":
   test "each op kind against its Gas Determination constant":
     check:
       execution_gas(defaultOpForOpcode(OpTransfer).get, 0) == Gas(590)
-      execution_gas(defaultOpForOpcode(OpChannelInscribe).get, 0) == Gas(56)
-      execution_gas(defaultOpForOpcode(OpChannelConfig).get, 1) == Gas(56)
+      execution_gas(defaultOpForOpcode(OpChannelInscribe).get, 0) == Gas(59)
+      execution_gas(defaultOpForOpcode(OpChannelConfig).get, 1) == Gas(59)
       execution_gas(defaultOpForOpcode(OpChannelDeposit).get, 0) == Gas(590)
-      execution_gas(defaultOpForOpcode(OpChannelWithdraw).get, 1) == Gas(56)
-      execution_gas(defaultOpForOpcode(OpChannelTransfer).get, 1) == Gas(56)
-      execution_gas(defaultOpForOpcode(OpSdpDeclare).get, 0) == Gas(646)
+      execution_gas(defaultOpForOpcode(OpChannelWithdraw).get, 1) == Gas(59)
+      execution_gas(defaultOpForOpcode(OpChannelTransfer).get, 1) == Gas(59)
+      execution_gas(defaultOpForOpcode(OpSdpDeclare).get, 0) == Gas(649)
       execution_gas(defaultOpForOpcode(OpSdpWithdraw).get, 0) == Gas(590)
       execution_gas(defaultOpForOpcode(OpSdpActive).get, 0) == Gas(590)
       execution_gas(defaultOpForOpcode(OpLeaderClaim).get, 0) == Gas(580)
@@ -87,17 +87,17 @@ suite "gas: per-operation execution gas":
       trf = defaultOpForOpcode(OpChannelTransfer).get
     check:
       execution_gas(cfg, 0) == Gas(0)
-      execution_gas(cfg, 1) == Gas(56)
-      execution_gas(cfg, 3) == Gas(168)
-      execution_gas(cfg, uint16.high) == Gas(3_669_960)
+      execution_gas(cfg, 1) == Gas(59)
+      execution_gas(cfg, 3) == Gas(177)
+      execution_gas(cfg, uint16.high) == Gas(3_866_565)
       execution_gas(wdr, 0) == Gas(0)
-      execution_gas(wdr, 1) == Gas(56)
-      execution_gas(wdr, 3) == Gas(168)
-      execution_gas(wdr, uint16.high) == Gas(3_669_960)
+      execution_gas(wdr, 1) == Gas(59)
+      execution_gas(wdr, 3) == Gas(177)
+      execution_gas(wdr, uint16.high) == Gas(3_866_565)
       execution_gas(trf, 0) == Gas(0)
-      execution_gas(trf, 1) == Gas(56)
-      execution_gas(trf, 3) == Gas(168)
-      execution_gas(trf, uint16.high) == Gas(3_669_960)
+      execution_gas(trf, 1) == Gas(59)
+      execution_gas(trf, 3) == Gas(177)
+      execution_gas(trf, uint16.high) == Gas(3_866_565)
 
   test "withdraw and transfer bill against transferThreshold, 0 when absent":
     let
@@ -118,11 +118,11 @@ suite "gas: per-operation execution gas":
     check execution_gas(
       createChannelWithdrawOp(
         ChannelWithdrawPayload(channel: cid, inputs: Inputs(noteIds: @[]))),
-      chan.transferThreshold) == Gas(168)
+      chan.transferThreshold) == Gas(177)
     check execution_gas(
       createChannelTransferOp(
         ChannelTransferPayload(channel: cid, inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @[]))),
-      chan.transferThreshold) == Gas(168)
+      chan.transferThreshold) == Gas(177)
     # A channel that doesn't exist yet bills a zero multiplier — the same
     # just-in-time path a first ChannelConfig takes.
     let absent = MantleState.init().channels.getOrDefault(mkChannelId(0x42))
@@ -241,7 +241,7 @@ suite "gas: storage market update":
 suite "gas: tx execution gas and block limit":
   test "tryApplyTx sums per-op execution gas over the tx":
     # Two transfer ops would sum to 1180; driven here with Ed25519-signable
-    # channel-inscribe ops (56 each), since transfers need a prover fixture.
+    # channel-inscribe ops, since transfers need a prover fixture.
     let transferOp = defaultOpForOpcode(OpTransfer).get
     check execution_gas(transferOp, 0) + execution_gas(transferOp, 0) == Gas(1180)
 
@@ -270,7 +270,7 @@ suite "gas: tx execution gas and block limit":
     check r.isOk
     let mf = s.mandatory_fees(ValidSignedMantleTx(tx))
     check mf.isOk
-    check mf.get.executionGas == Gas(112)
+    check mf.get.executionGas == Gas(118)
 
   test "per-block execution gas limit constant and accumulator overflow":
     # The TooMuchExecutionGas branch fires when the block's summed execution
