@@ -76,12 +76,7 @@ suite "MantleState.tryApplyChannelConfig — JIT creation":
   test "a signature in a JIT proof → ThresholdUnmet":
     # The count check fails before any signature is verified.
     let
-      op = ChannelConfigPayload(
-        channel: mkChannelId(7),
-        keys: @[default(Ed25519PublicKey)],
-        configurationThreshold: 1,
-        transferThreshold: 1,
-      )
+      op = ChannelConfigPayload(channel: mkChannelId(7))
       proof = ChannelMultiSigProof(
         signatures: @[default(Ed25519Signature)],
         indexes: @[ChannelKeyIndex(0)],

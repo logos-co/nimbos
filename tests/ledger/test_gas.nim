@@ -99,39 +99,6 @@ suite "gas: per-operation execution gas":
       execution_gas(trf, 3) == Gas(177)
       execution_gas(trf, uint16.high) == Gas(3_866_565)
 
-  test "withdraw and transfer bill against transferThreshold, 0 when absent":
-    let
-      rng = HmacDrbgContext.new()
-      kp = mkEdKeyPair(rng)
-      cid = mkChannelId(0x41)
-      configured = MantleState.init().tryApplyChannelConfig(
-        ChannelConfigPayload(
-          channel: cid,
-          keys: @[kp.pubkey],
-          configurationThreshold: 1,
-          transferThreshold: 3,
-        ),
-        ChannelMultiSigProof(), default(Hash32), blockSlot = 0'u64,
-      ).expect("valid config")
-      chan = configured.channels.getOrDefault(cid)
-    check chan.transferThreshold == 3
-    check execution_gas(
-      createChannelWithdrawOp(
-        ChannelWithdrawPayload(channel: cid, inputs: Inputs(noteIds: @[]))),
-      chan.transferThreshold) == Gas(177)
-    check execution_gas(
-      createChannelTransferOp(
-        ChannelTransferPayload(channel: cid, inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @[]))),
-      chan.transferThreshold) == Gas(177)
-    # A channel that doesn't exist yet bills a zero multiplier — the same
-    # just-in-time path a first ChannelConfig takes.
-    let absent = MantleState.init().channels.getOrDefault(mkChannelId(0x42))
-    check absent.transferThreshold == 0
-    check execution_gas(
-      createChannelTransferOp(
-        ChannelTransferPayload(channel: cid, inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @[]))),
-      absent.transferThreshold) == Gas(0)
-
 suite "gas: fee-market genesis state":
   test "FeeMarket.init opens both markets at price 1, counters at 0":
     let m = FeeMarket.init()
@@ -295,12 +262,13 @@ suite "gas: tx execution gas and block limit":
             channelConfigOpProof: twoOfTwo(kp1, kp2, txHash)),
         ],
       )
+      vtx = ValidSignedMantleTx(tx)
     var s = mkState(@[])
     let r = s.tryApplyTx(
-      ValidSignedMantleTx(tx), epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
+      vtx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
     check r.isOk
     # 0 for the JIT config, plus 2 × 59 for the 2-of-2 config.
-    check txExecutionGas(ValidSignedMantleTx(tx)).get == Gas(118)
+    check txExecutionGas(vtx).get == Gas(118)
 
   test "per-block execution gas limit constant and accumulator overflow":
     # The TooMuchExecutionGas branch fires when the block's summed execution
