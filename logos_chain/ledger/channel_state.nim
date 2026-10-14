@@ -16,6 +16,7 @@ import
   libp2p/crypto/ed25519/ed25519,
   ./[types, channel_notes, cryptarchia_state, zksig_verify],
   ../core/[utils],
+  ../core/crypto/hashing,
   ../core/mantle/[primitives, operations, proofs, tx_hashing, utxo],
   ../utils/hash_trie_map
 
@@ -25,7 +26,7 @@ type
   ChannelState* = object
     accreditedKeys*: seq[Ed25519PublicKey]
     configurationThreshold*: ConfigurationThreshold
-    tipMessage*: Hash32
+    tipHash*: Hash32
     tipSlot*: SlotNumber
     tipSequencer*: ChannelKeyIndex
     tipSequencerStartingSlot*: SlotNumber
@@ -40,6 +41,13 @@ func checkedAdd(a, b: TokenValue): Result[TokenValue, LedgerError] =
   let (res, didOverflow) = overflowingAdd(a, b)
   if didOverflow: err(BalanceOutOfRange) else: ok(res)
 
+func messageHash(
+    encoded: Result[seq[byte], EncodingError]): Result[Hash32, LedgerError] =
+  ## `hash(encode(msg))`: the BLAKE2b-256 of an encoded payload, no tag.
+  let bytes = encoded.valueOr:
+    return err(error.toLedgerError)
+  ok(blake2b256Hash(bytes))
+
 func default_channel(
     blockSlot: SlotNumber, keys: openArray[Ed25519PublicKey]
 ): ChannelState =
@@ -48,7 +56,7 @@ func default_channel(
   ChannelState(
     accreditedKeys: @keys,
     configurationThreshold: 1,
-    tipMessage: default(Hash32),
+    tipHash: default(Hash32),
     tipSlot: blockSlot,
     tipSequencer: 0,
     tipSequencerStartingSlot: blockSlot,
@@ -135,14 +143,14 @@ func validateChannelInscribe*(
     blockSlot: SlotNumber,
 ): Result[void, LedgerError] =
   ## Read-only checks for ChannelInscribe. If the channel exists, the parent
-  ## must match its `tipMessage` and the signer must be the current
+  ## must match its `tipHash` and the signer must be the current
   ## round-robin sequencer. JIT path requires `parent == ZERO`.
   ## Note: Assumes signer Ed25519 signature is verified statelessly at ingress
   ## via `validateMantleTxStateless`.
   let chanOpt = channels.get(op.channelId)
   if chanOpt.isSome:
     let chan = chanOpt.get
-    if op.parent != chan.tipMessage:
+    if op.parent != chan.tipHash:
       return err(InvalidParent)
     let (idx, _) = round_robin(blockSlot, chan)
     if op.signer != chan.accreditedKeys[idx]:
@@ -158,15 +166,13 @@ func applyChannelInscribe*(
     blockSlot: SlotNumber,
 ): Result[ChannelStore, LedgerError] =
   ## Mutation only; assumes `validateChannelInscribe` passed. JIT-creates
-  ## the channel if absent, then advances sequencer + tipMessage + tipSlot.
+  ## the channel if absent, then advances sequencer + tipHash + tipSlot.
   var chan = channels.get(op.channelId).valueOr:
     default_channel(blockSlot, [op.signer])
   let (newSeq, newStart) = round_robin(blockSlot, chan)
   chan.tipSequencer = newSeq
   chan.tipSequencerStartingSlot = newStart
-  let tipMsg = opId(op).valueOr:
-    return err(error.toLedgerError)
-  chan.tipMessage = tipMsg
+  chan.tipHash = ?messageHash(encodeChannelInscribe(op))
   chan.tipSlot = blockSlot
   ok(channels.insert(op.channelId, chan))
 
@@ -203,7 +209,7 @@ func applyChannelConfig*(
   chan.tipSlot = blockSlot
   let tipMsg = opId(op).valueOr:
     return err(error.toLedgerError)
-  chan.tipMessage = tipMsg
+  chan.tipHash = tipMsg
   ok(channels.insert(op.channel, chan))
 
 proc validateChannelDeposit*(

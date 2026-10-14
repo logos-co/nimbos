@@ -56,7 +56,7 @@ type
     HammingDistanceTooLarge ## activity token lost the Hamming lottery
     DuplicateActiveMessage ## provider already submitted for the target epoch
     ChannelNotFound ## channel op references a missing ChannelId
-    InvalidParent ## ChannelInscribe parent doesn't match the channel's tipMessage
+    InvalidParent ## ChannelInscribe parent doesn't match the channel's tipHash
     UnauthorizedSigner ## ChannelInscribe signer isn't the round-robin sequencer
     ThresholdUnmet ## Config/Withdraw/Transfer signature count != channel threshold
     ChannelNoteSpend ## channel note used where a channel-free note is required
