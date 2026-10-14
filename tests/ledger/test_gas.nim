@@ -17,6 +17,7 @@ import
   ../../logos_chain/ledger/[balance, ledger],
   ../../logos_chain/core/mantle/[tx_types, tx_hashing],
   ../../logos_chain/core/types,
+  ../../logos_chain/core/crypto/hashing,
   ../zk/zksign_helpers,
   ./sdp/test_helpers,
   ../core/mantle/test_helpers
@@ -245,11 +246,14 @@ suite "gas: tx execution gas and block limit":
       kp1 = mkEdKeyPair(rng)
       kp2 = mkEdKeyPair(rng)
       cid = mkChannelId(0x43)
-      create = createChannelConfigOp(ChannelConfigPayload(
+      createPayload = ChannelConfigPayload(
         channel: cid, keys: @[kp1.pubkey, kp2.pubkey],
-        configurationThreshold: 2, transferThreshold: 1))
+        configurationThreshold: 2, transferThreshold: 1)
+      create = createChannelConfigOp(createPayload)
       update = createChannelConfigOp(ChannelConfigPayload(
-        channel: cid, keys: @[kp1.pubkey],
+        channel: cid,
+        parent: blake2b256Hash(encodeChannelConfig(createPayload).get),
+        keys: @[kp1.pubkey],
         configurationThreshold: 1, transferThreshold: 1))
       body = MantleTx(ops: @[create, update])
       txHash = mantleTxHash(body).get

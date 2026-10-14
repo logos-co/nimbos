@@ -14,6 +14,7 @@ import
   bearssl/rand,
   libp2p/crypto/ed25519/ed25519,
   ../../logos_chain/ledger/[channel_state, mantle_state, types],
+  ../../logos_chain/core/crypto/hashing,
   ../../logos_chain/core/mantle/[primitives, operations, proofs],
   ../core/mantle/test_helpers
 
@@ -85,6 +86,14 @@ suite "MantleState.tryApplyChannelConfig — JIT creation":
         op, proof, mkTxHash(), blockSlot = 0'u64)
     check r.error == ThresholdUnmet
 
+  test "JIT config with a non-ZERO parent → InvalidParent":
+    let
+      op = ChannelConfigPayload(
+        channel: mkChannelId(8), parent: mkTxHash(seed = 0x99))
+      r = MantleState.init().tryApplyChannelConfig(
+        op, ChannelMultiSigProof(), mkTxHash(), blockSlot = 0'u64)
+    check r.error == InvalidParent
+
 suite "MantleState.tryApplyChannelConfig — existing channel":
   test "valid threshold signatures → config overwrites accreditedKeys":
     let
@@ -97,6 +106,7 @@ suite "MantleState.tryApplyChannelConfig — existing channel":
       txHash = mkTxHash(seed = 0x42)
       op = ChannelConfigPayload(
         channel: cid,
+        parent: m.channels.getOrDefault(cid).configTipHash,
         keys: @[kp3.pubkey],
         configurationThreshold: 1,
         transferThreshold: 1,
@@ -121,6 +131,7 @@ suite "MantleState.tryApplyChannelConfig — existing channel":
       txHash = mkTxHash()
       op = ChannelConfigPayload(
         channel: cid,
+        parent: m.channels.getOrDefault(cid).configTipHash,
         keys: @[kp1.pubkey],
         configurationThreshold: 1,
         transferThreshold: 1,
@@ -141,7 +152,8 @@ suite "MantleState.tryApplyChannelConfig — existing channel":
       m = seedMantle(cid, [kp1.pubkey, kp2.pubkey], configThreshold = 2)
       txHash = mkTxHash()
       op = ChannelConfigPayload(
-        channel: cid, keys: @[kp1.pubkey],
+        channel: cid, parent: m.channels.getOrDefault(cid).configTipHash,
+        keys: @[kp1.pubkey],
         configurationThreshold: 1, transferThreshold: 1,
       )
       proof = ChannelMultiSigProof(
@@ -160,7 +172,8 @@ suite "MantleState.tryApplyChannelConfig — existing channel":
       m = seedMantle(cid, [kp1.pubkey, kp2.pubkey], configThreshold = 2)
       txHash = mkTxHash(seed = 0x10)
       op = ChannelConfigPayload(
-        channel: cid, keys: @[kp1.pubkey],
+        channel: cid, parent: m.channels.getOrDefault(cid).configTipHash,
+        keys: @[kp1.pubkey],
         configurationThreshold: 1, transferThreshold: 1,
       )
       proof = ChannelMultiSigProof(
@@ -172,5 +185,89 @@ suite "MantleState.tryApplyChannelConfig — existing channel":
       )
       r = m.tryApplyChannelConfig(op, proof, txHash, blockSlot = 0'u64)
     check r.error == InvalidTxProof
+
+  test "config with a parent that is not the config tip → InvalidParent":
+    let
+      rng = HmacDrbgContext.new()
+      kp1 = mkEdKeyPair(rng)
+      cid = mkChannelId(14)
+      m = seedMantle(cid, [kp1.pubkey])
+      txHash = mkTxHash()
+      op = ChannelConfigPayload(
+        channel: cid, parent: mkTxHash(seed = 0xFF),
+        keys: @[kp1.pubkey],
+        configurationThreshold: 1, transferThreshold: 1,
+      )
+      proof = ChannelMultiSigProof(
+        signatures: @[sign(kp1.seckey, txHash)],
+        indexes: @[ChannelKeyIndex(0)],
+      )
+      r = m.tryApplyChannelConfig(op, proof, txHash, blockSlot = 0'u64)
+    check r.error == InvalidParent
+
+suite "MantleState.tryApplyChannelConfig — channel tips":
+  test "config moves configTipHash and leaves tipHash":
+    let
+      rng = HmacDrbgContext.new()
+      kp = mkEdKeyPair(rng)
+      cid = mkChannelId(20)
+      inscribeOp = ChannelInscribePayload(
+        channelId: cid, inscription: @[byte 0x61],
+        parent: default(Hash32), signer: kp.pubkey,
+      )
+      seeded = MantleState.init().tryApplyChannelInscribe(
+        inscribeOp, blockSlot = 1'u64,
+      ).get
+      prevChan = seeded.channels.getOrDefault(cid)
+      txHash = mkTxHash(seed = 0x21)
+      op = ChannelConfigPayload(
+        channel: cid, parent: prevChan.configTipHash,
+        keys: @[kp.pubkey],
+        configurationThreshold: 1, transferThreshold: 1,
+      )
+      proof = ChannelMultiSigProof(
+        signatures: @[sign(kp.seckey, txHash)],
+        indexes: @[ChannelKeyIndex(0)],
+      )
+      r = seeded.tryApplyChannelConfig(op, proof, txHash, blockSlot = 2'u64)
+    check r.isOk
+    let chan = r.get.channels.getOrDefault(cid)
+    check chan.tipHash == prevChan.tipHash
+    check chan.configTipHash == blake2b256Hash(encodeChannelConfig(op).get)
+
+  test "an inscribe after a config extends the last message":
+    let
+      rng = HmacDrbgContext.new()
+      kp = mkEdKeyPair(rng)
+      cid = mkChannelId(21)
+      seedOp = ChannelInscribePayload(
+        channelId: cid, inscription: @[byte 0x61],
+        parent: default(Hash32), signer: kp.pubkey,
+      )
+      seeded = MantleState.init().tryApplyChannelInscribe(
+        seedOp, blockSlot = 1'u64,
+      ).get
+      prevChan = seeded.channels.getOrDefault(cid)
+      txHash = mkTxHash(seed = 0x22)
+      configOp = ChannelConfigPayload(
+        channel: cid, parent: prevChan.configTipHash,
+        keys: @[kp.pubkey],
+        configurationThreshold: 1, transferThreshold: 1,
+      )
+      proof = ChannelMultiSigProof(
+        signatures: @[sign(kp.seckey, txHash)],
+        indexes: @[ChannelKeyIndex(0)],
+      )
+      configured = seeded.tryApplyChannelConfig(
+        configOp, proof, txHash, blockSlot = 2'u64,
+      ).get
+      op = ChannelInscribePayload(
+        channelId: cid, inscription: @[byte 0x62],
+        parent: prevChan.tipHash, signer: kp.pubkey,
+      )
+      r = configured.tryApplyChannelInscribe(op, blockSlot = 3'u64)
+    check r.isOk
+    check r.get.channels.getOrDefault(cid).tipHash ==
+      blake2b256Hash(encodeChannelInscribe(op).get)
 
 {.pop.}

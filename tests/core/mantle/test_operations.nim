@@ -10,6 +10,7 @@
 
 import
   unittest2,
+  stew/byteutils,
   libp2p/multiaddress,
   libp2p/crypto/ed25519/ed25519,
   ../../../logos_chain/core/mantle/[operations, tx_types]
@@ -262,6 +263,8 @@ suite "core/mantle/operations":
     let
       cfgPayload = ChannelConfigPayload(
         channel: default(ChannelId),
+        parent: hexToByteArray[32](
+          "0505050505050505050505050505050505050505050505050505050505050505"),
         keys: keys,
         postingTimeframe: 42'u32,
         postingTimeout: 7'u32,
@@ -269,18 +272,44 @@ suite "core/mantle/operations":
         transferThreshold: 5'u16,
       )
       wire = encodeChannelConfig(cfgPayload).get
-    check wire.len == 32 + 2 + (256 * 32) + 4 + 4 + 2 + 2
-    check wire[32] == 0'u8
-    check wire[33] == 1'u8 # KeyCount 256 as UINT16 LE
+    check wire.len == 32 + 32 + 2 + (256 * 32) + 4 + 4 + 2 + 2
+    check wire[32] == 5'u8 # Parent follows ChannelId
+    check wire[64] == 0'u8
+    check wire[65] == 1'u8 # KeyCount 256 as UINT16 LE
     var pos = 0
     let cfgBack = readOpPayload(wire, pos, OpChannelConfig).get.channelConfig
     check pos == wire.len
     check cfgBack.channel == cfgPayload.channel
+    check cfgBack.parent == cfgPayload.parent
     check cfgBack.keys.len == 256
     check cfgBack.postingTimeframe == cfgPayload.postingTimeframe
     check cfgBack.postingTimeout == cfgPayload.postingTimeout
     check cfgBack.configurationThreshold == cfgPayload.configurationThreshold
     check cfgBack.transferThreshold == cfgPayload.transferThreshold
+
+  test "readOpPayload decodes the CHANNEL_CONFIG spec vector, parent included":
+    let wire = hexToSeqByte(
+      "0707070707070707070707070707070707070707070707070707070707070707" &
+      "0000000000000000000000000000000000000000000000000000000000000000" &
+      "0200" &
+      "1398f62c6d1a457c51ba6a4b5f3dbd2f69fca93216218dc8997e416bd17d93ca" &
+      "fd1724385aa0c75b64fb78cd602fa1d991fdebf76b13c58ed702eac835e9f618" &
+      "0a000000" & "0b000000" & "0c00" & "0d00")
+    var pos = 0
+    let cfg = readOpPayload(wire, pos, OpChannelConfig).get.channelConfig
+    check pos == wire.len
+    check cfg.channel.toHex ==
+      "0707070707070707070707070707070707070707070707070707070707070707"
+    check cfg.parent == default(Hash32)
+    check cfg.keys.len == 2
+    check cfg.keys[0].getBytes.toHex ==
+      "1398f62c6d1a457c51ba6a4b5f3dbd2f69fca93216218dc8997e416bd17d93ca"
+    check cfg.keys[1].getBytes.toHex ==
+      "fd1724385aa0c75b64fb78cd602fa1d991fdebf76b13c58ed702eac835e9f618"
+    check cfg.postingTimeframe == 10
+    check cfg.postingTimeout == 11
+    check cfg.configurationThreshold == 12
+    check cfg.transferThreshold == 13
 
   test "readOp and readOpPayload roundtrip all 10 operation variants":
     let

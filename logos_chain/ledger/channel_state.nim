@@ -5,7 +5,7 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-## Spec: [Bedrock v1.1 — Mantle Specification v1.10.0 — Channel Operations](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md#channel-operations)
+## Spec: [Bedrock v1.1 — Mantle Specification v1.16.0 — Channel Operations](https://github.com/logos-co/logos-lips/blob/fddc2c1911626f7b1949360b8924bb6c05252bff/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md#channel-operations)
 
 {.push raises: [], gcsafe.}
 
@@ -27,6 +27,7 @@ type
     accreditedKeys*: seq[Ed25519PublicKey]
     configurationThreshold*: ConfigurationThreshold
     tipHash*: Hash32
+    configTipHash*: Hash32
     tipSlot*: SlotNumber
     tipSequencer*: ChannelKeyIndex
     tipSequencerStartingSlot*: SlotNumber
@@ -57,6 +58,7 @@ func default_channel(
     accreditedKeys: @keys,
     configurationThreshold: 1,
     tipHash: default(Hash32),
+    configTipHash: default(Hash32),
     tipSlot: blockSlot,
     tipSequencer: 0,
     tipSequencerStartingSlot: blockSlot,
@@ -182,11 +184,15 @@ func validateChannelConfig*(
     proof: ChannelMultiSigProof,
     txHash: Hash32,
 ): Result[void, LedgerError] =
-  ## Verifies `configuration_threshold` signatures from the accredited keys.
-  ## A new channel has no key, so its proof must be empty.
+  ## Checks the parent against `configTipHash`, then the threshold signatures.
+  ## A new channel needs a ZERO parent and an empty proof.
   let chan = channels.get(op.channel).valueOr:
+    if not op.parent.isZero:
+      return err(InvalidParent)
     # No key is accredited yet, so the threshold to verify against is 0.
     return verifyChannelMultiSig(proof, [], 0, txHash)
+  if op.parent != chan.configTipHash:
+    return err(InvalidParent)
   verifyChannelMultiSig(
     proof, chan.accreditedKeys, chan.configurationThreshold, txHash)
 
@@ -195,8 +201,8 @@ func applyChannelConfig*(
     op: ChannelConfigPayload,
     blockSlot: SlotNumber,
 ): Result[ChannelStore, LedgerError] =
-  ## Mutation only; assumes `validateChannelConfig` passed. Overwrites the
-  ## channel's keys/thresholds/rotation, or JIT-creates with `op.keys`.
+  ## Mutation only; assumes `validateChannelConfig` passed. JIT-creates the
+  ## channel if absent, then sets its config and `configTipHash`, not `tipHash`.
   var chan = channels.get(op.channel).valueOr:
     default_channel(blockSlot, op.keys)
   chan.accreditedKeys = op.keys
@@ -207,9 +213,7 @@ func applyChannelConfig*(
   chan.postingTimeout = op.postingTimeout
   chan.transferThreshold = op.transferThreshold
   chan.tipSlot = blockSlot
-  let tipMsg = opId(op).valueOr:
-    return err(error.toLedgerError)
-  chan.tipHash = tipMsg
+  chan.configTipHash = ?messageHash(encodeChannelConfig(op))
   ok(channels.insert(op.channel, chan))
 
 proc validateChannelDeposit*(
