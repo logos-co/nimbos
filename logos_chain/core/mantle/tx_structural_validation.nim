@@ -5,8 +5,8 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-## Pure structural and stateless validation rules for Mantle transactions.
-## Contains pure structural checks with zero cryptographic or ZK dependencies.
+## Pure structural and stateless validation rules for Mantle transactions
+## with zero cryptographic or ZK dependencies.
 ## Spec: [Bedrock v1.1 — Mantle Specification v1.10.0](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md)
 
 {.push raises: [], gcsafe.}
