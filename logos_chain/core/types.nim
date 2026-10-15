@@ -174,6 +174,20 @@ func body_root*[T: AnyHashedSignedMantleTx](
   ## Body root over the uncle list and precalculated hashes of transactions.
   body_root(uncles, merkle_root(txs.mapIt(it.hash)))
 
+iterator activeReferences*(refs: References): Hash32 =
+  for r in refs:
+    if r.isZero():
+      break
+    yield r
+
+func activeLen*(refs: References): int =
+  var count = 0
+  for r in refs:
+    if r.isZero():
+      break
+    inc count
+  count
+
 func blockId*(header: Header): Hash32 =
   ## block_id(header) = hash(
   ##   b"BLOCK_ID_V1",

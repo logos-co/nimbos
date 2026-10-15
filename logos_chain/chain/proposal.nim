@@ -141,10 +141,8 @@ func reconstructProposalTxs*(
 ): Result[seq[ValidSignedMantleTx], ProposalValidationError] =
   ## Resolves proposal references directly to mempool's cached ValidSignedMantleTx,
   ## preserving full stateless validity typing across block reconstruction.
-  var txs = newSeqOfCap[ValidSignedMantleTx](proposal.references.len)
-  for r in proposal.references:
-    if r.isZero():
-      break
+  var txs: seq[ValidSignedMantleTx]
+  for r in proposal.references.activeReferences:
     let vtx = mempool.get(r).valueOr:
       return err(ProposalValidationError.MissingReference)
     txs.add(vtx)
@@ -156,9 +154,7 @@ func hasMissingReference*(
     mempool: Mempool,
 ): bool =
   ## Returns true if any reference in the proposal is not found in the mempool.
-  for r in proposal.references:
-    if r.isZero():
-      break
+  for r in proposal.references.activeReferences:
     if r notin mempool:
       return true
   false

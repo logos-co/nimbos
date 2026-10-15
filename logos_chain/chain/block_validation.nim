@@ -29,7 +29,7 @@ from ../core/types import
   Block, BlockTxs, Proposal, body_root, ExpectedBedrockVersion,
   MaxBlockSize, MaxUncles, asSeq, len, header, blockId, BlockId,
   Header, UncleHeaders, encode, MaxBlockTxs,
-  createGenesisHeader
+  createGenesisHeader, activeLen
 from ../core/mantle/tx_hashing import
   HashedSignedMantleTx, byteLen, signedTx
 
@@ -91,13 +91,9 @@ func bodyMatchesHeader*(proposal: Proposal): bool =
   ## Binding of the reference list (Block Construction 1.3.0): references and
   ## uncle headers must commit to header.bodyRoot, before the copy may suppress
   ## any other copy of the same block ID.
-  var count = 0
-  for r in proposal.references:
-    if r.isZero():
-      break
-    inc count
+  let n = proposal.references.activeLen
   body_root(proposal.uncleHeaders.asSeq,
-            proposal.references.toOpenArray(0, count - 1)) == proposal.header.bodyRoot
+            proposal.references.toOpenArray(0, n - 1)) == proposal.header.bodyRoot
 
 func bodyMatchesHeader*(blk: Block): bool =
   body_root(blk.uncleHeaders.asSeq, blk.txs.asSeq) == blk.header.bodyRoot
