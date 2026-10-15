@@ -31,17 +31,17 @@ type
   BlockApplyFuture* = Future[BlockApplyResult].Raising([CancelledError])
 
   BlockEntryKind {.pure.} = enum
-    RawIncoming
-    ProposalIncoming
+    SyncIncoming
+    GossipIncoming
     PromotedOrphan
 
   BlockEntry = ref object
     queueTick: Moment
     resfut: Opt[BlockApplyFuture]
     case kind: BlockEntryKind
-    of BlockEntryKind.RawIncoming:
+    of BlockEntryKind.SyncIncoming:
       blk: Block
-    of BlockEntryKind.ProposalIncoming:
+    of BlockEntryKind.GossipIncoming:
       proposal: Proposal
     of BlockEntryKind.PromotedOrphan:
       admittedBlk: AdmittedBlock
@@ -58,6 +58,11 @@ template inFlightKey*(id: BlockId, sig: Ed25519Signature): InFlightKey =
   ## while preserving ~252-bit Ed25519 signature entropy (collision probability
   ## ~2^-252, matching a 256-bit cryptographic hash's 2^-256) so invalid blocks
   ## with junk signatures cannot lock out valid blocks.
+  ##
+  ## Invariant: This key is collision-free across differing bodies only because
+  ## every inserted entry (addBlock, addProposal, enqueueOrphanBlock) has its
+  ## body bound to header.bodyRoot before taking an in-flight slot. Two copies
+  ## with the same (blockId, signature) therefore commit to the exact same body bytes.
   var res {.noinit.}: InFlightKey
   for i in 0 ..< 32:
     res[i] = id[i] xor sig.data[i] xor sig.data[32 + i]
@@ -93,76 +98,72 @@ func checkDeduplication*(
     return err(BlockApplyErrorKind.OrphanAlreadyBuffered)
   ok()
 
+proc enqueueIncoming(
+    bp: BlockProcessor,
+    entry: BlockEntry,
+    id: BlockId,
+    sig: Ed25519Signature,
+): BlockApplyFuture =
+  let resfut = BlockApplyFuture.init("BlockProcessor.addBlock")
+  if not bp.running:
+    resfut.cancelSoon()
+    return resfut
+
+  bp.checkDeduplication(id, sig).isOkOr:
+    resfut.complete(BlockApplyResult.err(BlockApplyError(kind: error)))
+    return resfut
+
+  let key = inFlightKey(id, sig)
+  entry.resfut = Opt.some(resfut)
+  entry.queueTick = Moment.now()
+  bp.inFlight[key] = entry
+  try:
+    bp.blockQueue.addLastNoWait(entry)
+  except AsyncQueueFullError:
+    bp.inFlight.del(key)
+    raiseAssert "unbounded queue cannot be full"
+  resfut
+
 proc addBlock*(
     bp: BlockProcessor,
-    blk: sink Block,
+    blk: Block,
     id: BlockId,
 ): BlockApplyFuture =
   ## Queue `blk` from sync. The future completes with the apply result, or is cancelled
   ## when the loop is not running. Cancelling it does not dequeue the block.
-  let resfut = BlockApplyFuture.init("BlockProcessor.addBlock")
-  if not bp.running:
-    resfut.cancelSoon()
-    return resfut
-
-  bp.checkDeduplication(id, blk.signature).isOkOr:
-    resfut.complete(BlockApplyResult.err(BlockApplyError(kind: error)))
-    return resfut
-
-  let key = inFlightKey(id, blk.signature)
-  let entry = BlockEntry(
-    kind: BlockEntryKind.RawIncoming,
-    blk: blk,
-    resfut: Opt.some(resfut),
-    queueTick: Moment.now(),
+  if not blk.bodyMatchesHeader:
+    let fut = BlockApplyFuture.init("addBlock.invalidBody")
+    fut.complete(BlockApplyResult.err(BlockApplyError(kind: BlockApplyErrorKind.InvalidStructure)))
+    return fut
+  let sig = blk.signature
+  bp.enqueueIncoming(
+    BlockEntry(kind: BlockEntryKind.SyncIncoming, blk: blk),
+    id, sig,
   )
-  bp.inFlight[key] = entry
-  try:
-    bp.blockQueue.addLastNoWait(entry)
-  except AsyncQueueFullError:
-    bp.inFlight.del(key)
-    raiseAssert "unbounded queue cannot be full"
-  resfut
 
-proc addBlock*(
+proc addProposal*(
     bp: BlockProcessor,
-    proposal: sink Proposal,
+    proposal: Proposal,
     id: BlockId,
 ): BlockApplyFuture =
   ## Queue `proposal` from gossip. The future completes with the apply result, or is cancelled
   ## when the loop is not running. Cancelling it does not dequeue the proposal.
-  let resfut = BlockApplyFuture.init("BlockProcessor.addBlock")
-  if not bp.running:
-    resfut.cancelSoon()
-    return resfut
-
-  bp.checkDeduplication(id, proposal.signature).isOkOr:
-    resfut.complete(BlockApplyResult.err(BlockApplyError(kind: error)))
-    return resfut
-
-  let key = inFlightKey(id, proposal.signature)
-  let entry = BlockEntry(
-    kind: BlockEntryKind.ProposalIncoming,
-    proposal: proposal,
-    resfut: Opt.some(resfut),
-    queueTick: Moment.now(),
+  ## Caller must ensure `proposal.bodyMatchesHeader` before calling (verified at gossip gate).
+  let sig = proposal.signature
+  bp.enqueueIncoming(
+    BlockEntry(kind: BlockEntryKind.GossipIncoming, proposal: proposal),
+    id, sig,
   )
-  bp.inFlight[key] = entry
-  try:
-    bp.blockQueue.addLastNoWait(entry)
-  except AsyncQueueFullError:
-    bp.inFlight.del(key)
-    raiseAssert "unbounded queue cannot be full"
-  resfut
 
 proc enqueueOrphanBlock(bp: BlockProcessor, child: AdmittedBlock) =
-  let childId = blockId(header(child))
-  let key = inFlightKey(childId, child.signature)
+  let
+    childId = blockId(header(child))
+    key = inFlightKey(childId, child.signature)
   var stolenResfut = Opt.none(BlockApplyFuture)
 
   bp.inFlight.withValue(key, existing):
-    # A raw or proposal copy is queued — supersede it and steal its caller future.
-    if existing[].kind in {BlockEntryKind.RawIncoming, BlockEntryKind.ProposalIncoming}:
+    # A sync or gossip copy is queued — supersede it and steal its caller future.
+    if existing[].kind in {BlockEntryKind.SyncIncoming, BlockEntryKind.GossipIncoming}:
       stolenResfut = existing[].resfut
       existing[].resfut = Opt.none(BlockApplyFuture)
 
@@ -180,14 +181,14 @@ proc enqueueOrphanBlock(bp: BlockProcessor, child: AdmittedBlock) =
     raiseAssert "unbounded queue cannot be full"
 
 proc processBlock(bp: BlockProcessor, entry: BlockEntry) =
-  if entry.kind in {BlockEntryKind.RawIncoming, BlockEntryKind.ProposalIncoming} and entry.resfut.isNone:
+  if entry.kind in {BlockEntryKind.SyncIncoming, BlockEntryKind.GossipIncoming} and entry.resfut.isNone:
     return
 
   let (id, key) = case entry.kind
-    of BlockEntryKind.RawIncoming:
+    of BlockEntryKind.SyncIncoming:
       let i = blockId(header(entry.blk))
       (i, inFlightKey(i, entry.blk.signature))
-    of BlockEntryKind.ProposalIncoming:
+    of BlockEntryKind.GossipIncoming:
       let i = blockId(entry.proposal.header)
       (i, inFlightKey(i, entry.proposal.signature))
     of BlockEntryKind.PromotedOrphan:
@@ -199,19 +200,19 @@ proc processBlock(bp: BlockProcessor, entry: BlockEntry) =
   let
     startTick = Moment.now()
     res = case entry.kind
-      of BlockEntryKind.RawIncoming: bp.chain.tryApplyBlock(entry.blk)
-      of BlockEntryKind.ProposalIncoming: bp.chain.tryApplyProposal(entry.proposal)
+      of BlockEntryKind.SyncIncoming: bp.chain.tryApplyBlock(entry.blk)
+      of BlockEntryKind.GossipIncoming: bp.chain.tryApplyProposal(entry.proposal)
       of BlockEntryKind.PromotedOrphan: bp.chain.tryApplyAdmittedBlock(entry.admittedBlk)
     applyDur = Moment.now() - startTick
     queueDur = startTick - entry.queueTick
 
   res.isOkOr:
     case entry.kind
-    of BlockEntryKind.RawIncoming:
+    of BlockEntryKind.SyncIncoming:
       debug "Block rejected",
         id = toHex(id), slot = header(entry.blk).slot,
         src = "Sync", queueDur, applyDur, err = error.kind
-    of BlockEntryKind.ProposalIncoming:
+    of BlockEntryKind.GossipIncoming:
       debug "Proposal rejected",
         id = toHex(id), slot = entry.proposal.header.slot,
         src = "Gossip", queueDur, applyDur, err = error.kind
@@ -227,11 +228,11 @@ proc processBlock(bp: BlockProcessor, entry: BlockEntry) =
     bp.enqueueOrphanBlock(child)
 
   case entry.kind
-  of BlockEntryKind.RawIncoming:
+  of BlockEntryKind.SyncIncoming:
     debug "Block applied",
       id = toHex(id), slot = header(entry.blk).slot,
       src = "Sync", queueDur, applyDur
-  of BlockEntryKind.ProposalIncoming:
+  of BlockEntryKind.GossipIncoming:
     debug "Proposal applied",
       id = toHex(id), slot = entry.proposal.header.slot,
       src = "Gossip", queueDur, applyDur

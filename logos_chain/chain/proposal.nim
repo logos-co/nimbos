@@ -40,14 +40,15 @@ proc selectProposalReferences*(
   ## https://github.com/logos-co/logos-lips/blob/38916aa474164ac4acd81e62d19715e17626be17/docs/blockchain/raw/execution-market.md
   ## Enforces count (maxTxs), execution gas (MAX_EXECUTION_GAS_PER_BLOCK), and body byte size (maxBytes).
   ## Populates and returns the fixed-size References array and the selected count directly for proposal creation.
-  var refs: References
-  var count = 0
-  var workingLedger = tipLedgerState.advanceEpochAndMarket(currentSlot, cfg).valueOr:
-    tipLedgerState
-  var cumulativeExecutionGas = Gas(0)
-  var cumulativeBytes = 0
-  var consecutiveMisses = 0
-  var toEvict: seq[Hash32]
+  var
+    refs: References
+    count = 0
+    workingLedger = tipLedgerState.advanceEpochAndMarket(currentSlot, cfg).valueOr:
+      tipLedgerState
+    cumulativeExecutionGas = Gas(0)
+    cumulativeBytes = 0
+    consecutiveMisses = 0
+    toEvict: seq[Hash32]
 
   let epoch = workingLedger.epochs.activeEpoch.epoch
 
@@ -134,30 +135,32 @@ proc constructProposal*(
     sig = leaderSecKey.sign(blockId(h))
   initProposal(h, [], refs, sig)
 
-func reconstructBlock*(
+func reconstructProposalTxs*(
     proposal: Proposal,
     mempool: Mempool,
-): Result[tuple[blk: Block, vtxs: seq[ValidSignedMantleTx]], ProposalValidationError] =
-  ## Reconstructs the block header/signature and validated transactions from proposal references using the mempool.
-  ## Note: `blk.txs` is intentionally left empty because after validation, `vtxs` are directly
-  ## used to assemble the resulting `ValidBlock`. Since transactions in the mempool are already
-  ## statelessly validated, allocating and copying `SignedMantleTx` into `blk.txs` is unnecessary overhead.
-  var vtxs = newSeqOfCap[ValidSignedMantleTx](proposal.references.len)
+): Result[seq[ValidSignedMantleTx], ProposalValidationError] =
+  ## Resolves proposal references directly to mempool's cached ValidSignedMantleTx,
+  ## preserving full stateless validity typing across block reconstruction.
+  var txs = newSeqOfCap[ValidSignedMantleTx](proposal.references.len)
   for r in proposal.references:
     if r.isZero():
       break
     let vtx = mempool.get(r).valueOr:
       return err(ProposalValidationError.MissingReference)
-    vtxs.add(vtx)
+    txs.add(vtx)
 
-  ok((
-    blk: Block(
-      header: proposal.header,
-      signature: proposal.signature,
-      uncleHeaders: proposal.uncleHeaders,
-      txs: default(BlockTxs),
-    ),
-    vtxs: vtxs,
-  ))
+  ok(move(txs))
+
+func hasMissingReference*(
+    proposal: Proposal,
+    mempool: Mempool,
+): bool =
+  ## Returns true if any reference in the proposal is not found in the mempool.
+  for r in proposal.references:
+    if r.isZero():
+      break
+    if r notin mempool:
+      return true
+  false
 
 {.pop.}

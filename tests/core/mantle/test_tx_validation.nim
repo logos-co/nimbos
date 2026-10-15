@@ -62,11 +62,7 @@ suite "core/mantle/tx_validation — stateless invariants":
       channel: mkChannelId(1),
       inputs: Inputs(noteIds: @[]),
     ))
-    let tx = SignedMantleTx(
-      tx: MantleTx(ops: @[op]),
-      opProofs: @[OpProof(kind: opfChannelDeposit, channelDepositProof: default(ZkSigProof))],
-    )
-    let r = validateMantleTxStateless(mkHashedSignedTx(tx))
+    let r = validateMantleTxStateless(unhashedTx(op))
     check r.error == StatelessLedgerError.EmptyInputs
 
   test "ChannelDeposit: rejects duplicate inputs":
@@ -75,11 +71,7 @@ suite "core/mantle/tx_validation — stateless invariants":
       channel: mkChannelId(1),
       inputs: Inputs(noteIds: @[u.id, u.id]),
     ))
-    let tx = SignedMantleTx(
-      tx: MantleTx(ops: @[op]),
-      opProofs: @[OpProof(kind: opfChannelDeposit, channelDepositProof: default(ZkSigProof))],
-    )
-    let r = validateMantleTxStateless(mkHashedSignedTx(tx))
+    let r = validateMantleTxStateless(unhashedTx(op))
     check r.error == StatelessLedgerError.DoubleSpend
 
   test "ChannelWithdraw: rejects empty inputs":
@@ -87,11 +79,7 @@ suite "core/mantle/tx_validation — stateless invariants":
       channel: mkChannelId(1),
       inputs: Inputs(noteIds: @[]),
     ))
-    let tx = SignedMantleTx(
-      tx: MantleTx(ops: @[op]),
-      opProofs: @[OpProof(kind: opfChannelWithdraw, channelWithdrawOpProof: default(ChannelMultiSigProof))],
-    )
-    let r = validateMantleTxStateless(mkHashedSignedTx(tx))
+    let r = validateMantleTxStateless(unhashedTx(op))
     check r.error == StatelessLedgerError.EmptyInputs
 
   test "ChannelWithdraw: rejects duplicate inputs":
@@ -100,11 +88,7 @@ suite "core/mantle/tx_validation — stateless invariants":
       channel: mkChannelId(1),
       inputs: Inputs(noteIds: @[u.id, u.id]),
     ))
-    let tx = SignedMantleTx(
-      tx: MantleTx(ops: @[op]),
-      opProofs: @[OpProof(kind: opfChannelWithdraw, channelWithdrawOpProof: default(ChannelMultiSigProof))],
-    )
-    let r = validateMantleTxStateless(mkHashedSignedTx(tx))
+    let r = validateMantleTxStateless(unhashedTx(op))
     check r.error == StatelessLedgerError.DoubleSpend
 
   test "ChannelTransfer: rejects empty inputs":
@@ -113,11 +97,7 @@ suite "core/mantle/tx_validation — stateless invariants":
       inputs: Inputs(noteIds: @[]),
       outputs: Outputs(notes: @[mkNote(100, 1)]),
     ))
-    let tx = SignedMantleTx(
-      tx: MantleTx(ops: @[op]),
-      opProofs: @[OpProof(kind: opfChannelTransfer, channelTransferOpProof: default(ChannelMultiSigProof))],
-    )
-    let r = validateMantleTxStateless(mkHashedSignedTx(tx))
+    let r = validateMantleTxStateless(unhashedTx(op))
     check r.error == StatelessLedgerError.EmptyInputs
 
   test "ChannelTransfer: rejects duplicate inputs":
@@ -127,11 +107,7 @@ suite "core/mantle/tx_validation — stateless invariants":
       inputs: Inputs(noteIds: @[u.id, u.id]),
       outputs: Outputs(notes: @[mkNote(200, 2)]),
     ))
-    let tx = SignedMantleTx(
-      tx: MantleTx(ops: @[op]),
-      opProofs: @[OpProof(kind: opfChannelTransfer, channelTransferOpProof: default(ChannelMultiSigProof))],
-    )
-    let r = validateMantleTxStateless(mkHashedSignedTx(tx))
+    let r = validateMantleTxStateless(unhashedTx(op))
     check r.error == StatelessLedgerError.DoubleSpend
 
   test "ChannelTransfer: rejects zero-value output note":
@@ -141,11 +117,7 @@ suite "core/mantle/tx_validation — stateless invariants":
       inputs: Inputs(noteIds: @[u.id]),
       outputs: Outputs(notes: @[mkNote(0, 2)]),
     ))
-    let tx = SignedMantleTx(
-      tx: MantleTx(ops: @[op]),
-      opProofs: @[OpProof(kind: opfChannelTransfer, channelTransferOpProof: default(ChannelMultiSigProof))],
-    )
-    let r = validateMantleTxStateless(mkHashedSignedTx(tx))
+    let r = validateMantleTxStateless(unhashedTx(op))
     check r.error == StatelessLedgerError.ZeroValueNote
 
   test "ChannelConfig: rejects empty keys":
@@ -155,11 +127,7 @@ suite "core/mantle/tx_validation — stateless invariants":
       configurationThreshold: 1,
       transferThreshold: 1,
     ))
-    let tx = SignedMantleTx(
-      tx: MantleTx(ops: @[op]),
-      opProofs: @[OpProof(kind: opfChannelConfig, channelConfigOpProof: default(ChannelMultiSigProof))],
-    )
-    let r = validateMantleTxStateless(mkHashedSignedTx(tx))
+    let r = validateMantleTxStateless(unhashedTx(op))
     check r.error == StatelessLedgerError.InvalidChannelConfig
 
   test "ChannelConfig: rejects zero configurationThreshold":
@@ -169,11 +137,7 @@ suite "core/mantle/tx_validation — stateless invariants":
       configurationThreshold: 0,
       transferThreshold: 1,
     ))
-    let tx = SignedMantleTx(
-      tx: MantleTx(ops: @[op]),
-      opProofs: @[OpProof(kind: opfChannelConfig, channelConfigOpProof: default(ChannelMultiSigProof))],
-    )
-    let r = validateMantleTxStateless(mkHashedSignedTx(tx))
+    let r = validateMantleTxStateless(unhashedTx(op))
     check r.error == StatelessLedgerError.InvalidChannelConfig
 
   test "ChannelConfig: rejects configurationThreshold > keys.len":
@@ -183,11 +147,7 @@ suite "core/mantle/tx_validation — stateless invariants":
       configurationThreshold: 2,
       transferThreshold: 1,
     ))
-    let tx = SignedMantleTx(
-      tx: MantleTx(ops: @[op]),
-      opProofs: @[OpProof(kind: opfChannelConfig, channelConfigOpProof: default(ChannelMultiSigProof))],
-    )
-    let r = validateMantleTxStateless(mkHashedSignedTx(tx))
+    let r = validateMantleTxStateless(unhashedTx(op))
     check r.error == StatelessLedgerError.InvalidChannelConfig
 
   test "ChannelConfig: rejects zero transferThreshold":
@@ -197,11 +157,7 @@ suite "core/mantle/tx_validation — stateless invariants":
       configurationThreshold: 1,
       transferThreshold: 0,
     ))
-    let tx = SignedMantleTx(
-      tx: MantleTx(ops: @[op]),
-      opProofs: @[OpProof(kind: opfChannelConfig, channelConfigOpProof: default(ChannelMultiSigProof))],
-    )
-    let r = validateMantleTxStateless(mkHashedSignedTx(tx))
+    let r = validateMantleTxStateless(unhashedTx(op))
     check r.error == StatelessLedgerError.InvalidChannelConfig
 
   test "SdpDeclare: rejects empty locators":
@@ -212,11 +168,7 @@ suite "core/mantle/tx_validation — stateless invariants":
       zkId: mkZkPubKey(1),
       lockedNoteId: mkUtxo(100, 1).id,
     ))
-    let tx = SignedMantleTx(
-      tx: MantleTx(ops: @[op]),
-      opProofs: @[OpProof(kind: opfSdpDeclare, declarationProof: default(ZkAndEd25519SigsProof))],
-    )
-    let r = validateMantleTxStateless(mkHashedSignedTx(tx))
+    let r = validateMantleTxStateless(unhashedTx(op))
     check r.error == StatelessLedgerError.EmptyLocators
 
   test "SdpDeclare: rejects too many locators (> MaxSdpLocators)":
@@ -231,11 +183,7 @@ suite "core/mantle/tx_validation — stateless invariants":
       zkId: mkZkPubKey(1),
       lockedNoteId: mkUtxo(100, 1).id,
     ))
-    let tx = SignedMantleTx(
-      tx: MantleTx(ops: @[op]),
-      opProofs: @[OpProof(kind: opfSdpDeclare, declarationProof: default(ZkAndEd25519SigsProof))],
-    )
-    let r = validateMantleTxStateless(mkHashedSignedTx(tx))
+    let r = validateMantleTxStateless(unhashedTx(op))
     check r.error == StatelessLedgerError.TooManyLocators
 
   test "SdpDeclare: rejects invalid multiaddress locators":
@@ -249,11 +197,7 @@ suite "core/mantle/tx_validation — stateless invariants":
       zkId: mkZkPubKey(1),
       lockedNoteId: mkUtxo(100, 1).id,
     ))
-    let tx = SignedMantleTx(
-      tx: MantleTx(ops: @[op]),
-      opProofs: @[OpProof(kind: opfSdpDeclare, declarationProof: default(ZkAndEd25519SigsProof))],
-    )
-    let r = validateMantleTxStateless(mkHashedSignedTx(tx))
+    let r = validateMantleTxStateless(unhashedTx(op))
     check r.error == StatelessLedgerError.InvalidLocator
 
   test "SdpDeclare: verifies Ed25519 provider signature":
@@ -322,7 +266,7 @@ suite "core/mantle/tx_validation — stateless invariants":
       tx: MantleTx(ops: @[op]),
       opProofs: @[],
     )
-    let r = validateMantleTxStateless(mkHashedSignedTx(tx))
+    let r = validateMantleTxStateless(unhashed(tx))
     check r.error == StatelessLedgerError.InvalidProof
 
   test "Structural: rejects mismatched proof kind":
@@ -335,7 +279,7 @@ suite "core/mantle/tx_validation — stateless invariants":
       tx: MantleTx(ops: @[op]),
       opProofs: @[OpProof(kind: opfChannelInscribe, ed25519SigProof: default(Ed25519Signature))],
     )
-    let r = validateMantleTxStateless(mkHashedSignedTx(tx))
+    let r = validateMantleTxStateless(unhashed(tx))
     check r.error == StatelessLedgerError.InvalidProof
 
   test "Structural: rejects unsupported opcode":
@@ -349,7 +293,7 @@ suite "core/mantle/tx_validation — stateless invariants":
       tx: MantleTx(ops: @[op]),
       opProofs: @[OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))],
     )
-    let r = validateMantleTxStateless(mkHashedSignedTx(tx))
+    let r = validateMantleTxStateless(unhashed(tx))
     check r.error == StatelessLedgerError.UnsupportedOp
 
   test "Structural: rejects opcode / payload kind mismatch":
@@ -363,7 +307,7 @@ suite "core/mantle/tx_validation — stateless invariants":
       tx: MantleTx(ops: @[op]),
       opProofs: @[OpProof(kind: opfChannelDeposit, channelDepositProof: default(ZkSigProof))],
     )
-    let r = validateMantleTxStateless(mkHashedSignedTx(tx))
+    let r = validateMantleTxStateless(unhashed(tx))
     check r.error == StatelessLedgerError.UnsupportedOp
 
   test "LeaderClaim: verifies PoC Groth16 proof with verifier hook":
@@ -448,14 +392,7 @@ suite "core/mantle/tx_validation — stateless invariants":
       channel: mkChannelId(1),
       inputs: Inputs(noteIds: @[u1.id]), # double-spent across ops
     ))
-    let tx = SignedMantleTx(
-      tx: MantleTx(ops: @[op1, op2]),
-      opProofs: @[
-        OpProof(kind: opfTransfer, transferProof: default(ZkSigProof)),
-        OpProof(kind: opfChannelDeposit, channelDepositProof: default(ZkSigProof)),
-      ],
-    )
-    let r = validateMantleTxStateless(mkHashedSignedTx(tx))
+    let r = validateMantleTxStateless(unhashedTx([op1, op2]))
     check r.error == StatelessLedgerError.DoubleSpend
 
   test "toStatelessLedgerError: maps EncodingError variants correctly":
@@ -476,16 +413,12 @@ suite "core/mantle/tx_validation — stateless invariants":
 
   test "validateMantleTxStateless rejects tx exceeding MantleMaxOps with TooManyOps":
     var largeOps: seq[Op]
-    var largeProofs: seq[OpProof]
     let dummyOp = createTransferOp(TransferPayload(
       inputs: Inputs(noteIds: @[default(NoteId)]),
       outputs: Outputs(notes: @[]),
     ))
-    let dummyProof = OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))
     for i in 0 .. MantleMaxOps:
       largeOps.add dummyOp
-      largeProofs.add dummyProof
-    let tx = SignedMantleTx(tx: MantleTx(ops: largeOps), opProofs: largeProofs)
-    check validateMantleTxStateless(mkHashedSignedTx(tx)).error == StatelessLedgerError.TooManyOps
+    check validateMantleTxStateless(unhashedTx(largeOps)).error == StatelessLedgerError.TooManyOps
 
 {.pop.}

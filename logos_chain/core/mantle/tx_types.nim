@@ -13,9 +13,7 @@
 {.push raises: [], gcsafe.}
 
 import
-  bincode,
-  ./[primitives, operations, proofs],
-  ../crypto/types
+  ./[primitives, operations, proofs]
 
 export primitives, operations, proofs
 
@@ -27,96 +25,31 @@ type
     tx*: MantleTx
     opProofs*: seq[OpProof]
 
-  HashedSignedMantleTx* = object
-    signedTx*: SignedMantleTx
-    hash*: Hash32
-    ## A ``SignedMantleTx`` paired with its precalculated ``Hash32``.
-    ## Has not necessarily passed stateless or stateful validation.
-
-  ValidSignedMantleTx* = distinct HashedSignedMantleTx
-    ## A ``SignedMantleTx`` that has successfully passed all stateless structural
-    ## and cryptographic verifications via ``validateMantleTxStateless``.
-
-  ValidGenesisMantleTx* = distinct ValidSignedMantleTx
-    ## A ``ValidSignedMantleTx`` that passed every stateless genesis check in
-    ## ``validateGenesisTxStateless``; only state checks remain.
-
-  AnyHashedSignedMantleTx* =
-    HashedSignedMantleTx | ValidSignedMantleTx | ValidGenesisMantleTx
-
-  AnySignedMantleTx* =
-    SignedMantleTx | AnyHashedSignedMantleTx
-
-template signedTx(t: SignedMantleTx): untyped = t
-template signedTx(t: HashedSignedMantleTx): untyped = t.signedTx
-template signedTx*(t: ValidSignedMantleTx): untyped = HashedSignedMantleTx(t).signedTx
-template signedTx(t: ValidGenesisMantleTx): untyped = HashedSignedMantleTx(ValidSignedMantleTx(t)).signedTx
-
-template tx*(t: AnySignedMantleTx): untyped = signedTx(t).tx
-template opProofs*(t: AnySignedMantleTx): untyped = signedTx(t).opProofs
-
-template hash*(t: ValidSignedMantleTx): untyped = HashedSignedMantleTx(t).hash
-template hash*(t: ValidGenesisMantleTx): untyped = ValidSignedMantleTx(t).hash
 
 func encodeMantleTx*(tx: MantleTx): Result[seq[byte], EncodingError] =
   ## MantleTx = OpCount (u8) || *Op
   encodeOps(tx.ops)
 
-func encodeSignedMantleTx*[T: AnySignedMantleTx](signedTx: T): Result[seq[byte], EncodingError] =
+# TODO (perf): `encodeSignedMantleTx` builds byte buffers from the inside out,
+# triggering intermediate seq[byte] heap allocations and concatenation copies (e.g. `res.add`).
+# Optimize by streaming into an `OutputStreamHandle` (faststreams) across the encoder hierarchy
+# (`encode(stream, tx)`, `encode(stream, op.payload)`, etc.). This eliminates all intermediate buffers
+# and allows block serializers (e.g. `ValidBlock.encode`) to stream transactions directly into the
+# wire buffer in a single pass.
+func encodeSignedMantleTx*(signedTx: SignedMantleTx): Result[seq[byte], EncodingError] =
   ## SignedMantleTx = MantleTx || OpsProofs
-  when T is SignedMantleTx:
-    var res = ?encodeMantleTx(signedTx.tx)
-    let proofsBytes = ?encodeOpsProofs(signedTx.tx.ops, signedTx.opProofs)
-    res.add(proofsBytes)
-    ok(res)
-  else:
-    encodeSignedMantleTx(signedTx.signedTx)
+  var res = ?encodeMantleTx(signedTx.tx)
+  let proofsBytes = ?encodeOpsProofs(signedTx.tx.ops, signedTx.opProofs)
+  res.add(proofsBytes)
+  ok(res)
 
 func byteLen*(tx: MantleTx): int =
   ## Exact wire byte length of a MantleTx without allocating buffers.
   byteLen(tx.ops)
 
-func byteLen*[T: AnySignedMantleTx](tx: T): int =
-  ## Exact wire byte length of any signed MantleTx variant without allocating buffers.
-  when T is SignedMantleTx:
-    byteLen(tx.tx) + byteLen(tx.opProofs)
-  else:
-    byteLen(tx.signedTx)
+func byteLen*(tx: SignedMantleTx): int =
+  ## Exact wire byte length of a SignedMantleTx without allocating buffers.
+  byteLen(tx.tx) + byteLen(tx.opProofs)
 
-func readMantleTx*(data: openArray[byte], pos: var int): Result[MantleTx, DecodingError] =
-  let count = ?readByte(data, pos)
-  var ops = newSeqOfCap[Op](count)
-  for _ in 0 ..< int(count):
-    ops.add ?readOp(data, pos)
-  ok(MantleTx(ops: ops))
-
-func decodeSignedMantleTx*(data: openArray[byte]): Result[SignedMantleTx, DecodingError] =
-  var pos = 0
-  let tx = ?readMantleTx(data, pos)
-  let opProofs =
-    if tx.ops.len == 0:
-      ?finishDecode(data, pos)
-      @[]
-    elif pos < data.len:
-      ?decodeOpsProofs(tx.ops, data.toOpenArray(pos, data.high))
-    else:
-      return err(DecodingError.MissingProofs)
-  ok(SignedMantleTx(tx: tx, opProofs: opProofs))
-
-func bincodeEncodeSignedMantleTx(tx: SignedMantleTx): seq[byte] {.raises: [BincodeError].} =
-  let res = encodeSignedMantleTx(tx)
-  if res.isErr:
-    raise newException(BincodeError, "SignedMantleTx encoding failed: " & $res.error)
-  res.get
-
-func bincodeDecodeSignedMantleTx(data: openArray[byte]): SignedMantleTx {.raises: [BincodeError].} =
-  let res = decodeSignedMantleTx(data)
-  if res.isErr:
-    raise newException(BincodeError, "SignedMantleTx decoding failed: " & $res.error)
-  res.get
-
-deriveBincodeCustom(
-  SignedMantleTx, bincodeEncodeSignedMantleTx, bincodeDecodeSignedMantleTx, BincodeError
-)
 
 {.pop.}

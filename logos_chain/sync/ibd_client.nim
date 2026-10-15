@@ -19,7 +19,7 @@ import
   ../chain/block_processor,
   ./[framing, syncer_types, types]
 
-from ../core/local_tree import
+from ../chain/local_tree import
   LocalTree, localTipId, latestImmutableBlockId, hasBlock
 from ../core/types import Block, BlockId, blockId, header
 from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
@@ -227,7 +227,7 @@ proc downloadBlocks(
     peer: PeerId,
     targetBlock: Opt[BlockId] = Opt.none(BlockId),
 ): Future[bool] {.async: (raises: [CancelledError]).} =
-  var latestDownloaded = Opt.none(Block)
+  var latestDownloadedId = Opt.none(BlockId)
   debug "IBD download loop start", peer,
     targetBlock = targetBlock
       .map(proc (id: BlockId): string = sbyteutils.toHex(id))
@@ -258,8 +258,8 @@ proc downloadBlocks(
       debug "IBD: target already local", peer, targetBlock = sbyteutils.toHex(effectiveTarget.get)
       return true
 
-    let additionalKnown = latestDownloaded
-      .map(proc (b: Block): seq[BlockId] = @[blockId(b.header)])
+    let additionalKnown = latestDownloadedId
+      .map(proc (id: BlockId): seq[BlockId] = @[id])
       .valueOr(@[])
     let downloadReq = DownloadBlocksRequest(
       targetBlock: effectiveTarget.get,
@@ -281,8 +281,8 @@ proc downloadBlocks(
 
     var targetReached = false
     for blk in blocks:
-      latestDownloaded = Opt.some(blk)
       let id = blockId(blk.header)
+      latestDownloadedId = Opt.some(id)
       (await onBlock(syncer, blk, id)).isOkOr:
         # IBD streams blocks in parent order, so even a recoverable error
         # means this peer's stream is unusable (unless already applied or in flight).

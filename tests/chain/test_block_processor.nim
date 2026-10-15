@@ -14,19 +14,21 @@ import
   chronos/unittest2/asynctests,
   unittest2,
   results,
+  libp2p/protocols/pubsub/pubsub,
   ../testutil,
   ../logos_chain/sync/helpers,
-  ../../logos_chain/chain/block_processor
+  ../../logos_chain/chain/block_processor,
+  ../../logos_chain/chain/gossip_processor
 
 template addBlock(
     bp: BlockProcessor, blk: Block
 ): BlockApplyFuture =
   bp.addBlock(blk, blockId(header(blk)))
 
-template addBlock(
+template addProposal(
     bp: BlockProcessor, proposal: Proposal
 ): BlockApplyFuture =
-  bp.addBlock(proposal, blockId(proposal.header))
+  bp.addProposal(proposal, blockId(proposal.header))
 
 suite "chain/block_processor":
   setup:
@@ -267,24 +269,22 @@ suite "chain/block_processor":
       check (await bp.addBlock(stale)).error.kind ==
         BlockApplyErrorKind.InvalidStructure
 
-  asyncTest "addBlock on Proposal reconstructs, validates, and applies child of genesis":
+  asyncTest "addProposal on Proposal reconstructs, validates, and applies child of genesis":
     withProcessor(chain):
       let
         b1 = childValidBlock(genesisBlk.header, gid, SlotNumber(1), [])
         p1 = Proposal(header: b1.header, references: default(References), signature: b1.signature)
-        r = await bp.addBlock(p1)
+        r = await bp.addProposal(p1)
       check r.isOk
       check bp.localTree.localTipId == blockId(p1.header)
       check bp.ledger.state(blockId(p1.header)).isSome
 
-  asyncTest "addBlock on Proposal with missing tx reference fails with MissingReference":
+  asyncTest "addProposal on Proposal with missing tx reference fails with MissingReference":
     withProcessor(chain):
-      var refs: References
-      refs[0] = minimalValidSignedTx().hash
       let
-        b1 = childValidBlock(genesisBlk.header, gid, SlotNumber(1), [])
-        p1 = Proposal(header: b1.header, references: refs, signature: b1.signature)
-        r = await bp.addBlock(p1)
+        tx = minimalValidSignedTx()
+        p1 = childProposal(genesisBlk.header, gid, SlotNumber(1), [tx])
+        r = await bp.addProposal(p1)
       check r.isErr
       check r.error.kind == BlockApplyErrorKind.MissingReference
 
@@ -342,8 +342,9 @@ suite "chain/block_processor":
       check not fRawB2.finished
 
       # 3. Buffer admitted copy of b2 in orphanPool before b1 finishes processing
-      let (admittedB2, isOrphan) = validateBlockHeaderAndTopology(b2, bp.localTree, bp.ledger, newSeq[HashedSignedMantleTx](), @[]).get()
-      check isOrphan
+      let status = checkTopology(b2.header, bp.localTree, bp.ledger).get()
+      let admittedB2 = admitBlock(b2).get()
+      check status == TopologyStatus.Orphan
       check chain.orphanPool.addOrphan(admittedB2)
 
       # 4. Awaiting f1 allows event loop to process b1, which promotes admittedB2 from orphanPool.
@@ -371,8 +372,9 @@ suite "chain/block_processor":
       let fRawB2 = bp.addBlock(b2)
       check not fRawB2.finished
 
-      let (admittedB2, isOrphan) = validateBlockHeaderAndTopology(b2, bp.localTree, bp.ledger, newSeq[HashedSignedMantleTx](), @[]).get()
-      check isOrphan
+      let status = checkTopology(b2.header, bp.localTree, bp.ledger).get()
+      let admittedB2 = admitBlock(b2).get()
+      check status == TopologyStatus.Orphan
       check chain.orphanPool.addOrphan(admittedB2)
 
       check (await f1).isOk
@@ -382,5 +384,86 @@ suite "chain/block_processor":
       check resRawB2.isErr
       check not bp.localTree.hasBlock(id2)
       check chain.orphanPool.len == 0
+
+  asyncTest "processProposal with tampered references rejects and does not suppress genuine proposal":
+    withProcessor(chain):
+      let
+        b = childValidBlock(genesisBlk.header, gid, SlotNumber(1), [])
+        p = Proposal(header: b.header, references: default(References), signature: b.signature)
+        id = blockId(p.header)
+        peer = getRandomPeerId()
+
+      var pBad = p
+      pBad.references[0][0] = 0xAA'u8 # non-zero reference disagrees with bodyRoot
+
+      # 1. pBad is rejected immediately at gossip gate
+      check bp.processProposal(pBad, peer) == ValidationResult.Reject
+
+      # 2. In-flight / dedup table was not polluted
+      check bp.checkDeduplication(id, p.signature).isOk
+
+      # 3. Genuine proposal is accepted at gossip gate and applied
+      check bp.processProposal(p, peer) == ValidationResult.Accept
+      await sleepAsync(50.millis)
+      check bp.localTree.localTipId == id
+
+  asyncTest "processProposal with tampered uncle headers rejects and does not suppress genuine proposal":
+    withProcessor(chain):
+      let
+        b = childValidBlock(genesisBlk.header, gid, SlotNumber(1), [])
+        p = Proposal(header: b.header, references: default(References), signature: b.signature)
+        id = blockId(p.header)
+        peer = getRandomPeerId()
+
+      var pBad = p
+      var uHdr: Header
+      uHdr.bedrockVersion = ExpectedBedrockVersion
+      pBad.uncleHeaders = UncleHeaders(@[SignedHeader(header: uHdr, signature: default(Ed25519Signature))])
+
+      check bp.processProposal(pBad, peer) == ValidationResult.Reject
+      check bp.checkDeduplication(id, p.signature).isOk
+
+      check bp.processProposal(p, peer) == ValidationResult.Accept
+      await sleepAsync(50.millis)
+      check bp.localTree.localTipId == id
+
+  asyncTest "addBlock with tampered txs does not suppress a genuine copy":
+    withProcessor(chain):
+      let
+        b = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
+        id = blockId(b.header)
+
+      var bBad = b
+      bBad.txs = BlockTxs(@[minimalHashedSignedTx()])
+
+      let badFut = bp.addBlock(bBad, id)
+      check badFut.completed
+      check badFut.value.isErr
+      check badFut.value.error.kind == BlockApplyErrorKind.InvalidStructure
+
+      check bp.checkDeduplication(id, b.signature).isOk
+
+      let goodFut = bp.addBlock(b, id)
+      check (await goodFut).isOk
+      check bp.localTree.localTipId == id
+
+  asyncTest "processProposal rejects a tampered copy and accepts the genuine one after it":
+    withProcessor(chain):
+      let
+        b = childValidBlock(genesisBlk.header, gid, SlotNumber(1), [])
+        p = Proposal(header: b.header, references: default(References), signature: b.signature)
+        peer = getRandomPeerId()
+
+      var pBad = p
+      pBad.references[0][0] = 0xAA'u8
+
+      # Gossip rejects tampered copy
+      check bp.processProposal(pBad, peer) == ValidationResult.Reject
+
+      # Dedup check is still ok
+      check bp.checkDeduplication(blockId(p.header), p.signature).isOk
+
+      # Gossip accepts genuine copy
+      check bp.processProposal(p, peer) == ValidationResult.Accept
 
 {.pop.}

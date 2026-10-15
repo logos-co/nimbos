@@ -15,8 +15,8 @@ import
   bincode,
   libp2p/[switch, peerid],
   ../../../logos_chain/networking/network,
-  ../../../logos_chain/core/[types, local_tree],
-  ../../../logos_chain/chain/[genesis, chain],
+  ../../../logos_chain/core/types,
+  ../../../logos_chain/chain/[chain, local_tree],
   ../../../logos_chain/sync/[types, ibd_client, ibd_server, syncer],
   ./helpers,
   ../../testutil
@@ -221,10 +221,10 @@ suite "sync/initial_block_download (IBD requester loop)":
       genesis = createGenesisBlock(testValidGenesisTx())
       gid = blockId(genesis.header)
       b1Valid = childValidBlock(genesis.header, gid, SlotNumber(1), [])
-      b1 = b1Valid.toBlock()
+      b1 = childBlock(genesis.header, gid, SlotNumber(1), [])
       b1id = blockId(b1.header)
       b2Valid = childValidBlock(b1.header, b1id, SlotNumber(2), [])
-      b2 = b2Valid.toBlock()
+      b2 = childBlock(b1.header, b1id, SlotNumber(2), [])
       b2id = blockId(b2.header)
       serverChain = initTestChain(genesis)
       clientChain = initTestChain(genesis)

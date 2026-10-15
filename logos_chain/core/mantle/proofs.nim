@@ -347,6 +347,9 @@ func readOpProof*(data: openArray[byte], pos: var int, kind: OpProofKind): Resul
     let proof = ?readFixed[128](data, pos)
     ok(OpProof(kind: opfChannelDeposit, channelDepositProof: proof))
 
+# TODO (perf): `encodeOpsProofs` allocates separate `seq[byte]` buffers for each proof and concatenates
+# them with `res.add`. Optimize by streaming proof fields directly into an `OutputStreamHandle`
+# (faststreams) to avoid intermediate buffer allocations.
 func encodeOpsProofs*(ops: openArray[Op], proofs: openArray[OpProof]): Result[seq[byte], EncodingError] =
   ## OpsProofs = *OpProof
   ## 1. Length must equal OpCount.
@@ -362,16 +365,21 @@ func encodeOpsProofs*(ops: openArray[Op], proofs: openArray[OpProof]): Result[se
     res.add(encoded)
   ok(res)
 
-func decodeOpsProofs*(ops: openArray[Op], data: openArray[byte]): Result[seq[OpProof], DecodingError] =
+# TODO (perf): While the outer `res` sequence is filled in-place,
+# `readOpProof` returns an OpProof by value, causing genericAssign/genericSeqAssign copies
+# when unwrapping and appending. Optimize via in-place slot decoding (e.g. `readOpProofInto`).
+func decodeOpsProofsInto*(
+    ops: openArray[Op], data: openArray[byte], res: var seq[OpProof]
+): Result[void, DecodingError] =
   if ops.len > 0 and data.len == 0:
     return err(DecodingError.ProofCountMismatch)
   var pos = 0
-  var res = newSeqOfCap[OpProof](ops.len)
+  res = newSeqOfCap[OpProof](ops.len)
   for i in 0 ..< ops.len:
     let kind = expectedOpProofKindForOpcode(ops[i].opcode).valueOr:
       return err(DecodingError.UnsupportedOpcode)
     res.add ?readOpProof(data, pos, kind)
   ?finishDecode(data, pos)
-  ok(res)
+  ok()
 
 {.pop.}

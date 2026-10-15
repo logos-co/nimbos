@@ -12,21 +12,14 @@
 {.push raises: [], gcsafe.}
 
 import
-  results,
   stew/endians2,
-  ../core/types,
-  ../core/crypto/hashing
+  libp2p/crypto/ed25519/ed25519,
+  ../core/types
 
 from stew/byteutils import fromBytes
 
 from ../core/utils import isUtf8
-from ../core/crypto/types as crypto_types import DefaultEd25519PublicKey
 from ../consensus/clock import WallclockSeconds
-
-export results, types, hashing, WallclockSeconds
-
-const
-  GenesisBedrockVersion* = 1'u8
 
 type
   GenesisState* = object
@@ -68,32 +61,5 @@ func cryptarchiaParameter*(
     tx: ValidGenesisMantleTx): Result[CryptarchiaParameter, cstring] =
   ## Decode the Cryptarchia parameters from the genesis inscription.
   decodeCryptarchiaParameter(tx.tx.ops[1].payload.channelInscribe.inscription)
-
-func createGenesisHeader(validGenesisTx: ValidGenesisMantleTx): Header =
-  ## Genesis header: zero parent, slot 0, no uncles, default proof of leadership.
-  initHeader(
-    bedrockVersion = GenesisBedrockVersion,
-    parentBlock = DefaultBlockId,
-    slot = 0'u64,
-    uncleHeaders = [],
-    txs = [ValidSignedMantleTx(validGenesisTx)],
-    proofOfLeadership = ProofOfLeadership(
-      leaderVoucher: default(RewardVoucher),
-      entropyContribution: default(ZkHash),
-      proof: DefaultCompressedGroth16Proof,
-      leaderKey: DefaultEd25519PublicKey,
-    ),
-  )
-
-func createGenesisBlock*(validGenesisTx: ValidGenesisMantleTx): ValidBlock =
-  ## GENESIS_BLOCK = (GENESIS_HEADER, [GENESIS_MANTLE_TX]); the zero signature
-  ## and the empty uncle list are implementation-defined, the spec sets neither.
-  let genesisHeader = createGenesisHeader(validGenesisTx)
-  ValidBlock(
-    header: genesisHeader,
-    signature: DefaultEd25519Signature,
-    uncleHeaders: default(UncleHeaders),
-    txs: @[ValidSignedMantleTx(validGenesisTx)],
-  )
 
 {.pop.}

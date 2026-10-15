@@ -12,7 +12,8 @@
 import
   std/[deques, tables],
   ../core/types,
-  ../core/local_tree
+  ./local_tree,
+  ./block_validation
 
 type
   OrphanPool* = ref object
@@ -36,8 +37,9 @@ func hasOrphan*(pool: OrphanPool, id: BlockId): bool =
 proc pruneDescendants*(pool: OrphanPool, rootId: BlockId) =
   ## Purges all descendant subtrees waiting on `rootId` via iterative BFS traversal.
   ## Time: O(M), where M is the number of descendant nodes | Space: O(M) for BFS queue
-  var queue = @[rootId]
-  var idx = 0
+  var
+    queue = @[rootId]
+    idx = 0
   while idx < queue.len:
     let parent = queue[idx]
     inc idx

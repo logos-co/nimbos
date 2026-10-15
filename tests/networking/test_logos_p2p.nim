@@ -18,12 +18,13 @@ import
   ../testutil,
   ../logos_chain/sync/helpers,
   ../../logos_chain/conf,
-  ../../logos_chain/core/[types, local_tree],
+  ../../logos_chain/core/types,
+  ../../logos_chain/chain/local_tree,
   ../../logos_chain/core/mantle/[operations, tx_types, tx_hashing],
   ../../logos_chain/networking/[network, protocols],
-  ../../logos_chain/chain/genesis,
   ../../logos_chain/node,
-  ../../logos_chain/deployment/deployment_settings
+  ../../logos_chain/deployment/deployment_settings,
+  ../core/mantle/test_helpers
 
 from libp2p/protocols/connectivity/autonat/types import NetworkReachability
 from libp2p/crypto/ed25519/ed25519 import sign
@@ -262,7 +263,7 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
       let sampleTx = validSignedTxWithOps(1, 1)
 
       # Wait until GossipSub exchanges topic subscriptions and broadcast reaches listener
-      check waitUntil((await peers.dialer.broadcast(topic, sampleTx.signedTx)).isOk)
+      check waitUntil((await peers.dialer.broadcast(topic, sampleTx.hashed)).isOk)
       check waitUntil(listenerNode.processor.mempool.len > 0)
 
       let txItem = listenerNode.processor.mempool.get(sampleTx.hash)
@@ -270,38 +271,39 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
       check txItem.get.tx.ops.len == 1
 
       # Duplicate tx sent to processTx should return Ignore and not duplicate in mempool
-      let dupRes = listenerNode.processor.processTx(sampleTx.signedTx, peers.dialer.switch.peerInfo.peerId)
+      let dupRes = listenerNode.processor.processTx(sampleTx.hashed, peers.dialer.switch.peerInfo.peerId)
       check dupRes == ValidationResult.Ignore
       check listenerNode.processor.mempool.len == 1
 
-      # Malformed: Ops and proofs length mismatch
-      let mismatchTx = SignedMantleTx(tx: sampleTx.signedTx.tx, opProofs: @[])
-      check listenerNode.processor.processTx(mismatchTx, peers.dialer.switch.peerInfo.peerId) == ValidationResult.Reject
-
       # Malformed / Invalid: Corrupt cryptographic signature on new tx
-      var corruptSigTx = signedTxWithOps(1, 999)
+      let validHtx = hashedSignedTxWithOps(1, 999)
+      var corruptSigTx = validHtx.signedTx
       corruptSigTx.opProofs[0].ed25519SigProof.data[0] = 0xFF
-      check listenerNode.processor.processTx(corruptSigTx, peers.dialer.switch.peerInfo.peerId) == ValidationResult.Reject
+      let corruptHtx = mkHashedSignedTx(corruptSigTx, validHtx.hash)
+      check listenerNode.processor.processTx(corruptHtx, peers.dialer.switch.peerInfo.peerId) == ValidationResult.Reject
       check listenerNode.processor.mempool.len == 1
 
       # Large tx (> 64 KiB) verifies GossipBincodeConfig handles messages exceeding default 64 KiB bincode limit
       var largeCid: ChannelId
       largeCid[0] = 77
-      let largePayload = ChannelInscribePayload(
-        channelId: largeCid,
-        inscription: newSeq[byte](70_000),
-        parent: default(Hash32),
-        signer: testTxKeyPair.pubkey,
-      )
-      let largeOp = createChannelInscribeOp(largePayload)
-      let largeMtx = MantleTx(ops: @[largeOp])
-      let largeSig = sign(testTxKeyPair.seckey, mantleTxHash(largeMtx).get)
-      let largeTx = SignedMantleTx(
-        tx: largeMtx,
-        opProofs: @[OpProof(kind: opfChannelInscribe, ed25519SigProof: largeSig)],
-      )
+      let
+        largePayload = ChannelInscribePayload(
+          channelId: largeCid,
+          inscription: newSeq[byte](70_000),
+          parent: default(Hash32),
+          signer: testTxKeyPair.pubkey,
+        )
+        largeOp = createChannelInscribeOp(largePayload)
+        largeMtx = MantleTx(ops: @[largeOp])
+        largeTxHash = mantleTxHash(largeMtx).get
+        largeSig = sign(testTxKeyPair.seckey, largeTxHash)
+        largeTx = SignedMantleTx(
+          tx: largeMtx,
+          opProofs: @[OpProof(kind: opfChannelInscribe, ed25519SigProof: largeSig)],
+        )
+        largeHtx = mkHashedSignedTx(largeTx, largeTxHash)
       check largeTx.byteLen > 65536
-      check waitUntil((await peers.dialer.broadcast(topic, largeTx)).isOk)
+      check waitUntil((await peers.dialer.broadcast(topic, largeHtx)).isOk)
       check waitUntil(listenerNode.processor.mempool.len == 2)
     finally:
       await dialerNode.processor.stop()
@@ -313,7 +315,7 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
     const topic = "/logos-blockchain/cryptarchia/1.0.0"
     let peers = await createBootstrapPeers()
     let
-      genesis = createGenesisBlock(testValidGenesisTx())
+      genesis = testGenesisBlock()
       listenerNode = initTestLBNode(peers.listener, genesis, proposalTopic = topic)
       dialerNode = initTestLBNode(peers.dialer, genesis, proposalTopic = topic)
     try:
@@ -381,9 +383,9 @@ suite "P2P stack — on-the-wire encoding":
       tx = minimalSignedTx()
       encoded = encodeSignedMantleTx(tx).get
     check encoded.len > 0
-    let decoded = decodeSignedMantleTx(encoded).get
+    let decoded = bincodeDecodeHashedSignedMantleTx(encoded)
     check encodeSignedMantleTx(decoded).get == encodeSignedMantleTx(tx).get
-    check mantleTxHash(decoded.tx).get == mantleTxHash(tx.tx).get
+    check decoded.hash == mantleTxHash(tx.tx).get
     check decoded.opProofs.len == tx.opProofs.len
 
 {.pop.}

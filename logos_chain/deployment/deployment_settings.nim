@@ -19,7 +19,6 @@ import
   results,
   stew/io2,
   yaml/dom,
-  ../chain/genesis,
   ./deployment_settings_helpers
 
 from ../core/mantle/primitives import EpochNumber, NumberOfEpochs
@@ -27,7 +26,6 @@ from ../zk/pol_lottery import isSupportedLotteryF
 
 export
   dom,
-  genesis,
   deployment_settings_helpers,
   EpochNumber,
   NumberOfEpochs

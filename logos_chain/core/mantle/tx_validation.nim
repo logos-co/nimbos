@@ -18,8 +18,7 @@ import
   ./primitives,
   ./operations,
   ./proofs,
-  ./tx_hashing,
-  ./tx_types
+  ./[tx_types, tx_hashing]
 
 type
   StatelessLedgerError* {.pure.} = enum
@@ -40,7 +39,34 @@ type
     TooManyOps ## more ops than the u8 wire count holds
     TooManyOutputs ## more outputs than the u8 wire count holds
 
-export results, StatelessLedgerError
+  ValidSignedMantleTx* = object
+    htx: HashedSignedMantleTx
+    ## A ``SignedMantleTx`` that has successfully passed all stateless structural
+    ## and cryptographic verifications via ``validateMantleTxStateless``.
+
+  ValidGenesisMantleTx* = distinct ValidSignedMantleTx
+    ## A ``ValidSignedMantleTx`` that passed every stateless genesis check in
+    ## ``validateGenesisTxStateless``; only state checks remain.
+
+  AnyHashedSignedMantleTx* =
+    HashedSignedMantleTx | ValidSignedMantleTx | ValidGenesisMantleTx
+
+export results
+
+func hashed*(vtx: ValidSignedMantleTx): HashedSignedMantleTx {.inline.} =
+  vtx.htx
+
+template hashed*(gtx: ValidGenesisMantleTx): HashedSignedMantleTx =
+  ValidSignedMantleTx(gtx).htx
+
+template hash*(t: ValidSignedMantleTx | ValidGenesisMantleTx): Hash32 =
+  hashed(t).hash
+
+template tx*(t: ValidSignedMantleTx | ValidGenesisMantleTx): untyped = hashed(t).tx
+template opProofs*(t: ValidSignedMantleTx | ValidGenesisMantleTx): untyped = hashed(t).opProofs
+
+template byteLen*(t: ValidSignedMantleTx | ValidGenesisMantleTx): int =
+  byteLen(hashed(t))
 
 func toStatelessLedgerError*(err: EncodingError): StatelessLedgerError =
   case err
@@ -107,9 +133,10 @@ proc validateMantleTxStateless*(
   if tx.tx.ops.len != tx.opProofs.len:
     return err(StatelessLedgerError.InvalidProof)
 
-  var allInputs: HashSet[NoteId]
-  var hasSigCrypto = false
-  var hasHeavyZk = false
+  var
+    allInputs: HashSet[NoteId]
+    hasSigCrypto = false
+    hasHeavyZk = false
 
   template checkInputs(inputs: Inputs): untyped =
     if inputs.noteIds.len == 0:
@@ -193,11 +220,13 @@ proc validateMantleTxStateless*(
         if not verified:
           return err(StatelessLedgerError.InvalidProof)
 
-  ok(ValidSignedMantleTx(htx))
+  ok(ValidSignedMantleTx(htx: htx))
 
 func validateGenesisTxStateless*(
-    tx: SignedMantleTx): Result[ValidGenesisMantleTx, StatelessLedgerError] =
+    htx: HashedSignedMantleTx
+): Result[ValidGenesisMantleTx, StatelessLedgerError] =
   ## Stateless genesis checks; no proof is verified.
+  template tx: untyped = htx.signedTx
   template ops: untyped = tx.tx.ops
   if ops.len > MantleMaxOps:
     return err(StatelessLedgerError.TooManyOps)
@@ -221,8 +250,13 @@ func validateGenesisTxStateless*(
   ?assert_valid_output(transfer.outputs.notes)
   for op in ops.toOpenArray(2, ops.high):
     ?validateLocators(op.payload.sdpDeclare)
-  let h = mantleTxHash(tx.tx).valueOr:
-    return err(toStatelessLedgerError(error))
-  ok(ValidGenesisMantleTx(ValidSignedMantleTx(HashedSignedMantleTx(signedTx: tx, hash: h))))
+  ok(ValidGenesisMantleTx(ValidSignedMantleTx(htx: htx)))
+
+when defined(unittest) or defined(test):
+  func createValidTxForTest*(htx: HashedSignedMantleTx): ValidSignedMantleTx =
+    ValidSignedMantleTx(htx: htx)
+
+  func createValidGenesisTxForTest*(htx: HashedSignedMantleTx): ValidGenesisMantleTx =
+    ValidGenesisMantleTx(ValidSignedMantleTx(htx: htx))
 
 {.pop.}

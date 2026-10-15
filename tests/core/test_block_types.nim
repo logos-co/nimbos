@@ -10,13 +10,12 @@
 
 import
   ../testutil,
+  ./mantle/test_helpers,
   ../../logos_chain/core/types
 
 suite "core/types":
   const testBedrockVersion = 1'u8
 
-  proc sampleTx(op: Op): SignedMantleTx =
-    SignedMantleTx(tx: MantleTx(ops: @[op]), opProofs: @[])
 
   test "initBlock accepts empty tx list":
     let
@@ -39,8 +38,7 @@ suite "core/types":
 
   test "blockId returns 32-byte hash":
     let
-      tx = MantleTx(ops: @[])
-      hx = mantleTxHash(tx).get
+      hx = mkTxHash(1)
       h = initHeader(
         bedrockVersion = testBedrockVersion,
         parentBlock = default(BlockId),
@@ -59,75 +57,29 @@ suite "core/types":
 
   test "merkle_root changes when tx order changes":
     let
-      txA = sampleTx(
-        createTransferOp(TransferPayload(
-          inputs: Inputs(noteIds: @[]),
-          outputs: Outputs(notes: @[]),
-        )),
-      )
-      txB = sampleTx(
-        createSdpActiveOp(ActiveMessage(
-          declarationId: default(DeclarationId),
-          nonce: 1'u64,
-          metadata: @[],
-        )),
-      )
-      hA = mantleTxHash(txA.tx).get
-      hB = mantleTxHash(txB.tx).get
+      hA = mkTxHash(1)
+      hB = mkTxHash(2)
     check merkle_root([hA, hB]) != merkle_root([hB, hA])
 
   test "merkle_root returns zero hash for empty tx list":
     check merkle_root(openArray[Hash32]([])) == default(Hash32)
 
   test "merkle_root single tx equals that tx hash":
-    let
-      tx = sampleTx(
-        createTransferOp(TransferPayload(
-          inputs: Inputs(noteIds: @[]),
-          outputs: Outputs(notes: @[]),
-        )),
-      )
-      h = mantleTxHash(tx.tx).get
+    let h = mkTxHash(1)
     check merkle_root([h]) == h
 
   test "merkle_root odd leaf count uses zero padding not duplicate last":
     let
-      txA = sampleTx(
-        createTransferOp(TransferPayload(
-          inputs: Inputs(noteIds: @[]),
-          outputs: Outputs(notes: @[]),
-        )),
-      )
-      txB = sampleTx(
-        createSdpActiveOp(ActiveMessage(
-          declarationId: default(DeclarationId),
-          nonce: 2'u64,
-          metadata: @[],
-        )),
-      )
-      txC = sampleTx(
-        createSdpWithdrawOp(WithdrawMessage(
-          declarationId: default(DeclarationId),
-          lockedNoteId: default(NoteId),
-          nonce: 3'u64,
-        )),
-      )
-      hA = mantleTxHash(txA.tx).get
-      hB = mantleTxHash(txB.tx).get
-      hC = mantleTxHash(txC.tx).get
+      hA = mkTxHash(1)
+      hB = mkTxHash(2)
+      hC = mkTxHash(3)
       zero = default(Hash32)
     check merkle_root([hA, hB, hC]) == hashPair(hashPair(hA, hB), hashPair(hC, zero))
     check merkle_root([hA, hB, hC]) != merkle_root([hA, hB, hC, hC])
 
   test "blockId is deterministic for same header":
     let
-      tx = sampleTx(
-        createTransferOp(TransferPayload(
-          inputs: Inputs(noteIds: @[]),
-          outputs: Outputs(notes: @[]),
-        )),
-      )
-      hx = mantleTxHash(tx.tx).get
+      hx = mkTxHash(1)
       h = initHeader(
         bedrockVersion = 1'u8,
         parentBlock = default(BlockId),
@@ -145,32 +97,28 @@ suite "core/types":
 
   test "merkle_root directly accepts list of hashes":
     let
-      txA = sampleTx(createTransferOp(TransferPayload(inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @[]))))
-      txB = sampleTx(createSdpActiveOp(ActiveMessage(declarationId: default(DeclarationId), nonce: 1'u64, metadata: @[])))
+      txA = txWithPlaceholderProofs([createTransferOp(TransferPayload(inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @[])))])
+      txB = txWithPlaceholderProofs([createSdpActiveOp(ActiveMessage(declarationId: default(DeclarationId), nonce: 1'u64, metadata: @[]))])
       hA = mantleTxHash(txA.tx).get
       hB = mantleTxHash(txB.tx).get
       hashes = [hA, hB]
     check merkle_root(hashes) == hashPair(hA, hB)
     let
-      htxA = HashedSignedMantleTx(signedTx: txA, hash: hA)
-      htxB = HashedSignedMantleTx(signedTx: txB, hash: hB)
+      htxA = mkHashedSignedTx(txA, hA)
+      htxB = mkHashedSignedTx(txB, hB)
       expectedRoot = body_root(openArray[SignedHeader]([]), merkle_root(hashes))
     check body_root(openArray[SignedHeader]([]), [htxA, htxB]) == expectedRoot
     let
-      vtxA = ValidSignedMantleTx(htxA)
-      vtxB = ValidSignedMantleTx(htxB)
-    check body_root(openArray[SignedHeader]([]), [vtxA, vtxB]) == expectedRoot
-    let
-      gtxA = ValidGenesisMantleTx(vtxA)
-      gtxB = ValidGenesisMantleTx(vtxB)
-    check body_root(openArray[SignedHeader]([]), [gtxA, gtxB]) == expectedRoot
+      vtxA = mkValidTx(htxA)
+      vtxB = mkValidTx(htxB)
+    check body_root(openArray[SignedHeader]([]), [vtxA, vtxB]) ==
+      body_root(openArray[SignedHeader]([]), [vtxA.hashed, vtxB.hashed])
     check merkle_root(openArray[Hash32]([])) == default(Hash32)
     check merkle_root([hA]) == hA
 
   test "initHeader accepts openArray[Hash32]":
     let
-      tx = sampleTx(createTransferOp(TransferPayload(inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @[]))))
-      hx = mantleTxHash(tx.tx).get
+      hx = mkTxHash(1)
       pol = ProofOfLeadership(
         leaderVoucher: default(RewardVoucher),
         entropyContribution: default(ZkHash),
@@ -180,12 +128,9 @@ suite "core/types":
       h = initHeader(1'u8, default(BlockId), SlotNumber(10), [], [hx], pol)
     check h.bodyRoot == body_root([], hx)
 
-
   test "initProposal accepts References directly":
     var refs: References
-    let
-      tx = sampleTx(createTransferOp(TransferPayload(inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @[]))))
-      hx = mantleTxHash(tx.tx).get
+    let hx = mkTxHash(1)
     refs[0] = hx
 
     let
@@ -198,5 +143,12 @@ suite "core/types":
       h = initHeader(1'u8, default(BlockId), SlotNumber(10), [], [hx], pol)
       prop = initProposal(h, [], refs, DefaultEd25519Signature)
     check prop.references[0] == hx
+
+  test "binary layout equivalence of transaction types":
+    static:
+      doAssert sizeof(typeof(default(HashedSignedMantleTx)[])) == sizeof(typeof(default(ValidSignedMantleTx).hashed[]))
+      doAssert sizeof(HashedSignedMantleTx) == sizeof(ValidSignedMantleTx)
+    check sizeof(typeof(default(HashedSignedMantleTx)[])) == sizeof(typeof(default(ValidSignedMantleTx).hashed[]))
+    check sizeof(HashedSignedMantleTx) == sizeof(ValidSignedMantleTx)
 
 {.pop.}

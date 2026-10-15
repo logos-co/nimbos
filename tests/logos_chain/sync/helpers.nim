@@ -15,14 +15,12 @@ import
   stew/byteutils as byteutils,
   ../../testutil,
   ../../ledger/sdp/test_helpers,
-  ../../../logos_chain/chain/[chain, block_processor],
-  ../../../logos_chain/core/[types, local_tree],
+  ../../../logos_chain/chain/[chain, block_processor, local_tree],
+  ../../../logos_chain/core/types,
   ../../../logos_chain/ledger/ledger,
   ../../../logos_chain/sync/[framing, types, ibd_server, syncer]
 from ../../../logos_chain/core/mantle/primitives import SlotNumber
-from ../../../logos_chain/core/mantle/tx_types import encodeSignedMantleTx
-from ../../../logos_chain/core/mantle/tx_validation import validateGenesisTxStateless
-from ../../ledger/test_helpers import testLedgerConfig
+from ../../ledger/test_helpers import testLedgerConfig, testGenesisLedgerState
 
 const testChainSyncProtocol* = "/logos-blockchain-testnet-v0.1.2/chainsync/1.0.0"
 
@@ -33,17 +31,19 @@ proc initTestChain*(
 ): Chain =
   ## Chain over the genesis block's ledger state (epochs seeded under
   ## `testLedgerConfig`).
-  let
-    validTx = validateGenesisTxStateless(genesis.txs[0].signedTx).valueOr:
-      raiseAssert "initTestChain: stateless genesis: " & $error
-    state = LedgerState.fromGenesis(
-        validTx, default(FieldElement), testSdpRegistry(),
-        testLedgerConfig).valueOr:
-      raiseAssert "initTestChain: genesis state: " & $error
+  let gid = blockId(genesis.header)
+  let state =
+    if gid == blockId(testGenesisBlock().header):
+      testGenesisLedgerState()
+    else:
+      let validTx = mkValidGenesisTx(genesis.txs[0].hashed)
+      LedgerState.fromGenesis(
+          validTx, default(FieldElement), testSdpRegistry(),
+          testLedgerConfig).valueOr:
+        raiseAssert "initTestChain: genesis state: " & $error
   Chain.init(
     genesis,
-    Ledger[BlockId].init(blockId(genesis.header), state, testLedgerConfig,
-        mockVerifyLeaderProof),
+    Ledger[BlockId].init(gid, state, testLedgerConfig, mockVerifyLeaderProof),
     SlotConfig(genesisTime: genesisTime, slotDurationSeconds: 1),
     securityParam = securityParam)
 
@@ -111,11 +111,6 @@ proc extendChainAfterGenesis*(
     parentId = blockId(blk.header)
   parentId
 
-func exampleBlockId*(fill: byte): BlockId =
-  var id: BlockId
-  for i in 0 ..< id.len:
-    id[i] = fill
-  id
 
 func exampleGetTipTipFixture*(): Tip =
   Tip(tip: exampleBlockId(0xAB'u8), slot: SlotNumber(12_345'u64),

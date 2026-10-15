@@ -21,7 +21,6 @@ import
   ./sync/syncer,
   ./zk/[circuits, pol, poc, poq, prover, zksign]
 
-from ./core/mantle/tx_types import SignedMantleTx
 from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
 from libp2p/peerid import PeerId
 from libp2p/protocols/pubsub/pubsub import ValidationResult
@@ -240,9 +239,9 @@ proc installMessageValidators(node: LBNode) =
   let mempoolTopic = node.deploymentSettings.mempool.pubsubTopic
   if mempoolTopic.len > 0:
     node.network.addValidator(mempoolTopic) do (
-        tx: SignedMantleTx, src: PeerId
+        htx: HashedSignedMantleTx, src: PeerId
     ) -> ValidationResult:
-      node.processor.processTx(tx, src)
+      node.processor.processTx(htx, src)
     node.network.subscribe(mempoolTopic, TopicParams.init())
     debug "Subscribed to gossip topic", topic = mempoolTopic
   else:

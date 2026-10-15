@@ -17,16 +17,24 @@ import
     poq_verifier, epoch_state, fee_market, block_rewards,
   ],
   ./sdp/[registry, ops],
-  ../core/mantle/[tx_types, gas],
+  ../core/mantle/gas,
   ../core/types
 
 from ../core/crypto/types import ZkPublicKey
 export
   types, balance, cryptarchia_state, channel_state, mantle_state, epoch_state, registry,
-  poq_verifier, fee_market, block_rewards, gas, tx_types.ValidSignedMantleTx
+  poq_verifier, fee_market, block_rewards, gas
 
 type
   LedgerState* = object
+    ## Composite state across all sub-ledgers.
+    ##
+    ## TODO (perf): LedgerState is currently a value object holding dynamic
+    ## sub-states (e.g. CryptarchiaState pending vouchers, Merkle tree holes,
+    ## SdpRegistry). Under --mm:refc, passing or returning Result[LedgerState, ...]
+    ## across the block execution pipeline causes genericAssign deep-copies of
+    ## these collections. Optimize the apply pipeline via in-place mutation
+    ## (`var LedgerState` / `Result[void, LedgerError]`) or reference wrapping.
     cryptarchiaLedger*: CryptarchiaState
     sdp*: SdpRegistry
     mantleLedger*: MantleState
@@ -306,8 +314,8 @@ proc tryApplyTx*(
       )
   ok(balance)
 
-proc txExecutionGas*[T: AnySignedMantleTx](
-    tx: T,
+proc txExecutionGas*(
+    tx: ValidSignedMantleTx,
 ): Result[Gas, LedgerError] =
   var total = Gas(0)
   for i in 0 ..< tx.tx.ops.len:

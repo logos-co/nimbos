@@ -12,16 +12,21 @@
 
 import
   std/sequtils,
-  faststreams,
   results,
   stew/[assign2, bitops2],
   bincode,
   bincode/types as bincodeTypes,
   libp2p/crypto/ed25519/ed25519,
   ./crypto/hashing,
-  ./mantle/[tx_types, tx_hashing]
+  ./mantle/[tx_types, tx_hashing, tx_validation]
 
-export hashing, tx_types, tx_hashing, results, bincodeTypes
+export
+  hashing,
+  tx_types,
+  tx_hashing,
+  results,
+  bincodeTypes
+export tx_validation except StatelessLedgerError
 
 const
   MaxUncles* = 4
@@ -54,32 +59,13 @@ type
     signature*: Ed25519Signature
 
   UncleHeaders* = BoundedSeq[SignedHeader, MaxUncles]
-  BlockTxs* = BoundedSeq[SignedMantleTx, MaxBlockTxs]
+  BlockTxs* = BoundedSeq[HashedSignedMantleTx, MaxBlockTxs]
 
   Block* = object
     header*: Header
     signature*: Ed25519Signature
     uncleHeaders*: UncleHeaders
     txs*: BlockTxs
-
-  AdmittedBlock* = object
-    ## A block that has successfully passed structural, topology,
-    ## body root, and header signature verifications (Tiers 0–2).
-    ## Transactions at indices in ``unverifiedIndices`` have not yet
-    ## undergone stateless validation and are not valid yet.
-    header*: Header
-    signature*: Ed25519Signature
-    uncleHeaders*: UncleHeaders
-    txs*: seq[HashedSignedMantleTx]
-    unverifiedIndices*: seq[int]
-
-  ValidBlock* = object
-    ## A block that has successfully passed all structural, admission,
-    ## and stateless transaction verifications via ``validateBlock``.
-    header*: Header
-    signature*: Ed25519Signature
-    uncleHeaders*: UncleHeaders
-    txs*: seq[ValidSignedMantleTx]
 
   # Fields are in the canonical order of Block Construction 1.3.0, but the
   # wire is still bincode (u64 counts, fixed full-hash references, signature
@@ -92,6 +78,7 @@ type
 
 const
   ExpectedBedrockVersion* = 1'u8
+  GenesisBedrockVersion* = 1'u8
   MaxBlockSize* = 2_097_152
   DefaultHash32 = default(Hash32)
   DefaultBlockId* = default(BlockId)
@@ -102,28 +89,7 @@ deriveBincode(SignedHeader)
 deriveBincode(Block)
 deriveBincode(Proposal)
 
-# `ValidBlock` is explicitly encoded rather than derived via `deriveBincode` because:
-# 1. Wire compatibility: `ValidBlock` contains `seq[ValidSignedMantleTx]`, which hold
-#    precomputed transaction hashes in memory. Encoding emits only `vtx.signedTx`, producing
-#    identical wire bytes to `Block` with zero intermediate allocations or conversions.
-# 2. Typestate safety: `ValidBlock` is strictly an outgoing/verified representation and
-#    must not provide a deserializer (`decode`), ensuring untrusted wire bytes always decode
-#    into `Block` and pass full validation before becoming `ValidBlock`.
-proc encode*(
-    stream: OutputStreamHandle,
-    blk: ValidBlock,
-    config: BincodeConfig,
-) {.raises: [BincodeError, IOError].} =
-  encode(stream, blk.header, config)
-  encode(stream, blk.signature, config)
-  encode(stream, blk.uncleHeaders, config)
-  encodeLength(stream, blk.txs.len.uint64, config)
-  for vtx in blk.txs:
-    encode(stream, vtx.signedTx, config)
-
-template header*(blk: Block): auto = blk.header
-template header*(blk: AdmittedBlock): auto = blk.header
-template header*(blk: ValidBlock): auto = blk.header
+template header*(blk: Block): Header = blk.header
 
 func hashPair*(left, right: Hash32): Hash32 =
   var pairBytes: array[64, byte]
@@ -197,7 +163,7 @@ func body_root*(uncles: openArray[SignedHeader], txRoot: Hash32): Hash32 =
   preimage.add(txRoot)
   blake2b256Hash("BODY_ROOT_V1", preimage)
 
-func body_root(uncles: openArray[SignedHeader], txHashes: openArray[Hash32]): Hash32 =
+func body_root*(uncles: openArray[SignedHeader], txHashes: openArray[Hash32]): Hash32 =
   ## Body root over the uncle list and the transaction hashes.
   body_root(uncles, merkle_root(txHashes))
 
@@ -205,7 +171,7 @@ func body_root*[T: AnyHashedSignedMantleTx](
     uncles: openArray[SignedHeader],
     txs: openArray[T],
 ): Hash32 =
-  ## Body root over the uncle list and any hashed/valid transactions sequence.
+  ## Body root over the uncle list and precalculated hashes of transactions.
   body_root(uncles, merkle_root(txs.mapIt(it.hash)))
 
 func blockId*(header: Header): Hash32 =
@@ -268,15 +234,15 @@ func initHeader*(
     proofOfLeadership: proofOfLeadership,
   )
 
-func initHeader*(
+func initHeader*[T: AnyHashedSignedMantleTx](
     bedrockVersion: uint8,
     parentBlock: BlockId,
     slot: SlotNumber,
     uncleHeaders: openArray[SignedHeader],
-    txs: openArray[ValidSignedMantleTx],
+    txs: openArray[T],
     proofOfLeadership: ProofOfLeadership,
 ): Header =
-  ## Canonical constructor over valid transactions.
+  ## Canonical constructor over verified transactions.
   doAssert uncleHeaders.len <= MaxUncles,
     "uncle count exceeds MaxUncles (" & $MaxUncles & "): " & $uncleHeaders.len
   doAssert txs.len <= MaxBlockTxs,
@@ -287,6 +253,22 @@ func initHeader*(
     slot: slot,
     bodyRoot: body_root(uncleHeaders, txs),
     proofOfLeadership: proofOfLeadership,
+  )
+
+func createGenesisHeader*(validGenesisTx: ValidGenesisMantleTx): Header =
+  ## Genesis header: zero parent, slot 0, no uncles, default proof of leadership.
+  initHeader(
+    bedrockVersion = GenesisBedrockVersion,
+    parentBlock = DefaultBlockId,
+    slot = 0'u64,
+    uncleHeaders = [],
+    txs = [validGenesisTx],
+    proofOfLeadership = ProofOfLeadership(
+      leaderVoucher: default(RewardVoucher),
+      entropyContribution: default(ZkHash),
+      proof: DefaultCompressedGroth16Proof,
+      leaderKey: DefaultEd25519PublicKey,
+    ),
   )
 
 

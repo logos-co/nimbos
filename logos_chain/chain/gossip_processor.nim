@@ -14,8 +14,7 @@ import
   stew/byteutils,
   libp2p/peerid,
   libp2p/protocols/pubsub/pubsub,
-  ./block_processor,
-  ../core/mantle/tx_validation
+  ./block_processor
 
 logScope:
   topics = "gossip_processor"
@@ -23,8 +22,9 @@ logScope:
 proc processProposal*(
     bp: BlockProcessor, proposal: Proposal, src: PeerId
 ): ValidationResult =
-  let id = blockId(proposal.header)
-  let idHex = toHex(id)
+  let
+    id = blockId(proposal.header)
+    idHex = toHex(id)
 
   # 1. Scalar slot checks (~2-20 ns)
   if proposal.header.slot <= bp.localTree.latestImmutableSlot():
@@ -43,28 +43,26 @@ proc processProposal*(
     trace "GossipSub ignored duplicate proposal", blockId = idHex, src
     return ValidationResult.Ignore
 
-  discard bp.addBlock(proposal, id)
+  # 3. Binding of the reference list (~µs, mempool-free)
+  if not proposal.bodyMatchesHeader:
+    debug "GossipSub rejected proposal: references do not match body root",
+      blockId = idHex, src
+    return ValidationResult.Reject
+
+  if proposal.hasMissingReference(bp.mempool):
+    debug "GossipSub cannot accept proposal: missing tx in mempool",
+      blockId = idHex, src
+    return ValidationResult.Ignore
+
+  discard bp.addProposal(proposal, id)
 
   debug "GossipSub accepted proposal into block queue",
     blockId = idHex, slot = proposal.header.slot, src
   ValidationResult.Accept
 
 proc processTx*(
-    bp: BlockProcessor, tx: SignedMantleTx, src: PeerId
+    bp: BlockProcessor, htx: HashedSignedMantleTx, src: PeerId
 ): ValidationResult =
-  # Reject malformed payloads before hashing:
-  # 1. Enforces OpCount byte bounds (ops.len <= MantleMaxOps).
-  # 2. Ensures operations and opProofs counts match with zero allocations before running crypto verifications.
-  if tx.tx.ops.len > MantleMaxOps or tx.tx.ops.len != tx.opProofs.len:
-    debug "GossipSub rejected malformed tx (invalid op bounds or proof mismatch)",
-      opCount = tx.tx.ops.len, proofCount = tx.opProofs.len, src
-    return ValidationResult.Reject
-
-  let txHash = mantleTxHash(tx.tx).valueOr:
-    debug "GossipSub rejected malformed tx (hashing failed)",
-      error = $error, src
-    return ValidationResult.Reject
-  let htx = HashedSignedMantleTx(signedTx: tx, hash: txHash)
   let txHashHex = toHex(htx.hash)
 
   if htx.hash in bp.mempool:
@@ -77,8 +75,9 @@ proc processTx*(
       txHash = txHashHex, error = $error, src
     return ValidationResult.Reject
 
-  let nowSlot = bp.currentWallclockSlot()
-  let added = bp.mempool.add(validTx, nowSlot)
+  let
+    nowSlot = bp.currentWallclockSlot()
+    added = bp.mempool.add(validTx, nowSlot)
   if not added:
     trace "GossipSub ignored duplicate tx already in mempool",
       txHash = txHashHex, src

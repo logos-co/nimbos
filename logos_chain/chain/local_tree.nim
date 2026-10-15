@@ -9,13 +9,12 @@
 
 import
   std/tables,
-  results,
   bincode,
-  ./types
-from ./crypto/types as crypto_types import isZero
-from ./mantle/primitives import SlotNumber, BlockNumber
+  ../core/types
+from ../core/crypto/types as crypto_types import isZero
+from ./block_validation import ValidBlock, encode, header
 
-export types.Block, types.Header, types.BlockId, types.ValidBlock
+export Block, Header, BlockId, ValidBlock, encode, header
 
 type
   Tip* = object
@@ -53,8 +52,9 @@ func ancestorAtHeight(node: BlockNode, targetHeight: BlockNumber): BlockNode =
   nil
 
 func newLocalTree*(genesisBlock: ValidBlock, securityParam: uint64): LocalTree =
-  let gid = blockId(genesisBlock.header)
-  let gn = BlockNode(id: gid, blk: genesisBlock, parent: nil, height: 0'u64)
+  let
+    gid = blockId(genesisBlock.header)
+    gn = BlockNode(id: gid, blk: genesisBlock, parent: nil, height: 0'u64)
   LocalTree(
     blocksById: [(gid, gn)].toTable,
     idsByHeight: [(0'u64, @[gid])].toTable,
@@ -163,12 +163,6 @@ func getBlock*(localTree: LocalTree, id: BlockId): Opt[ValidBlock] =
     return Opt.some(node.blk)
   Opt.none(ValidBlock)
 
-func blocksIdsAtHeight*(localTree: LocalTree, height: BlockNumber): seq[BlockId] =
-  ## Returns a sequence of block IDs admitted at the specified height.
-  localTree.idsByHeight.withValue(height, ids):
-    return ids[]
-  @[]
-
 func localTipId*(localTree: LocalTree): BlockId =
   ## Returns the BlockId of the current active tip.
   localTree.tipId
@@ -176,18 +170,6 @@ func localTipId*(localTree: LocalTree): BlockId =
 func latestImmutableBlockId*(localTree: LocalTree): BlockId =
   ## Returns the BlockId of the current Latest Immutable Block.
   localTree.latestImmutableId
-
-func isAncestor*(localTree: LocalTree, ancestor: BlockId,
-    descendant: BlockId): bool =
-  if ancestor == descendant:
-    return localTree.hasBlock(ancestor)
-  localTree.blocksById.withValue(descendant, start):
-    var n = start.parent
-    while n != nil:
-      if n.id == ancestor:
-        return true
-      n = n.parent
-  false
 
 # https://github.com/logos-co/logos-lips/blob/5587d1e5ca2964e38098cd18f81f0fbe19f51fd3/docs/blockchain/raw/cryptarchia-v1-protocol.md#L435-L436
 func canDescendFromImmutable*(localTree: LocalTree, header: Header): bool =
@@ -217,8 +199,9 @@ func canDescendFromImmutable*(localTree: LocalTree, header: Header): bool =
 func lcaBlockIdAndHeight*(
     localTree: LocalTree, idA, idB: BlockId,
 ): Opt[(BlockId, BlockNumber)] =
-  var na = localTree.blocksById.getOrDefault(idA, nil)
-  var nb = localTree.blocksById.getOrDefault(idB, nil)
+  var
+    na = localTree.blocksById.getOrDefault(idA, nil)
+    nb = localTree.blocksById.getOrDefault(idB, nil)
   if na == nil or nb == nil:
     return Opt.none((BlockId, BlockNumber))
   if na.id == nb.id:
@@ -255,6 +238,12 @@ proc addBlockToTree*(localTree: LocalTree, blk: ValidBlock): bool =
   false
 
 when defined(unittest) or defined(test):
+  func blocksIdsAtHeight*(localTree: LocalTree, height: BlockNumber): seq[BlockId] =
+    ## Returns a sequence of block IDs admitted at the specified height.
+    localTree.idsByHeight.withValue(height, ids):
+      return ids[]
+    @[]
+
   proc `latestImmutableHeight=`*(localTree: LocalTree, height: BlockNumber) =
     localTree.blocksById.withValue(localTree.tipId, tip):
       let node = ancestorAtHeight(tip[], height)

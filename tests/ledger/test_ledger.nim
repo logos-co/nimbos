@@ -72,10 +72,10 @@ proc mkState(utxos: openArray[Utxo]): LedgerState =
 
 proc mkFixtureTransferTx(input: Utxo): ValidSignedMantleTx =
   ## The exact tx shape the committed zksign fixture proof was generated for.
-  var tx = mkTransferTx(
+  var stx = mkSignedTransferTx(
     [input.id], [Note(value: 100, zkPublicKey: default(ZkPublicKey))])
-  tx.opProofs[0].transferProof = loadProof(transferProofPath)
-  ValidSignedMantleTx(tx)
+  stx.opProofs[0].transferProof = loadProof(transferProofPath)
+  mkValidTx(stx)
 
 suite "LedgerState constructors and reads":
   test "fromUtxos with empty seq → empty state":
@@ -159,17 +159,15 @@ suite "tryApplyTx — channel ops":
       body = MantleTx(ops: @[createChannelWithdrawOp(
         ChannelWithdrawPayload(channel: cid, inputs: Inputs(noteIds: @[note.id])))])
       txHash = mantleTxHash(body).get
-      vtx = ValidSignedMantleTx(HashedSignedMantleTx(
-        signedTx: SignedMantleTx(
-          tx: body,
-          opProofs: @[OpProof(
-            kind: opfChannelWithdraw,
-            channelWithdrawOpProof: ChannelMultiSigProof(
-              signatures: @[sign(kp.seckey, txHash)],
-              indexes: @[ChannelKeyIndex(0)]))],
-        ),
-        hash: txHash,
-      ))
+      stx = SignedMantleTx(
+        tx: body,
+        opProofs: @[OpProof(
+          kind: opfChannelWithdraw,
+          channelWithdrawOpProof: ChannelMultiSigProof(
+            signatures: @[sign(kp.seckey, txHash)],
+            indexes: @[ChannelKeyIndex(0)]))],
+      )
+      vtx = mkValidTx(mkHashedSignedTx(stx, txHash))
     var
       s0 = mkChannelState([note], cid, kp.pubkey, [note])
       r = s0.tryApplyTx(
@@ -195,17 +193,15 @@ suite "tryApplyTx — channel ops":
         channel: cid, inputs: Inputs(noteIds: @[note.id]), outputs: Outputs(notes: @[reassigned]))
       body = MantleTx(ops: @[createChannelTransferOp(op)])
       txHash = mantleTxHash(body).get
-      vtx = ValidSignedMantleTx(HashedSignedMantleTx(
-        signedTx: SignedMantleTx(
-          tx: body,
-          opProofs: @[OpProof(
-            kind: opfChannelTransfer,
-            channelTransferOpProof: ChannelMultiSigProof(
-              signatures: @[sign(kp.seckey, txHash)],
-              indexes: @[ChannelKeyIndex(0)]))],
-        ),
-        hash: txHash,
-      ))
+      stx = SignedMantleTx(
+        tx: body,
+        opProofs: @[OpProof(
+          kind: opfChannelTransfer,
+          channelTransferOpProof: ChannelMultiSigProof(
+            signatures: @[sign(kp.seckey, txHash)],
+            indexes: @[ChannelKeyIndex(0)]))],
+      )
+      vtx = mkValidTx(mkHashedSignedTx(stx, txHash))
     var
       s0 = mkChannelState([note], cid, kp.pubkey, [note])
       r = s0.tryApplyTx(
@@ -228,7 +224,7 @@ suite "tryApplyTx — channel ops":
       note = mkUtxo(value = 100, pkSeed = 1)
     var
       s0 = mkChannelState([note], cid, kp.pubkey, [note])
-      tx = ValidSignedMantleTx(mkTransferTx([note.id], [mkNote(100, pkSeed = 2)]))
+      tx = mkValidTransferTx([note.id], [mkNote(100, pkSeed = 2)])
       r = s0.tryApplyTx(
         tx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
     check r.error == ChannelNoteSpend
@@ -354,15 +350,14 @@ when false:
             outputs: Outputs(notes: @[mkNote(50, pkSeed = 4)]),
           )
         )
-        tx = SignedMantleTx(
-          tx:
-            MantleTx(ops: @[op1, op2]),
-          opProofs:
-            @[
-              OpProof(kind: opfTransfer, transferProof: default(ZkSigProof)),
-              OpProof(kind: opfTransfer, transferProof: default(ZkSigProof)),
-            ],
+        stx = SignedMantleTx(
+          tx: MantleTx(ops: @[op1, op2]),
+          opProofs: @[
+            OpProof(kind: opfTransfer, transferProof: default(ZkSigProof)),
+            OpProof(kind: opfTransfer, transferProof: default(ZkSigProof)),
+          ],
         )
+        tx = mkValidTx(stx)
         r = s0.tryApplyTx(
           tx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
       check r.isOk
@@ -389,15 +384,14 @@ when false:
             outputs: Outputs(notes: @[mkNote(50, pkSeed = 4)]),
           )
         )
-        tx = SignedMantleTx(
-          tx:
-            MantleTx(ops: @[op1, op2]),
-          opProofs:
-            @[
-              OpProof(kind: opfTransfer, transferProof: default(ZkSigProof)),
-              OpProof(kind: opfChannelInscribe, ed25519SigProof: default(Ed25519SigProof)),
-            ],
+        stx = SignedMantleTx(
+          tx: MantleTx(ops: @[op1, op2]),
+          opProofs: @[
+            OpProof(kind: opfTransfer, transferProof: default(ZkSigProof)),
+            OpProof(kind: opfChannelInscribe, ed25519SigProof: default(Ed25519SigProof)),
+          ],
         )
+        tx = mkValidTx(stx)
         r = s0.tryApplyTx(
           tx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
       check r.isErr
@@ -408,7 +402,7 @@ when false:
       let
         input = mkUtxo(value = 100, pkSeed = 1)
         s0 = mkState([input])
-        tx = ValidSignedMantleTx(mkTransferTx([input.id], [mkNote(100, pkSeed = 2)]))
+        tx = mkValidTransferTx([input.id], [mkNote(100, pkSeed = 2)])
         r = s0.tryApplyTxns([tx], slot = 0'u64, verifyPoq = acceptAllPoq)
       check r.isOk
       check r.get.latestUtxos.len == 1
@@ -417,7 +411,7 @@ when false:
       let
         input = mkUtxo(value = 100, pkSeed = 1)
         s0 = mkState([input])
-        tx = ValidSignedMantleTx(mkTransferTx([input.id], [mkNote(60, pkSeed = 2), mkNote(50, pkSeed = 3)]))
+        tx = mkValidTransferTx([input.id], [mkNote(60, pkSeed = 2), mkNote(50, pkSeed = 3)])
           # sum 110 > input 100
         r = s0.tryApplyTxns([tx], slot = 0'u64, verifyPoq = acceptAllPoq)
       check r.isErr
@@ -427,7 +421,7 @@ when false:
       let
         input = mkUtxo(value = 100, pkSeed = 1)
         s0 = mkState([input])
-        tx = ValidSignedMantleTx(mkTransferTx([input.id], [mkNote(50, pkSeed = 2)])) # surplus 50 < fee
+        tx = mkValidTransferTx([input.id], [mkNote(50, pkSeed = 2)]) # surplus 50 < fee
         r = s0.tryApplyTxns([tx], slot = 0'u64, verifyPoq = acceptAllPoq)
       check r.isErr
       check r.error == InsufficientBalance
@@ -439,7 +433,7 @@ when false:
       )
       let
         input = mkUtxo(value = 100, pkSeed = 1)
-        tx = ValidSignedMantleTx(mkTransferTx([input.id], [mkNote(100, pkSeed = 2)]))
+        tx = mkValidTransferTx([input.id], [mkNote(100, pkSeed = 2)])
         r = l.prepareUpdateWithHeader(
           parentId = mkId(0x01),
           slot = 1'u64,
@@ -456,7 +450,7 @@ when false:
       let
         input = mkUtxo(value = 100, pkSeed = 1)
         l = initLedger(mkId(0x01), mkState([input]), testLedgerConfig)
-        tx = ValidSignedMantleTx(mkTransferTx([input.id], [mkNote(50, pkSeed = 2)])) # 100 in, 50 out
+        tx = mkValidTransferTx([input.id], [mkNote(50, pkSeed = 2)]) # 100 in, 50 out
         r = l.prepareUpdateWithHeader(
           parentId = mkId(0x01),
           slot = 1'u64,
@@ -475,7 +469,7 @@ when false:
       # Block 1: spend genesis utxo into a new note (pk=2)
       let
         input1 = mkUtxo(value = 100, pkSeed = 1)
-        tx1 = ValidSignedMantleTx(mkTransferTx([input1.id], [mkNote(100, pkSeed = 2)]))
+        tx1 = mkValidTransferTx([input1.id], [mkNote(100, pkSeed = 2)])
         r1 = l.prepareUpdateWithHeader(
           parentId = mkId(0x00),
           slot = 1'u64,
@@ -498,7 +492,7 @@ when false:
       check l.state(mkId(0x01)).get.latestUtxos.contains(utxoAfter1.id)
 
       let
-        tx2 = ValidSignedMantleTx(mkTransferTx([utxoAfter1.id], [mkNote(100, pkSeed = 3)]))
+        tx2 = mkValidTransferTx([utxoAfter1.id], [mkNote(100, pkSeed = 3)])
         r2 = l.prepareUpdateWithHeader(
           parentId = mkId(0x01),
           slot = 2'u64,
@@ -520,9 +514,9 @@ when false:
         )
 
       let
-        tx3 = ValidSignedMantleTx(mkTransferTx(
+        tx3 = mkValidTransferTx(
           [utxoAfter2.id], [mkNote(60, pkSeed = 4), mkNote(40, pkSeed = 5)]
-        ))
+        )
         r3 = l.prepareUpdateWithHeader(
           parentId = mkId(0x02),
           slot = 3'u64,
@@ -606,9 +600,6 @@ suite "tryApplyTx — SDP":
     l.commitUpdate(mkId(0x11), r.get)
     check declarationId(declaration).get in l.state(mkId(0x11)).get.sdp.state.declarations
 
-const noTxs: seq[ValidSignedMantleTx] = @[]
-  ## Empty block contents; a compile-time value stays gcsafe, a `let` would not.
-
 suite "block rewards — per-block leader crediting":
   # At every stake these fixtures reach, the interpolation weight pins at
   # A_SCALE, so one block emits a leader share of 38.
@@ -620,7 +611,7 @@ suite "block rewards — per-block leader crediting":
     var s = mkState([mkUtxo()])
     s = s.tryApplyHeader(1'u64, mkProof(), testLedgerConfig).expect("header")
     s = s.tryApplyTxns(
-      noTxs, slot = 1'u64, verifyPoq = acceptAllPoq).expect("txns")
+      [], slot = 1'u64, verifyPoq = acceptAllPoq).expect("txns")
     check s.cryptarchiaLedger.leader.leadersRewards == 0
     s = s.tryApplyHeader(100'u64, mkProof(), testLedgerConfig).expect("rotation")
     check s.cryptarchiaLedger.leader.leadersRewards == emission
@@ -629,9 +620,9 @@ suite "block rewards — per-block leader crediting":
     var s = mkState([mkUtxo()])
     check s.blockNumber == 0'u64
     s = s.tryApplyTxns(
-      noTxs, slot = 1'u64, verifyPoq = acceptAllPoq).expect("block 1")
+      [], slot = 1'u64, verifyPoq = acceptAllPoq).expect("block 1")
     s = s.tryApplyTxns(
-      noTxs, slot = 2'u64, verifyPoq = acceptAllPoq).expect("block 2")
+      [], slot = 2'u64, verifyPoq = acceptAllPoq).expect("block 2")
     check:
       s.blockNumber == 2'u64
       s.feeWindow.summedFees == u128(0)
@@ -656,12 +647,12 @@ suite "block rewards — per-block leader crediting":
     var s = mkState([mkUtxo()])
     s = s.tryApplyHeader(1'u64, mkProof(), testLedgerConfig).expect("header")
     s = s.tryApplyTxns(
-      noTxs, slot = 1'u64, verifyPoq = acceptAllPoq).expect("txns")
+      [], slot = 1'u64, verifyPoq = acceptAllPoq).expect("txns")
     # The rotation rolls epoch 0's pending pool; the rotating block's own
     # reward is credited afterwards, so it belongs to epoch 1.
     s = s.tryApplyHeader(100'u64, mkProof(), testLedgerConfig).expect("rotation")
     s = s.tryApplyTxns(
-      noTxs, slot = 100'u64, verifyPoq = acceptAllPoq).expect("txns")
+      [], slot = 100'u64, verifyPoq = acceptAllPoq).expect("txns")
     check s.cryptarchiaLedger.leader.leadersRewards == emission
     s = s.tryApplyHeader(200'u64, mkProof(), testLedgerConfig).expect("rotation")
     check s.cryptarchiaLedger.leader.leadersRewards == 2 * emission

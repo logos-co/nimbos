@@ -20,7 +20,6 @@ import
   libp2p/multiaddress,
   ../../logos_chain/chain/chain,
   ../../logos_chain/core/crypto/types,
-  ../../logos_chain/core/mantle/tx_validation,
   ../core/mantle/test_helpers,
   ../ledger/sdp/test_helpers,
   ../ledger/test_helpers,
@@ -53,11 +52,11 @@ func inscriptionWithChainId(chainId: openArray[byte]): seq[byte] =
 
 func withInscription(inscribe: ChannelInscribePayload): ValidGenesisMantleTx =
   ## Genesis transaction whose parameter inscription is `inscribe`.
-  var tx = testGenesisTx()
+  var tx = testGenesisSignedTx()
   tx.tx.ops[1].payload.channelInscribe = inscribe
-  validateGenesisTxStateless(tx).expect("stage 1 does not read the inscription bytes")
+  mkValidGenesisTx(unhashed(tx))
 
-func twoNoteGenesis(
+proc twoNoteGenesis(
     declarations: openArray[DeclarationMessage] = []): ValidGenesisMantleTx =
   ## Genesis minting 1000 to zk keys 1 and 2, followed by `declarations`.
   testValidGenesisTx(
@@ -73,142 +72,143 @@ proc genesisState(
 
 suite "chain/genesis validation: stage 1 (stateless)":
   test "accepts Transfer + Inscribe":
-    check validateGenesisTxStateless(testGenesisTx()).isOk
+    check validateGenesisTxStateless(unhashed(testGenesisSignedTx())).isOk
 
   test "accepts N declarations":
     let
       declarations = [1'u8, 2, 3].mapIt(declareOn(fe(it), mkZkPubKey(it), it))
-      tx = testGenesisTx(declarations = declarations)
-    check validateGenesisTxStateless(tx).isOk
+      tx = testGenesisSignedTx(declarations = declarations)
+    check validateGenesisTxStateless(unhashed(tx)).isOk
 
   test "rejects empty ops":
-    check validateGenesisTxStateless(txWithPlaceholderProofs([])).error ==
+    check validateGenesisTxStateless(unhashed(txWithPlaceholderProofs([]))).error ==
       StatelessLedgerError.GenesisShape
 
   test "rejects a lone Transfer":
-    let ops = testGenesisTx().tx.ops
-    check validateGenesisTxStateless(txWithPlaceholderProofs([ops[0]])).error ==
+    let ops = testGenesisSignedTx().tx.ops
+    check validateGenesisTxStateless(unhashed(txWithPlaceholderProofs([ops[0]]))).error ==
       StatelessLedgerError.GenesisShape
 
   test "rejects an Inscribe first":
-    let ops = testGenesisTx().tx.ops
-    check validateGenesisTxStateless(txWithPlaceholderProofs([ops[1], ops[0]])).error ==
+    let ops = testGenesisSignedTx().tx.ops
+    check validateGenesisTxStateless(unhashed(txWithPlaceholderProofs([ops[1], ops[0]]))).error ==
       StatelessLedgerError.GenesisShape
 
   test "rejects two Transfers":
-    let ops = testGenesisTx().tx.ops
-    check validateGenesisTxStateless(txWithPlaceholderProofs([ops[0], ops[0]])).error ==
+    let ops = testGenesisSignedTx().tx.ops
+    check validateGenesisTxStateless(unhashed(txWithPlaceholderProofs([ops[0], ops[0]]))).error ==
       StatelessLedgerError.GenesisShape
 
   test "rejects a Transfer after a Declare":
-    let ops = testGenesisTx(
+    let ops = testGenesisSignedTx(
       declarations = [declareOn(fe(1), mkZkPubKey(1))]).tx.ops
     check validateGenesisTxStateless(
-      txWithPlaceholderProofs([ops[0], ops[1], ops[2], ops[0]])).error ==
+      unhashed(txWithPlaceholderProofs([ops[0], ops[1], ops[2], ops[0]]))).error ==
       StatelessLedgerError.GenesisShape
 
   test "rejects any other opcode":
-    let ops = testGenesisTx().tx.ops
+    let ops = testGenesisSignedTx().tx.ops
     for extra in [
         createSdpWithdrawOp(WithdrawMessage()),
         createChannelConfigOp(ChannelConfigPayload()),
         createLeaderClaimOp(LeaderClaimPayload())]:
-      check validateGenesisTxStateless(txWithPlaceholderProofs([ops[0], ops[1], extra])).error ==
+      check validateGenesisTxStateless(unhashed(txWithPlaceholderProofs([ops[0], ops[1], extra]))).error ==
         StatelessLedgerError.GenesisShape
 
   test "accepts 255 ops":
     let
-      ops = testGenesisTx().tx.ops
+      ops = testGenesisSignedTx().tx.ops
       extra = (1 .. MantleMaxOps - 2).mapIt(
         createSdpDeclareOp(declareOn(fe(uint64 it), mkZkPubKey(byte it), byte it)))
       tx = txWithPlaceholderProofs(ops & extra)
     check:
       tx.tx.ops.len == MantleMaxOps
-      validateGenesisTxStateless(tx).isOk
+      validateGenesisTxStateless(unhashed(tx)).isOk
 
   test "rejects 256 ops":
     let
-      ops = testGenesisTx().tx.ops
+      ops = testGenesisSignedTx().tx.ops
       extra = (1 .. MantleMaxOps - 1).mapIt(
         createSdpDeclareOp(declareOn(fe(uint64 it), mkZkPubKey(byte it), byte it)))
-    check validateGenesisTxStateless(txWithPlaceholderProofs(ops & extra)).error ==
+      tx = txWithPlaceholderProofs(ops & extra)
+    check validateGenesisTxStateless(unhashed(tx)).error ==
       StatelessLedgerError.TooManyOps
 
   test "accepts 255 outputs":
-    var tx = testGenesisTx()
+    var tx = testGenesisSignedTx()
     tx.tx.ops[0].payload.transfer.outputs.notes =
       (1 .. int(high(byte))).mapIt(Note(value: 1, zkPublicKey: testZkPk()))
-    check validateGenesisTxStateless(tx).isOk
+    check validateGenesisTxStateless(unhashed(tx)).isOk
 
   test "rejects 256 outputs":
-    var tx = testGenesisTx()
+    var tx = testGenesisSignedTx()
     tx.tx.ops[0].payload.transfer.outputs.notes =
       (0 .. int(high(byte))).mapIt(Note(value: 1, zkPublicKey: testZkPk()))
-    check validateGenesisTxStateless(tx).error == StatelessLedgerError.TooManyOutputs
+    check validateGenesisTxStateless(unhashed(tx)).error == StatelessLedgerError.TooManyOutputs
 
   test "rejects an inscription on a non-null channel":
-    var tx = testGenesisTx()
+    var tx = testGenesisSignedTx()
     tx.tx.ops[1].payload.channelInscribe.channelId[0] = 1
-    check validateGenesisTxStateless(tx).error ==
+    check validateGenesisTxStateless(unhashed(tx)).error ==
       StatelessLedgerError.GenesisInscription
 
   test "rejects a non-zero signer":
     var
       raw: array[32, byte]
-      tx = testGenesisTx()
+      tx = testGenesisSignedTx()
     raw[0] = 1
     check tx.tx.ops[1].payload.channelInscribe.signer.init(raw)
-    check validateGenesisTxStateless(tx).error ==
+    check validateGenesisTxStateless(unhashed(tx)).error ==
       StatelessLedgerError.GenesisInscription
 
   test "rejects an opcode that disagrees with its payload":
-    var tx = testGenesisTx()
+    var tx = testGenesisSignedTx()
     tx.tx.ops[1].opcode = OpTransfer
-    check validateGenesisTxStateless(tx).error == StatelessLedgerError.UnsupportedOp
+    check validateGenesisTxStateless(unhashed(tx)).error == StatelessLedgerError.UnsupportedOp
 
   test "rejects a proof count that differs from the op count":
-    var tx = testGenesisTx()
+    var tx = testGenesisSignedTx()
     tx.opProofs.setLen(1)
-    check validateGenesisTxStateless(tx).error == StatelessLedgerError.InvalidProof
+    check validateGenesisTxStateless(unhashed(tx)).error == StatelessLedgerError.InvalidProof
 
   test "rejects a wrong proof kind on each op":
     for i in 0 .. 2:
-      var tx = testGenesisTx(
+      var tx = testGenesisSignedTx(
         declarations = [declareOn(fe(1), mkZkPubKey(1))])
       tx.opProofs[i] = defaultOpProofForOpcode(
         if i == 0: OpChannelInscribe else: OpTransfer).get
-      check validateGenesisTxStateless(tx).error == StatelessLedgerError.InvalidProof
+      check validateGenesisTxStateless(unhashed(tx)).error == StatelessLedgerError.InvalidProof
 
   test "rejects a Transfer with an input":
-    var tx = testGenesisTx()
+    var tx = testGenesisSignedTx()
     tx.tx.ops[0].payload.transfer.inputs.noteIds = @[fe(1)]
-    check validateGenesisTxStateless(tx).error == StatelessLedgerError.GenesisInputs
+    check validateGenesisTxStateless(unhashed(tx)).error == StatelessLedgerError.GenesisInputs
 
   test "rejects a zero-value output":
-    var tx = testGenesisTx()
+    var tx = testGenesisSignedTx()
     tx.tx.ops[0].payload.transfer.outputs.notes[0].value = 0
-    check validateGenesisTxStateless(tx).error == StatelessLedgerError.ZeroValueNote
+    check validateGenesisTxStateless(unhashed(tx)).error == StatelessLedgerError.ZeroValueNote
 
   test "rejects zero locators":
-    var tx = testGenesisTx(
+    var tx = testGenesisSignedTx(
       declarations = [declareOn(fe(1), mkZkPubKey(1))])
     tx.tx.ops[2].payload.sdpDeclare.locators = @[]
-    check validateGenesisTxStateless(tx).error == StatelessLedgerError.EmptyLocators
+    check validateGenesisTxStateless(unhashed(tx)).error == StatelessLedgerError.EmptyLocators
 
   test "rejects nine locators":
-    var tx = testGenesisTx(
+    var tx = testGenesisSignedTx(
       declarations = [declareOn(fe(1), mkZkPubKey(1))])
     tx.tx.ops[2].payload.sdpDeclare.locators =
       (0 .. MaxSdpLocators).mapIt(mkLocator(30303))
-    check validateGenesisTxStateless(tx).error == StatelessLedgerError.TooManyLocators
+    check validateGenesisTxStateless(unhashed(tx)).error == StatelessLedgerError.TooManyLocators
 
   test "rejects an invalid locator":
-    var tx = testGenesisTx(
+    var tx = testGenesisSignedTx(
       declarations = [declareOn(fe(1), mkZkPubKey(1))])
     # Exceeds MaxLocatorMultiaddrBytes.
     tx.tx.ops[2].payload.sdpDeclare.locators =
       @[MultiAddress.init("/dns4/" & repeat('a', 350) & "/tcp/1234").get]
-    check validateGenesisTxStateless(tx).error == StatelessLedgerError.InvalidLocator
+    check validateGenesisTxStateless(unhashed(tx)).error == StatelessLedgerError.InvalidLocator
 
 suite "chain/genesis validation: stage 2 (cryptarchia parameters)":
   test "decodes what the test helper encodes":

@@ -9,100 +9,81 @@
 {.used.}
 
 import
-  std/algorithm,
+  std/[algorithm, sequtils],
   results,
-  bearssl/rand,
   libp2p/crypto/ed25519/ed25519,
   unittest2,
-  ../../logos_chain/chain/[block_validation, genesis, proposal],
-  ../../logos_chain/core/[local_tree, types],
-  ../../logos_chain/core/mantle/[opcodes, operations, proofs, tx_hashing, tx_types],
-  ../../logos_chain/ledger/ledger,
-  ../../logos_chain/mempool,
+  ../../logos_chain/chain/chain,
+  ../../logos_chain/core/mantle/[opcodes, operations, proofs, tx_types],
+  ../../logos_chain/zk/poc,
   ./mantle/test_helpers,
   ../testutil
-from ../../logos_chain/core/crypto/types import FieldElement
 from ../../logos_chain/core/mantle/primitives import MaxBlockTxs, SlotNumber
-from ../ledger/sdp/test_helpers import testSdpRegistry
-from ../ledger/test_helpers import testLedgerConfig
+from ../ledger/test_helpers import testLedgerConfig, testGenesisLedgerState
 
 const inscribeTxFraming = 166
   ## OpCount, Opcode, ChannelId, the u32 inscription length, Parent, Signer
   ## and the 64-byte Ed25519 proof — everything but the inscription itself.
 
-proc mkSizedTx(bytes: int): SignedMantleTx =
+proc mkSizedTx(bytes: int): HashedSignedMantleTx =
   ## ChannelInscribe transaction padded to encode to exactly `bytes`.
   doAssert bytes >= inscribeTxFraming
   let
-    rng = HmacDrbgContext.new()
-    kp = mkEdKeyPair(rng)
     tx = MantleTx(ops: @[createChannelInscribeOp(ChannelInscribePayload(
       channelId: default(ChannelId),
       inscription: newSeq[byte](bytes - inscribeTxFraming),
       parent: default(Parent),
-      signer: kp.pubkey,
+      signer: testTxKeyPair.pubkey,
     ))])
     txHash = mantleTxHash(tx).get
-    sig = sign(kp.seckey, txHash)
-  SignedMantleTx(
-    tx: tx,
-    opProofs: @[OpProof(kind: opfChannelInscribe, ed25519SigProof: sig)],
-  )
+    sig = sign(testTxKeyPair.seckey, txHash)
+    stx = SignedMantleTx(
+      tx: tx,
+      opProofs: @[OpProof(kind: opfChannelInscribe, ed25519SigProof: sig)],
+    )
+  mkHashedSignedTx(stx, txHash)
+
+func admitWithTopology(
+    blk: Block,
+    tree: LocalTree,
+    ledger: Ledger[BlockId],
+): Result[tuple[admittedBlk: AdmittedBlock, isOrphan: bool], BlockApplyError] =
+  let
+    status = ?checkTopology(blk.header, tree, ledger)
+    admittedBlk = admitBlock(blk).valueOr:
+      return err(toBlockApplyError(error))
+  ok((admittedBlk: admittedBlk, isOrphan: status == TopologyStatus.Orphan))
 
 proc validate(genesis: ValidBlock, blk: Block): Result[ValidBlock, BlockValidationError] =
   let tree = newLocalTree(genesis, 1'u64)
-  let state = LedgerState.fromGenesis(
-    testValidGenesisTx(), default(FieldElement), testSdpRegistry(), testLedgerConfig
-  ).valueOr:
-    raiseAssert "validate helper init: " & $error
+  let state = testGenesisLedgerState()
   let ledger = Ledger[BlockId].init(
     blockId(genesis.header), state, testLedgerConfig, mockVerifyLeaderProof
   )
-  let (htxs, unverified) = Mempool.init().classifyBlockTxs(blk.txs.asSeq).valueOr:
-    return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))
-  let (admittedBlk, isOrphan) = ?validateBlockHeaderAndTopology(blk, tree, ledger, htxs, unverified)
+  let (admittedBlk, isOrphan) = admitWithTopology(blk, tree, ledger).valueOr:
+    case error.kind
+    of BlockApplyErrorKind.UnviableFork:
+      return err(BlockValidationError(kind: BlockValidationErrorKind.UnviableFork))
+    else:
+      return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))
   if isOrphan:
     return err(BlockValidationError(kind: BlockValidationErrorKind.UnviableFork))
-  let (validBlk, _) = ?validatePolAndStatelessTransactions(admittedBlk, ledger)
+  let (validBlk, _) = ?validatePolAndStatelessTransactions(admittedBlk, ledger, nil)
   ok(validBlk)
 
 proc treeWithLib(genesis: ValidBlock): tuple[tree: LocalTree, b1, b2: ValidBlock] =
   ## Tree with security parameter 1 holding genesis, b1, b2, b3; the LIB is b2.
   let
-    sm = minimalValidSignedTx()
     tree = newLocalTree(genesis, 1'u64)
-    b1 = childValidBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [sm])
-    b2 = childValidBlock(b1.header, blockId(b1.header), SlotNumber(2), [sm])
-    b3 = childValidBlock(b2.header, blockId(b2.header), SlotNumber(3), [sm])
+    b1 = mkChildValidBlock(genesis.header, blockId(genesis.header), SlotNumber(1))
+    b2 = mkChildValidBlock(b1.header, blockId(b1.header), SlotNumber(2))
+    b3 = mkChildValidBlock(b2.header, blockId(b2.header), SlotNumber(3))
   for blk in [b1, b2, b3]:
     check tree.addBlockToTree(blk)
     tree.tryUpdateLib()
   check tree.latestImmutableBlockId == blockId(b2.header)
   (tree, b1, b2)
 
-proc childProposal(
-    parentHdr: Header,
-    parentId: BlockId,
-    slot: SlotNumber,
-    txs: openArray[ValidSignedMantleTx],
-): Proposal =
-  var proofOfLeadership = parentHdr.proofOfLeadership
-  proofOfLeadership.leaderKey = testBlockKeyPair.pubkey
-
-  let
-    h = initHeader(
-      bedrockVersion = parentHdr.bedrockVersion,
-      parentBlock = parentId,
-      slot = slot,
-      uncleHeaders = [],
-      txs = txs,
-      proofOfLeadership = proofOfLeadership,
-    )
-    sig = testBlockKeyPair.seckey.sign(blockId(h))
-  var refs: References
-  for i, tx in txs:
-    refs[i] = tx.hash
-  initProposal(h, [], refs, sig)
 
 func sampleUncle(value: byte): SignedHeader =
   # Arbitrary bytes: only the commitment to an entry is checked, not the entry.
@@ -118,47 +99,47 @@ func sampleUncle(value: byte): SignedHeader =
 suite "core/block_validation":
   test "accepts a structurally valid block":
     let
-      sm = minimalSignedTx()
-      genesis = createGenesisBlock(testValidGenesisTx())
+      sm = minimalHashedSignedTx()
+      genesis = testGenesisBlock()
       b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [sm])
     check validate(genesis, b1).isOk
 
   test "rejects wrong bedrock version":
     let
-      sm = minimalSignedTx()
-      genesis = createGenesisBlock(testValidGenesisTx())
+      sm = minimalHashedSignedTx()
+      genesis = testGenesisBlock()
     var b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [sm])
     b1.header.bedrockVersion = 99'u8
     check validate(genesis, b1).isErr
 
   test "rejects a body root that disagrees with the transactions":
     let
-      sm = minimalSignedTx()
-      genesis = createGenesisBlock(testValidGenesisTx())
+      sm = minimalHashedSignedTx()
+      genesis = testGenesisBlock()
     var b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [sm])
     b1.header.bodyRoot[0] = b1.header.bodyRoot[0] xor 0xff'u8
     check validate(genesis, b1).isErr
 
   test "accepts a block whose body root commits to two uncles":
     let
-      sm = minimalSignedTx()
-      genesis = createGenesisBlock(testValidGenesisTx())
+      sm = minimalHashedSignedTx()
+      genesis = testGenesisBlock()
       uncles = [sampleUncle(0x11'u8), sampleUncle(0x22'u8)]
       b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [sm], uncles)
     check validate(genesis, b1).isOk
 
   test "rejects a block whose body root ignores its uncles":
     let
-      sm = minimalSignedTx()
-      genesis = createGenesisBlock(testValidGenesisTx())
+      sm = minimalHashedSignedTx()
+      genesis = testGenesisBlock()
     var b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [sm])
     b1.uncleHeaders = UncleHeaders(@[sampleUncle(0x11'u8), sampleUncle(0x22'u8)])
     check validate(genesis, b1).isErr
 
   test "rejects more than MaxUncles uncles":
     let
-      sm = minimalSignedTx()
-      genesis = createGenesisBlock(testValidGenesisTx())
+      sm = minimalHashedSignedTx()
+      genesis = testGenesisBlock()
       uncle = sampleUncle(0x33'u8)
     var b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [sm])
     b1.uncleHeaders = UncleHeaders(@[uncle, uncle, uncle, uncle, uncle])
@@ -166,45 +147,42 @@ suite "core/block_validation":
 
   test "rejects a transaction with mismatched ops and opProofs counts":
     let
-      sm = mkTransferTx(@[], @[]).signedTx
-      genesis = createGenesisBlock(testValidGenesisTx())
-    var badTx = sm
-    badTx.opProofs.add(badTx.opProofs[0]) # 1 op, 2 proofs
-    let b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [badTx])
+      badProof = OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))
+      badHtx = mkTransferTx(@[], @[], opProofs = @[badProof, badProof])
+      genesis = testGenesisBlock()
+      b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [badHtx])
     check validate(genesis, b1).isErr
 
   test "rejects a transaction with unsupported opcode":
+    var badOp = createTransferOp(TransferPayload(inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @[])))
+    badOp.opcode = cast[Opcode](0xff'u8)
     let
-      sm = mkTransferTx(@[], @[]).signedTx
-      genesis = createGenesisBlock(testValidGenesisTx())
-    var badTx = sm
-    badTx.tx.ops[0].opcode = cast[Opcode](0xff'u8)
-    let b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [badTx])
+      badHtx = mkHashedTx(@[badOp], @[OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))])
+      genesis = testGenesisBlock()
+      b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [badHtx])
     check validate(genesis, b1).isErr
 
   test "rejects a transaction with opcode mismatching payload":
+    var badOp = createTransferOp(TransferPayload(inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @[])))
+    badOp.opcode = OpChannelInscribe
     let
-      sm = mkTransferTx(@[], @[]).signedTx
-      genesis = createGenesisBlock(testValidGenesisTx())
-    var badTx = sm
-    badTx.tx.ops[0].opcode = OpChannelInscribe
-    let b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [badTx])
+      badHtx = mkHashedTx(@[badOp], @[OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))])
+      genesis = testGenesisBlock()
+      b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [badHtx])
     check validate(genesis, b1).isErr
 
   test "rejects a transaction with proof kind mismatching opcode":
     let
-      sm = mkTransferTx(@[], @[]).signedTx
-      genesis = createGenesisBlock(testValidGenesisTx())
-    var badTx = sm
-    badTx.opProofs[0] = OpProof(kind: opfChannelInscribe,
-        ed25519SigProof: default(Ed25519SigProof))
-    let b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [badTx])
+      badProof = OpProof(kind: opfChannelInscribe, ed25519SigProof: default(Ed25519SigProof))
+      badHtx = mkTransferTx(@[], @[], opProofs = @[badProof])
+      genesis = testGenesisBlock()
+      b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [badHtx])
     check validate(genesis, b1).isErr
 
 suite "core/block_validation — inclusive size and count bounds":
   test "a block whose tx bytes are exactly MaxBlockSize is accepted":
     let
-      genesis = createGenesisBlock(testValidGenesisTx())
+      genesis = testGenesisBlock()
       # Only the serialized transactions count; header and block signature don't.
       tx = mkSizedTx(MaxBlockSize)
     check encodeSignedMantleTx(tx).get.len == MaxBlockSize
@@ -214,7 +192,7 @@ suite "core/block_validation — inclusive size and count bounds":
 
   test "one byte past MaxBlockSize is rejected":
     let
-      genesis = createGenesisBlock(testValidGenesisTx())
+      genesis = testGenesisBlock()
       tx = mkSizedTx(MaxBlockSize + 1)
       b1 = childBlock(
         genesis.header, blockId(genesis.header), SlotNumber(1), [tx])
@@ -222,27 +200,29 @@ suite "core/block_validation — inclusive size and count bounds":
 
   test "a block with exactly MaxBlockTxs transactions is accepted":
     let
-      genesis = createGenesisBlock(testValidGenesisTx())
-      txs = newSeq[SignedMantleTx](MaxBlockTxs)
+      genesis = testGenesisBlock()
+      tx = minimalHashedSignedTx()
+      txs = newSeqWith(MaxBlockTxs, tx)
       b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), txs)
     check validate(genesis, b1).isOk
 
   test "one transaction past MaxBlockTxs is rejected":
     let
-      genesis = createGenesisBlock(testValidGenesisTx())
-      txs = newSeq[SignedMantleTx](MaxBlockTxs)
+      genesis = testGenesisBlock()
+      tx = minimalHashedSignedTx()
+      txs = newSeqWith(MaxBlockTxs, tx)
       b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), txs)
       overLong = Block(
         header: b1.header,
         signature: b1.signature,
-        txs: BlockTxs(newSeq[SignedMantleTx](MaxBlockTxs + 1)),
+        txs: BlockTxs(newSeqWith(MaxBlockTxs + 1, tx)),
       )
     check validate(genesis, overLong).isErr
 
 suite "core/block_validation — multi-tier evaluation order":
-  test "header signature failure short-circuits with InvalidBlockStructure":
+  test "Tier 2: header signature failure short-circuits with InvalidBlockStructure":
     let
-      genesis = createGenesisBlock(testValidGenesisTx())
+      genesis = testGenesisBlock()
       badTx = SignedMantleTx(
         tx: MantleTx(ops: @[createTransferOp(TransferPayload(
           inputs: Inputs(noteIds: @[]),
@@ -250,14 +230,15 @@ suite "core/block_validation — multi-tier evaluation order":
         ))]),
         opProofs: @[OpProof(kind: opfTransfer, transferProof: DefaultZkSignature)],
       )
-    var blk = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [badTx])
+      badHtx = createHashedSignedMantleTx(badTx).get
+    var blk = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [badHtx])
     # Corrupt block header signature
     blk.signature.data[0] = blk.signature.data[0] xor 0xff'u8
     let res = validate(genesis, blk)
     check res.isErr
     check res.error.kind == BlockValidationErrorKind.InvalidBlockStructure
 
-  test "light-first scanning rejects malformed non-ZK tx before ZK txs":
+  test "Tier 3: stateless validation rejects malformed non-ZK tx with empty inputs":
     let
       badLightTx = SignedMantleTx(
         tx: MantleTx(ops: @[createTransferOp(TransferPayload(
@@ -266,9 +247,10 @@ suite "core/block_validation — multi-tier evaluation order":
         ))]),
         opProofs: @[OpProof(kind: opfTransfer, transferProof: DefaultZkSignature)],
       )
-      validLightTx = minimalSignedTx()
-      genesis = createGenesisBlock(testValidGenesisTx())
-      blk = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [validLightTx, badLightTx])
+      badLightHtx = createHashedSignedMantleTx(badLightTx).get
+      validLightTx = minimalHashedSignedTx()
+      genesis = testGenesisBlock()
+      blk = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [validLightTx, badLightHtx])
     let res = validate(genesis, blk)
     check res.isErr
     check res.error.kind == BlockValidationErrorKind.StatelessTxRejected
@@ -276,8 +258,8 @@ suite "core/block_validation — multi-tier evaluation order":
 
   test "Tier 0: rejects block with default zero signature":
     let
-      genesis = createGenesisBlock(testValidGenesisTx())
-      sm = minimalSignedTx()
+      genesis = testGenesisBlock()
+      sm = minimalHashedSignedTx()
     var blk = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [sm])
     blk.signature = DefaultEd25519Signature
     let res = validate(genesis, blk)
@@ -286,8 +268,8 @@ suite "core/block_validation — multi-tier evaluation order":
 
   test "Tier 1: rejects block with unknown parent":
     let
-      genesis = createGenesisBlock(testValidGenesisTx())
-      sm = minimalSignedTx()
+      genesis = testGenesisBlock()
+      sm = minimalHashedSignedTx()
       missingParentId = default(BlockId)
       blk = childBlock(genesis.header, missingParentId, SlotNumber(1), [sm])
     let res = validate(genesis, blk)
@@ -296,8 +278,8 @@ suite "core/block_validation — multi-tier evaluation order":
 
   test "Tier 1: rejects block with non-advancing slot (slot <= parent.slot)":
     let
-      genesis = createGenesisBlock(testValidGenesisTx())
-      sm = minimalSignedTx()
+      genesis = testGenesisBlock()
+      sm = minimalHashedSignedTx()
       # Genesis is slot 0; a child at slot 0 does not advance
       blk = childBlock(genesis.header, blockId(genesis.header), SlotNumber(0), [sm])
     let res = validate(genesis, blk)
@@ -306,35 +288,47 @@ suite "core/block_validation — multi-tier evaluation order":
 
   test "Tier 1: rejects a block extending an ancestor below the LIB":
     let
-      genesis = createGenesisBlock(testValidGenesisTx())
+      genesis = testGenesisBlock()
       (tree, b1, _) = treeWithLib(genesis)
       ledger = Ledger[BlockId].init(
         blockId(genesis.header), default(LedgerState), default(LedgerConfig))
       # b1 is below the LIB with no ledger state, but the tree still holds it.
-      sm = minimalValidSignedTx()
-      blk = childBlock(b1.header, blockId(b1.header), SlotNumber(4), [sm.signedTx])
-      res = validateBlockHeaderAndTopology(blk, tree, ledger, @[HashedSignedMantleTx(sm)], @[])
+      sm = minimalHashedSignedTx()
+      blk = childBlock(b1.header, blockId(b1.header), SlotNumber(4), [sm])
+      res = admitWithTopology(blk, tree, ledger)
     check res.isErr
-    check res.error.kind == BlockValidationErrorKind.UnviableFork
+    check res.error.kind == BlockApplyErrorKind.UnviableFork
+
+  test "Tier 1: unviable fork is rejected with UnviableFork before signature verification":
+    let
+      genesis = testGenesisBlock()
+      (tree, b1, _) = treeWithLib(genesis)
+      ledger = Ledger[BlockId].init(
+        blockId(genesis.header), default(LedgerState), default(LedgerConfig))
+      sm = minimalHashedSignedTx()
+      blk = childBlock(b1.header, blockId(b1.header), SlotNumber(4), [sm])
+    var corruptBlk = blk
+    corruptBlk.signature = testTxKeyPair.seckey.sign(default(Hash32))
+    let res = admitWithTopology(corruptBlk, tree, ledger)
+    check res.isErr
+    check res.error.kind == BlockApplyErrorKind.UnviableFork
 
   test "Tier 1: accepts a child of the LIB":
     let
-      genesis = createGenesisBlock(testValidGenesisTx())
+      genesis = testGenesisBlock()
       (tree, _, b2) = treeWithLib(genesis)
-      sm = minimalValidSignedTx()
-      blk = childBlock(b2.header, blockId(b2.header), SlotNumber(4), [sm.signedTx])
-      state = LedgerState.fromGenesis(
-        testValidGenesisTx(), default(FieldElement), testSdpRegistry(), testLedgerConfig
-      ).expect("genesis state")
+      sm = minimalHashedSignedTx()
+      blk = childBlock(b2.header, blockId(b2.header), SlotNumber(4), [sm])
+      state = testGenesisLedgerState()
     var ledger = Ledger[BlockId].init(
       blockId(genesis.header), state, testLedgerConfig, mockVerifyLeaderProof)
     ledger.commitUpdate(blockId(b2.header), state)
-    check validateBlockHeaderAndTopology(blk, tree, ledger, @[HashedSignedMantleTx(sm)], @[]).isOk
+    check admitWithTopology(blk, tree, ledger).isOk
 
-  test "Tier 2: rejects block with empty leader key":
+  test "Tier 0: rejects block with empty leader key":
     let
-      genesis = createGenesisBlock(testValidGenesisTx())
-      sm = minimalSignedTx()
+      genesis = testGenesisBlock()
+      sm = minimalHashedSignedTx()
     var blk = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [sm])
     blk.header.proofOfLeadership.leaderKey = DefaultEd25519PublicKey
     let res = validate(genesis, blk)
@@ -345,8 +339,8 @@ suite "core/block_validation — multi-tier evaluation order":
     let
       note = mkUtxo(value = 100, pkSeed = 1)
       badTx = mkTransferTx(@[note.id, note.id], @[mkNote(100, pkSeed = 2)])
-      genesis = createGenesisBlock(testValidGenesisTx())
-      blk = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [badTx.signedTx])
+      genesis = testGenesisBlock()
+      blk = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [badTx])
     let res = validate(genesis, blk)
     check res.isErr
     check res.error.kind == BlockValidationErrorKind.StatelessTxRejected
@@ -354,15 +348,16 @@ suite "core/block_validation — multi-tier evaluation order":
 
   test "Tier 3: Pass 2 rejects heavy ZK transaction with invalid proof after light txs pass":
     let
-      validLightTx = minimalSignedTx()
-      genesis = createGenesisBlock(testValidGenesisTx())
+      validLightTx = minimalHashedSignedTx()
+      genesis = testGenesisBlock()
       claimTx = SignedMantleTx(
         tx: MantleTx(ops: @[createLeaderClaimOp(LeaderClaimPayload(
           rewardsRoot: default(RewardsRoot),
         ))]),
         opProofs: @[OpProof(kind: opfLeaderClaim, proofOfClaimProof: default(ProofOfClaimProof))],
       )
-      blk = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [validLightTx, claimTx])
+      claimHtx = createHashedSignedMantleTx(claimTx).get
+      blk = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [validLightTx, claimHtx])
     let res = validate(genesis, blk)
     check res.isErr
     check res.error.kind == BlockValidationErrorKind.StatelessTxRejected
@@ -378,122 +373,189 @@ suite "core/block_validation — multi-tier evaluation order":
       # A transaction that would fail stateless validation (duplicate inputs)
       note = mkUtxo(value = 100, pkSeed = 1)
       badTx = mkTransferTx(@[note.id, note.id], @[mkNote(100, pkSeed = 2)])
-      genesis = createGenesisBlock(testValidGenesisTx())
+      genesis = testGenesisBlock()
       gid = blockId(genesis.header)
       tree = newLocalTree(genesis, 1'u64)
-      state = LedgerState.fromGenesis(
-        testValidGenesisTx(), default(FieldElement), testSdpRegistry(), testLedgerConfig
-      ).expect("genesis state")
+      state = testGenesisLedgerState()
       ledger = Ledger[BlockId].init(gid, state, testLedgerConfig, failingPolVerifier)
-      blk = childBlock(genesis.header, gid, SlotNumber(1), [badTx.signedTx])
+      blk = childBlock(genesis.header, gid, SlotNumber(1), [badTx])
 
-    let (admittedBlk, isOrphan) = validateBlockHeaderAndTopology(blk, tree, ledger, @[badTx], @[0]).expect("header valid")
+    let (admittedBlk, isOrphan) = admitWithTopology(blk, tree, ledger).expect("header valid")
     check not isOrphan
-    let res = validatePolAndStatelessTransactions(admittedBlk, ledger)
+    let res = validatePolAndStatelessTransactions(admittedBlk, ledger, nil)
     check res.isErr
     # PoL failure at Tier 3a triggers HeaderRejected, BEFORE reaching Tier 3b StatelessTxRejected
     check res.error.kind == BlockValidationErrorKind.HeaderRejected
     check res.error.ledgerError == LedgerError.InvalidProofOfLeadership
 
-  test "reconstructBlock reconstructs block from proposal":
+  test "Tier 3: consensus proof mismatch rejects block even if hash exists in mempool (D1)":
     let
-      sm = minimalValidSignedTx()
-      genesis = createGenesisBlock(testValidGenesisTx())
-      gid = blockId(genesis.header)
-      proposal = childProposal(genesis.header, gid, SlotNumber(1), [sm])
-    
-    var mempool = Mempool.init()
-    check mempool.add(sm, SlotNumber(0))
-    
-    let res = reconstructBlock(proposal, mempool)
-    check res.isOk
-    let (blk, vtxs) = res.get
-    check blk.txs.len == 0
-    check vtxs.len == 1
-
-  test "reconstructBlock rejects if referenced transaction is missing from mempool":
-    let
-      sm = minimalValidSignedTx()
-      genesis = createGenesisBlock(testValidGenesisTx())
-      gid = blockId(genesis.header)
-      proposal = childProposal(genesis.header, gid, SlotNumber(1), [sm])
-      mempool = Mempool.init()
-      
-    let res = reconstructBlock(proposal, mempool)
-    check res.isErr and res.error == ProposalValidationError.MissingReference
-
-  test "mempool identifies known valid transactions":
-    var mempool = Mempool.init()
-    let tx = minimalValidSignedTx()
-    let txHash = tx.hash
-    check not mempool.isKnownValid(HashedSignedMantleTx(tx))
-    check mempool.add(tx, SlotNumber(0))
-    check mempool.isKnownValid(HashedSignedMantleTx(tx))
-
-    # If proof differs, isKnownValid returns false
-    var badProofTx = tx.signedTx
-    badProofTx.opProofs = @[defaultOpProofForOpcode(OpChannelInscribe).get]
-    check not mempool.isKnownValid(HashedSignedMantleTx(signedTx: badProofTx, hash: txHash))
-
-  test "validatePolAndStatelessTransactions fast-paths with unverified txs":
-    let
-      sm = minimalValidSignedTx()
-      genesis = createGenesisBlock(testValidGenesisTx())
+      validLightTx = minimalValidSignedTx()
+      genesis = testGenesisBlock()
       gid = blockId(genesis.header)
       tree = newLocalTree(genesis, 1'u64)
-      blk = childBlock(genesis.header, gid, SlotNumber(1), [sm.signedTx])
-      state = LedgerState.fromGenesis(
-        testValidGenesisTx(), default(FieldElement), testSdpRegistry(), testLedgerConfig
-      ).expect("genesis state")
+      state = testGenesisLedgerState()
       ledger = Ledger[BlockId].init(gid, state, testLedgerConfig, mockVerifyLeaderProof)
     var mempool = Mempool.init()
-    check mempool.add(sm, SlotNumber(0))
+    check mempool.add(validLightTx, SlotNumber(0))
 
-    let (htxs, unverified) = mempool.classifyBlockTxs(blk.txs.asSeq).get
-    check unverified.len == 0
-    let (admittedBlk2, isOrphan2) = validateBlockHeaderAndTopology(blk, tree, ledger, htxs, unverified).expect("header valid")
-    check not isOrphan2
-    check validatePolAndStatelessTransactions(admittedBlk2, ledger).isOk
+    # Construct wire tx with same hash as mempool tx, but with corrupted proof
+    var tamperedSignedTx = validLightTx.hashed.signedTx
+    tamperedSignedTx.opProofs = @[defaultOpProofForOpcode(OpChannelInscribe).get]
+    let tamperedHtx = createHashedSignedMantleTx(tamperedSignedTx).get
+    # Check mempool rejects fast-path
+    check mempool.getKnownValid(tamperedHtx).isNone
+
+    # Construct block with tampered tx
+    let
+      blk = childBlock(genesis.header, gid, SlotNumber(1), [tamperedHtx])
+      (admittedBlk, isOrphan) = admitWithTopology(blk, tree, ledger).expect("header valid")
+    check not isOrphan
+    let res = validatePolAndStatelessTransactions(admittedBlk, ledger, mempool)
+    check res.isErr
+    check res.error.kind == BlockValidationErrorKind.StatelessTxRejected
+    check res.error.statelessError == StatelessLedgerError.InvalidProof
+
+  test "Tier 3: reconstructed proposal bypasses stateless validation via mempool hit (D3)":
+    # 1. Construct a LeaderClaim tx with a dummy proof
+    let
+      op = createLeaderClaimOp(LeaderClaimPayload(
+        rewardsRoot: default(RewardsRoot),
+        voucherNullifier: default(VoucherNullifier),
+        publicKey: mkZkPubKey(1),
+      ))
+      tx = SignedMantleTx(
+        tx: MantleTx(ops: @[op]),
+        opProofs: @[OpProof(kind: opfLeaderClaim, proofOfClaimProof: default(ProofOfClaimProof))],
+      )
+      vtx = mkValidTx(tx)
+      htx = vtx.hashed
+
+    var mempool = Mempool.init()
+    check mempool.add(vtx, SlotNumber(0))
+
+    # 2. Build block containing this transaction
+    let
+      genesis = testGenesisBlock()
+      gid = blockId(genesis.header)
+      child = childBlock(genesis.header, gid, SlotNumber(1), [htx])
+
+    # 3. Ensure the verifier is uninitialised
+    poc.resetVkForTesting()
+
+    # 4. If Tier 3 runs stateless validation, it calls verifyProofOfClaim -> fails with VerifierNotInitialised.
+    #    Because it hits the mempool pointer fast-path, it bypasses stateless validation and succeeds!
+    let
+      tree = newLocalTree(genesis, 1'u64)
+      state = testGenesisLedgerState()
+      ledger = Ledger[BlockId].init(gid, state, testLedgerConfig, mockVerifyLeaderProof)
+
+    let (admittedBlk, isOrphan) = admitWithTopology(child, tree, ledger).expect("header valid")
+    check not isOrphan
+    let res = validatePolAndStatelessTransactions(admittedBlk, ledger, mempool)
+    check res.isOk
+
+    # 5. Negative check: with empty mempool, Tier 3 falls back to stateless validation and FAILS with VerifierNotInitialised
+    let
+      emptyMempool = Mempool.init()
+      resMiss = validatePolAndStatelessTransactions(admittedBlk, ledger, emptyMempool)
+    check resMiss.isErr
+    check resMiss.error.kind == BlockValidationErrorKind.StatelessTxRejected
+    check resMiss.error.statelessError == StatelessLedgerError.VerifierNotInitialised
 
   test "prepareBlockUpdate rejects stateful transaction failures":
     let
-      sm = minimalValidSignedTx()
-      valid = testValidGenesisTx()
-      genesis = createGenesisBlock(testValidGenesisTx())
+      sm = minimalHashedSignedTx()
+      genesis = testGenesisBlock()
       gid = blockId(genesis.header)
       tree = newLocalTree(genesis, 1'u64)
-      blk = childBlock(genesis.header, gid, SlotNumber(1), [sm.signedTx])
-      
-    var state = LedgerState.fromGenesis(
-        valid, default(FieldElement), testSdpRegistry(),
-        testLedgerConfig).expect("genesis state")
+      blk = childBlock(genesis.header, gid, SlotNumber(1), [sm])
+    var state = testGenesisLedgerState()
     # Non-zero base fee causes minimalValidSignedTx with 0 transfer balance to fail fee coverage
     state.feeMarket.executionBaseFee = 1000
     state.feeMarket.storageGasPrice = 1000
     let ledger = Ledger[BlockId].init(gid, state, testLedgerConfig, mockVerifyLeaderProof)
-    let (admittedBlk3, isOrphan3) = validateBlockHeaderAndTopology(blk, tree, ledger, @[HashedSignedMantleTx(sm)], @[]).expect("header valid")
+    let (admittedBlk3, isOrphan3) = admitWithTopology(blk, tree, ledger).expect("header valid")
     check not isOrphan3
-    let (validBlk, headerState) = validatePolAndStatelessTransactions(admittedBlk3, ledger).expect("header state")
+    let (validBlk, headerState) = validatePolAndStatelessTransactions(admittedBlk3, ledger, nil).expect("header state")
     let res = prepareBlockUpdate(validBlk, ledger, headerState)
     check res.isErr and res.error.kind == BlockValidationErrorKind.TransactionsRejected
 
-  test "Tier 1: validateBlockHeaderAndTopology marks isOrphan as true and bypasses PoL/txs for orphan":
+  test "Tier 1: admitWithTopology marks isOrphan as true and bypasses PoL/txs for orphan":
     let
       # An orphan with invalid tx that would fail stateless validation if executed
       note = mkUtxo(value = 100, pkSeed = 1)
       badTx = mkTransferTx(@[note.id, note.id], @[mkNote(100, pkSeed = 2)])
-      genesis = createGenesisBlock(testValidGenesisTx())
+      genesis = testGenesisBlock()
       tree = newLocalTree(genesis, 1'u64)
-      state = LedgerState.fromGenesis(
-        testValidGenesisTx(), default(FieldElement), testSdpRegistry(), testLedgerConfig
-      ).expect("genesis state")
+      state = testGenesisLedgerState()
       ledger = Ledger[BlockId].init(blockId(genesis.header), state, testLedgerConfig, mockVerifyLeaderProof)
       orphanParent = Hash32([1'u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-      blk = childBlock(genesis.header, orphanParent, SlotNumber(1), [badTx.signedTx])
+      blk = childBlock(genesis.header, orphanParent, SlotNumber(1), [badTx])
 
     # Ingestion skips Tier 3 PoL & tx checks for orphans
-    let res = validateBlockHeaderAndTopology(blk, tree, ledger, @[badTx], @[0])
+    let res = admitWithTopology(blk, tree, ledger)
     check res.isOk
     check res.get.isOrphan == true
+
+  test "validatePolAndStatelessTransactions consumes validTxs from proposal-admitted block":
+    let
+      validTx = minimalValidSignedTx()
+      genesis = testGenesisBlock()
+      gid = blockId(genesis.header)
+      proposal = childProposal(genesis.header, gid, SlotNumber(1), [validTx])
+      admitted = admitProposal(proposal, @[validTx]).expect("valid proposal")
+
+    check admitted.validTxs.len == 1
+    let
+      state = testGenesisLedgerState()
+      ledger = Ledger[BlockId].init(gid, state, testLedgerConfig, mockVerifyLeaderProof)
+
+    let res = validatePolAndStatelessTransactions(admitted, ledger, nil)
+    check res.isOk
+    let (validBlk, _) = res.get()
+    check validBlk.txs.len == 1
+    doAssert admitted.validTxs.len == 0,
+      "admitted block validTxs must be consumed by validatePolAndStatelessTransactions"
+
+  test "bodyMatchesHeader unit tests for Proposal and Block":
+    let
+      validTx = minimalValidSignedTx()
+      genesis = testGenesisBlock()
+      gid = blockId(genesis.header)
+      proposal = childProposal(genesis.header, gid, SlotNumber(1), [validTx])
+      blk = childBlock(genesis.header, gid, SlotNumber(1), [validTx.hashed])
+
+    # Genuine proposal & block match
+    check proposal.bodyMatchesHeader == true
+    check blk.bodyMatchesHeader == true
+
+    # Proposal with modified reference fails
+    var badRefProp = proposal
+    badRefProp.references[0][0] = badRefProp.references[0][0] xor 0xff'u8
+    check badRefProp.bodyMatchesHeader == false
+
+    # Proposal with dropped reference (early zero) fails
+    var droppedRefProp = proposal
+    droppedRefProp.references[0] = default(Hash32)
+    check droppedRefProp.bodyMatchesHeader == false
+
+    # Proposal with modified uncle fails
+    var badUncleProp = proposal
+    badUncleProp.uncleHeaders = UncleHeaders(@[sampleUncle(0x11'u8)])
+    check badUncleProp.bodyMatchesHeader == false
+
+    # Block with modified transaction hash fails
+    var badTxBlk = blk
+    var alteredHash = validTx.hash
+    alteredHash[0] = alteredHash[0] xor 0xff'u8
+    let badTx = mkHashedSignedTx(validTx.hashed.signedTx, alteredHash)
+    badTxBlk.txs = BlockTxs(@[badTx])
+    check badTxBlk.bodyMatchesHeader == false
+
+    # Block with modified uncle fails
+    var badUncleBlk = blk
+    badUncleBlk.uncleHeaders = UncleHeaders(@[sampleUncle(0x11'u8)])
+    check badUncleBlk.bodyMatchesHeader == false
 
 {.pop.}

@@ -12,14 +12,14 @@
 import
   std/times,
   chronicles,
-  ../core/local_tree,
-  ../core/mantle/tx_validation,
+  ./local_tree,
+  ../core/types,
   ../deployment/deployment_settings,
   ../ledger/[ledger, stake_inference],
   ../mempool,
   ./[block_validation, genesis, orphan_pool, proposal]
 
-export genesis, local_tree, mempool, block_validation, orphan_pool, proposal
+export types, genesis, local_tree, mempool, block_validation, orphan_pool, proposal
 export ledger except config
 
 const DefaultSecurityParam*: uint64 = 1'u64
@@ -114,9 +114,11 @@ proc init*(
     poqVerifier: ProofOfQuotaVerifier = verifyProofOfQuota,
 ): Result[T, string] =
   let
-    validGenesisTx = validateGenesisTxStateless(
+    genesisHtx = createGenesisHtx(
       settings.cryptarchia.genesisState.signedMantleTx
     ).valueOr:
+      return err("chain: invalid genesis transaction: " & $error)
+    validGenesisTx = validateGenesisTxStateless(genesisHtx).valueOr:
       return err("chain: invalid genesis transaction: " & $error)
     param = cryptarchiaParameter(validGenesisTx).valueOr:
       return err("chain: " & $error)
@@ -166,7 +168,7 @@ proc removeBranchTxs(chain: var Chain, fromId, toId: BlockId) =
       warn "Missing block during reorg transaction removal",
           missingBlockId = curr, toId = toId
       break
-    chain.mempool.pruneBlockTxs(b)
+    chain.mempool.pruneTxs(b.txs)
     curr = header(b).parentBlock
 
 proc pruneStatesBeforeLib(chain: var Chain, newLibId, oldLibId: BlockId) =
@@ -196,8 +198,9 @@ proc handleTipChange(chain: var Chain, oldTip, newTip: BlockId) =
   # 3. Prune fork states and canonical states older than the new immutable block (retaining latestImmutableId as anchor).
   chain.readdBranchTxs(oldTip, lcaId)
   chain.removeBranchTxs(newTip, lcaId)
-  let oldLibId = chain.localTree.latestImmutableBlockId()
-  let prunedBlockIds = chain.localTree.tryUpdateLib()
+  let
+    oldLibId = chain.localTree.latestImmutableBlockId()
+    prunedBlockIds = chain.localTree.tryUpdateLib()
   for prunedId in prunedBlockIds:
     chain.ledger.pruneStateAt(prunedId)
   let newLibId = chain.localTree.latestImmutableBlockId()
@@ -205,7 +208,7 @@ proc handleTipChange(chain: var Chain, oldTip, newTip: BlockId) =
     chain.pruneStatesBeforeLib(newLibId, oldLibId)
     chain.orphanPool.pruneIncompatibleWithImmutable(chain.localTree)
 
-func toBlockApplyError(err: BlockValidationError): BlockApplyError =
+func toBlockApplyError*(err: BlockValidationError): BlockApplyError =
   case err.kind
   of BlockValidationErrorKind.InvalidBlockStructure:
     BlockApplyError(kind: InvalidStructure)
@@ -234,23 +237,17 @@ func checkViability(
     return err(BlockApplyError(kind: FutureSlot))
   ok(id)
 
-proc applyAdmittedBlock(
+proc applyValidBlock(
     chain: var Chain,
-    admittedBlk: sink AdmittedBlock,
+    validBlk: ValidBlock,
+    headerState: LedgerState,
     id: BlockId,
     curSlot: SlotNumber,
 ): Result[void, BlockApplyError] =
-  # Tier 3: PoL against parent state and stateless transaction validation
-  let
-    (validBlk, headerState) = validatePolAndStatelessTransactions(
-      admittedBlk, chain.ledger
-    ).valueOr:
-      chain.orphanPool.pruneDescendants(id)
-      return err(toBlockApplyError(error))
-    preparedState = prepareBlockUpdate(validBlk, chain.ledger, headerState).valueOr:
-      chain.orphanPool.pruneDescendants(id)
-      return err(BlockApplyError(kind: LedgerRejected, ledgerError: error.ledgerError))
-    oldTip = chain.localTree.localTipId()
+  let preparedState = prepareBlockUpdate(validBlk, chain.ledger, headerState).valueOr:
+    chain.orphanPool.pruneDescendants(id)
+    return err(BlockApplyError(kind: LedgerRejected, ledgerError: error.ledgerError))
+  let oldTip = chain.localTree.localTipId()
 
   if not chain.localTree.addBlockToTree(validBlk):
     chain.orphanPool.pruneDescendants(id)
@@ -261,42 +258,76 @@ proc applyAdmittedBlock(
   chain.mempool.pruneExpiredTxs(curSlot)
   ok()
 
+proc applyAdmittedBlock(
+    chain: var Chain,
+    admittedBlk: AdmittedBlock,
+    id: BlockId,
+    curSlot: SlotNumber,
+): Result[void, BlockApplyError] =
+  # Tier 3: PoL against parent state and stateless transaction validation (mempool fast path)
+  let
+    (validBlk, headerState) = validatePolAndStatelessTransactions(
+      admittedBlk, chain.ledger, chain.mempool
+    ).valueOr:
+      chain.orphanPool.pruneDescendants(id)
+      return err(toBlockApplyError(error))
+  chain.applyValidBlock(validBlk, headerState, id, curSlot)
+
+type
+  TopologyStatus* {.pure.} = enum
+    ParentPresent
+    Orphan
+
+proc admitOrBuffer(
+    chain: var Chain,
+    status: TopologyStatus,
+    admittedBlk: AdmittedBlock,
+    id: BlockId,
+    curSlot: SlotNumber,
+): Result[void, BlockApplyError] =
+  case status
+  of TopologyStatus.Orphan:
+    if not chain.orphanPool.addOrphan(admittedBlk):
+      return err(BlockApplyError(kind: OrphanAlreadyBuffered))
+    err(BlockApplyError(kind: OrphanBuffered))
+  of TopologyStatus.ParentPresent:
+    chain.applyAdmittedBlock(admittedBlk, id, curSlot)
+
+func checkTopology*(
+    header: Header,
+    localTree: LocalTree,
+    ledger: Ledger[BlockId],
+): Result[TopologyStatus, BlockApplyError] =
+  let missing = not ledger.hasState(header.parentBlock)
+  if not missing:
+    let parentHdr = localTree.fetchHeader(header.parentBlock).valueOr:
+      return err(BlockApplyError(kind: UnviableFork))
+    if header.slot <= parentHdr.slot:
+      return err(BlockApplyError(kind: InvalidStructure))
+
+  if not localTree.canDescendFromImmutable(header):
+    return err(BlockApplyError(kind: UnviableFork))
+
+  ok(if missing: TopologyStatus.Orphan else: TopologyStatus.ParentPresent)
+
 proc tryApplyAdmittedBlock*(
     chain: var Chain,
-    admittedBlk: sink AdmittedBlock,
+    admittedBlk: AdmittedBlock,
 ): Result[void, BlockApplyError] =
   ## Directly applies an admitted block promoted from the orphan pool.
   let
     curSlot = chain.currentWallclockSlot()
-    id = chain.checkViability(header(admittedBlk), curSlot).valueOr:
-      chain.orphanPool.pruneDescendants(blockId(header(admittedBlk)))
+    hdr = header(admittedBlk)
+    id = chain.checkViability(hdr, curSlot).valueOr:
+      chain.orphanPool.pruneDescendants(blockId(hdr))
       return err(error)
 
-  # Re-check mempool for transactions that entered the pool while this block
-  # was buffered in the orphan pool, avoiding redundant stateless validation.
-  if admittedBlk.unverifiedIndices.len > 0 and chain.mempool != nil:
-    chain.mempool.updateUnverifiedIndices(
-      admittedBlk.txs, admittedBlk.unverifiedIndices
-    )
-
-  chain.applyAdmittedBlock(admittedBlk, id, curSlot)
-
-template tryApplyIncoming(chain: var Chain, item: untyped, body: untyped): untyped =
-  let
-    curSlot = chain.currentWallclockSlot()
-    id = ?chain.checkViability(item.header, curSlot)
-  let (blk, htxs, unverified) = body
-
-  # Tiers 0-2: Structure, Topology Viability, Body Root, Header Signature
-  let (admittedBlk, isOrphan) = validateBlockHeaderAndTopology(
-    blk, chain.localTree, chain.ledger, htxs, unverified
-  ).valueOr:
-    return err(toBlockApplyError(error))
-
-  if isOrphan:
-    if not chain.orphanPool.addOrphan(admittedBlk):
-      return err(BlockApplyError(kind: OrphanAlreadyBuffered))
-    return err(BlockApplyError(kind: OrphanBuffered))
+  let status = checkTopology(hdr, chain.localTree, chain.ledger).valueOr:
+    chain.orphanPool.pruneDescendants(id)
+    return err(error)
+  if status == TopologyStatus.Orphan:
+    chain.orphanPool.pruneDescendants(id)
+    return err(BlockApplyError(kind: UnviableFork))
 
   chain.applyAdmittedBlock(admittedBlk, id, curSlot)
 
@@ -305,24 +336,38 @@ proc tryApplyBlock*(
     blk: Block,
 ): Result[void, BlockApplyError] =
   ## Full block ingestion in `valid_header` order, with automatic orphan buffering.
-  tryApplyIncoming(chain, blk):
-    let (htxs, unverified) = chain.mempool.classifyBlockTxs(blk.txs.asSeq).valueOr:
-      return err(BlockApplyError(
-        kind: StatelessTxRejected,
-        statelessError: toStatelessLedgerError(error),
-      ))
-    (blk, htxs, unverified)
+  let
+    curSlot = chain.currentWallclockSlot()
+    id = ?chain.checkViability(blk.header, curSlot)
+
+  let status = ?checkTopology(blk.header, chain.localTree, chain.ledger)
+
+  let admittedBlk = admitBlock(blk).valueOr:
+    return err(toBlockApplyError(error))
+
+  chain.admitOrBuffer(status, admittedBlk, id, curSlot)
 
 proc tryApplyProposal*(
     chain: var Chain,
     proposal: Proposal,
 ): Result[void, BlockApplyError] =
-  ## Full proposal ingestion: reconstructs transactions from the mempool,
-  ## validates through the multi-tier pipeline without redundant transaction
-  ## classification, and applies the resulting AdmittedBlock.
-  tryApplyIncoming(chain, proposal):
-    let (blk, vtxs) = proposal.reconstructBlock(chain.mempool).valueOr:
-      return err(BlockApplyError(kind: MissingReference))
-    (blk, cast[seq[HashedSignedMantleTx]](vtxs), static(seq[int](@[])))
+  ## Privileged proposal ingestion: reconstructs transactions from the mempool,
+  ## admits the proposal through Tier 0-2 checks (buffering as orphan if parent is unknown),
+  ## and applies the resulting block without redundant stateless tx validation.
+  let
+    curSlot = chain.currentWallclockSlot()
+    id = ?chain.checkViability(proposal.header, curSlot)
+
+  let status = ?checkTopology(proposal.header, chain.localTree, chain.ledger)
+
+  let validTxs = reconstructProposalTxs(proposal, chain.mempool).valueOr:
+    case error
+    of ProposalValidationError.MissingReference:
+      return err(BlockApplyError(kind: BlockApplyErrorKind.MissingReference))
+
+  let admittedBlk = admitProposal(proposal, validTxs).valueOr:
+    return err(toBlockApplyError(error))
+
+  chain.admitOrBuffer(status, admittedBlk, id, curSlot)
 
 {.pop.}

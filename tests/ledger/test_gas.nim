@@ -42,10 +42,10 @@ proc mkState(utxos: openArray[Utxo]): LedgerState =
 proc mkFixtureTransferTx(input: Utxo): ValidSignedMantleTx =
   ## The exact tx shape the committed zksign fixture proof was generated for
   ## (input pk mkRealZkPubKey(1), value 100; one output of value 100).
-  var tx = mkTransferTx(
+  var stx = mkSignedTransferTx(
     [input.id], [Note(value: 100, zkPublicKey: default(ZkPublicKey))])
-  tx.opProofs[0].transferProof = loadProof(transferProofPath)
-  ValidSignedMantleTx(tx)
+  stx.opProofs[0].transferProof = loadProof(transferProofPath)
+  mkValidTx(stx)
 
 proc mkInscribeTx(
     rng: ref HmacDrbgContext, channel: ChannelId
@@ -65,7 +65,7 @@ proc mkInscribeTx(
       tx: body,
       opProofs: @[OpProof(
         kind: opfChannelInscribe, ed25519SigProof: sign(kp.seckey, txHash))])
-  ValidSignedMantleTx(HashedSignedMantleTx(signedTx: stx, hash: txHash))
+  mkValidTx(mkHashedSignedTx(stx, txHash))
 
 suite "gas: per-operation execution gas":
   test "each op kind against its Gas Determination constant":
@@ -266,9 +266,10 @@ suite "gas: tx execution gas and block limit":
         ],
       )
     var s = mkState(@[])
-    let vtx = ValidSignedMantleTx(HashedSignedMantleTx(signedTx: tx, hash: txHash))
-    let r = s.tryApplyTx(
-      vtx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
+    let
+      vtx = mkValidTx(mkHashedSignedTx(tx, txHash))
+      r = s.tryApplyTx(
+        vtx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
     check r.isOk
     let mf = s.mandatory_fees(vtx)
     check mf.isOk
@@ -341,7 +342,7 @@ suite "gas: storage accumulation and epoch rotation":
     s.feeMarket.storageGasPrice = 0
     let
       tx = mkInscribeTx(rng, mkChannelId(1))
-      encodedLen = Gas(encodeSignedMantleTx(tx.signedTx).get.len)
+      encodedLen = Gas(tx.byteLen)
     s = s.tryApplyTxns(
       [tx], slot = 1'u64, verifyPoq = acceptAllPoq).expect("applied")
     check s.feeMarket.storageGasConsumedInEpoch == encodedLen
