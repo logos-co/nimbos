@@ -40,14 +40,15 @@ proc selectProposalReferences*(
   ## https://github.com/logos-co/logos-lips/blob/38916aa474164ac4acd81e62d19715e17626be17/docs/blockchain/raw/execution-market.md
   ## Enforces count (maxTxs), execution gas (MAX_EXECUTION_GAS_PER_BLOCK), and body byte size (maxBytes).
   ## Populates and returns the fixed-size References array and the selected count directly for proposal creation.
-  var refs: References
-  var count = 0
-  var workingLedger = tipLedgerState.advanceEpochAndMarket(currentSlot, cfg).valueOr:
-    tipLedgerState
-  var cumulativeExecutionGas = Gas(0)
-  var cumulativeBytes = 0
-  var consecutiveMisses = 0
-  var toEvict: seq[Hash32]
+  var
+    refs: References
+    count = 0
+    workingLedger = tipLedgerState.advanceEpochAndMarket(currentSlot, cfg).valueOr:
+      tipLedgerState
+    cumulativeExecutionGas = Gas(0)
+    cumulativeBytes = 0
+    consecutiveMisses = 0
+    toEvict: seq[Hash32]
 
   let epoch = workingLedger.epochs.activeEpoch.epoch
 
@@ -134,27 +135,28 @@ proc constructProposal*(
     sig = leaderSecKey.sign(blockId(h))
   initProposal(h, [], refs, sig)
 
-func reconstructBlock*(
+func reconstructProposalTxs*(
     proposal: Proposal,
-    mempool: Mempool
-): Result[Block, ProposalValidationError] =
-  ## Reconstructs the block from proposal references using the mempool (and internal grace cache).
-  ## Returns error if any reference is missing or if we cannot retrieve it.
-  var txs: seq[SignedMantleTx]
-  for r in proposal.references:
-    if r.isZero():
-      break
-    let tx = mempool.get(r).valueOr:
+    mempool: Mempool,
+): Result[seq[ValidSignedMantleTx], ProposalValidationError] =
+  ## Resolves proposal references directly to mempool's cached ValidSignedMantleTx,
+  ## preserving full stateless validity typing across block reconstruction.
+  var txs: seq[ValidSignedMantleTx]
+  for r in proposal.references.activeReferences:
+    let vtx = mempool.get(r).valueOr:
       return err(ProposalValidationError.MissingReference)
-    txs.add(SignedMantleTx(tx))
-  
-  # Not `initBlock`: its uncle-count assert is for programming errors, and
-  # `validateBlockStructure` checks the count of this block as input.
-  ok(Block(
-    header: proposal.header,
-    signature: proposal.signature,
-    uncleHeaders: proposal.uncleHeaders,
-    txs: BlockTxs(txs)
-  ))
+    txs.add(vtx)
+
+  ok(move(txs))
+
+func hasMissingReference*(
+    proposal: Proposal,
+    mempool: Mempool,
+): bool =
+  ## Returns true if any reference in the proposal is not found in the mempool.
+  for r in proposal.references.activeReferences:
+    if r notin mempool:
+      return true
+  false
 
 {.pop.}

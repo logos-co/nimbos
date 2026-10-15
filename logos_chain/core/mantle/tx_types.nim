@@ -13,9 +13,7 @@
 {.push raises: [], gcsafe.}
 
 import
-  bincode,
-  ./[primitives, operations, proofs],
-  ../crypto/types
+  ./[primitives, operations, proofs]
 
 export primitives, operations, proofs
 
@@ -27,23 +25,17 @@ type
     tx*: MantleTx
     opProofs*: seq[OpProof]
 
-  ValidSignedMantleTx* = distinct SignedMantleTx
-    ## A ``SignedMantleTx`` that has successfully passed all stateless structural
-    ## and cryptographic verifications via ``validateMantleTxStateless``.
-
-  ValidGenesisMantleTx* = distinct SignedMantleTx
-    ## A ``SignedMantleTx`` that passed every stateless genesis check in
-    ## ``validateGenesisTxStateless``; only state checks remain.
-
-template tx*(t: ValidSignedMantleTx): untyped = SignedMantleTx(t).tx
-template opProofs*(t: ValidSignedMantleTx): untyped = SignedMantleTx(t).opProofs
-
-template tx*(t: ValidGenesisMantleTx): untyped = SignedMantleTx(t).tx
 
 func encodeMantleTx*(tx: MantleTx): Result[seq[byte], EncodingError] =
   ## MantleTx = OpCount (u8) || *Op
   encodeOps(tx.ops)
 
+# TODO (perf): `encodeSignedMantleTx` builds byte buffers from the inside out,
+# triggering intermediate seq[byte] heap allocations and concatenation copies (e.g. `res.add`).
+# Optimize by streaming into an `OutputStreamHandle` (faststreams) across the encoder hierarchy
+# (`encode(stream, tx)`, `encode(stream, op.payload)`, etc.). This eliminates all intermediate buffers
+# and allows block serializers (e.g. `ValidBlock.encode`) to stream transactions directly into the
+# wire buffer in a single pass.
 func encodeSignedMantleTx*(signedTx: SignedMantleTx): Result[seq[byte], EncodingError] =
   ## SignedMantleTx = MantleTx || OpsProofs
   var res = ?encodeMantleTx(signedTx.tx)
@@ -51,54 +43,13 @@ func encodeSignedMantleTx*(signedTx: SignedMantleTx): Result[seq[byte], Encoding
   res.add(proofsBytes)
   ok(res)
 
-template encodeSignedMantleTx*(signedTx: ValidSignedMantleTx): Result[seq[byte], EncodingError] =
-  encodeSignedMantleTx(SignedMantleTx(signedTx))
-
 func byteLen*(tx: MantleTx): int =
   ## Exact wire byte length of a MantleTx without allocating buffers.
   byteLen(tx.ops)
 
-func byteLen*(signedTx: SignedMantleTx): int =
+func byteLen*(tx: SignedMantleTx): int =
   ## Exact wire byte length of a SignedMantleTx without allocating buffers.
-  byteLen(signedTx.tx) + byteLen(signedTx.opProofs)
+  byteLen(tx.tx) + byteLen(tx.opProofs)
 
-template byteLen*(signedTx: ValidSignedMantleTx): int =
-  byteLen(SignedMantleTx(signedTx))
-
-func readMantleTx*(data: openArray[byte], pos: var int): Result[MantleTx, DecodingError] =
-  let count = ?readByte(data, pos)
-  var ops = newSeqOfCap[Op](count)
-  for _ in 0 ..< int(count):
-    ops.add ?readOp(data, pos)
-  ok(MantleTx(ops: ops))
-
-func decodeSignedMantleTx*(data: openArray[byte]): Result[SignedMantleTx, DecodingError] =
-  var pos = 0
-  let tx = ?readMantleTx(data, pos)
-  let opProofs =
-    if tx.ops.len == 0:
-      ?finishDecode(data, pos)
-      @[]
-    elif pos < data.len:
-      ?decodeOpsProofs(tx.ops, data.toOpenArray(pos, data.high))
-    else:
-      return err(DecodingError.MissingProofs)
-  ok(SignedMantleTx(tx: tx, opProofs: opProofs))
-
-func bincodeEncodeSignedMantleTx(tx: SignedMantleTx): seq[byte] {.raises: [BincodeError].} =
-  let res = encodeSignedMantleTx(tx)
-  if res.isErr:
-    raise newException(BincodeError, "SignedMantleTx encoding failed: " & $res.error)
-  res.get
-
-func bincodeDecodeSignedMantleTx(data: openArray[byte]): SignedMantleTx {.raises: [BincodeError].} =
-  let res = decodeSignedMantleTx(data)
-  if res.isErr:
-    raise newException(BincodeError, "SignedMantleTx decoding failed: " & $res.error)
-  res.get
-
-deriveBincodeCustom(
-  SignedMantleTx, bincodeEncodeSignedMantleTx, bincodeDecodeSignedMantleTx, BincodeError
-)
 
 {.pop.}

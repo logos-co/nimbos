@@ -93,54 +93,79 @@ proc checkSignedMantleTxEqual(a, b: SignedMantleTx) =
     checkOpEqual(a.tx.ops[i], b.tx.ops[i])
     checkOpProofEqual(a.opProofs[i], b.opProofs[i])
 
-func signedTxWithAllOps(): SignedMantleTx =
+proc checkHashedSignedMantleTxEqual(a, b: HashedSignedMantleTx) =
+  check a.hash == b.hash
+  checkSignedMantleTxEqual(a.signedTx, b.signedTx)
+
+func hashedTxWithAllOps(): HashedSignedMantleTx =
   var ops: seq[Op]
   var proofs: seq[OpProof]
   for opcode in allOpcodes:
     ops.add defaultOpForOpcode(opcode).get
     proofs.add defaultOpProofForOpcode(opcode).get
-  SignedMantleTx(
-    tx: MantleTx(ops: ops),
-    opProofs: proofs,
-  )
+  mkHashedTx(ops, proofs)
 
-proc checkSignedMantleTxRoundtrip(signed: SignedMantleTx) {.raises: [BincodeError].} =
+proc checkHashedSignedMantleTxRoundtrip(htx: HashedSignedMantleTx) {.raises: [BincodeError].} =
   let
-    wire = encode(signed)
-    back = decode(wire, SignedMantleTx)
-  checkSignedMantleTxEqual(signed, back)
+    wire = encode(htx)
+    back = decode(wire, HashedSignedMantleTx)
+  checkHashedSignedMantleTxEqual(htx, back)
 
 suite "core/mantle/tx_bincode":
   test "encode roundtrips decode (empty tx)":
-    let signed = SignedMantleTx(
-      tx: MantleTx(ops: @[]),
-      opProofs: @[],
-    )
-    checkSignedMantleTxRoundtrip(signed)
+    checkHashedSignedMantleTxRoundtrip(minimalHashedSignedTx())
 
   test "encode roundtrips decode (all op kinds)":
-    checkSignedMantleTxRoundtrip(signedTxWithAllOps())
+    checkHashedSignedMantleTxRoundtrip(hashedTxWithAllOps())
 
   test "decodeAt reads one prefixed tx inside a longer buffer":
-    let signed = signedTxWithAllOps()
+    let htx = hashedTxWithAllOps()
     try:
-      let wire = encode(signed)
+      let wire = encode(htx)
       var buf = wire
       buf.add @[0xFF'u8]
-      let (back, used) = decodeAt(buf, SignedMantleTx, standard())
+      let (back, used) = decodeAt(buf, HashedSignedMantleTx, standard())
       check used == wire.len
-      checkSignedMantleTxEqual(signed, back)
+      checkHashedSignedMantleTxEqual(htx, back)
     except BincodeError:
       fail getCurrentExceptionMsg()
 
   test "encode raises BincodeError on invalid tx structure":
-    let badSigned = SignedMantleTx(
-      tx: MantleTx(ops: @[
-        createTransferOp(TransferPayload(inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @[])))
-      ]),
-      opProofs: @[] # Mismatch
-    )
+    let badHtx = mkTransferTx([], [], opProofs = @[]) # Mismatch
     expect BincodeError:
-      discard encode(badSigned)
+      discard encode(badHtx)
+
+  test "bincodeDecodeHashedSignedMantleTx invariant hash == mantleTxHash for all op kinds individually":
+    for opcode in allOpcodes:
+      let
+        op = defaultOpForOpcode(opcode).get
+        proof = defaultOpProofForOpcode(opcode).get
+        htx = mkHashedTx(@[op], @[proof])
+        wire = encode(htx)
+        back = decode(wire, HashedSignedMantleTx)
+      check back.hash == mantleTxHash(back.signedTx.tx).get
+      checkHashedSignedMantleTxEqual(htx, back)
+
+  test "decode rejects truncated or malformed HashedSignedMantleTx wire":
+    let wire = encode(hashedTxWithAllOps())
+    for cut in [1, 5, 10, wire.len div 2, wire.len - 1]:
+      expect BincodeError:
+        discard decode(wire[0 ..< cut], HashedSignedMantleTx)
+    var corrupted = wire
+    corrupted[0] = 0xFF'u8
+    expect BincodeError:
+      discard decode(corrupted, HashedSignedMantleTx)
+
+  test "decode rejects HashedSignedMantleTx with ops but no proofs (gossip path)":
+    let
+      tx = MantleTx(ops: @[
+        createTransferOp(TransferPayload(inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @[])))
+      ])
+      wireNoProofs = encodeMantleTx(tx).get
+      bincodeWire = encode(wireNoProofs)
+    expect BincodeError:
+      discard bincodeDecodeHashedSignedMantleTx(wireNoProofs)
+    expect BincodeError:
+      discard decode(bincodeWire, HashedSignedMantleTx)
 
 {.pop.}

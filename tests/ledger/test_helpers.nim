@@ -19,6 +19,9 @@ import
   ../../logos_chain/zk/poseidon2/hasher
 
 from ../../logos_chain/core/crypto/types import ZkPublicKey
+from ../../logos_chain/ledger/ledger import fromGenesis, LedgerState
+from ./sdp/test_helpers import testSdpRegistry
+from ../testutil import testValidGenesisTx
 
 const
   testSchedule* = EpochSchedule(
@@ -72,5 +75,18 @@ proc twoOfTwo*(kp1, kp2: EdKeyPair, txHash: Hash32): ChannelMultiSigProof =
     signatures: @[sign(kp1.seckey, txHash), sign(kp2.seckey, txHash)],
     indexes: @[ChannelKeyIndex(0), ChannelKeyIndex(1)],
   )
+
+var defaultGenesisLedgerStateCache: LedgerState
+var hasDefaultGenesisLedgerStateCache = false
+
+proc testGenesisLedgerState*(): LedgerState =
+  ## Cached pristine LedgerState at genesis, returned by copy (safe for local mutation).
+  {.gcsafe.}:
+    if not hasDefaultGenesisLedgerStateCache:
+      defaultGenesisLedgerStateCache = LedgerState.fromGenesis(
+        testValidGenesisTx(), default(FieldElement), testSdpRegistry(), testLedgerConfig
+      ).expect("genesis state")
+      hasDefaultGenesisLedgerStateCache = true
+    defaultGenesisLedgerStateCache
 
 {.pop.}
