@@ -16,9 +16,9 @@ import
   ../../logos_chain/core/mantle/[operations, proofs],
   ../core/mantle/test_helpers
 
-proc seedMantle(
+func seedMantle(
     cid: ChannelId, keys: openArray[Ed25519PublicKey],
-    configThreshold = ConfigurationThreshold(1),
+    configThreshold: ConfigurationThreshold,
     transferThreshold = TransferThreshold(1),
 ): MantleState =
   let seedOp = ChannelConfigPayload(

@@ -33,7 +33,7 @@ const
   SpecInscription = hexToSeqByte(
     "186c6f676f732d626c6f636b636861696e2d6d61696e6e6574030f5c69" & SpecNonceHex)
 
-proc declareOn(
+func declareOn(
     noteId: NoteId, zkId: ZkPublicKey, providerSeed: byte = 1
 ): DeclarationMessage =
   DeclarationMessage(

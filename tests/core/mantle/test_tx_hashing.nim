@@ -16,7 +16,7 @@ import
   ./test_helpers,
   ../../../logos_chain/core/mantle/[tx_hashing, tx_types, utxo]
 
-proc mkProvider(seed: byte): ProviderId =
+func mkProvider(seed: byte): ProviderId =
   var bytes: array[EdPublicKeySize, byte]
   bytes[0] = seed
   var key: ProviderId

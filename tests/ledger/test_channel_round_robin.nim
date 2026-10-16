@@ -13,7 +13,7 @@ import
   ../../logos_chain/ledger/channel_state,
   ../../logos_chain/core/mantle/primitives
 
-proc mkChan(
+func mkChan(
     tipSlot: uint64,
     tipSequencer: uint16,
     tipSequencerStartingSlot: uint64,

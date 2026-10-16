@@ -156,7 +156,7 @@ func peerAddr*(node: LBP2PNode): PeerAddr =
     addrs: node.switch.peerInfo.addrs,
   )
 
-proc alwaysAllowPeer*(_: PeerAddr): bool {.gcsafe, raises: [].} = true
+func alwaysAllowPeer*(_: PeerAddr): bool {.gcsafe, raises: [].} = true
 
 proc startQuicTestSwitch*(
     keys: KeyPair = getRandomNetKeys(),
@@ -234,7 +234,7 @@ let testTxKeyPair* = block:
   rngRef[] = HmacDrbgContext.init([8'u8])
   EdKeyPair.random(newBearSslRng(rngRef))
 
-proc signedTxWithOps*(opsCount: int = 1, txIndex: int = 1): SignedMantleTx =
+proc signedTxWithOps*(opsCount: int, txIndex: int): SignedMantleTx =
   var
     ops: seq[Op]
     proofs: seq[OpProof]

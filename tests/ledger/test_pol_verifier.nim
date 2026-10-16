@@ -29,7 +29,7 @@ const
 # Fr → 32 LE bytes; (leaderPk1, leaderPk2) Fr halves → 16 bytes each → 32-byte
 # Ed25519 raw key. libp2p `EdPublicKey.init` is length-only (no curve
 # validation), so synthetic key bytes are accepted.
-proc reconstructPol(
+func reconstructPol(
     proofBytes: array[ProofBytesLen, byte],
     inputs: seq[FieldElement],
 ): ProofOfLeadership =
@@ -49,7 +49,7 @@ proc reconstructPol(
     leaderVoucher: default(RewardVoucher),
   )
 
-proc reconstructLeaderPublic(inputs: seq[FieldElement]): LeaderPublic =
+func reconstructLeaderPublic(inputs: seq[FieldElement]): LeaderPublic =
   doAssert inputs.len == 9
   LeaderPublic(
     slot: fixtureSlot,

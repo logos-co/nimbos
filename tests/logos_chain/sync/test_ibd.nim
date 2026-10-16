@@ -30,7 +30,7 @@ proc runLbp2pIbdSyncTest(extraBlocks: int) {.async.} =
     chainClient = initTestChain(genesis)
     peers = await createBootstrapPeers()
     waitAttempts = 150 + extraBlocks * 5
-  discard mountTestServer(peers.listener.switch, chainBootstrap)
+  mountTestServer(peers.listener.switch, chainBootstrap)
 
   try:
     withClientSyncerOn(peers.dialer.switch, chainClient):
@@ -257,7 +257,7 @@ suite "sync/initial_block_download (IBD requester loop)":
     let
       server1 = await startQuicTestSwitch()
       server2 = await startQuicTestSwitch()
-    discard mountTestServer(server2, serverChain2)
+    mountTestServer(server2, serverChain2)
     try:
       withClientSyncer(clientChain):
         await client.connect(server1.peerInfo.peerId, server1.peerInfo.addrs, forceDial = true)

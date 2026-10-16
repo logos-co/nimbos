@@ -149,7 +149,7 @@ proc validatePolAndStatelessTransactions*(
 
   ok((validBlk: ValidBlock(Block(blk)), headerState: afterHeader))
 
-proc validateBlockHeaderAndTopology*(
+func validateBlockHeaderAndTopology*(
     blk: Block,
     localTree: LocalTree,
     ledger: Ledger[BlockId],

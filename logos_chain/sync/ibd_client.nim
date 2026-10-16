@@ -221,7 +221,7 @@ proc onBlock(
 proc downloadBlocks(
     syncer: Syncer,
     peer: PeerId,
-    targetBlock: Opt[BlockId] = Opt.none(BlockId),
+    targetBlock: Opt[BlockId],
 ): Future[bool] {.async: (raises: [CancelledError]).} =
   var latestDownloaded = Opt.none(Block)
   debug "IBD download loop start", peer,

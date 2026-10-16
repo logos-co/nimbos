@@ -159,7 +159,7 @@ proc removeBranchTxs(chain: var Chain, fromId, toId: BlockId) =
     chain.mempool.pruneBlockTxs(b)
     curr = header(b).parentBlock
 
-proc pruneStatesBeforeLib(chain: var Chain, newLibId, oldLibId: BlockId) =
+func pruneStatesBeforeLib(chain: var Chain, newLibId, oldLibId: BlockId) =
   ## Prunes canonical ledger states strictly older than the new immutable block (LIB).
   ## The state at `newLibId` is retained as the finalized base anchor.
   let newLib = chain.localTree.getBlock(newLibId).valueOr:

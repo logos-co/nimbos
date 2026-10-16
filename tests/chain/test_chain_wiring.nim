@@ -29,7 +29,7 @@ const
   testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
   deploymentSettingsPath = testsDir / "../../config/deployment-settings.yaml"
 
-proc parseGenesis(ds: DeploymentSettings):
+func parseGenesis(ds: DeploymentSettings):
     tuple[validTx: ValidGenesisMantleTx, param: CryptarchiaParameter] =
   ## Validated genesis tx and the cryptarchia parameter it inscribes.
   let

@@ -9,8 +9,8 @@
 {.used.}
 
 import
-  std/[random, heapqueue, tables, sequtils, strutils],
-  chronos, chronos/unittest2/asynctests,
+  std/[random, heapqueue, sequtils, strutils],
+  chronos/unittest2/asynctests,
   ../../logos_chain/networking/peer_pool,
   ../testutil
 

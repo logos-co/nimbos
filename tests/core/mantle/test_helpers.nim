@@ -39,7 +39,7 @@ func mkUtxo*(
   )
 
 func mkUtxoWithPk*(
-    pk: ZkPublicKey, value: Value = 100, opIdSeed: byte = 0,
+    pk: ZkPublicKey, value: Value, opIdSeed: byte = 0,
     outputIndex: uint64 = 0,
 ): Utxo =
   ## Sibling of `mkUtxo` that takes a raw pk instead of deriving one from a
@@ -79,7 +79,7 @@ func mkTransferTx*(
 func mkProof*(): ProofOfLeadership =
   default(ProofOfLeadership)
 
-proc mkEdKeyPair*(rng: ref HmacDrbgContext): EdKeyPair =
+func mkEdKeyPair*(rng: ref HmacDrbgContext): EdKeyPair =
   ## Random Ed25519 keypair. Caller provides the rng so all keypairs minted
   ## within a single test share one source and remain reproducible-by-order.
   EdKeyPair.random(newBearSslRng(rng))

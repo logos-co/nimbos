@@ -119,7 +119,7 @@ func reqDecimalRatio*(
     root: YamlNode, path: openArray[string]): Result[NonNegativeRatio, string] =
   reqParsed(root, path, parseDecimalRatio, "decimal ratio")
 
-proc parseSlotDurationSeconds(s: string): Duration {.raises: [ValueError].} =
+func parseSlotDurationSeconds(s: string): Duration {.raises: [ValueError].} =
   ## ``time.slot_duration`` YAML scalar: seconds as a float (e.g. ``'1.0'``).
   let secs = parseFloat(s)
   nanoseconds(int64(secs * float(nanoseconds(seconds(1)))))

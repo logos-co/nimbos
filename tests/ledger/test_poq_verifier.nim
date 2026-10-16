@@ -204,7 +204,7 @@ suite "ledger/poq_verifier — end-to-end activity verification":
         proofOfQuota: fixture.proofOfQuota,
         proofOfSelection: rho)
 
-    proc rotatedWith(
+    func rotatedWith(
         chain: PoqChainContext
     ): tuple[rewards: BlendRewards, randomness: FieldElement] =
       ## Rotate epoch 0 into the target with an epoch randomness ground

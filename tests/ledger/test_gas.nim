@@ -44,7 +44,7 @@ proc mkFixtureTransferTx(input: Utxo): SignedMantleTx =
   tx.opProofs[0].transferProof = loadProof(transferProofPath)
   tx
 
-proc mkInscribeTx(
+func mkInscribeTx(
     rng: ref HmacDrbgContext, channel: ChannelId
 ): SignedMantleTx =
   ## A single ChannelInscribe op that JIT-creates `channel`; signed with a

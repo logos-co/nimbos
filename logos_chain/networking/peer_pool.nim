@@ -87,7 +87,7 @@ proc resorted[A, B](
   pool.resort(res, order)
   res
 
-proc addToStorage[A, B](pool: PeerPool[A, B], item: PeerItem[A]): PeerIndex =
+func addToStorage[A, B](pool: PeerPool[A, B], item: PeerItem[A]): PeerIndex =
   var indexedItem = item
   if len(pool.empties) > 0:
     indexedItem.index = pool.empties[0]
@@ -167,7 +167,7 @@ proc len*[A, B](pool: PeerPool[A, B]): int =
   ## includes all the peers (acquired and available).
   len(pool.registry)
 
-proc lenCurrent*[A, B](pool: PeerPool[A, B],
+func lenCurrent*[A, B](pool: PeerPool[A, B],
                        filter = {PeerType.Incoming,
                                  PeerType.Outgoing}): int =
   ## Returns number of registered peers in PeerPool ``pool`` which satisfies
@@ -175,7 +175,7 @@ proc lenCurrent*[A, B](pool: PeerPool[A, B],
   (if PeerType.Incoming in filter: pool.curIncPeersCount else: 0) +
   (if PeerType.Outgoing in filter: pool.curOutPeersCount else: 0)
 
-proc lenAvailable*[A, B](
+func lenAvailable*[A, B](
     pool: PeerPool[A, B],
     filter = {PeerType.Incoming, PeerType.Outgoing}
 ): int =
@@ -190,7 +190,7 @@ proc lenAvailable*[A, B](
    else:
      0)
 
-proc lenAvailable[A, B](
+func lenAvailable[A, B](
     pool: PeerPool[A, B],
     filter: set[PeerType],
     customFilter: PeerCustomFilterCallback[A]
@@ -213,7 +213,7 @@ proc lenAvailable[A, B](
       break
   res
 
-proc lenAcquired*[A, B](
+func lenAcquired*[A, B](
     pool: PeerPool[A, B],
     filter = {PeerType.Incoming, PeerType.Outgoing}
 ): int =
@@ -222,7 +222,7 @@ proc lenAcquired*[A, B](
   (if PeerType.Incoming in filter: pool.acqIncPeersCount else: 0) +
   (if PeerType.Outgoing in filter: pool.acqOutPeersCount else: 0)
 
-proc lenSpace*[A, B](
+func lenSpace*[A, B](
     pool: PeerPool[A, B],
     filter = {PeerType.Incoming, PeerType.Outgoing}
 ): int =
@@ -799,17 +799,17 @@ proc clearSafe*[A, B](
       acquired.add(item)
   pool.clear()
 
-proc setScoreCheck*[A, B](pool: PeerPool[A, B],
+func setScoreCheck*[A, B](pool: PeerPool[A, B],
                           scoreCheckCb: PeerScoreCheckCallback[A]) =
   ## Sets ScoreCheck callback.
   pool.scoreCheck = scoreCheckCb
 
-proc setOnDeletePeer*[A, B](pool: PeerPool[A, B],
+func setOnDeletePeer*[A, B](pool: PeerPool[A, B],
                             deletePeerCb: PeerOnDeleteCallback[A]) =
   ## Sets DeletePeer callback.
   pool.onDeletePeer = deletePeerCb
 
-proc setPeerCounter*[A, B](pool: PeerPool[A, B],
+func setPeerCounter*[A, B](pool: PeerPool[A, B],
                            peerCounterCb: PeerCounterCallback) =
   ## Sets PeerCounter callback.
   pool.peerCounter = peerCounterCb

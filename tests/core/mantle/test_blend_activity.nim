@@ -14,7 +14,7 @@ import
   ../../../logos_chain/core/crypto/types,
   ../../../logos_chain/core/mantle/blend_activity
 
-proc mkActivityProof(seed: byte = 1): ActivityProof =
+func mkActivityProof(seed: byte = 1): ActivityProof =
   var
     proof = ActivityProof(
       epoch: EpochNumber(7),

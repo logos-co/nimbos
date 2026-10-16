@@ -13,7 +13,7 @@ import
   libp2p/crypto/ed25519/ed25519,
   ./test_helpers
 
-proc mkToken(seed: byte = 1): BlendingToken =
+func mkToken(seed: byte = 1): BlendingToken =
   var
     token = BlendingToken(
       proofOfQuota: ProofOfQuota(keyNullifier: frFromBytesLE([seed]).get),

@@ -49,11 +49,10 @@ proc startTestProcessor(chain: Chain): BlockProcessor =
 
 proc mountTestServer*(
     sw: Switch, chain: Chain, protocol = testChainSyncProtocol
-): Syncer {.raises: [LPError].} =
+) {.raises: [LPError].} =
   ## Syncer that only serves. Its processor loop does not run.
   let syncer = Syncer.init(sw, BlockProcessor.new(chain), protocol)
   mountCryptarchiaSyncHandler(syncer)
-  syncer
 
 template withProcessor*(chain: Chain, body: untyped) =
   ## Running processor over `chain`, stopped after `body`.
@@ -85,7 +84,7 @@ template withClientSyncer*(clientChain: Chain, body: untyped) =
 template withSyncPair*(serverChain, clientChain: Chain, body: untyped) =
   ## A serving switch and a connected client syncer, stopped after `body`.
   let server {.inject.} = await startQuicTestSwitch()
-  discard mountTestServer(server, serverChain)
+  mountTestServer(server, serverChain)
   try:
     withClientSyncer(clientChain):
       await client.connect(server.peerInfo.peerId, server.peerInfo.addrs, forceDial = true)
@@ -129,7 +128,7 @@ proc exampleSerializedGetTipResponseTipWire*(): Opt[seq[byte]] =
     fail getCurrentExceptionMsg()
 
 proc exampleSerializedGetTipResponseFailureWire*(
-    failureUtf8: string = "example: tip unavailable",
+    failureUtf8: string,
 ): Opt[seq[byte]] =
   let resp = GetTipResponse(kind: gtrFailure, failureMessage: failureUtf8)
   try:

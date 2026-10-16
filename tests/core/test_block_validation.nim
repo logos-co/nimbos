@@ -370,7 +370,7 @@ suite "core/block_validation — multi-tier evaluation order":
       res.error.statelessError in {StatelessLedgerError.InvalidProof, StatelessLedgerError.VerifierNotInitialised}
 
   test "Tier 3: PoL verification failure rejects block before stateless tx validation":
-    proc failingPolVerifier(
+    func failingPolVerifier(
         proof: ProofOfLeadership, public: LeaderPublic
     ): Result[bool, PolLoadError] =
       ok(false)

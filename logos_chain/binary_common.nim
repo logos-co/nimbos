@@ -87,7 +87,7 @@ proc writePanicLine*(v: varargs[string, `$`]) =
     discard # Nothing to do..
 
 proc setupLogging*(
-    logLevel: string, stdoutKind: StdoutLogKind, logFile = none(OutFile)) =
+    logLevel: string, stdoutKind: StdoutLogKind, logFile: Option[OutFile]) =
   # In the cfg file for nimbus, we create two formats: textlines and json.
   # Here, we either write those logs to an output, or not, depending on the
   # given configuration.
@@ -96,7 +96,7 @@ proc setupLogging*(
   when defaultChroniclesStream.outputs.type.arity != 2:
     warn "Logging configuration options not enabled in the current build"
   else:
-    proc noOutput(logLevel: LogLevel, msg: LogOutputStr) = discard
+    func noOutput(logLevel: LogLevel, msg: LogOutputStr) = discard
     proc writeAndFlush(f: File, msg: LogOutputStr) =
       try:
         f.write(msg)
@@ -254,7 +254,7 @@ proc init*(T: type RestServerRef,
     server
 
 # TODO this was removed from elsewhere and belongs in some REST utility module
-proc validateBeaconApiQueries*(key: string, value: string): int =
+func validateBeaconApiQueries*(key: string, value: string): int =
   ## This is rough validation procedure which should be simple and fast,
   ## because it will be used for query routing.
   ## NOTE: There is currently no Logos Chain REST or wallet spec that explicitly

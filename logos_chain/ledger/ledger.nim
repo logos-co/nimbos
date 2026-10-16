@@ -122,7 +122,7 @@ proc fromGenesis*(
   s.sdp = onEpochStarted(s.sdp, genesisEpoch)
   ok(s)
 
-proc advanceEpochAndMarket*(
+func advanceEpochAndMarket*(
     state: sink LedgerState,
     slot: SlotNumber,
     cfg: LedgerConfig,
@@ -308,7 +308,7 @@ proc tryApplyTx*(
       )
   ok(balance)
 
-proc txExecutionGas*(
+func txExecutionGas*(
     tx: ValidSignedMantleTx,
 ): Result[Gas, LedgerError] =
   var total = Gas(0)
@@ -338,7 +338,7 @@ func mandatory_fees*(
       return err(GasOverflow)
   ok((totalCost: totalCost, executionGas: execGas, storageGas: storageGas))
 
-proc mandatory_fees*(
+func mandatory_fees*(
     s: LedgerState,
     tx: ValidSignedMantleTx,
 ): Result[tuple[totalCost: GasCost, executionGas, storageGas: Gas], LedgerError] =

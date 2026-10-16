@@ -363,7 +363,7 @@ func announcedAddresses*(
     addresses.add(ep)
   addresses
 
-proc networkConfig*(config: LBNodeConf): NetworkConfig =
+func networkConfig*(config: LBNodeConf): NetworkConfig =
   NetworkConfig(
     listenAddress: config.listenAddress,
     quicPort: config.quicPort,

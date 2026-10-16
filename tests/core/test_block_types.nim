@@ -15,7 +15,7 @@ import
 suite "core/types":
   const testBedrockVersion = 1'u8
 
-  proc sampleTx(op: Op): SignedMantleTx =
+  func sampleTx(op: Op): SignedMantleTx =
     SignedMantleTx(tx: MantleTx(ops: @[op]), opProofs: @[])
 
   test "initBlock accepts empty tx list":

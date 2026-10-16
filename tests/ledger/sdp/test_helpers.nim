@@ -77,7 +77,7 @@ func rejectAllPoq*(
   ## Rejecting stub for tests that assert the quota check gates the path.
   ok(false)
 
-proc findRho*(index, membership: uint64): FieldElement =
+func findRho*(index, membership: uint64): FieldElement =
   ## Smallest fe(k) whose selection index is `index`. One in `membership`
   ## candidates matches, so the bound is never reached in practice.
   for k in 1'u64 .. 10_000'u64:
@@ -101,7 +101,7 @@ proc mkActivity*(
   doAssert proof.signingKey.init(keyBytes)
   proof
 
-proc mkProvider*(seed: byte): ProviderId =
+func mkProvider*(seed: byte): ProviderId =
   var bytes: array[EdPublicKeySize, byte]
   bytes[0] = seed
   var key: ProviderId
@@ -225,7 +225,7 @@ proc execActive*(
   )
 
 proc seedDeclaration*(
-    pkSeed: byte = 1, declareEpoch: EpochNumber = 10,
+    pkSeed: byte, declareEpoch: EpochNumber,
 ): SeededDeclaration =
   let utxo = mkUtxo(value = 200, pkSeed = pkSeed)
   var store = UtxoStore.init()

@@ -23,7 +23,7 @@ import
 func initLedger(
     id: TestId,
     state: LedgerState,
-    config: LedgerConfig = LedgerConfig(),
+    config: LedgerConfig,
     leaderProofVerifier: LeaderProofVerifier = mockVerifyLeaderProof,
 ): Ledger[TestId] =
   Ledger[TestId].init(id, state, config, leaderProofVerifier)
@@ -50,7 +50,7 @@ const
   zksignFixtureVk = zksignFixtureDir / "verification_key.json"
   transferProofPath = zksignFixtureDir / "proof.json"
 
-proc mkProvider(seed: byte): ProviderId =
+func mkProvider(seed: byte): ProviderId =
   var bytes: array[EdPublicKeySize, byte]
   bytes[0] = seed
   var key: ProviderId

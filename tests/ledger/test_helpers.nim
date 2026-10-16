@@ -34,7 +34,7 @@ func fe*(n: uint64): FieldElement =
   ## Small-integer field element for test vectors.
   frFromBytesLE(n.toBytesLE).expect("8 bytes < order")
 
-proc seedChannelNotes*(
+func seedChannelNotes*(
     owners: openArray[tuple[note: Utxo, channel: ChannelId]]
 ): ChannelNotes =
   ## Registry with each note owned by its paired channel.
@@ -62,7 +62,7 @@ proc seedMantle*(
     channelNotes: seedChannelNotes(owned.mapIt((note: it, channel: cid))),
   )
 
-proc twoOfTwo*(kp1, kp2: EdKeyPair, txHash: Hash32): ChannelMultiSigProof =
+func twoOfTwo*(kp1, kp2: EdKeyPair, txHash: Hash32): ChannelMultiSigProof =
   ## 2-of-2 multisig proof over `txHash` from keys at indexes 0 and 1.
   ChannelMultiSigProof(
     signatures: @[sign(kp1.seckey, txHash), sign(kp2.seckey, txHash)],

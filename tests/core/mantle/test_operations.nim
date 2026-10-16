@@ -15,7 +15,7 @@ import
   ../../../logos_chain/core/mantle/tx_types
 
 suite "core/mantle/operations":
-  proc mkSigner(seed: byte): Signer =
+  func mkSigner(seed: byte): Signer =
     var bytes: array[EdPublicKeySize, byte]
     bytes[0] = seed
     var key: Signer

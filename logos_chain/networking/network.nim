@@ -366,7 +366,7 @@ proc connectViaConnQueue*(
   return await waitForOutboundDial(
     node, peerAddr.peerId, waitTimeout)
 
-proc dialPeer(node: LBP2PNode, peerAddr: PeerAddr, index = 0) {.async: (raises: [CancelledError]).} =
+proc dialPeer(node: LBP2PNode, peerAddr: PeerAddr, index: int) {.async: (raises: [CancelledError]).} =
   ## Establish connection with remote peer identified by address ``peerAddr``.
   logScope:
     peer = peerAddr.peerId
@@ -554,7 +554,7 @@ proc new(T: type LBP2PNode,
          switch: Switch, pubsub: GossipSub,
          announcedAddresses: openArray[MultiAddress],
          bootstrapPeers: openArray[PeerAddr],
-         mountedProtocols = MountedProtocols(),
+         mountedProtocols: MountedProtocols,
          rng: ref HmacDrbgContext): T =
   when not defined(local_testnet):
     let connectTimeout = chronos.minutes(1)
@@ -592,7 +592,7 @@ proc new(T: type LBP2PNode,
   switch.addConnEventHandler(peerHook, ConnEventKind.Connected)
   switch.addConnEventHandler(peerHook, ConnEventKind.Disconnected)
 
-  proc scoreCheck(peer: Peer): bool =
+  func scoreCheck(peer: Peer): bool =
     peer.score >= PeerScoreLowLimit
 
   proc onDeletePeer(peer: Peer) =
@@ -763,7 +763,7 @@ proc runKadDiscoveryEnqueueLoop(node: LBP2PNode) {.async: (raises: [CancelledErr
 func bootstrapPeerIds*(node: LBP2PNode): seq[PeerId] =
   node.bootstrapPeers.mapIt(it.peerId)
 
-proc connectedBootstrapPeerIds*(node: LBP2PNode): seq[PeerId] =
+func connectedBootstrapPeerIds*(node: LBP2PNode): seq[PeerId] =
   ## Returns the PeerIds of all configured bootstrap peers currently admitted
   ## to the peer pool.
   var res = newSeqOfCap[PeerId](node.bootstrapPeers.len)
@@ -924,7 +924,7 @@ func initNetKeys(privKey: PrivateKey): NetKeyPair =
   let pubKey = privKey.getPublicKey().expect("public key from a valid private key")
   NetKeyPair(seckey: privKey, pubkey: pubKey)
 
-proc getRandomNetKeys*(rng: ref HmacDrbgContext): Result[NetKeyPair, string] =
+func getRandomNetKeys*(rng: ref HmacDrbgContext): Result[NetKeyPair, string] =
   let privKey = PrivateKey.random(Ed25519, newBearSslRng(rng)).valueOr:
     return err("cannot generate random network key: " & $error)
   ok(initNetKeys(privKey))
@@ -978,7 +978,7 @@ proc newSwitch(
     seckey: PrivateKey,
     address: MultiAddress,
     rng: ref HmacDrbgContext,
-    announcedAddresses: seq[MultiAddress] = @[],
+    announcedAddresses: seq[MultiAddress],
 ): Result[Switch, string] =
   var sb = SwitchBuilder.new()
   try:

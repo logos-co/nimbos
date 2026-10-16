@@ -15,7 +15,7 @@ import
   ../../../logos_chain/core/mantle/[operations, tx_hashing]
 
 suite "core/mantle/operations — declarationId":
-  proc mkProvider(seed: byte): ProviderId =
+  func mkProvider(seed: byte): ProviderId =
     var bytes: array[EdPublicKeySize, byte]
     bytes[0] = seed
     var key: ProviderId

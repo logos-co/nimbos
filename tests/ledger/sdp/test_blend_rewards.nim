@@ -14,7 +14,7 @@ import
   libp2p/crypto/ed25519/ed25519,
   ./test_helpers
 
-proc mkSnapshot(
+func mkSnapshot(
     n: int
 ): seq[tuple[providerId: ProviderId, zkId: ZkPublicKey]] =
   ## n providers; provider i carries zk_id fe(i + 1), so the ascending
