@@ -16,9 +16,11 @@ import
   ../../../logos_chain/core/mantle/[proofs, operations]
 
 # ChannelMultiSigProof = SignatureCount *(SignerIndex Ed25519Signature),
-# Mantle Transaction Encoding 1.9.0. The spec has no vector for this
-# structure. These bytes come from an external encoder, not from this one,
-# so do not regenerate them from `encodeChannelMultiSigProof`.
+# Mantle Transaction Encoding 1.9.0:
+# https://github.com/logos-co/logos-lips/blob/master/docs/blockchain/raw/mantle-transaction-encoding.md
+# The spec has no vector for this structure. These bytes come from an
+# external encoder, not from this one, so do not regenerate them from
+# `encodeChannelMultiSigProof`.
 # Layout: count 2, then index 0 with 64 bytes of 0x01, then index 7 with
 # 64 bytes of 0x02.
 const channelMultiSigHex =
