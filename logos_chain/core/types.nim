@@ -121,14 +121,10 @@ func signHeader*(key: EdPrivateKey, header: Header): Ed25519Signature =
   ## Leader signature over the canonical header encoding.
   key.sign(encodeHeader(header))
 
-func verify_signature*(
-    header: Header, signature: Ed25519Signature,
-    leaderKey: Ed25519PublicKey): bool =
-  ## True if `signature` is the signature of `leaderKey` over the canonical
-  ## header encoding.
-  # The key is a parameter, as in Cryptarchia step 9. Each caller passes the
-  # leader key from the header that it verifies.
-  signature.verify(encodeHeader(header), leaderKey)
+func verify_signature*(header: Header, signature: Ed25519Signature): bool =
+  ## True if `signature` is the leader signature over the canonical header
+  ## encoding, under the leader key that the header commits to.
+  signature.verify(encodeHeader(header), header.proofOfLeadership.leaderKey)
 
 func encodeSignedHeader*(signed: SignedHeader): array[SignedHeaderSize, byte] =
   ## Canonical 361-byte signed header encoding.

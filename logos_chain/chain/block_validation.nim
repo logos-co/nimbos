@@ -69,7 +69,7 @@ func validateBlockHeader(blk: Block): bool =
   if root != h.bodyRoot:
     return false
 
-  if not verify_signature(h, blk.signature, h.proofOfLeadership.leaderKey):
+  if not verify_signature(h, blk.signature):
     return false
 
   true

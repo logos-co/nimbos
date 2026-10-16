@@ -292,9 +292,7 @@ suite "chain/proposal":
     check proposal.header.proofOfLeadership.leaderKey == testTxKeyPair.pubkey
     check proposal.references[0] == mantleTxHash(tx.tx).get
     check proposal.uncleHeaders.len == 0
-    check verify_signature(
-      proposal.header, proposal.signature,
-      proposal.header.proofOfLeadership.leaderKey)
+    check verify_signature(proposal.header, proposal.signature)
 
     # Reconstruct the proposal
     let reconstructedRes = reconstructBlock(proposal, m)

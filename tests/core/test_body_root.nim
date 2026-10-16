@@ -123,7 +123,23 @@ suite "core/body_root (spec vectors)":
 
   test "verify_signature checks the 297 header bytes":
     let u0 = uncle(uncle0Hex)
-    check verify_signature(
-      u0.header, u0.signature, u0.header.proofOfLeadership.leaderKey)
+    check verify_signature(u0.header, u0.signature)
+
+  test "verify_signature rejects a changed header byte":
+    var u0 = uncle(uncle0Hex)
+    u0.header.slot += 1
+    check not verify_signature(u0.header, u0.signature)
+
+  test "verify_signature rejects a header that commits to another key":
+    var u0 = uncle(uncle0Hex)
+    u0.header.proofOfLeadership.leaderKey =
+      uncle(uncle1Hex).header.proofOfLeadership.leaderKey
+    check not verify_signature(u0.header, u0.signature)
+
+  test "verify_signature rejects another leader's signature":
+    let
+      u0 = uncle(uncle0Hex)
+      u1 = uncle(uncle1Hex)
+    check not verify_signature(u0.header, u1.signature)
 
 {.pop.}
