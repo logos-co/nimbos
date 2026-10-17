@@ -27,7 +27,8 @@ the two halves concatenated.
 The VK is tied to the trusted-setup ceremony in the circuits-bundle
 release. It must match:
 
-- `lbc-*-sys` tags in `logos-blockchain/Cargo.toml`
+- `lbc-*-sys` tags in the reference workspace-root
+  [`Cargo.toml`](https://github.com/logos-blockchain/logos-blockchain/blob/4c129a88a60144df6ac08a80eee220bf962da9d8/Cargo.toml#L174-L177)
 - `ExpectedCircuitsVersion` in `logos_chain/zk/circuits.nim`
 
 Currently: **v0.5.7**. Bump all three together when the bundle moves.
