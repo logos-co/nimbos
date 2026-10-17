@@ -11,7 +11,6 @@
 {.push raises: [], gcsafe.}
 
 import
-  std/algorithm,
   bearssl/blockx,
   nimcrypto/blake2,
   stew/staticfor,
@@ -63,7 +62,7 @@ func prng*(seed: Hash32, output: var openArray[byte]) =
   # names, for the first 2^32 blocks.
   const nonce = default(array[12, byte])
   if output.len > 0:
-    output.fill(0'u8)
+    zeroMem(addr output[0], output.len)
     discard chacha20CtRun(
       addr seed, addr nonce, 0'u32,
       addr output[0], csize_t(output.len))
