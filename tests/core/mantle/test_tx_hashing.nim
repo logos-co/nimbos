@@ -50,6 +50,14 @@ suite "core/mantle/tx_hashing":
     let tx = MantleTx(ops: @[])
     check mantleTxHash(tx).get == mantleTxHash(tx).get
 
+  test "empty transaction spec vector":
+    # The spec's one-of-each-operation vector needs the tagged SDP_ACTIVE
+    # metadata encoding (Encoding 1.10.0) and lands with it.
+    let tx = MantleTx(ops: @[])
+    check encodeMantleTx(tx).get.toHex == "00"
+    check mantleTxHash(tx).get.toHex ==
+      "2eba3f667b80a508f3d44d149a1c27a90ea365a51e4fc8209289088142b364e5"
+
   test "sdp opId is deterministic and payload-sensitive":
     let utxo = mkUtxo(pkSeed = 1)
     let otherUtxo = mkUtxo(pkSeed = 2)
