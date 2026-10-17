@@ -36,7 +36,7 @@ type
   References* = array[MaxBlockTxs, Hash32]
 
   Inscription* = seq[byte]
-  Metadata* = seq[byte]
+  DepositMetadata* = seq[byte]
 
   SlotNumber* = uint64
   BlockNumber* = uint64
@@ -152,8 +152,8 @@ func encodeNonce*(value: Nonce): array[8, byte] =
   ## Nonce = UINT64
   encodeLe(value)
 
-func encodeMetadata*(value: Metadata): Result[seq[byte], EncodingError] =
-  ## Metadata = UINT32 *BYTE
+func encodeDepositMetadata*(value: DepositMetadata): Result[seq[byte], EncodingError] =
+  ## DepositMetadata = UINT32 *BYTE
   let enc = encodeU32LeLenPrefixed(value).valueOr:
     return err(EncodingError.MetadataLengthExceeded)
   ok(enc)
