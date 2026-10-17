@@ -22,7 +22,7 @@ import
   ../../logos_chain/core/mantle/[operations, tx_types, tx_hashing],
   ../../logos_chain/networking/[network, protocols],
   ../../logos_chain/chain/genesis,
-  ../../logos_chain/sync/[types, syncer, ibd_server],
+  ../../logos_chain/sync/[syncer, ibd_server],
   ../../logos_chain/node,
   ../../logos_chain/deployment/deployment_settings
 
@@ -424,6 +424,8 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
         bcastRes.error == "No peers on libp2p topic"
         not dialerNode.processor.localTree.hasBlock(id1)
     finally:
+      if dialerNode.syncer != nil:
+        await dialerNode.syncer.stop()
       pendingFut.cancelSoon()
       await dialerNode.processor.stop()
       await listenerNode.processor.stop()
@@ -471,6 +473,8 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
         waitUntil(dialerNode.processor.localTree.hasBlock(id2))
         dialerNode.processor.localTree.localTipId == id2
     finally:
+      if dialerNode.syncer != nil:
+        await dialerNode.syncer.stop()
       await dialerNode.processor.stop()
       await listenerNode.processor.stop()
       await peers.dialer.stop()

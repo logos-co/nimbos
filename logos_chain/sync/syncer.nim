@@ -12,7 +12,6 @@ import
   chronos,
   libp2p/[switch, peerid, errors],
   ../chain/block_processor,
-  ../process_state,
   ./[syncer_types, ibd_server, ibd_client, types]
 
 export syncer_types
@@ -25,13 +24,15 @@ proc runAtStartup(
     syncer: Syncer,
     onIbdComplete: OnIbdComplete,
     peerProvider: Opt[PeerProvider],
+    onIbdFailure: OnIbdFailure,
 ) {.async: (raises: [CancelledError]).} =
   try:
     mountCryptarchiaSyncHandler(syncer)
   except LPError as exc:
     fatal "Syncer start failed: failed to mount chain-sync handler",
       msg = exc.msg, protocol = syncer.chainSyncProtocol
-    ProcessState.scheduleStop("Chain-sync handler mount failure")
+    if onIbdFailure != nil:
+      onIbdFailure("Chain-sync handler mount failure: " & exc.msg)
     return
   debug "Syncer started chain-sync handler",
     protocol = syncer.chainSyncProtocol
@@ -44,16 +45,18 @@ proc runAtStartup(
   except IBDFailure as exc:
     fatal "Syncer initial block download failed: unable to catch up with any IBD peer",
       msg = exc.msg, protocol = syncer.chainSyncProtocol
-    ProcessState.scheduleStop("Initial block download failure")
+    if onIbdFailure != nil:
+      onIbdFailure("Initial block download failure: " & exc.msg)
     return
 
 proc start*(
     syncer: Syncer,
     onIbdComplete: OnIbdComplete,
+    onIbdFailure: OnIbdFailure,
     peerProvider: Opt[PeerProvider] = Opt.none(PeerProvider),
 ) =
   doAssert syncer.ibdFut == nil, "syncer already started"
-  syncer.ibdFut = syncer.runAtStartup(onIbdComplete, peerProvider)
+  syncer.ibdFut = syncer.runAtStartup(onIbdComplete, peerProvider, onIbdFailure)
 
 proc stop*(syncer: Syncer) {.async: (raises: []).} =
   ## Cancel the initial block download if it still runs.

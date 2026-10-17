@@ -280,6 +280,8 @@ proc initializeNetworking*(node: LBNode) {.async: (raises: [CancelledError]).} =
   if node.syncer != nil:
     let onIbdComplete: OnIbdComplete = proc() =
       node.subscribeBlockTopic()
+    let onIbdFailure: OnIbdFailure = proc(reason: string) =
+      ProcessState.scheduleStop(cstring(reason))
 
     if node.network.bootstrapPeerIds.len > 0:
       debug "Waiting for bootstrap peer readiness before starting syncer",
@@ -292,10 +294,11 @@ proc initializeNetworking*(node: LBNode) {.async: (raises: [CancelledError]).} =
         return
       node.syncer.start(
         onIbdComplete,
+        onIbdFailure,
         Opt.some(proc(): seq[PeerId] = node.network.connectedBootstrapPeerIds()),
       )
     else:
-      node.syncer.start(onIbdComplete)
+      node.syncer.start(onIbdComplete, onIbdFailure)
   else:
     node.subscribeBlockTopic()
 type StopFuture = Future[void].Raising([CancelledError])
