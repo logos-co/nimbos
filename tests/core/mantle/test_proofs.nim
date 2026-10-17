@@ -9,11 +9,12 @@
 {.used.}
 
 import
-  std/algorithm,
   stew/byteutils,
   unittest2,
   ../../../logos_chain/core/crypto/types,
   ../../../logos_chain/core/mantle/[proofs, operations]
+
+from std/algorithm import fill
 
 # ChannelMultiSigProof = SignatureCount *(SignerIndex Ed25519Signature),
 # Mantle Transaction Encoding 1.9.0:
