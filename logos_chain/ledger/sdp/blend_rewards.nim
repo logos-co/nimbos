@@ -111,6 +111,7 @@ func expectedSelectionIndex*(
     selectionRandomness: FieldElement, membershipSize: uint64
 ): uint64 =
   ## ``CSPRNG(H_N(rho))_8 mod N`` (spec §Proof of Selection, condition 1).
+  doAssert membershipSize > 0, "expectedSelectionIndex: empty membership"
   let seed = blake2b256Hash(
     SelectionDomainTag, encodeFieldElement(selectionRandomness))
   var stream: array[8, byte]
