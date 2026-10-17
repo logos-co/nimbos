@@ -96,7 +96,7 @@ proc childProposal(
       txs = txs,
       proofOfLeadership = proofOfLeadership,
     ).get
-    sig = testBlockKeyPair.seckey.sign(blockId(h))
+    sig = signHeader(testBlockKeyPair.seckey, h)
   var refs: References
   for i, tx in txs:
     refs[i] = mantleTxHash(tx.tx).get

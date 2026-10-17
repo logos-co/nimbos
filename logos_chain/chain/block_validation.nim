@@ -23,8 +23,8 @@ export tx_validation.StatelessLedgerError
 
 from ../core/types import
   Block, body_root, ExpectedBedrockVersion,
-  MaxBlockSize, MaxUncles, asSeq, len, header, txs, blockId, ValidBlock,
-  AdmittedBlock
+  MaxBlockSize, MaxUncles, asSeq, len, header, txs, verify_signature,
+  ValidBlock, AdmittedBlock
 from ../core/mantle/tx_types import SignedMantleTx, ValidSignedMantleTx, byteLen
 
 type
@@ -69,7 +69,7 @@ func validateBlockHeader(blk: Block): bool =
   if root != h.bodyRoot:
     return false
 
-  if not verify(blk.signature, blockId(h), h.proofOfLeadership.leaderKey):
+  if not verify_signature(h, blk.signature):
     return false
 
   true
