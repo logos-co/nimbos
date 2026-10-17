@@ -8,6 +8,7 @@
 {.push raises: [], gcsafe.}
 
 import
+  std/algorithm,
   bearssl/rand,
   libp2p/crypto/ed25519/ed25519,
   ../../../logos_chain/core/types,
@@ -104,5 +105,28 @@ proc mkActivityProof*(seed: byte = 1): ActivityProof =
   for i in 0 ..< proof.proofOfQuota.proof.len:
     proof.proofOfQuota.proof[i] = byte((i + int(seed)) mod 256)
   proof
+
+proc mkSpecActiveMessage*(): ActiveMessage =
+  ## The SDP_ACTIVE message of the spec's op_id vector.
+  var
+    declarationId: DeclarationId
+    nullifier: array[32, byte]
+    quotaProof: CompressedGroth16Proof
+    selection: array[32, byte]
+  declarationId.fill(0x1e)
+  nullifier.fill(0x02)
+  quotaProof.fill(0x02)
+  selection.fill(0x03)
+  ActiveMessage(
+    declarationId: declarationId,
+    nonce: 31,
+    metadata: ActivityProof(
+      epoch: 10,
+      signingKey: Ed25519PublicKey.init(
+        "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c").get,
+      proofOfQuota: ProofOfQuota(
+        keyNullifier: frFromBytesLE(nullifier).get,
+        proof: quotaProof),
+      proofOfSelection: frFromBytesLE(selection).get))
 
 {.pop.}

@@ -16,6 +16,20 @@ import
   ./test_helpers,
   ../../../logos_chain/core/mantle/[operations, tx_types]
 
+const SdpActiveSpecPayloadHex =
+  # Payload from the Mantle specification's "Operation Id" table.
+  "1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e" &
+  "1f00000000000000" &
+  "01" &
+  "0a000000" &
+  "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c" &
+  "0202020202020202020202020202020202020202020202020202020202020202" &
+  "0202020202020202020202020202020202020202020202020202020202020202" &
+  "0202020202020202020202020202020202020202020202020202020202020202" &
+  "0202020202020202020202020202020202020202020202020202020202020202" &
+  "0202020202020202020202020202020202020202020202020202020202020202" &
+  "0303030303030303030303030303030303030303030303030303030303030303"
+
 suite "core/mantle/operations":
   proc mkSigner(seed: byte): Signer =
     var bytes: array[EdPublicKeySize, byte]
@@ -400,6 +414,25 @@ suite "core/mantle/operations":
       let backPayload = readOpPayload(payloadWire, payloadPos, op.opcode).get
       check payloadPos == payloadWire.len
       check backPayload.kind == op.payload.kind
+
+  test "SDP_ACTIVE encodes the spec vector":
+    check encodeSdpActive(mkSpecActiveMessage()).toHex == SdpActiveSpecPayloadHex
+
+  test "readOpPayload decodes the SDP_ACTIVE spec vector":
+    let payload = hexToSeqByte(SdpActiveSpecPayloadHex)
+    var pos = 0
+    let decoded = readOpPayload(payload, pos, OpSdpActive).get
+    check pos == 269
+    check decoded.kind == SdpActive
+    check decoded.sdpActive == mkSpecActiveMessage()
+
+  test "readOpPayload rejects an unknown activity metadata type":
+    var
+      payload = hexToSeqByte(SdpActiveSpecPayloadHex)
+      pos = 0
+    payload[40] = 0x02
+    check readOpPayload(payload, pos, OpSdpActive).error ==
+      DecodingError.UnknownActivityMetadataType
 
   test "readOp returns UnsupportedOpcode on unknown opcode byte":
     var pos = 0
