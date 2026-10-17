@@ -71,7 +71,6 @@ suite "core/mantle/proofs":
         createSdpActiveOp(ActiveMessage(
           declarationId: default(DeclarationId),
           nonce: default(Nonce),
-          metadata: @[],
         )),
       ]
       proofs = @[

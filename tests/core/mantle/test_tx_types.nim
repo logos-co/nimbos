@@ -129,7 +129,7 @@ suite "core/mantle/tx_types":
           # 9. SdpActive
           txSdpActive = SignedMantleTx(
             tx: MantleTx(ops: @[createSdpActiveOp(ActiveMessage(
-              declarationId: default(DeclarationId), nonce: 42, metadata: @[7'u8, 8, 9]))]),
+              declarationId: default(DeclarationId), nonce: 42))]),
             opProofs: @[OpProof(kind: opfSdpActive, sdpActiveProof: DefaultZkSignature)])
 
           # 10. LeaderClaim

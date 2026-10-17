@@ -123,10 +123,9 @@ func opId*(op: WithdrawMessage): Hash32 =
   ## op_id = Blake2b-256("OPERATION_ID_V1" || encode_op_bytes(op))
   blake2b256Hash(OperationIdV1DomainTag, encodeSdpWithdraw(op))
 
-func opId*(op: ActiveMessage): Result[Hash32, EncodingError] =
+func opId*(op: ActiveMessage): Hash32 =
   ## op_id = Blake2b-256("OPERATION_ID_V1" || encode_op_bytes(op))
-  let encoded = ?encodeSdpActive(op)
-  ok(blake2b256Hash(OperationIdV1DomainTag, encoded))
+  blake2b256Hash(OperationIdV1DomainTag, encodeSdpActive(op))
 
 func opId*(op: ChannelInscribePayload): Result[Hash32, EncodingError] =
   let encoded = ?encodeChannelInscribe(op)

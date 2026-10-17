@@ -94,14 +94,12 @@ suite "core/mantle/tx_hashing":
     let active = ActiveMessage(
       declarationId: declarationId,
       nonce: 1'u64,
-      metadata: @[],
     )
-    check opId(active).get == opId(active).get
-    check opId(active).get != opId(ActiveMessage(
+    check opId(active) == opId(active)
+    check opId(active) != opId(ActiveMessage(
       declarationId: declarationId,
       nonce: 2'u64,
-      metadata: @[],
-    )).get
+    ))
 
   test "sdp declare opId is over wire-encoded payload, not declaration_id preimage":
     let declare = DeclarationMessage(
