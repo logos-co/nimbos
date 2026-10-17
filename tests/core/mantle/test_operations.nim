@@ -13,6 +13,7 @@ import
   stew/byteutils,
   libp2p/multiaddress,
   libp2p/crypto/ed25519/ed25519,
+  ./test_helpers,
   ../../../logos_chain/core/mantle/[operations, tx_types]
 
 suite "core/mantle/operations":
@@ -151,7 +152,7 @@ suite "core/mantle/operations":
     check createSdpActiveOp(ActiveMessage(
       declarationId: default(DeclarationId),
       nonce: default(Nonce),
-      metadata: @[],
+      metadata: mkActivityProof(),
     )).opcode == OpSdpActive
 
     check createLeaderClaimOp(LeaderClaimPayload(
@@ -360,7 +361,7 @@ suite "core/mantle/operations":
       opSdpActive = createSdpActiveOp(ActiveMessage(
         declarationId: default(DeclarationId),
         nonce: 456'u64,
-        metadata: @[7'u8, 8, 9],
+        metadata: mkActivityProof(),
       ))
       # 9. LeaderClaim
       opLeaderClaim = createLeaderClaimOp(LeaderClaimPayload(

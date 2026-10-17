@@ -10,9 +10,10 @@
 {.push raises: [], gcsafe.}
 
 import
-  ./[primitives, opcodes],
-  ../crypto/types,
-  libp2p/crypto/ed25519/ed25519
+  stew/assign2,
+  libp2p/crypto/ed25519/ed25519,
+  ./[primitives, opcodes, blend_activity],
+  ../crypto/types
 export primitives, opcodes
 
 type
@@ -55,7 +56,7 @@ type
   ActiveMessage* = object
     declarationId*: DeclarationId
     nonce*: Nonce
-    metadata*: Metadata
+    metadata*: ActivityProof
 
   LeaderClaimPayload* = object
     rewardsRoot*: RewardsRoot
@@ -221,7 +222,6 @@ func defaultOpForOpcode*(opcode: Opcode): Result[Op, EncodingError] =
     ok(createSdpActiveOp(ActiveMessage(
       declarationId: default(DeclarationId),
       nonce: default(Nonce),
-      metadata: @[],
     )))
   of OpLeaderClaim:
     ok(createLeaderClaimOp(LeaderClaimPayload(
@@ -277,13 +277,15 @@ func encodeSdpWithdraw*(value: WithdrawMessage): array[72, byte] =
   res[40 ..< 72] = encodeLockedNoteId(value.lockedNoteId)
   res
 
-func encodeSdpActive*(value: ActiveMessage): Result[seq[byte], EncodingError] =
-  ## SDPActive = DeclarationId || Nonce || Metadata
-  var res = @(encodeDeclarationId(value.declarationId))
-  res.add(encodeNonce(value.nonce))
-  let meta = ?encodeMetadata(value.metadata)
-  res.add(meta)
-  ok(res)
+const SdpActiveLen = sizeof(DeclarationId) + sizeof(Nonce) + ActivityMetadataLen
+
+func encodeSdpActive*(value: ActiveMessage): array[SdpActiveLen, byte] =
+  ## SDPActive = DeclarationId ‖ Nonce ‖ ActivityMetadata
+  var res {.noinit.}: array[SdpActiveLen, byte]
+  assign(res.toOpenArray(0, 31), encodeDeclarationId(value.declarationId))
+  assign(res.toOpenArray(32, 39), encodeNonce(value.nonce))
+  assign(res.toOpenArray(40, SdpActiveLen - 1), encodeActivityMetadata(value.metadata))
+  res
 
 func encodeLeaderClaim*(value: LeaderClaimPayload): array[96, byte] =
   ## LeaderClaim = RewardsRoot || VoucherNullifier || PublicKey
@@ -370,7 +372,7 @@ func encodeOpPayload(payload: OpPayload): Result[seq[byte], EncodingError] =
   of SdpWithdraw:
     ok(@(encodeSdpWithdraw(payload.sdpWithdraw)))
   of SdpActive:
-    encodeSdpActive(payload.sdpActive)
+    ok(@(encodeSdpActive(payload.sdpActive)))
   of LeaderClaim:
     ok(@(encodeLeaderClaim(payload.leaderClaim)))
   of ChannelConfig:
@@ -428,8 +430,7 @@ func byteLen*(payload: OpPayload): int =
   of SdpWithdraw:
     sizeof(DeclarationId) + sizeof(Nonce) + sizeof(LockedNoteId)
   of SdpActive:
-    template act: untyped = payload.sdpActive
-    sizeof(DeclarationId) + sizeof(Nonce) + sizeof(uint32) + act.metadata.len
+    SdpActiveLen
   of LeaderClaim:
     sizeof(RewardsRoot) + sizeof(VoucherNullifier) + sizeof(ZkPublicKey)
 
@@ -482,14 +483,11 @@ func readSdpWithdraw(data: openArray[byte], pos: var int): Result[WithdrawMessag
   ))
 
 func readSdpActive(data: openArray[byte], pos: var int): Result[ActiveMessage, DecodingError] =
-  let declarationId = ?readFixed[32](data, pos)
-  let nonce = ?readLe[uint64](data, pos)
-  let metadata = ?readU32LeLenPrefixed(data, pos)
-  ok(ActiveMessage(
-    declarationId: declarationId,
-    nonce: nonce,
-    metadata: metadata,
-  ))
+  let
+    declarationId = ?readFixed[32](data, pos)
+    nonce = ?readLe[uint64](data, pos)
+    metadata = ?readActivityMetadata(data, pos)
+  ok(ActiveMessage(declarationId: declarationId, nonce: nonce, metadata: metadata))
 
 func readLeaderClaim(data: openArray[byte], pos: var int): Result[LeaderClaimPayload, DecodingError] =
   let rewardsRoot = ?decodeFieldElementAt(data, pos)

@@ -153,8 +153,7 @@ func encodeNonce*(value: Nonce): array[8, byte] =
   encodeLe(value)
 
 func encodeMetadata*(value: Metadata): Result[seq[byte], EncodingError] =
-  ## Metadata = UINT32 * BYTE
-  ## Service-specific node activeness metadata.
+  ## Metadata = UINT32 *BYTE
   let enc = encodeU32LeLenPrefixed(value).valueOr:
     return err(EncodingError.MetadataLengthExceeded)
   ok(enc)

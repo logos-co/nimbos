@@ -12,7 +12,7 @@ import
   libp2p/crypto/ed25519/ed25519,
   ../../../logos_chain/core/types,
   ../../../logos_chain/core/mantle/
-    [primitives, operations, proofs, utxo],
+    [blend_activity, primitives, operations, proofs, utxo],
   ../../../logos_chain/zk/poseidon2/hasher
 
 from libp2p/crypto/rng import newBearSslRng
@@ -90,5 +90,19 @@ func mkChannelId*(seed: byte): ChannelId =
   var c: ChannelId
   c[0] = seed
   c
+
+proc mkActivityProof*(seed: byte = 1): ActivityProof =
+  var
+    proof = ActivityProof(
+      epoch: EpochNumber(7),
+      proofOfQuota: ProofOfQuota(
+        keyNullifier: frFromBytesLE([seed]).get),
+      proofOfSelection: frFromBytesLE([seed, 2'u8]).get)
+    keyBytes: array[32, byte]
+  keyBytes[0] = seed
+  doAssert proof.signingKey.init(keyBytes)
+  for i in 0 ..< proof.proofOfQuota.proof.len:
+    proof.proofOfQuota.proof[i] = byte((i + int(seed)) mod 256)
+  proof
 
 {.pop.}

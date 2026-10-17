@@ -56,6 +56,7 @@ type
     InvalidProviderId
     InvalidSigner
     UnsupportedOpcode
+    UnknownActivityMetadataType
     MultiSigIndicesNonIncreasing
     ProofCountMismatch
     MissingProofs

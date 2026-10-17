@@ -14,7 +14,7 @@ import
   results,
   ./util,
   ../[registry, state],
-  ../../../core/mantle/[blend_activity, operations, proofs]
+  ../../../core/mantle/[operations, proofs]
 
 export util, registry, state
 
@@ -55,10 +55,8 @@ proc tryApplySdpActive*(
     return err(MissingServiceParameters)
   case declaration.service
   of ServiceType.bn:
-    let activityProof = decodeActivityMetadata(active.metadata).valueOr:
-      return err(MalformedActivityMetadata)
     registry.blendRewards = ?recordActivity(
-      registry.blendRewards, activityProof, declaration.providerId, verifyPoq)
+      registry.blendRewards, active.metadata, declaration.providerId, verifyPoq)
 
   var updated = declaration
   updated.nonce = active.nonce
