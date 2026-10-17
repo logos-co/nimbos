@@ -269,7 +269,6 @@ suite "chain/proposal":
     check:
       count == 0
       # Cryptographically invalid transaction is permanently evicted from mempool
-      txHash notin m.txs
       txHash notin m
       m.len == 0
 
