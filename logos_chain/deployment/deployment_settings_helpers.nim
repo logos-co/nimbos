@@ -19,6 +19,7 @@ import
   ../core/[types, mantle/tx_types],
   ../zk/poseidon2/hasher
 
+from ../core/mantle/tx_structural_validation import validateGenesisTxStateless
 from ../core/utils import NonNegativeRatio
 
 export genesis, chronos, NonNegativeRatio
@@ -608,11 +609,13 @@ func parseDeploymentGenesisState*(root: YamlNode): Result[GenesisState, string] 
     "cryptarchia.genesis_block.transactions[0].mantle_tx.ops",
     "cryptarchia.genesis_block.transactions[0].ops_proofs",
   )
+  let validTx = validateGenesisTxStateless(smt).valueOr:
+    return err("deployment-settings: invalid genesis transaction: " & $error)
   let faucetNode = yamlGetPathNode(root, ["cryptarchia", "faucet_pk"]).valueOr:
     return err("deployment-settings: missing cryptarchia.faucet_pk")
   let faucetPk = ? parseFieldElementNode(faucetNode, "cryptarchia.faucet_pk")
   ok(GenesisState(
-    signedMantleTx: smt,
+    signedMantleTx: validTx,
     faucetZkPublicKey: faucetPk,
     header: signedHeader,
     blockSignature: blockSig,

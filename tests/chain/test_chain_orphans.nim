@@ -22,7 +22,7 @@ proc setupChain(
     securityParam: uint64 = 10'u64,
 ): tuple[chain: Chain, genesis: Block, gid: BlockId] =
   let
-    genesis = createGenesisBlock(SignedMantleTx(testGenesisTx())).get
+    genesis = createGenesisBlock(testGenesisTx()).get
     gid = blockId(genesis.header)
   var c = initTestChain(genesis, securityParam = securityParam)
   c.slotConfig.genesisTime = uint64(getTime().toUnix() - 500)

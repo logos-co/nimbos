@@ -273,6 +273,14 @@ func validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
   need(ds.mempool.pubsubTopic.startsWith("/"), "mempool.pubsub_topic must start with '/'")
   need(ds.cryptarchia.gossipsubProtocol.startsWith("/"), "cryptarchia.gossipsub_protocol must start with '/'")
 
+  let expectedHeader = createGenesisHeader(
+      ds.cryptarchia.genesisState.signedMantleTx).valueOr:
+    return err("cryptarchia: genesis header creation failed: " & $error)
+  need(
+    ds.cryptarchia.genesisState.header == expectedHeader,
+    "cryptarchia: genesis_block.header does not match header derived from genesis mantle_tx"
+  )
+
   ok()
 
 proc loadDeploymentSettings*(deploymentSettingsFile: InputFile): Result[DeploymentSettings, string] =

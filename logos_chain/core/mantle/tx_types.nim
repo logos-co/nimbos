@@ -39,6 +39,7 @@ template tx*(t: ValidSignedMantleTx): untyped = SignedMantleTx(t).tx
 template opProofs*(t: ValidSignedMantleTx): untyped = SignedMantleTx(t).opProofs
 
 template tx*(t: ValidGenesisMantleTx): untyped = SignedMantleTx(t).tx
+template opProofs*(t: ValidGenesisMantleTx): untyped = SignedMantleTx(t).opProofs
 
 func encodeMantleTx*(tx: MantleTx): Result[seq[byte], EncodingError] =
   ## MantleTx = OpCount (u8) || *Op

@@ -23,7 +23,6 @@ import
   libp2p/crypto/ed25519/ed25519,
   ../testutil,
   ../../logos_chain/chain/[chain, proposal],
-  ../../logos_chain/core/mantle/tx_validation,
   ../../logos_chain/deployment/deployment_settings,
   ../../logos_chain/ledger/poq_verifier,
   ../../logos_chain/zk/poseidon2/hasher
@@ -36,8 +35,7 @@ proc parseGenesis(ds: DeploymentSettings):
     tuple[validTx: ValidGenesisMantleTx, param: CryptarchiaParameter] =
   ## Validated genesis tx and the cryptarchia parameter it inscribes.
   let
-    validTx = validateGenesisTxStateless(
-      ds.cryptarchia.genesisState.signedMantleTx).expect("valid genesis tx")
+    validTx = ds.cryptarchia.genesisState.signedMantleTx
     param = cryptarchiaParameter(validTx).expect("valid cryptarchia parameter")
   (validTx, param)
 

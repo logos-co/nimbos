@@ -250,7 +250,7 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
     const topic = "/logos-blockchain/mempool/1.0.0"
     let
       peers = await createBootstrapPeers()
-      genesis = createGenesisBlock(SignedMantleTx(testGenesisTx())).get
+      genesis = createGenesisBlock(testGenesisTx()).get
       listenerNode = initTestLBNode(peers.listener, genesis, mempoolTopic = topic)
       dialerNode = initTestLBNode(peers.dialer, genesis, mempoolTopic = topic)
     try:
@@ -313,7 +313,7 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
     const topic = "/logos-blockchain/cryptarchia/1.0.0"
     let peers = await createBootstrapPeers()
     let
-      genesis = createGenesisBlock(SignedMantleTx(testGenesisTx())).get
+      genesis = createGenesisBlock(testGenesisTx()).get
       listenerNode = initTestLBNode(peers.listener, genesis, proposalTopic = topic)
       dialerNode = initTestLBNode(peers.dialer, genesis, proposalTopic = topic)
     try:

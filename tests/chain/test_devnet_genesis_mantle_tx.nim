@@ -78,7 +78,7 @@ suite "devnet genesis mantle_tx body root":
       gstate = ds.cryptarchia.genesisState
       smtFromDeployment = gstate.signedMantleTx
     check mantleTxHash(smt.tx).get == mantleTxHash(smtFromDeployment.tx).get
-    check txRoot == merkle_root([smtFromDeployment]).get
+    check txRoot == merkle_root([SignedMantleTx(smtFromDeployment)]).get
     check txRoot == mantleTxHash(smt.tx).get
     check toHex(txRoot) == expectedDevnetMantleTxHash
     check toHex(bodyRoot) == expectedDevnetGenesisBodyRoot
