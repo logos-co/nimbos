@@ -70,7 +70,6 @@ suite "core/types":
         createSdpActiveOp(ActiveMessage(
           declarationId: default(DeclarationId),
           nonce: 1'u64,
-          metadata: @[],
         )),
       )
       hA = mantleTxHash(txA.tx).get
@@ -103,7 +102,6 @@ suite "core/types":
         createSdpActiveOp(ActiveMessage(
           declarationId: default(DeclarationId),
           nonce: 2'u64,
-          metadata: @[],
         )),
       )
       txC = sampleTx(
@@ -146,7 +144,7 @@ suite "core/types":
   test "merkle_root directly accepts list of hashes":
     let
       txA = sampleTx(createTransferOp(TransferPayload(inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @[]))))
-      txB = sampleTx(createSdpActiveOp(ActiveMessage(declarationId: default(DeclarationId), nonce: 1'u64, metadata: @[])))
+      txB = sampleTx(createSdpActiveOp(ActiveMessage(declarationId: default(DeclarationId), nonce: 1'u64)))
       hA = mantleTxHash(txA.tx).get
       hB = mantleTxHash(txB.tx).get
       hashes = [hA, hB]
