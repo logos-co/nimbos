@@ -15,7 +15,7 @@ import
 
 export results
 
-func uniqueTmpDir*(tag: string): string =
+proc uniqueTmpDir*(tag: string): string =
   ## Per-test unique directory under the system temp dir. Never removed;
   ## skipping teardown keeps test bodies focused on the assertion.
   getTempDir() / ("nimbos_" & tag & "_" & $getMonoTime().ticks)
