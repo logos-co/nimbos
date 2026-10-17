@@ -8,11 +8,12 @@
 {.push raises: [], gcsafe.}
 
 import
+  std/algorithm,
   bearssl/rand,
   libp2p/crypto/ed25519/ed25519,
   ../../../logos_chain/core/types,
   ../../../logos_chain/core/mantle/
-    [primitives, operations, proofs, utxo],
+    [blend_activity, primitives, operations, proofs, utxo],
   ../../../logos_chain/zk/poseidon2/hasher
 
 from libp2p/crypto/rng import newBearSslRng
@@ -90,5 +91,42 @@ func mkChannelId*(seed: byte): ChannelId =
   var c: ChannelId
   c[0] = seed
   c
+
+proc mkActivityProof*(seed: byte = 1): ActivityProof =
+  var
+    proof = ActivityProof(
+      epoch: EpochNumber(7),
+      proofOfQuota: ProofOfQuota(
+        keyNullifier: frFromBytesLE([seed]).get),
+      proofOfSelection: frFromBytesLE([seed, 2'u8]).get)
+    keyBytes: array[32, byte]
+  keyBytes[0] = seed
+  doAssert proof.signingKey.init(keyBytes)
+  for i in 0 ..< proof.proofOfQuota.proof.len:
+    proof.proofOfQuota.proof[i] = byte((i + int(seed)) mod 256)
+  proof
+
+proc mkSpecActiveMessage*(): ActiveMessage =
+  ## The SDP_ACTIVE message of the spec's op_id vector.
+  var
+    declarationId: DeclarationId
+    nullifier: array[32, byte]
+    quotaProof: CompressedGroth16Proof
+    selection: array[32, byte]
+  declarationId.fill(0x1e)
+  nullifier.fill(0x02)
+  quotaProof.fill(0x02)
+  selection.fill(0x03)
+  ActiveMessage(
+    declarationId: declarationId,
+    nonce: 31,
+    metadata: ActivityProof(
+      epoch: 10,
+      signingKey: Ed25519PublicKey.init(
+        "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c").get,
+      proofOfQuota: ProofOfQuota(
+        keyNullifier: frFromBytesLE(nullifier).get,
+        proof: quotaProof),
+      proofOfSelection: frFromBytesLE(selection).get))
 
 {.pop.}

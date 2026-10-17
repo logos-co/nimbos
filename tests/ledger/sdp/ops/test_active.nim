@@ -61,7 +61,7 @@ proc mkTargetActivity(target: BlendTarget, nonce: Nonce = 1): ActiveMessage =
   ActiveMessage(
     declarationId: target.declId,
     nonce: nonce,
-    metadata: encodeActivityMetadata(mkActivity(findRho(index, 2), 0, 3)))
+    metadata: mkActivity(findRho(index, 2), 0, 3))
 
 suite "ledger/sdp/ops/active":
   test "tryApplySdpActive rejects unknown declaration and bad nonce":
@@ -69,18 +69,16 @@ suite "ledger/sdp/ops/active":
     var unknown = ActiveMessage(
       declarationId: seeded.declId,
       nonce: 1,
-      metadata: @[],
     )
     unknown.declarationId[0] = byte(77)
     var seededCopy = seeded
-    check execActive(seededCopy, unknown, 15).isErr
+    check execActive(seededCopy, unknown, 15).error == DeclarationNotFound
 
     let stale = ActiveMessage(
       declarationId: seeded.declId,
       nonce: 0,
-      metadata: @[],
     )
-    check execActive(seeded, stale, 15).isErr
+    check execActive(seeded, stale, 15).error == InvalidNonce
 
   test "tryApplySdpActive accepts declaration with withdraw intent":
     var seeded = seedDeclaration(pkSeed = 22, declareEpoch = 10)
@@ -93,7 +91,6 @@ suite "ledger/sdp/ops/active":
     let active = ActiveMessage(
       declarationId: seeded.declId,
       nonce: 2,
-      metadata: @[],
     )
     installTestActive(seeded.registry, active, 15)
     let info = getDeclaration(seeded.registry.state, seeded.declId).get()
@@ -104,7 +101,6 @@ suite "ledger/sdp/ops/active":
     let active = ActiveMessage(
       declarationId: seeded.declId,
       nonce: 1,
-      metadata: @[],
     )
     installTestActive(seeded.registry, active, 25)
     let info = getDeclaration(seeded.registry.state, seeded.declId).get()
@@ -131,12 +127,5 @@ suite "ledger/sdp/ops/active — blend activity":
     check tryApplySdpActive(
       target.registry, mkTargetActivity(target), fixtureProof,
       fixtureTxHash, 1, rejectAllPoq).error == InvalidTxProof
-
-  test "metadata that is not a blend activity proof is rejected":
-    let active = ActiveMessage(
-      declarationId: target.declId, nonce: 1, metadata: @[byte 1, 2, 3])
-    check tryApplySdpActive(
-      target.registry, active, fixtureProof, fixtureTxHash, 1, acceptAllPoq
-    ).error == MalformedActivityMetadata
 
 {.pop.}

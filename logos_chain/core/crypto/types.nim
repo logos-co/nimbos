@@ -54,6 +54,7 @@ type
     InvalidProviderId
     InvalidSigner
     UnsupportedOpcode
+    UnknownActivityMetadataType
     MultiSigIndicesNonIncreasing
     ProofCountMismatch
     MissingProofs
@@ -107,7 +108,7 @@ func encodeByte*(value: byte): byte =
   value
 
 func encodeU32LeLenPrefixed*(data: openArray[byte]): Result[seq[byte], EncodingError] =
-  ## ``UINT32`` length (LE) then payload (Inscription, Metadata, …).
+  ## ``UINT32`` length (LE) then payload (Inscription, DepositMetadata, …).
   if data.len > int(high(uint32)):
     return err(EncodingError.LengthExceeded)
   var res = @(encodeLe(uint32(data.len)))

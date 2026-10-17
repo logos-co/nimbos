@@ -196,7 +196,7 @@ suite "ledger/sdp/registry — active blend providers":
   test "a provider drops out once the inactivity period lapses":
     var seeded = seedDeclaration(pkSeed = 41, declareEpoch = 1)
     installTestActive(seeded.registry, ActiveMessage(
-      declarationId: seeded.declId, nonce: 1, metadata: @[]), 1)
+      declarationId: seeded.declId, nonce: 1), 1)
     seeded.registry = onEpochStarted(seeded.registry, 2)
     seeded.registry = onEpochStarted(seeded.registry, 3)
     # Last activity in epoch 1 plus an inactivity period of 2 reaches epoch 3.

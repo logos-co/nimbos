@@ -10,9 +10,25 @@
 
 import
   unittest2,
+  stew/byteutils,
   libp2p/multiaddress,
   libp2p/crypto/ed25519/ed25519,
+  ./test_helpers,
   ../../../logos_chain/core/mantle/[operations, tx_types]
+
+const SdpActiveSpecPayloadHex =
+  # Payload from the Mantle specification's "Operation Id" table.
+  "1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e" &
+  "1f00000000000000" &
+  "01" &
+  "0a000000" &
+  "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c" &
+  "0202020202020202020202020202020202020202020202020202020202020202" &
+  "0202020202020202020202020202020202020202020202020202020202020202" &
+  "0202020202020202020202020202020202020202020202020202020202020202" &
+  "0202020202020202020202020202020202020202020202020202020202020202" &
+  "0202020202020202020202020202020202020202020202020202020202020202" &
+  "0303030303030303030303030303030303030303030303030303030303030303"
 
 suite "core/mantle/operations":
   proc mkSigner(seed: byte): Signer =
@@ -150,7 +166,7 @@ suite "core/mantle/operations":
     check createSdpActiveOp(ActiveMessage(
       declarationId: default(DeclarationId),
       nonce: default(Nonce),
-      metadata: @[],
+      metadata: mkActivityProof(),
     )).opcode == OpSdpActive
 
     check createLeaderClaimOp(LeaderClaimPayload(
@@ -262,6 +278,8 @@ suite "core/mantle/operations":
     let
       cfgPayload = ChannelConfigPayload(
         channel: default(ChannelId),
+        parent: hexToByteArray[32](
+          "0505050505050505050505050505050505050505050505050505050505050505"),
         keys: keys,
         postingTimeframe: 42'u32,
         postingTimeout: 7'u32,
@@ -269,18 +287,44 @@ suite "core/mantle/operations":
         transferThreshold: 5'u16,
       )
       wire = encodeChannelConfig(cfgPayload).get
-    check wire.len == 32 + 2 + (256 * 32) + 4 + 4 + 2 + 2
-    check wire[32] == 0'u8
-    check wire[33] == 1'u8 # KeyCount 256 as UINT16 LE
+    check wire.len == 32 + 32 + 2 + (256 * 32) + 4 + 4 + 2 + 2
+    check wire[32] == 5'u8 # Parent follows ChannelId
+    check wire[64] == 0'u8
+    check wire[65] == 1'u8 # KeyCount 256 as UINT16 LE
     var pos = 0
     let cfgBack = readOpPayload(wire, pos, OpChannelConfig).get.channelConfig
     check pos == wire.len
     check cfgBack.channel == cfgPayload.channel
+    check cfgBack.parent == cfgPayload.parent
     check cfgBack.keys.len == 256
     check cfgBack.postingTimeframe == cfgPayload.postingTimeframe
     check cfgBack.postingTimeout == cfgPayload.postingTimeout
     check cfgBack.configurationThreshold == cfgPayload.configurationThreshold
     check cfgBack.transferThreshold == cfgPayload.transferThreshold
+
+  test "readOpPayload decodes the CHANNEL_CONFIG spec vector, parent included":
+    let wire = hexToSeqByte(
+      "0707070707070707070707070707070707070707070707070707070707070707" &
+      "0000000000000000000000000000000000000000000000000000000000000000" &
+      "0200" &
+      "1398f62c6d1a457c51ba6a4b5f3dbd2f69fca93216218dc8997e416bd17d93ca" &
+      "fd1724385aa0c75b64fb78cd602fa1d991fdebf76b13c58ed702eac835e9f618" &
+      "0a000000" & "0b000000" & "0c00" & "0d00")
+    var pos = 0
+    let cfg = readOpPayload(wire, pos, OpChannelConfig).get.channelConfig
+    check pos == wire.len
+    check cfg.channel.toHex ==
+      "0707070707070707070707070707070707070707070707070707070707070707"
+    check cfg.parent == default(Hash32)
+    check cfg.keys.len == 2
+    check cfg.keys[0].getBytes.toHex ==
+      "1398f62c6d1a457c51ba6a4b5f3dbd2f69fca93216218dc8997e416bd17d93ca"
+    check cfg.keys[1].getBytes.toHex ==
+      "fd1724385aa0c75b64fb78cd602fa1d991fdebf76b13c58ed702eac835e9f618"
+    check cfg.postingTimeframe == 10
+    check cfg.postingTimeout == 11
+    check cfg.configurationThreshold == 12
+    check cfg.transferThreshold == 13
 
   test "readOp and readOpPayload roundtrip all 10 operation variants":
     let
@@ -331,7 +375,7 @@ suite "core/mantle/operations":
       opSdpActive = createSdpActiveOp(ActiveMessage(
         declarationId: default(DeclarationId),
         nonce: 456'u64,
-        metadata: @[7'u8, 8, 9],
+        metadata: mkActivityProof(),
       ))
       # 9. LeaderClaim
       opLeaderClaim = createLeaderClaimOp(LeaderClaimPayload(
@@ -370,6 +414,25 @@ suite "core/mantle/operations":
       let backPayload = readOpPayload(payloadWire, payloadPos, op.opcode).get
       check payloadPos == payloadWire.len
       check backPayload.kind == op.payload.kind
+
+  test "SDP_ACTIVE encodes the spec vector":
+    check encodeSdpActive(mkSpecActiveMessage()).toHex == SdpActiveSpecPayloadHex
+
+  test "readOpPayload decodes the SDP_ACTIVE spec vector":
+    let payload = hexToSeqByte(SdpActiveSpecPayloadHex)
+    var pos = 0
+    let decoded = readOpPayload(payload, pos, OpSdpActive).get
+    check pos == 269
+    check decoded.kind == SdpActive
+    check decoded.sdpActive == mkSpecActiveMessage()
+
+  test "readOpPayload rejects an unknown activity metadata type":
+    var
+      payload = hexToSeqByte(SdpActiveSpecPayloadHex)
+      pos = 0
+    payload[40] = 0x02
+    check readOpPayload(payload, pos, OpSdpActive).error ==
+      DecodingError.UnknownActivityMetadataType
 
   test "readOp returns UnsupportedOpcode on unknown opcode byte":
     var pos = 0

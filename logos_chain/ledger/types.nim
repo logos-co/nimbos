@@ -49,14 +49,13 @@ type
     InvalidNonce
     LockedNoteIdMismatch
     DeclarationNotInLockedNote
-    MalformedActivityMetadata ## Active metadata failed to decode
     TargetEpochNotSet ## SDP Active submitted while no target epoch is set
     InvalidEpoch ## activity proof's epoch is not the target epoch
     UnknownProvider ## activity submitter is not in the target-epoch snapshot
     HammingDistanceTooLarge ## activity token lost the Hamming lottery
     DuplicateActiveMessage ## provider already submitted for the target epoch
     ChannelNotFound ## channel op references a missing ChannelId
-    InvalidParent ## ChannelInscribe parent doesn't match the channel's tipMessage
+    InvalidParent ## Inscribe or Config parent doesn't match `tipHash` / `configTipHash`
     UnauthorizedSigner ## ChannelInscribe signer isn't the round-robin sequencer
     ThresholdUnmet ## Config/Withdraw/Transfer signature count != channel threshold
     ChannelNoteSpend ## channel note used where a channel-free note is required
