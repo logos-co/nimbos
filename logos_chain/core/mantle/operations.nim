@@ -30,7 +30,7 @@ type
   ChannelDepositPayload* = object
     channel*: ChannelId
     inputs*: Inputs
-    metadata*: Metadata
+    metadata*: DepositMetadata
 
   ChannelWithdrawPayload* = object
     channel*: ChannelId
@@ -312,11 +312,11 @@ func encodeChannelTransfer*(value: ChannelTransferPayload): Result[seq[byte], En
   ok(res)
 
 func encodeChannelDeposit*(value: ChannelDepositPayload): Result[seq[byte], EncodingError] =
-  ## ChannelDeposit = ChannelId || Inputs || Metadata
+  ## ChannelDeposit = ChannelId || Inputs || DepositMetadata
   var res = @(encodeChannelId(value.channel))
   let ins = ?encodeInputs(value.inputs)
   res.add(ins)
-  let meta = ?encodeMetadata(value.metadata)
+  let meta = ?encodeDepositMetadata(value.metadata)
   res.add(meta)
   ok(res)
 

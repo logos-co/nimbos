@@ -115,9 +115,9 @@ suite "core/mantle/primitives":
     let fr42 = slotToFr(42'u64)
     check fr42 != default(FieldElement)
 
-  test "encodeMetadata and encodeInscription roundtrip correctly":
-    let meta: Metadata = @[1'u8, 2, 3, 4]
-    let encMeta = encodeMetadata(meta).get
+  test "encodeDepositMetadata and encodeInscription roundtrip correctly":
+    let meta: DepositMetadata = @[1'u8, 2, 3, 4]
+    let encMeta = encodeDepositMetadata(meta).get
     check encMeta.len == 4 + 4 # 4-byte u32 length prefix + 4 payload bytes
     var pos = 0
     check readU32LeLenPrefixed(encMeta, pos).get == meta
