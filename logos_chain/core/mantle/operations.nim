@@ -11,7 +11,6 @@
 
 import
   ./[primitives, opcodes],
-  ../crypto/types,
   libp2p/crypto/ed25519/ed25519
 export primitives, opcodes
 
@@ -390,7 +389,7 @@ func encodeOps*(ops: openArray[Op]): Result[seq[byte], EncodingError] =
     res.add(enc)
   ok(res)
 
-func byteLen*(payload: OpPayload): int =
+func byteLen(payload: OpPayload): int =
   ## Exact wire byte length of an OpPayload without allocating buffers.
   case payload.kind
   of Transfer:
@@ -441,13 +440,15 @@ func byteLen*(ops: openArray[Op]): int =
   total
 
 func readTransfer(data: openArray[byte], pos: var int): Result[TransferPayload, DecodingError] =
-  let inputs = ?readInputs(data, pos)
-  let outputs = ?readOutputs(data, pos)
+  let
+    inputs = ?readInputs(data, pos)
+    outputs = ?readOutputs(data, pos)
   ok(TransferPayload(inputs: inputs, outputs: outputs))
 
 func readSdpDeclare(data: openArray[byte], pos: var int): Result[DeclarationMessage, DecodingError] =
-  let serviceType = ?readServiceType(data, pos)
-  let locatorCount = ?readByte(data, pos)
+  let
+    serviceType = ?readServiceType(data, pos)
+    locatorCount = ?readByte(data, pos)
   if locatorCount > MaxSdpLocators:
     return err(DecodingError.LocatorsCountExceeded)
   var locators = newSeqOfCap[Locator](locatorCount)
@@ -457,8 +458,9 @@ func readSdpDeclare(data: openArray[byte], pos: var int): Result[DeclarationMess
   let raw = ?readFixed[EdPublicKeySize](data, pos)
   if not providerKey.init(raw):
     return err(DecodingError.InvalidProviderId)
-  let zkId = ?decodeFieldElementAt(data, pos)
-  let lockedNoteId = ?decodeFieldElementAt(data, pos)
+  let
+    zkId = ?decodeFieldElementAt(data, pos)
+    lockedNoteId = ?decodeFieldElementAt(data, pos)
   ok(DeclarationMessage(
     serviceType: serviceType,
     locators: locators,
@@ -468,9 +470,10 @@ func readSdpDeclare(data: openArray[byte], pos: var int): Result[DeclarationMess
   ))
 
 func readSdpWithdraw(data: openArray[byte], pos: var int): Result[WithdrawMessage, DecodingError] =
-  let declarationId = ?readFixed[32](data, pos)
-  let nonce = ?readLe[uint64](data, pos)
-  let lockedNoteId = ?decodeFieldElementAt(data, pos)
+  let
+    declarationId = ?readFixed[32](data, pos)
+    nonce = ?readLe[uint64](data, pos)
+    lockedNoteId = ?decodeFieldElementAt(data, pos)
   ok(WithdrawMessage(
     declarationId: declarationId,
     nonce: nonce,
@@ -478,9 +481,10 @@ func readSdpWithdraw(data: openArray[byte], pos: var int): Result[WithdrawMessag
   ))
 
 func readSdpActive(data: openArray[byte], pos: var int): Result[ActiveMessage, DecodingError] =
-  let declarationId = ?readFixed[32](data, pos)
-  let nonce = ?readLe[uint64](data, pos)
-  let metadata = ?readU32LeLenPrefixed(data, pos)
+  let
+    declarationId = ?readFixed[32](data, pos)
+    nonce = ?readLe[uint64](data, pos)
+    metadata = ?readU32LeLenPrefixed(data, pos)
   ok(ActiveMessage(
     declarationId: declarationId,
     nonce: nonce,
@@ -488,9 +492,10 @@ func readSdpActive(data: openArray[byte], pos: var int): Result[ActiveMessage, D
   ))
 
 func readLeaderClaim(data: openArray[byte], pos: var int): Result[LeaderClaimPayload, DecodingError] =
-  let rewardsRoot = ?decodeFieldElementAt(data, pos)
-  let voucherNullifier = ?decodeFieldElementAt(data, pos)
-  let publicKey = ?decodeFieldElementAt(data, pos)
+  let
+    rewardsRoot = ?decodeFieldElementAt(data, pos)
+    voucherNullifier = ?decodeFieldElementAt(data, pos)
+    publicKey = ?decodeFieldElementAt(data, pos)
   ok(LeaderClaimPayload(
     rewardsRoot: rewardsRoot,
     voucherNullifier: voucherNullifier,
@@ -520,8 +525,9 @@ func readChannelDeposit(data: openArray[byte], pos: var int): Result[ChannelDepo
   ok(ChannelDepositPayload(channel: channel, inputs: inputs, metadata: metadata))
 
 func readChannelConfig(data: openArray[byte], pos: var int): Result[ChannelConfigPayload, DecodingError] =
-  let channel = ?readFixed[32](data, pos)
-  let keyCount = ?readLe[uint16](data, pos)
+  let
+    channel = ?readFixed[32](data, pos)
+    keyCount = ?readLe[uint16](data, pos)
   var keys = newSeqOfCap[Ed25519PublicKey](keyCount)
   for _ in 0 ..< int(keyCount):
     var key: Ed25519PublicKey
@@ -529,10 +535,11 @@ func readChannelConfig(data: openArray[byte], pos: var int): Result[ChannelConfi
     if not key.init(raw):
       return err(DecodingError.InvalidSigner)
     keys.add(key)
-  let postingTimeframe = PostingTimeframe(?readLe[uint32](data, pos))
-  let postingTimeout = PostingTimeout(?readLe[uint32](data, pos))
-  let configurationThreshold = ConfigurationThreshold(?readLe[uint16](data, pos))
-  let transferThreshold = TransferThreshold(?readLe[uint16](data, pos))
+  let
+    postingTimeframe = PostingTimeframe(?readLe[uint32](data, pos))
+    postingTimeout = PostingTimeout(?readLe[uint32](data, pos))
+    configurationThreshold = ConfigurationThreshold(?readLe[uint16](data, pos))
+    transferThreshold = TransferThreshold(?readLe[uint16](data, pos))
   ok(ChannelConfigPayload(
     channel: channel,
     keys: keys,
@@ -543,9 +550,10 @@ func readChannelConfig(data: openArray[byte], pos: var int): Result[ChannelConfi
   ))
 
 func readChannelInscribe(data: openArray[byte], pos: var int): Result[ChannelInscribePayload, DecodingError] =
-  let channelId = ?readFixed[32](data, pos)
-  let inscription = ?readU32LeLenPrefixed(data, pos)
-  let parent = ?readFixed[32](data, pos)
+  let
+    channelId = ?readFixed[32](data, pos)
+    inscription = ?readU32LeLenPrefixed(data, pos)
+    parent = ?readFixed[32](data, pos)
   var signerKey: Ed25519PublicKey
   let raw = ?readFixed[EdPublicKeySize](data, pos)
   if not signerKey.init(raw):
@@ -583,8 +591,9 @@ func readOpPayload*(data: openArray[byte], pos: var int, opcode: Opcode): Result
     err(DecodingError.UnsupportedOpcode)
 
 func readOp*(data: openArray[byte], pos: var int): Result[Op, DecodingError] =
-  let opcode = Opcode(?readByte(data, pos))
-  let payload = ?readOpPayload(data, pos, opcode)
+  let
+    opcode = Opcode(?readByte(data, pos))
+    payload = ?readOpPayload(data, pos, opcode)
   ok(Op(opcode: opcode, payload: payload))
 
 {.pop.}

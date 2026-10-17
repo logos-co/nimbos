@@ -11,12 +11,10 @@
 {.push raises: [], gcsafe.}
 
 import
-  results,
   libp2p/crypto/ed25519/ed25519,
   ./util,
   ../[registry, state],
   ../../[channel_notes, utxo_store],
-  ../../../core/crypto/types,
   ../../../core/mantle/[operations, proofs]
 
 export util, registry, state

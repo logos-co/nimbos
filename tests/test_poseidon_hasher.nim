@@ -11,7 +11,6 @@
 import
   unittest2,
   constantine/math/[arithmetic, io/io_bigints],
-  poseidon2/types,
   ../logos_chain/zk/poseidon2/hasher
 
 # Reference values cross-checked against logos-blockchain/zk/poseidon2/src/hasher.rs.

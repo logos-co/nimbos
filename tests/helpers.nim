@@ -8,12 +8,11 @@
 {.push raises: [], gcsafe.}
 
 import
-  std/uri,
   chronos, chronos/apps,
   presto/common
 
 type
-  ClientResponse* = object
+  ClientResponse = object
     status*: int
     data*: string
     headers*: HttpTable
@@ -59,14 +58,14 @@ proc httpClient*(
   let resp = parseResponse(headersBuf, true)
   doAssert resp.success()
 
-  let headers =
-    block:
-      var res = HttpTable.init()
-      for key, value in resp.headers(headersBuf):
-        res.add(key, value)
-      res
-
-  let clen = resp.contentLength()
+  let
+    headers =
+      block:
+        var res = HttpTable.init()
+        for key, value in resp.headers(headersBuf):
+          res.add(key, value)
+        res
+    clen = resp.contentLength()
   doAssert clen >= 0
 
   let cresp =

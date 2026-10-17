@@ -11,7 +11,6 @@
 import
   std/[os, strutils],
   unittest2,
-  results,
   libp2p/crypto/ed25519/ed25519,
   ../test_helpers,
   ../../../zk/zksign_helpers
@@ -65,14 +64,14 @@ proc mkTargetActivity(target: BlendTarget, nonce: Nonce = 1): ActiveMessage =
 
 suite "ledger/sdp/ops/active":
   test "tryApplySdpActive rejects unknown declaration and bad nonce":
-    var seeded = seedDeclaration(pkSeed = 21, declareEpoch = 10)
+    let seeded = seedDeclaration(pkSeed = 21, declareEpoch = 10)
     var unknown = ActiveMessage(
       declarationId: seeded.declId,
       nonce: 1,
       metadata: @[],
     )
     unknown.declarationId[0] = byte(77)
-    var seededCopy = seeded
+    let seededCopy = seeded
     check execActive(seededCopy, unknown, 15).isErr
 
     let stale = ActiveMessage(
@@ -108,8 +107,9 @@ suite "ledger/sdp/ops/active":
     )
     installTestActive(seeded.registry, active, 25)
     let info = getDeclaration(seeded.registry.state, seeded.declId).get()
-    check info.active == Opt.some(25'u64)
-    check info.nonce == 1'u64
+    check:
+      info.active == Opt.some(25'u64)
+      info.nonce == 1'u64
 
 suite "ledger/sdp/ops/active — blend activity":
   setup:
@@ -123,9 +123,10 @@ suite "ledger/sdp/ops/active — blend activity":
     let applied = tryApplySdpActive(
       target.registry, mkTargetActivity(target), fixtureProof,
       fixtureTxHash, 1, acceptAllPoq).expect("valid blend activity")
-    check applied.blendRewards.target.get.tracker.submitted.len == 1
-    check getDeclaration(applied.state, target.declId).get().active ==
-      Opt.some(1'u64)
+    check:
+      applied.blendRewards.target.get.tracker.submitted.len == 1
+      getDeclaration(applied.state, target.declId).get().active ==
+        Opt.some(1'u64)
 
   test "a rejected proof of quota invalidates the op":
     check tryApplySdpActive(

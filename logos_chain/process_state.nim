@@ -43,8 +43,9 @@ type ProcessState* {.pure.} = enum
   Running
   Stopping
 
-var processState: Atomic[ProcessState]
-var shutdownSource: Atomic[pointer]
+var
+  processState: Atomic[ProcessState]
+  shutdownSource: Atomic[pointer]
 
 import system/ansi_c
 
@@ -104,9 +105,6 @@ proc setupStopHandlers*(_: type ProcessState) =
   # https://learn.microsoft.com/en-us/cpp/c-runtime-library/reference/signal?view=msvc-170
   when defined(posix):
     c_signal(ansi_c.SIGTERM, controlCHandler)
-
-proc running*(_: type ProcessState): bool =
-  processState.load(moRelaxed) == ProcessState.Running
 
 proc stopping*(_: type ProcessState): Opt[cstring] =
   if processState.load(moRelaxed) == ProcessState.Stopping:

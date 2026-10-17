@@ -12,7 +12,6 @@ import
   unittest2,
   stint,
   ../../logos_chain/ledger/epoch_state,
-  ../../logos_chain/zk/groth16/utils,
   ./test_helpers
 
 const FieldModulusMinusOne =
@@ -147,9 +146,9 @@ suite "ledger/blend_difficulty — epoch timing":
     var t = genesisTracker()
     t = t.recordBlockTxs(50)
     # Jump from epoch 0 straight into epoch 3: epochs 1 and 2 close empty.
-    let advanced = t.advanceEpochs(305, fe(9), testLedgerConfig).expect(
-      "advance to epoch 3")
     let
+      advanced = t.advanceEpochs(305, fe(9), testLedgerConfig).expect(
+        "advance to epoch 3")
       d2 = compute_epoch_blend_difficulty(EpochLoad(blocks: 1, txs: 50), base)
       d3 = compute_epoch_blend_difficulty(EpochLoad(), d2)
     check:
@@ -160,8 +159,9 @@ suite "ledger/blend_difficulty — epoch timing":
       advanced.txDensity.lastClosedOrEmpty() == EpochLoad()
 
   test "trackers fork by value — counting in one leaves the other alone":
-    let t = genesisTracker()
-    let branch = t.recordBlockTxs(9)
+    let
+      t = genesisTracker()
+      branch = t.recordBlockTxs(9)
     check:
       t.txDensity.currentEpoch == EpochLoad()
       branch.txDensity.currentEpoch == EpochLoad(blocks: 1, txs: 9)

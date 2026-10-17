@@ -11,9 +11,7 @@
 import
   std/tables,
   unittest2,
-  results,
   ./test_helpers,
-  ../../../logos_chain/core/crypto/hashing,
   ../../../logos_chain/ledger/sdp/rewards
 
 suite "ledger/sdp/rewards":
@@ -34,23 +32,25 @@ suite "ledger/sdp/rewards":
     rewards[zkLarge] = 40
     rewards[zkSmall] = 30
     let minted = distributeRewards(rewards, 3, ServiceType.bn)
-    check minted.len == 2
-    check minted[0].note.zkPublicKey == zkSmall
-    check minted[0].note.value == 30
-    check minted[0].outputIndex == 0
-    check minted[1].note.zkPublicKey == zkLarge
-    check minted[1].outputIndex == 1
-    check minted[0].opId == minted[1].opId
-    check minted[0].opId == rewardOpId(ServiceType.bn, 3)
+    check:
+      minted.len == 2
+      minted[0].note.zkPublicKey == zkSmall
+      minted[0].note.value == 30
+      minted[0].outputIndex == 0
+      minted[1].note.zkPublicKey == zkLarge
+      minted[1].outputIndex == 1
+      minted[0].opId == minted[1].opId
+      minted[0].opId == rewardOpId(ServiceType.bn, 3)
 
   test "distributeRewards filters zero rewards before indexing":
     var rewards = initTable[ZkPublicKey, Value]()
     rewards[frFromBytesLE([byte 1]).get] = 0
     rewards[frFromBytesLE([byte 2]).get] = 7
     let minted = distributeRewards(rewards, 1, ServiceType.bn)
-    check minted.len == 1
-    check minted[0].outputIndex == 0
-    check minted[0].note.value == 7
+    check:
+      minted.len == 1
+      minted[0].outputIndex == 0
+      minted[0].note.value == 7
 
   test "distributeRewards over an empty map mints nothing":
     check distributeRewards(

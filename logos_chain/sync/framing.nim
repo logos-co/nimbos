@@ -11,7 +11,6 @@ import
   bincode,
   chronicles,
   chronos,
-  results,
   libp2p/stream/connection,
   stew/[assign2, endians2]
 

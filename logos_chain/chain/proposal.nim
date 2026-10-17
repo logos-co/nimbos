@@ -40,14 +40,15 @@ proc selectProposalReferences*(
   ## https://github.com/logos-co/logos-lips/blob/38916aa474164ac4acd81e62d19715e17626be17/docs/blockchain/raw/execution-market.md
   ## Enforces count (maxTxs), execution gas (MAX_EXECUTION_GAS_PER_BLOCK), and body byte size (maxBytes).
   ## Populates and returns the fixed-size References array and the selected count directly for proposal creation.
-  var refs: References
-  var count = 0
-  var workingLedger = tipLedgerState.advanceEpochAndMarket(currentSlot, cfg).valueOr:
-    tipLedgerState
-  var cumulativeExecutionGas = Gas(0)
-  var cumulativeBytes = 0
-  var consecutiveMisses = 0
-  var toEvict: seq[Hash32]
+  var
+    refs: References
+    count = 0
+    workingLedger = tipLedgerState.advanceEpochAndMarket(currentSlot, cfg).valueOr:
+      tipLedgerState
+    cumulativeExecutionGas = Gas(0)
+    cumulativeBytes = 0
+    consecutiveMisses = 0
+    toEvict: seq[Hash32]
 
   let epoch = workingLedger.epochs.activeEpoch.epoch
 
@@ -61,19 +62,18 @@ proc selectProposalReferences*(
         continue
 
       # Lazily compute and cache byteSize and execGas on first evaluation
-      let txBytes = item.byteSize.valueOr:
-        let sz = byteLen(item.tx)
-        item.byteSize = Opt.some(sz)
-        sz
-
-      let execGas = item.execGas.valueOr:
-        let eg = txExecutionGas(item.tx).valueOr:
+      let
+        txBytes = item.byteSize.valueOr:
+          let sz = byteLen(item.tx)
+          item.byteSize = Opt.some(sz)
+          sz
+        execGas = item.execGas.valueOr:
+          let eg = txExecutionGas(item.tx).valueOr:
+            continue
+          item.execGas = Opt.some(eg)
+          eg
+        nextExecutionGas = cumulativeExecutionGas.checkedAdd(execGas).valueOr:
           continue
-        item.execGas = Opt.some(eg)
-        eg
-
-      let nextExecutionGas = cumulativeExecutionGas.checkedAdd(execGas).valueOr:
-        continue
 
       if cumulativeBytes + txBytes > maxBytes or
           nextExecutionGas > MAX_EXECUTION_GAS_PER_BLOCK:
