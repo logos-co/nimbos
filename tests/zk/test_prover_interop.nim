@@ -13,7 +13,7 @@
 {.used.}
 
 import
-  std/[os, osproc],
+  std/[json, os, osproc],
   unittest2,
   chronos,
   stew/io2,
@@ -22,6 +22,13 @@ import
 
 proc vkText(c: Circuit): string =
   readText(verificationKeyPath(testCircuitsDir, c))
+
+proc vkJson(text: string): JsonNode =
+  ## Parsed form, so formatting differences do not fail a comparison.
+  try:
+    parseJson(text)
+  except JsonParsingError, IOError, OSError, ValueError:
+    raiseAssert "verification key unreadable"
 
 proc inputFor(c: Circuit): ProveInput =
   case c
@@ -101,5 +108,12 @@ suite "zk/prover — interop with the reference toolchain":
         of Circuit.Poc: poc.verify(bytes, pocVerifierInput(signals).expect("3"))
         else: zksign.verify(bytes, zksignVerifierInput(signals).expect("33"))
       check accepts(accepted)
+
+  test "committed fixture VKs equal the bundle VKs":
+    # The verifier tests read the fixture copies. A stale copy still
+    # accepts its own stale proofs.
+    for c in Circuit:
+      check vkJson(readText(fixtureDir(c) / "verification_key.json")) ==
+        vkJson(vkText(c))
 
 {.pop.}

@@ -28,8 +28,8 @@ type
   PoqVerifierInput* = object
     ## PoQ public-input vector in the circuit's IC order. Do not reorder.
     # Output first, then inputs in declaration order, not `public [...]`
-    # order. That is why `pol_ledger_aged` sits sixth. Source at v0.5.6:
-    # https://github.com/logos-blockchain/logos-blockchain-circuits/blob/07c439356435eb6a2f1f4a8daa973bd04bd0b088/blend/poq.circom
+    # order. That is why `pol_ledger_aged` sits sixth. Source at v0.5.7:
+    # https://github.com/logos-blockchain/logos-blockchain-circuits/blob/ebf7ddf5b5b625ef4ea7c803171c670beebd05ef/blend/poq.circom
     keyNullifier*: FieldElement
     coreQuota*: FieldElement
     leaderQuota*: FieldElement
