@@ -20,10 +20,10 @@ template peerProvider(peers: varargs[PeerId]): PeerProvider =
   (proc(): seq[PeerId] = @peers)
 
 proc runLbp2pIbdSyncTest(extraBlocks: int) {.async.} =
-  let genesis = createGenesisBlock(testGenesisTx()).get
-
-  var chainBootstrap = initTestChain(genesis)
-  let tipId = extendChainAfterGenesis(chainBootstrap.localTree, genesis, extraBlocks)
+  let
+    genesis = createGenesisBlock(testGenesisTx()).get
+    chainBootstrap = initTestChain(genesis)
+    tipId = extendChainAfterGenesis(chainBootstrap.localTree, genesis, extraBlocks)
   check chainBootstrap.localTree.localTipId == tipId
 
   let

@@ -11,7 +11,6 @@
 import
   unittest2,
   bearssl/rand,
-  libp2p/crypto/ed25519/ed25519,
   ../../logos_chain/ledger/[mantle_state, types],
   ../../logos_chain/core/mantle/[operations, tx_hashing],
   ../core/mantle/test_helpers

@@ -8,7 +8,7 @@
 {.push raises: [], gcsafe.}
 
 import
-  libp2p/[crypto/ed25519/ed25519, multiaddress],
+  libp2p/crypto/ed25519/ed25519,
   ../../../logos_chain/ledger/sdp/ops,
   ../../../logos_chain/core/mantle/[operations, proofs, utxo],
   ../../../logos_chain/ledger/[channel_notes, utxo_store],

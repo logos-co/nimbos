@@ -11,7 +11,6 @@
 {.push raises: [], gcsafe.}
 
 import
-  libp2p/crypto/ed25519/ed25519,
   ./util,
   ../[registry, state],
   ../../[channel_notes, utxo_store],

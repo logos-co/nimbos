@@ -12,7 +12,6 @@ import
   std/sets,
   chronos/unittest2/asynctests,
   ../testutil,
-  ../../logos_chain/conf,
   ../../logos_chain/networking/network,
   libp2p/switch
 

@@ -11,7 +11,6 @@
 import
   std/[os, strutils],
   unittest2,
-  libp2p/crypto/ed25519/ed25519,
   ../test_helpers,
   ../../../zk/zksign_helpers
 

@@ -17,7 +17,6 @@ import
   unittest2,
   ../logos_chain/conf,
   ../logos_chain/networking/network,
-  ../logos_chain/core/local_tree,
   ../logos_chain/core/mantle/[tx_validation, utxo],
   ../logos_chain/ledger/pol_verifier,
   ./core/mantle/test_helpers

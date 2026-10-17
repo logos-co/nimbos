@@ -8,8 +8,7 @@
 {.push raises: [], gcsafe.}
 
 import
-  chronos, chronos/apps,
-  presto/common
+  chronos/apps
 
 type
   ClientResponse = object

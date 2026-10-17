@@ -11,7 +11,6 @@
 import
   std/sequtils,
   unittest2,
-  libp2p/crypto/ed25519/ed25519,
   ./test_helpers
 
 func mkSnapshot(

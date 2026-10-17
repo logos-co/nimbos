@@ -18,7 +18,6 @@
 import
   std/[os, strutils, tables, times],
   stew/[byteutils, io2],
-  libp2p/crypto/ed25519/ed25519,
   ../testutil,
   ../../logos_chain/chain/[chain, proposal],
   ../../logos_chain/deployment/deployment_settings,
