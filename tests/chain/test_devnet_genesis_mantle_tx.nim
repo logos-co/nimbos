@@ -20,8 +20,7 @@ import
   ../../logos_chain/deployment/[deployment_settings, deployment_settings_helpers],
   ../../logos_chain/chain/block_validation,
   ../../logos_chain/core/[types, crypto/hashing],
-  ../../logos_chain/core/mantle/[tx_types, tx_hashing],
-  ../core/mantle/test_helpers
+  ../../logos_chain/core/mantle/[tx_types, tx_hashing]
 
 const
   testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
@@ -73,7 +72,7 @@ suite "devnet genesis mantle_tx body root":
       ds = devnetDeploymentSettings
       smtHash = mantleTxHash(smt.tx).get
       gstate = ds.cryptarchia.genesisState
-      smtFromDeployment = gstate.signedMantleTx
+      smtFromDeployment = gstate.validGenesisTx
       smtDeploymentHash = mantleTxHash(smtFromDeployment.tx).get
       txRoot = merkle_root([smtHash])
       bodyRoot = body_root([], txRoot)
@@ -87,8 +86,7 @@ suite "devnet genesis mantle_tx body root":
   test "deployment genesis block id matches devnet header preimage":
     let
       ds = devnetDeploymentSettings
-      htx = createGenesisHtx(ds.cryptarchia.genesisState.signedMantleTx).get
-      validGenesisTx = mkValidGenesisTx(htx)
+      validGenesisTx = ds.cryptarchia.genesisState.validGenesisTx
       gb = createGenesisBlock(validGenesisTx)
     check toHex(gb.header.bodyRoot) == expectedDevnetGenesisBodyRoot
     check toHex(blockId(gb.header)) == expectedDevnetGenesisBlockId

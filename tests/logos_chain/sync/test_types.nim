@@ -285,8 +285,7 @@ suite "sync/types (cryptarchia u32 length-prefixed wire fixtures 1-9)":
     let pr = parseDeploymentSettings(readFile(deploymentSettingsPath))
     require pr.isOk
     let
-      htx = createGenesisHtx(pr.get.cryptarchia.genesisState.signedMantleTx).get
-      validGenesisTx = mkValidGenesisTx(htx)
+      validGenesisTx = pr.get.cryptarchia.genesisState.validGenesisTx
       genesisFromDeployment = createGenesisBlock(validGenesisTx)
       genesisWire = try:
         encode(genesisFromDeployment, cryptarchiaSyncBincodeConfig)

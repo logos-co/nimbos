@@ -114,12 +114,7 @@ proc init*(
     poqVerifier: ProofOfQuotaVerifier = verifyProofOfQuota,
 ): Result[T, string] =
   let
-    genesisHtx = createGenesisHtx(
-      settings.cryptarchia.genesisState.signedMantleTx
-    ).valueOr:
-      return err("chain: invalid genesis transaction: " & $error)
-    validGenesisTx = validateGenesisTxStateless(genesisHtx).valueOr:
-      return err("chain: invalid genesis transaction: " & $error)
+    validGenesisTx = settings.cryptarchia.genesisState.validGenesisTx
     param = cryptarchiaParameter(validGenesisTx).valueOr:
       return err("chain: " & $error)
     genesisBlock = createGenesisBlock(validGenesisTx)

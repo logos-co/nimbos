@@ -7,13 +7,15 @@
 
 ## Mantle proof domain types.
 ## Spec: [Bedrock v1.1 — Mantle Specification v1.10.0](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md)
+## Spec: [Mantle Transaction Encoding v1.9.0](https://github.com/logos-co/logos-lips/blob/fddc2c1911626f7b1949360b8924bb6c05252bff/docs/blockchain/raw/mantle-transaction-encoding.md)
 
 {.push raises: [], gcsafe.}
 
 import
-  ./[primitives, opcodes, operations],
+  libp2p/crypto/ed25519/ed25519,
+  stew/assign2,
   ../crypto/types,
-  libp2p/crypto/ed25519/ed25519
+  ./[primitives, opcodes, operations]
 
 type
   OpProofKind* {.pure.} = enum
@@ -156,13 +158,12 @@ func encodeProofOfClaimProof(value: ProofOfClaimProof): array[128, byte] =
   ## ProofOfClaimProof = Groth16
   encodeGroth16(value)
 
-func encodeIndexedEd25519Signature(
-    signature: Ed25519Signature, index: ChannelKeyIndex
-): array[66, byte] =
-  ## IndexedEd25519Signature = Ed25519Signature || ChannelKeyIndex
+func encodeIndexedSignature(
+    index: ChannelKeyIndex, signature: Ed25519Signature): array[66, byte] =
+  ## IndexedSignature = SignerIndex Ed25519Signature
   var res: array[66, byte]
-  res[0 ..< 64] = encodeEd25519Signature(signature)
-  res[64 ..< 66] = encodeChannelKeyIndex(index)
+  assign(res.toOpenArray(0, 1), encodeChannelKeyIndex(index))
+  assign(res.toOpenArray(2, 65), encodeEd25519Signature(signature))
   res
 
 func encodeEd25519SigProof(value: Ed25519Signature): array[64, byte] =
@@ -178,14 +179,14 @@ func encodeZkAndEd25519SigsProof(
 ): array[192, byte] =
   ## ZkAndEd25519SigsProof = ZkSignature || Ed25519Signature
   var res: array[192, byte]
-  res[0 ..< 128] = encodeZkSignature(zkSig)
-  res[128 ..< 192] = encodeEd25519Signature(ed25519Sig)
+  assign(res.toOpenArray(0, 127), encodeZkSignature(zkSig))
+  assign(res.toOpenArray(128, 191), encodeEd25519Signature(ed25519Sig))
   res
 
 func encodeChannelMultiSigProof*(
   signatures: openArray[Ed25519Signature], indexes: openArray[ChannelKeyIndex]
 ): Result[seq[byte], EncodingError] =
-  ## ChannelMultiSigProof = SignatureCount * IndexedEd25519Signature
+  ## ChannelMultiSigProof = SignatureCount *IndexedSignature
   if signatures.len != indexes.len:
     return err(EncodingError.MultiSigSignaturesMismatch)
   if signatures.len > int(high(uint16)):
@@ -194,13 +195,10 @@ func encodeChannelMultiSigProof*(
     if uint16(indexes[i - 1]) >= uint16(indexes[i]):
       return err(EncodingError.MultiSigIndicesNonIncreasing)
 
-  var res: seq[byte]
-  let countBytes = encodeSignatureCount(SignatureCount(uint16(signatures.len)))
-  res.add(countBytes[0])
-  res.add(countBytes[1])
+  var res = newSeqOfCap[byte](2 + 66 * signatures.len)
+  res.add(encodeSignatureCount(SignatureCount(signatures.len)))
   for i in 0 ..< signatures.len:
-    let indexedSig = encodeIndexedEd25519Signature(signatures[i], indexes[i])
-    res.add(indexedSig)
+    res.add(encodeIndexedSignature(indexes[i], signatures[i]))
   ok(res)
 
 func encodeOpProof*(proof: OpProof): Result[seq[byte], EncodingError] =
@@ -211,10 +209,9 @@ func encodeOpProof*(proof: OpProof): Result[seq[byte], EncodingError] =
   ##   ChannelMultiSigProof /
   ##   ProofOfClaimProof
   ##
-  ## Additional local variants:
+  ## Op kinds that share a proof type:
   ## - opfChannelDeposit: ZkSigProof
-  ## - opfChannelTransfer, opfChannelConfig: encoded as
-  ##   SignatureCount * IndexedEd25519Signature
+  ## - opfChannelTransfer, opfChannelConfig: ChannelMultiSigProof
   case proof.kind
   of opfChannelInscribe:
     ok(@(encodeEd25519SigProof(proof.ed25519SigProof)))
@@ -280,19 +277,22 @@ func readEd25519Signature(data: openArray[byte], pos: var int): Result[Ed25519Si
     return err(DecodingError.InvalidSignature)
   ok(sig)
 
-func readIndexedEd25519Signature(data: openArray[byte], pos: var int): Result[(Ed25519Signature, ChannelKeyIndex), DecodingError] =
-  let signature = ?readEd25519Signature(data, pos)
-  let index = ChannelKeyIndex(?readLe[uint16](data, pos))
-  ok((signature, index))
+func readIndexedSignature(
+    data: openArray[byte], pos: var int
+): Result[(ChannelKeyIndex, Ed25519Signature), DecodingError] =
+  let
+    index = ?readLe[ChannelKeyIndex](data, pos)
+    signature = ?readEd25519Signature(data, pos)
+  ok((index, signature))
 
 func readChannelMultiSigProof(data: openArray[byte], pos: var int): Result[ChannelMultiSigProof, DecodingError] =
-  let count = SignatureCount(?readLe[uint16](data, pos))
+  let count = ?readLe[SignatureCount](data, pos)
   var signatures = newSeqOfCap[Ed25519Signature](count)
   var indexes = newSeqOfCap[ChannelKeyIndex](count)
   var prevIndex = ChannelKeyIndex(0)
   var havePrev = false
   for _ in 0 ..< int(count):
-    let (signature, index) = ?readIndexedEd25519Signature(data, pos)
+    let (index, signature) = ?readIndexedSignature(data, pos)
     if havePrev and uint16(index) <= uint16(prevIndex):
       return err(DecodingError.MultiSigIndicesNonIncreasing)
     signatures.add signature

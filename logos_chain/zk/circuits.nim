@@ -16,7 +16,7 @@ import
 
 export results
 
-const ExpectedCircuitsVersion* = "v0.5.6"
+const ExpectedCircuitsVersion* = "v0.5.7"
   ## Pinned bundle version. A bump needs a new setup run, fresh test
   ## vectors, and a new source link in `poq.nim`.
 

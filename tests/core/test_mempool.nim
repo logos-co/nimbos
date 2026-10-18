@@ -13,7 +13,7 @@ import
   unittest2,
   minilru,
   ../../logos_chain/core/crypto/types,
-  ../../logos_chain/core/mantle/[primitives, tx_types],
+  ../../logos_chain/core/mantle/primitives,
   ../../logos_chain/core/types,
   ../../logos_chain/mempool,
   ./mantle/test_helpers,

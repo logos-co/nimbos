@@ -6,7 +6,7 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## Common cryptographic wire types and little-endian / length-prefixed / fixed-size
-## **byte** encoders and decoders shared across Bedrock (block ids, PRNG, Ed25519
+## **byte** encoders and decoders shared across Bedrock (block ids, Ed25519
 ## wire, Groth16 bytes, Mantle wire, etc.).
 ## Spec: [Common Cryptographic Components v1.0.2](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/common-cryptographic-components.md)
 ## Spec: [Bedrock v1.1 — Mantle Specification v1.10.0](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md)
@@ -26,8 +26,6 @@ type
   Hash32* = array[32, byte]
   ## BN254 32-byte field element as returned by Poseidon2 sponge (LE); Mantle **``ZkHash``** wire.
   ZkHash* = Hash32
-  Blake2bPrngSeed* = array[64, byte]
-  Blake2bPrngBlock* = array[64, byte]
 
   ## Spec wire-sized Groth16 proof encoding:
   ## pi_a (32 bytes) || pi_b (64 bytes) || pi_c (32 bytes).

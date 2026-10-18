@@ -13,7 +13,6 @@
 
 import
   stew/endians2,
-  libp2p/crypto/ed25519/ed25519,
   ../core/types
 
 from stew/byteutils import fromBytes
@@ -23,7 +22,7 @@ from ../consensus/clock import WallclockSeconds
 
 type
   GenesisState* = object
-    signedMantleTx*: SignedMantleTx
+    validGenesisTx*: ValidGenesisMantleTx
     faucetZkPublicKey*: ZkPublicKey
     header*: Header
     blockSignature*: Ed25519Signature

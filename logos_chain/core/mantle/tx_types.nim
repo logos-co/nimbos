@@ -25,7 +25,6 @@ type
     tx*: MantleTx
     opProofs*: seq[OpProof]
 
-
 func encodeMantleTx*(tx: MantleTx): Result[seq[byte], EncodingError] =
   ## MantleTx = OpCount (u8) || *Op
   encodeOps(tx.ops)

@@ -12,7 +12,7 @@ import
   libp2p/crypto/ed25519/ed25519,
   ../../../logos_chain/core/types,
   ../../../logos_chain/core/mantle/
-    [primitives, operations, proofs, utxo, poc_verifier],
+    [primitives, operations, proofs, utxo],
   ../../../logos_chain/zk/poseidon2/hasher
 
 from libp2p/crypto/rng import newBearSslRng
@@ -135,7 +135,6 @@ func mkValidTx*(stx: sink SignedMantleTx): ValidSignedMantleTx =
 
 func mkValidGenesisTx*(htx: HashedSignedMantleTx): ValidGenesisMantleTx =
   createValidGenesisTxForTest(htx)
-
 
 proc mkEdKeyPair*(rng: ref HmacDrbgContext): EdKeyPair =
   ## Random Ed25519 keypair. Caller provides the rng so all keypairs minted

@@ -38,9 +38,7 @@ proc parseGenesis(ds: DeploymentSettings):
     tuple[validTx: ValidGenesisMantleTx, param: CryptarchiaParameter] =
   ## Genesis tx and the cryptarchia parameter it inscribes.
   let
-    htx = createGenesisHtx(
-      ds.cryptarchia.genesisState.signedMantleTx).expect("valid genesis tx hash")
-    validTx = mkValidGenesisTx(htx)
+    validTx = ds.cryptarchia.genesisState.validGenesisTx
     param = cryptarchiaParameter(validTx).expect("valid cryptarchia parameter")
   (validTx, param)
 

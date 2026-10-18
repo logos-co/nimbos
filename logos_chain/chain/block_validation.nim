@@ -14,7 +14,6 @@
 {.push raises: [], gcsafe.}
 
 import
-  faststreams,
   bincode,
   libp2p/crypto/ed25519/ed25519,
   ../ledger/ledger,
@@ -27,9 +26,9 @@ export StatelessLedgerError
 
 from ../core/types import
   Block, BlockTxs, Proposal, body_root, ExpectedBedrockVersion,
-  MaxBlockSize, MaxUncles, asSeq, len, header, blockId, BlockId,
+  MaxBlockSize, MaxUncles, asSeq, len, header, BlockId,
   Header, UncleHeaders, encode, MaxBlockTxs,
-  createGenesisHeader, activeLen
+  createGenesisHeader, activeLen, verify_signature
 from ../core/mantle/tx_hashing import
   HashedSignedMantleTx, byteLen, signedTx
 
@@ -124,7 +123,7 @@ func validateHeader[T: AnyHashedSignedMantleTx](
   if root != header.bodyRoot:
     return false
 
-  if not verify(signature, blockId(header), header.proofOfLeadership.leaderKey):
+  if not verify_signature(header, signature):
     return false
 
   true

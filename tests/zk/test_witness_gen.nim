@@ -19,11 +19,11 @@ import
   ./prover_helpers
 
 const
-  # nVars from the zkey headers of bundle v0.5.6.
-  SignatureVarsV056 = 7715
-  PolVarsV056 = 20531
-  PocVarsV056 = 8293
-  PoqVarsV056 = 20168
+  # nVars from the zkey headers of the pinned bundle.
+  SignatureVars = 7715
+  PolVars = 20531
+  PocVars = 8293
+  PoqVars = 20168
 
 func signalsMatch(values: openArray[FieldElement], expected: seq[FieldElement]): bool =
   if values.len < expected.len + 1 or values[0] != one:
@@ -36,24 +36,24 @@ func signalsMatch(values: openArray[FieldElement], expected: seq[FieldElement]):
 suite "zk/witness_gen — reference vectors":
   test "signature: sks = [1, 0 × 31] reproduces the fixture public signals":
     let values = witnessValues(Circuit.Signature, toInputsJson(zksignFixtureInput()))
-    check values.len == SignatureVarsV056
+    check values.len == SignatureVars
     check signalsMatch(values, fixtureSignals(Circuit.Signature))
     check values[33] == fr(ZkSignFixtureMsg)
 
   test "pol: reference test_full_flow inputs reproduce the fixture public signals":
     let values = witnessValues(Circuit.Pol, toInputsJson(polFixtureInput()))
-    check values.len == PolVarsV056
+    check values.len == PolVars
     check signalsMatch(values, fixtureSignals(Circuit.Pol))
 
   test "poc: sample.input.json reproduces the fixture public signals":
     let values = witnessValues(Circuit.Poc, toInputsJson(pocFixtureInput()))
-    check values.len == PocVarsV056
+    check values.len == PocVars
     check signalsMatch(values, fixtureSignals(Circuit.Poc))
 
   test "poq: core-branch fixture reproduces public_core.json":
     let values = witnessValues(
       Circuit.Poq, toInputsJson(poqCoreFixtureInput(PoqCoreFixtureIndex)))
-    check values.len == PoqVarsV056
+    check values.len == PoqVars
     check signalsMatch(values, fixtureSignals(Circuit.Poq))
 
   test "poq: a key index at the quota is rejected by the circuit":

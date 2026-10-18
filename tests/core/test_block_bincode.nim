@@ -15,7 +15,7 @@ import
   unittest2,
   ../testutil,
   bincode,
-  ../../logos_chain/core/[types, mantle/tx_types],
+  ../../logos_chain/core/types,
   ../../logos_chain/chain/block_validation,
   ../../logos_chain/sync/types
 

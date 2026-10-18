@@ -12,7 +12,7 @@ import
   std/[os, strutils],
   results,
   stew/io2,
-  ../../logos_chain/core/mantle/[tx_types, tx_hashing],
+  ../../logos_chain/core/mantle/tx_hashing,
   ../../logos_chain/chain/chain,
   ../../logos_chain/deployment/deployment_settings,
   ../testutil
@@ -25,7 +25,7 @@ let devnetDeploymentSettings = block:
   parseDeploymentSettings(text).expect("could not parse deployment settings")
 
 suite "chain/genesis":
-  test "createGenesisBlock wraps a minimal signed mantle tx":
+  test "createGenesisBlock wraps a valid genesis mantle tx":
     let
       validGenesisTx = testValidGenesisTx()
       b = createGenesisBlock(validGenesisTx)
@@ -40,7 +40,7 @@ suite "chain/genesis":
     let
       ds = devnetDeploymentSettings
       gstate = ds.cryptarchia.genesisState
-      genesisTx = gstate.signedMantleTx
+      genesisTx = gstate.validGenesisTx
       testChain = Chain.init(ds).valueOr:
         fail "Chain.init: " & $error
       gb = testChain.genesisBlock
@@ -58,20 +58,19 @@ suite "chain/genesis":
     check gb.header == gstate.header
     check gb.signature == gstate.blockSignature
 
-  test "createGenesisBlock from signedMantleTx matches deployment genesisState envelope":
+  test "createGenesisBlock from validGenesisTx matches deployment genesisState envelope":
     let
       gstate = devnetDeploymentSettings.cryptarchia.genesisState
-      htx = createGenesisHtx(gstate.signedMantleTx).get
-      validGenesisTx = mkValidGenesisTx(htx)
+      validGenesisTx = gstate.validGenesisTx
       fromTx = createGenesisBlock(validGenesisTx)
-      fromState = initBlock(gstate.header, gstate.blockSignature, [], [htx])
+      fromState = initBlock(gstate.header, gstate.blockSignature, [], [validGenesisTx.hashed])
 
     check fromTx.header == fromState.header
     check blockId(fromTx.header) == blockId(fromState.header)
     check fromTx.signature == fromState.signature
     check fromTx.txs.len == fromState.txs.len
     check fromTx.txs.len == 1
-    check fromTx.txs[0].hash == htx.hash
+    check fromTx.txs[0].hash == validGenesisTx.hash
     check fromTx.txs[0].opProofs.len == fromState.txs[0].opProofs.len
     for i in 0 ..< fromTx.txs[0].opProofs.len:
       check fromTx.txs[0].opProofs[i].kind == fromState.txs[0].opProofs[i].kind

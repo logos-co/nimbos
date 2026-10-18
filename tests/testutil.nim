@@ -240,8 +240,18 @@ func testGenesisSignedTx*(
       declarations.mapIt(createSdpDeclareOp(it))
   txWithPlaceholderProofs(ops)
 
-var defaultGenesisHtxCache: HashedSignedMantleTx
-var hasDefaultGenesisHtxCache = false
+func testGenesisHtx*(
+    outputs: openArray[Note] = [Note(value: 1000, zkPublicKey: testZkPk())],
+    declarations: openArray[DeclarationMessage] = [],
+    chainId = "test",
+    genesisTime = 0'u32,
+    epochNonce = default(FieldElement),
+): HashedSignedMantleTx =
+  ## Spec-shaped genesis transaction with precomputed hash: Transfer of `outputs`,
+  ## the parameter inscription, then one SdpDeclare per entry; placeholder proofs.
+  createGenesisHtx(
+    testGenesisSignedTx(outputs, declarations, chainId, genesisTime, epochNonce)
+  ).expect("valid genesis tx hash")
 
 template isDefaultGenesisArgs(outputs, declarations, chainId, genesisTime, epochNonce): bool =
   declarations.len == 0 and
@@ -251,26 +261,6 @@ template isDefaultGenesisArgs(outputs, declarations, chainId, genesisTime, epoch
   outputs.len == 1 and
   outputs[0].value == 1000 and
   outputs[0].zkPublicKey == testZkPk()
-
-proc testGenesisHtx*(
-    outputs: openArray[Note] = [Note(value: 1000, zkPublicKey: testZkPk())],
-    declarations: openArray[DeclarationMessage] = [],
-    chainId = "test",
-    genesisTime = 0'u32,
-    epochNonce = default(FieldElement),
-): HashedSignedMantleTx =
-  ## Spec-shaped genesis transaction with precomputed hash: Transfer of `outputs`,
-  ## the parameter inscription, then one SdpDeclare per entry; placeholder proofs.
-  if isDefaultGenesisArgs(outputs, declarations, chainId, genesisTime, epochNonce):
-    {.gcsafe.}:
-      if not hasDefaultGenesisHtxCache:
-        defaultGenesisHtxCache = createGenesisHtx(testGenesisSignedTx()).expect("valid genesis tx hash")
-        hasDefaultGenesisHtxCache = true
-      return defaultGenesisHtxCache
-
-  createGenesisHtx(
-    testGenesisSignedTx(outputs, declarations, chainId, genesisTime, epochNonce)
-  ).expect("valid genesis tx hash")
 
 var defaultValidGenesisTxCache: ValidGenesisMantleTx
 var hasDefaultValidGenesisTxCache = false
@@ -390,7 +380,7 @@ func childBlock*(
       txs = txs,
       proofOfLeadership = proofOfLeadership,
     )
-    sig = keyPair.seckey.sign(blockId(h))
+    sig = signHeader(keyPair.seckey, h)
   initBlock(h, signature = sig, uncleHeaders = uncleHeaders, txs = txs)
 
 func childValidBlock*(
@@ -413,7 +403,7 @@ func childValidBlock*(
       txs = txs,
       proofOfLeadership = proofOfLeadership,
     )
-    sig = keyPair.seckey.sign(blockId(h))
+    sig = signHeader(keyPair.seckey, h)
   createValidBlockForTest(
     header = h,
     signature = sig,
@@ -477,7 +467,7 @@ func childProposal*(
       txs = txs,
       proofOfLeadership = proofOfLeadership,
     )
-    sig = keyPair.seckey.sign(blockId(h))
+    sig = signHeader(keyPair.seckey, h)
   var refs: References
   for i, tx in txs:
     refs[i] = tx.hash
