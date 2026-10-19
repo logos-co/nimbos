@@ -34,6 +34,7 @@ type
     GenesisInputs ## the genesis Transfer consumes notes
     TooManyOps ## more ops than the u8 wire count holds
     TooManyOutputs ## more outputs than the u8 wire count holds
+    OperationDataExceeded ## inscription or deposit metadata over MAX_OPERATION_DATA_SIZE
 
 export results, StatelessLedgerError
 
@@ -49,11 +50,11 @@ func toStatelessLedgerError*(err: EncodingError): StatelessLedgerError =
     StatelessLedgerError.InvalidChannelConfig
   of EncodingError.OpsCountExceeded:
     StatelessLedgerError.TooManyOps
+  of EncodingError.MetadataLengthExceeded, EncodingError.InscriptionLengthExceeded:
+    StatelessLedgerError.OperationDataExceeded
   of EncodingError.ProofCountMismatch, EncodingError.ProofKindMismatch,
      EncodingError.MultiSigCountExceeded, EncodingError.MultiSigSignaturesMismatch,
-     EncodingError.MultiSigIndicesNonIncreasing,
-     EncodingError.LengthExceeded, EncodingError.MetadataLengthExceeded,
-     EncodingError.InscriptionLengthExceeded,
+     EncodingError.MultiSigIndicesNonIncreasing, EncodingError.LengthExceeded,
      EncodingError.InputsCountExceeded, EncodingError.OutputsCountExceeded:
     StatelessLedgerError.InvalidProof
 

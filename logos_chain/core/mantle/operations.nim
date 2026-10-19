@@ -280,7 +280,7 @@ func encodeSdpWithdraw*(value: WithdrawMessage): array[72, byte] =
 const SdpActiveLen = sizeof(DeclarationId) + sizeof(Nonce) + ActivityMetadataLen
 
 func encodeSdpActive*(value: ActiveMessage): array[SdpActiveLen, byte] =
-  ## SDPActive = DeclarationId ‖ Nonce ‖ ActivityMetadata
+  ## SDPActive = DeclarationId || Nonce || ActivityMetadata
   var res {.noinit.}: array[SdpActiveLen, byte]
   assign(res.toOpenArray(0, 31), encodeDeclarationId(value.declarationId))
   assign(res.toOpenArray(32, 39), encodeNonce(value.nonce))
@@ -518,7 +518,7 @@ func readChannelDeposit(data: openArray[byte], pos: var int): Result[ChannelDepo
   let
     channel = ?readFixed[32](data, pos)
     inputs = ?readInputs(data, pos)
-    metadata = ?readU32LeLenPrefixed(data, pos)
+    metadata = ?readDepositMetadata(data, pos)
   ok(ChannelDepositPayload(channel: channel, inputs: inputs, metadata: metadata))
 
 func readChannelConfig(data: openArray[byte], pos: var int): Result[ChannelConfigPayload, DecodingError] =
@@ -548,9 +548,10 @@ func readChannelConfig(data: openArray[byte], pos: var int): Result[ChannelConfi
   ))
 
 func readChannelInscribe(data: openArray[byte], pos: var int): Result[ChannelInscribePayload, DecodingError] =
-  let channelId = ?readFixed[32](data, pos)
-  let inscription = ?readU32LeLenPrefixed(data, pos)
-  let parent = ?readFixed[32](data, pos)
+  let
+    channelId = ?readFixed[32](data, pos)
+    inscription = ?readInscription(data, pos)
+    parent = ?readFixed[32](data, pos)
   var signerKey: Ed25519PublicKey
   let raw = ?readFixed[EdPublicKeySize](data, pos)
   if not signerKey.init(raw):
