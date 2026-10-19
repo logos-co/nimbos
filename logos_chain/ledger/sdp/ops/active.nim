@@ -23,8 +23,10 @@ proc validateSdpActive(
     proof: ZkSigProof,
     txHash: Hash32,
     state: SdpState,
+    epoch: EpochNumber,
 ): Result[DeclarationInfo, LedgerError] =
   let declaration = ?loadDeclaration(state, active.declarationId)
+  ?checkWithinWithdrawal(declaration, epoch)
   ?checkNonceMonotonic(declaration, active.nonce)
   ?verifyZkSig(proof, txHash, @[declaration.zkId])
   ok(declaration)
@@ -50,7 +52,8 @@ proc tryApplySdpActive*(
     epoch: EpochNumber,
     verifyPoq: ProofOfQuotaVerifier,
 ): Result[SdpRegistry, LedgerError] =
-  let declaration = ?validateSdpActive(active, proof, txHash, registry.state)
+  let declaration = ?validateSdpActive(
+    active, proof, txHash, registry.state, epoch)
   if getParametersAt(registry, declaration.service, epoch).isNone:
     return err(MissingServiceParameters)
   case declaration.service

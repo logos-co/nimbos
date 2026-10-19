@@ -9,7 +9,7 @@
 {.used.}
 
 import
-  std/[os, strutils],
+  std/[os, sequtils, strutils],
   unittest2,
   results,
   libp2p/crypto/ed25519/ed25519,
@@ -107,6 +107,29 @@ suite "ledger/sdp/ops/active":
     check info.active == Opt.some(25'u64)
     check info.nonce == 1'u64
 
+  test "rejects a report after withdraw_at":
+    var seeded = seedDeclaration(pkSeed = 24, declareEpoch = 1)
+    installTestWithdraw(seeded.registry, WithdrawMessage(
+      declarationId: seeded.declId,
+      lockedNoteId: seeded.declaration.lockedNoteId,
+      nonce: 1), withdrawAt = 5)
+    let active = ActiveMessage(
+      declarationId: seeded.declId, nonce: 2)
+    check execActive(seeded, active, 6).error == AlreadyWithdrawn
+    let info = getDeclaration(seeded.registry.state, seeded.declId).get()
+    check info.nonce == 1'u64
+    check info.active.isNone
+
+  test "the withdrawal check runs before the nonce check":
+    var seeded = seedDeclaration(pkSeed = 25, declareEpoch = 1)
+    installTestWithdraw(seeded.registry, WithdrawMessage(
+      declarationId: seeded.declId,
+      lockedNoteId: seeded.declaration.lockedNoteId,
+      nonce: 1), withdrawAt = 5)
+    let stale = ActiveMessage(
+      declarationId: seeded.declId, nonce: 1)
+    check execActive(seeded, stale, 6).error == AlreadyWithdrawn
+
 suite "ledger/sdp/ops/active — blend activity":
   setup:
     check installZksignVk(zksignFixtureVk)
@@ -127,5 +150,100 @@ suite "ledger/sdp/ops/active — blend activity":
     check tryApplySdpActive(
       target.registry, mkTargetActivity(target), fixtureProof,
       fixtureTxHash, 1, rejectAllPoq).error == InvalidTxProof
+
+  test "accepts a report up to withdraw_at":
+    var registry = target.registry
+    installTestWithdraw(registry, WithdrawMessage(
+      declarationId: target.declId, lockedNoteId: default(NoteId), nonce: 1),
+      withdrawAt = 1)
+    let applied = tryApplySdpActive(
+      registry, mkTargetActivity(target, nonce = 2), fixtureProof,
+      fixtureTxHash, 1, acceptAllPoq).expect("report at withdraw_at")
+    check getDeclaration(applied.state, target.declId).get().active ==
+      Opt.some(1'u32)
+
+  test "the last served epoch is rewarded before removal":
+    # The test runs the reward rotation before `onEpochStarted` at each
+    # boundary. It checks the registry parts, not the ledger order in
+    # `advanceEpochAndMarket`.
+    let
+      noteA = frFromBytesLE([byte 31]).get
+      declarationA = DeclarationMessage(
+        serviceType: ServiceType.bn,
+        locators: @[mkLocator(30306)],
+        providerId: mkProvider(11),
+        lockedNoteId: noteA,
+        zkId: mkRealZkPubKey(1))
+      declarationB = DeclarationMessage(
+        serviceType: ServiceType.bn,
+        locators: @[mkLocator(30307)],
+        providerId: mkProvider(12),
+        lockedNoteId: frFromBytesLE([byte 32]).get,
+        zkId: frFromBytesLE([byte 33]).get)
+      randomness = frFromBytesLE([byte 5]).get
+    var registry = testSdpRegistry()
+
+    # 1. Declare A and B at epoch 1.
+    let
+      declIdA = installTestDeclaration(registry, declarationA, 1)
+      declIdB = installTestDeclaration(registry, declarationB, 1)
+
+    # 2. A withdraws at epoch 2. Thus withdraw_at is 4.
+    let infoA = getDeclaration(registry.state, declIdA).get()
+    registry = applySdpWithdraw(registry, WithdrawMessage(
+      declarationId: declIdA, lockedNoteId: noteA, nonce: 1), infoA, 2)
+    check getDeclaration(registry.state, declIdA).get().withdrawAt ==
+      Opt.some(4'u32)
+
+    # 3. A and B serve in epoch 3.
+    registry = onEpochStarted(registry, 2)
+    registry = onEpochStarted(registry, 3)
+    let providers3 = activeBlendProviders(registry, 3)
+    check providers3.len == 2
+    check providers3.anyIt(it.providerId == declarationA.providerId)
+    check providers3.anyIt(it.providerId == declarationB.providerId)
+
+    # 4. The boundary into epoch 4 sets epoch 3 as the reward target. A
+    # stays a declaration, but epoch 4 does not include it.
+    registry.blendRewards = registry.blendRewards.addIncome(1000).expect(
+      "epoch-3 income")
+    registry.blendRewards = registry.blendRewards.rotateEpoch(
+      3, 4, providers3, randomness, testBlendLotteryParams,
+      testPoqChain).rewards
+    registry = onEpochStarted(registry, 4)
+    check getDeclaration(registry.state, declIdA).isSome
+    check getLockedNote(registry.state, noteA).isSome
+    let providers4 = activeBlendProviders(registry, 4)
+    check providers4.len == 1
+    check providers4[0].providerId == declarationB.providerId
+
+    # 5. A reports its epoch-3 activity during epoch 4.
+    let
+      indexA = registry.blendRewards.target.get.state.providers.get(
+        declarationA.providerId).get.index
+      report = ActiveMessage(
+        declarationId: declIdA,
+        nonce: 2,
+        metadata: mkActivity(findRho(indexA, 2), 3, 3))
+    registry = tryApplySdpActive(
+      registry, report, fixtureProof, fixtureTxHash, 4, acceptAllPoq).expect(
+        "report at withdraw_at")
+    check getDeclaration(registry.state, declIdA).get().active ==
+      Opt.some(4'u32)
+
+    # 6. The boundary into epoch 5 pays A for epoch 3. Then it removes A
+    # and unlocks the note of A.
+    let (rewards, minted) = registry.blendRewards.rotateEpoch(
+      4, 5, providers4, randomness, testBlendLotteryParams, testPoqChain)
+    registry.blendRewards = rewards
+    # The base is 1000 div 2 = 500. The only submitter is premium. Thus it
+    # gets two times the base.
+    check minted.len == 1
+    check minted[0].note.zkPublicKey == declarationA.zkId
+    check minted[0].note.value == 1000
+    registry = onEpochStarted(registry, 5)
+    check getDeclaration(registry.state, declIdA).isNone
+    check getLockedNote(registry.state, noteA).isNone
+    check getDeclaration(registry.state, declIdB).isSome
 
 {.pop.}
