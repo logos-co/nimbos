@@ -55,6 +55,7 @@ type
     InvalidSigner
     UnsupportedOpcode
     UnknownActivityMetadataType
+    OperationDataExceeded
     MultiSigIndicesNonIncreasing
     ProofCountMismatch
     MissingProofs

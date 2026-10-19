@@ -427,12 +427,29 @@ suite "core/mantle/operations":
     check decoded.sdpActive == mkSpecActiveMessage()
 
   test "readOpPayload rejects an unknown activity metadata type":
-    var
-      payload = hexToSeqByte(SdpActiveSpecPayloadHex)
-      pos = 0
-    payload[40] = 0x02
-    check readOpPayload(payload, pos, OpSdpActive).error ==
-      DecodingError.UnknownActivityMetadataType
+    for tag in [0x00'u8, 0x02]:
+      var
+        payload = hexToSeqByte(SdpActiveSpecPayloadHex)
+        pos = 0
+      payload[40] = tag
+      check readOpPayload(payload, pos, OpSdpActive).error ==
+        DecodingError.UnknownActivityMetadataType
+
+  test "readOpPayload rejects a CHANNEL_INSCRIBE inscription over MaxOperationDataSize":
+    var payload = newSeq[byte](32)
+    payload.add encodeLe(uint32(MaxOperationDataSize + 1))
+    var pos = 0
+    check readOpPayload(payload, pos, OpChannelInscribe).error ==
+      DecodingError.OperationDataExceeded
+
+  test "readOpPayload rejects CHANNEL_DEPOSIT metadata over MaxOperationDataSize":
+    # ChannelId || InputCount 0 || oversized DepositMetadata prefix
+    var payload = newSeq[byte](32)
+    payload.add 0'u8
+    payload.add encodeLe(uint32(MaxOperationDataSize + 1))
+    var pos = 0
+    check readOpPayload(payload, pos, OpChannelDeposit).error ==
+      DecodingError.OperationDataExceeded
 
   test "readOp returns UnsupportedOpcode on unknown opcode byte":
     var pos = 0

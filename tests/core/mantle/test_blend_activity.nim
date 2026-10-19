@@ -43,12 +43,13 @@ suite "core/mantle/blend_activity":
       DecodingError.UnexpectedEnd
 
   test "read rejects an unknown metadata type":
-    var
-      encoded = encodeActivityMetadata(mkActivityProof())
-      pos = 0
-    encoded[0] = 0x02
-    check readActivityMetadata(encoded, pos).error ==
-      DecodingError.UnknownActivityMetadataType
+    for tag in [0x00'u8, 0x02]:
+      var
+        encoded = encodeActivityMetadata(mkActivityProof())
+        pos = 0
+      encoded[0] = tag
+      check readActivityMetadata(encoded, pos).error ==
+        DecodingError.UnknownActivityMetadataType
 
   test "read rejects a non-canonical key nullifier":
     var

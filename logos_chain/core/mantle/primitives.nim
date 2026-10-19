@@ -28,6 +28,9 @@ const
   MaxOutputs* = 255
   MaxSdpLocators* = 8
   MaxLocatorMultiaddrBytes* = 329
+  # MAX_OPERATION_DATA_SIZE, Mantle Transaction Encoding v1.10.0:
+  # https://github.com/logos-co/logos-lips/blob/949faa9563027de366514247a2a62b0de2f8c45f/docs/blockchain/raw/mantle-transaction-encoding.md
+  MaxOperationDataSize* = 1_835_008
 
 type
   ChannelId* = Hash32
@@ -153,10 +156,10 @@ func encodeNonce*(value: Nonce): array[8, byte] =
   encodeLe(value)
 
 func encodeDepositMetadata*(value: DepositMetadata): Result[seq[byte], EncodingError] =
-  ## DepositMetadata = UINT32 *BYTE
-  let enc = encodeU32LeLenPrefixed(value).valueOr:
+  ## DepositMetadata = UINT32 *BYTE ; Max MAX_OPERATION_DATA_SIZE bytes
+  if value.len > MaxOperationDataSize:
     return err(EncodingError.MetadataLengthExceeded)
-  ok(enc)
+  encodeU32LeLenPrefixed(value)
 
 func encodeSignatureCount*(value: SignatureCount): array[2, byte] =
   ## SignatureCount = UINT16
@@ -222,10 +225,10 @@ func encodeOutputs*(value: Outputs): Result[seq[byte], EncodingError] =
   ok(res)
 
 func encodeInscription*(value: Inscription): Result[seq[byte], EncodingError] =
-  ## Inscription = UINT32 * BYTE
-  let enc = encodeU32LeLenPrefixed(value).valueOr:
+  ## Inscription = UINT32 *BYTE ; Max MAX_OPERATION_DATA_SIZE bytes
+  if value.len > MaxOperationDataSize:
     return err(EncodingError.InscriptionLengthExceeded)
-  ok(enc)
+  encodeU32LeLenPrefixed(value)
 
 func encodeServiceType*(value: ServiceType): byte =
   ## Wire ``ServiceType`` = single byte (``ord``). Used by ``encodeSdpDeclare`` /
@@ -282,6 +285,20 @@ func readLocator*(data: openArray[byte], pos: var int): Result[Locator, Decoding
   let ma = MultiAddress.init(raw).valueOr:
     return err(DecodingError.InvalidLocator)
   ok(ma)
+
+func readOperationData(data: openArray[byte], pos: var int): Result[seq[byte], DecodingError] =
+  # The declared length is checked before the buffer, so an oversized prefix
+  # is rejected before any payload is read.
+  var peek = pos
+  if ?readLe[uint32](data, peek) > uint32(MaxOperationDataSize):
+    return err(DecodingError.OperationDataExceeded)
+  readU32LeLenPrefixed(data, pos)
+
+func readDepositMetadata*(data: openArray[byte], pos: var int): Result[DepositMetadata, DecodingError] =
+  readOperationData(data, pos)
+
+func readInscription*(data: openArray[byte], pos: var int): Result[Inscription, DecodingError] =
+  readOperationData(data, pos)
 
 func readNote(data: openArray[byte], pos: var int): Result[Note, DecodingError] =
   let value = Value(?readLe[uint64](data, pos))

@@ -18,6 +18,7 @@ suite "core/mantle/primitives":
   test "primitive constants match expected values":
     check MaxBlockTxs == 1024
     check MantleMaxOps == 255
+    check MaxOperationDataSize == 1_835_008
 
   test "References is MaxBlockTxs of Hash32":
     check default(References).len == MaxBlockTxs
@@ -136,13 +137,35 @@ suite "core/mantle/primitives":
     let encMeta = encodeDepositMetadata(meta).get
     check encMeta.len == 4 + 4 # 4-byte u32 length prefix + 4 payload bytes
     var pos = 0
-    check readU32LeLenPrefixed(encMeta, pos).get == meta
+    check readDepositMetadata(encMeta, pos).get == meta
 
     let inscript: Inscription = @[9'u8, 8, 7]
     let encInscript = encodeInscription(inscript).get
     check encInscript.len == 4 + 3
     pos = 0
-    check readU32LeLenPrefixed(encInscript, pos).get == inscript
+    check readInscription(encInscript, pos).get == inscript
+
+  test "encodeInscription and encodeDepositMetadata reject more than MaxOperationDataSize bytes":
+    let oversized = newSeq[byte](MaxOperationDataSize + 1)
+    check encodeInscription(oversized).error == EncodingError.InscriptionLengthExceeded
+    check encodeDepositMetadata(oversized).error == EncodingError.MetadataLengthExceeded
+
+  test "readInscription and readDepositMetadata reject a declared length over MaxOperationDataSize":
+    # Only the prefix is present: the length check must fire before the
+    # buffer check, so the error is not BufferExceeded.
+    let wire = encodeLe(uint32(MaxOperationDataSize + 1))
+    var pos = 0
+    check readInscription(wire, pos).error == DecodingError.OperationDataExceeded
+    pos = 0
+    check readDepositMetadata(wire, pos).error == DecodingError.OperationDataExceeded
+
+  test "readInscription accepts exactly MaxOperationDataSize bytes":
+    let
+      inscript = newSeq[byte](MaxOperationDataSize)
+      wire = encodeInscription(inscript).get
+    var pos = 0
+    check readInscription(wire, pos).get.len == MaxOperationDataSize
+    check pos == wire.len
 
   test "primitive scalar encoders produce exact little-endian byte representations":
     check encodeValue(100'u64) == [100'u8, 0, 0, 0, 0, 0, 0, 0]
