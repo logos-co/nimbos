@@ -60,9 +60,10 @@ suite "ledger/sdp/registry":
       lockedNoteId: seeded.declaration.lockedNoteId,
       nonce: 1,
     )
-    installTestWithdraw(seeded.registry, withdraw, 5)
+    installTestWithdraw(seeded.registry, withdraw, withdrawAt = 5)
+    seeded.registry = onEpochStarted(seeded.registry, 5)
     check getDeclaration(seeded.registry.state, seeded.declId).isSome
-    seeded.registry = onEpochStarted(seeded.registry, 7)
+    seeded.registry = onEpochStarted(seeded.registry, 6)
     check getDeclaration(seeded.registry.state, seeded.declId).isNone
 
   test "onEpochStarted asserts when the epoch does not advance":
@@ -72,14 +73,14 @@ suite "ledger/sdp/registry":
       lockedNoteId: seeded.declaration.lockedNoteId,
       nonce: 1,
     )
-    installTestWithdraw(seeded.registry, withdraw, 5)
-    for epoch in EpochNumber(1) .. EpochNumber(6):
+    installTestWithdraw(seeded.registry, withdraw, withdrawAt = 5)
+    for epoch in EpochNumber(1) .. EpochNumber(5):
       seeded.registry = onEpochStarted(seeded.registry, epoch)
     check getDeclaration(seeded.registry.state, seeded.declId).isSome
-    seeded.registry = onEpochStarted(seeded.registry, 7)
+    seeded.registry = onEpochStarted(seeded.registry, 6)
     check getDeclaration(seeded.registry.state, seeded.declId).isNone
     expect AssertionDefect:
-      discard onEpochStarted(seeded.registry, 7)
+      discard onEpochStarted(seeded.registry, 6)
 
 suite "ledger/sdp/registry — epoch snapshots":
   test "epochs 0 and 1 use genesis snapshot":
@@ -203,16 +204,46 @@ suite "ledger/sdp/registry — active blend providers":
     check activeBlendProviders(seeded.registry, 3).len == 1
     check activeBlendProviders(seeded.registry, 4).len == 0
 
-  test "a pending withdrawal excludes the provider once it takes effect":
+  test "a withdrawal follows the message timing table":
     var seeded = seedDeclaration(pkSeed = 42, declareEpoch = 1)
-    installTestWithdraw(seeded.registry, WithdrawMessage(
-      declarationId: seeded.declId,
-      lockedNoteId: seeded.declaration.lockedNoteId,
-      nonce: 1), 3)
+    let
+      withdraw = WithdrawMessage(
+        declarationId: seeded.declId,
+        lockedNoteId: seeded.declaration.lockedNoteId,
+        nonce: 1,
+      )
+      declaration = getDeclaration(seeded.registry.state, seeded.declId).get()
+    seeded.registry = applySdpWithdraw(seeded.registry, withdraw, declaration, 1)
+    check getDeclaration(seeded.registry.state, seeded.declId).get().withdrawAt ==
+      Opt.some(3'u32)
     seeded.registry = onEpochStarted(seeded.registry, 1)
     seeded.registry = onEpochStarted(seeded.registry, 2)
     check activeBlendProviders(seeded.registry, 2).len == 1
     check activeBlendProviders(seeded.registry, 3).len == 0
+
+    seeded.registry = onEpochStarted(seeded.registry, 3)
+    check activeBlendProviders(seeded.registry, 4).len == 0
+    check getDeclaration(seeded.registry.state, seeded.declId).isSome
+
+    seeded.registry = onEpochStarted(seeded.registry, 4)
+    check getDeclaration(seeded.registry.state, seeded.declId).isNone
+
+  test "the note unlocks one epoch after withdraw_at":
+    var seeded = seedDeclaration(pkSeed = 45, declareEpoch = 1)
+    let
+      noteId = seeded.declaration.lockedNoteId
+      withdraw = WithdrawMessage(
+        declarationId: seeded.declId, lockedNoteId: noteId, nonce: 1)
+      declaration = getDeclaration(seeded.registry.state, seeded.declId).get()
+    seeded.registry = applySdpWithdraw(seeded.registry, withdraw, declaration, 2)
+    for epoch in EpochNumber(3) .. EpochNumber(4):
+      seeded.registry = onEpochStarted(seeded.registry, epoch)
+      check getDeclaration(seeded.registry.state, seeded.declId).isSome
+      check getLockedNote(seeded.registry.state, noteId).isSome
+
+    seeded.registry = onEpochStarted(seeded.registry, 5)
+    check getDeclaration(seeded.registry.state, seeded.declId).isNone
+    check getLockedNote(seeded.registry.state, noteId).isNone
 
   test "a missing epoch snapshot yields no providers":
     check activeBlendProviders(testSdpRegistry(), 5).len == 0

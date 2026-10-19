@@ -51,7 +51,7 @@ type
     DeclarationNotInLockedNote
     MalformedActivityMetadata ## Active metadata failed to decode
     TargetEpochNotSet ## SDP Active submitted while no target epoch is set
-    InvalidEpoch ## activity proof's epoch is not the target epoch
+    InvalidEpoch ## op epoch out of range
     UnknownProvider ## activity submitter is not in the target-epoch snapshot
     HammingDistanceTooLarge ## activity token lost the Hamming lottery
     DuplicateActiveMessage ## provider already submitted for the target epoch
