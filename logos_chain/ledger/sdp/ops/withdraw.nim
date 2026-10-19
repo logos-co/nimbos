@@ -26,10 +26,14 @@ proc validateSdpWithdraw(
     txHash: ZkHash,
     utxos: UtxoStore,
     state: SdpState,
+    epoch: EpochNumber,
 ): Result[DeclarationInfo, LedgerError] =
   let declareInfo = ?loadDeclaration(state, withdraw.declarationId)
   ?checkNotWithdrawn(declareInfo)
   ?checkNonceMonotonic(declareInfo, withdraw.nonce)
+  # `withdraw_at = epoch + 2` must fit in an EpochNumber.
+  if epoch > high(EpochNumber) - SnapshotFinalizationDelay:
+    return err(InvalidEpoch)
 
   if withdraw.lockedNoteId != declareInfo.lockedNoteId:
     return err(LockedNoteIdMismatch)
@@ -52,9 +56,11 @@ proc applySdpWithdraw*(
     epoch: EpochNumber,
 ): SdpRegistry =
   ## Mutation only; assumes validation passed.
+  # The node is active until `withdraw_at - 1`. The snapshot for
+  # `withdraw_at` is the first one without the node.
   var updated = declaration
   updated.nonce = withdraw.nonce
-  updated.withdrawAt = Opt.some(epoch)
+  updated.withdrawAt = Opt.some(epoch + SnapshotFinalizationDelay)
   registry.state = insertDeclaration(
     registry.state, withdraw.declarationId, updated,
   )
@@ -69,7 +75,7 @@ proc tryApplySdpWithdraw*(
     epoch: EpochNumber,
 ): Result[SdpRegistry, LedgerError] =
   let declaration = ?validateSdpWithdraw(
-    withdraw, proof, txHash, utxos, registry.state,
+    withdraw, proof, txHash, utxos, registry.state, epoch,
   )
   ok(applySdpWithdraw(registry, withdraw, declaration, epoch))
 

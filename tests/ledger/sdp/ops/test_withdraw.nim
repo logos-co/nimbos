@@ -11,7 +11,8 @@
 import
   unittest2,
   results,
-  ../test_helpers
+  ../test_helpers,
+  ../../../../logos_chain/zk/zksign
 
 suite "ledger/sdp/ops/withdraw":
   test "tryApplySdpWithdraw rejects unknown declaration":
@@ -40,23 +41,41 @@ suite "ledger/sdp/ops/withdraw":
     replay.nonce = 0
     check execWithdraw(seeded, replay, 16).isErr
 
-  test "tryApplySdpWithdraw sets withdraw_at and keeps note locked until finalization":
-    var seeded = seedDeclaration(pkSeed = 13, declareEpoch = 10)
-    let withdraw = WithdrawMessage(
-      declarationId: seeded.declId,
-      lockedNoteId: seeded.declaration.lockedNoteId,
-      nonce: 1,
-    )
-    installTestWithdraw(seeded.registry, withdraw, 5)
+  test "applySdpWithdraw sets withdraw_at and keeps note locked until finalization":
+    var seeded = seedDeclaration(pkSeed = 13, declareEpoch = 1)
+    let
+      withdraw = WithdrawMessage(
+        declarationId: seeded.declId,
+        lockedNoteId: seeded.declaration.lockedNoteId,
+        nonce: 1,
+      )
+      declaration = getDeclaration(seeded.registry.state, seeded.declId).get()
+    seeded.registry = applySdpWithdraw(seeded.registry, withdraw, declaration, 3)
     let info = getDeclaration(seeded.registry.state, seeded.declId).get()
-    check info.withdrawAt == Opt.some(5'u64)
+    check info.withdrawAt == Opt.some(5'u32)
     check info.nonce == 1'u64
     check getLockedNote(seeded.registry.state, seeded.declaration.lockedNoteId).isSome
 
-    seeded.registry.state = finalizeWithdrawals(seeded.registry.state, 6)
+    seeded.registry.state = finalizeWithdrawals(seeded.registry.state, 5)
     check getDeclaration(seeded.registry.state, seeded.declId).isSome
-    seeded.registry.state = finalizeWithdrawals(seeded.registry.state, 7)
+    seeded.registry.state = finalizeWithdrawals(seeded.registry.state, 6)
     check getDeclaration(seeded.registry.state, seeded.declId).isNone
     check getLockedNote(seeded.registry.state, seeded.declaration.lockedNoteId).isNone
+
+  test "tryApplySdpWithdraw rejects an epoch too close to the limit":
+    # No verification key is loaded. An op that passes the epoch check
+    # fails at the signature check.
+    zksign.resetVkForTesting()
+    let
+      seeded = seedDeclaration(pkSeed = 15, declareEpoch = 1)
+      withdraw = WithdrawMessage(
+        declarationId: seeded.declId,
+        lockedNoteId: seeded.declaration.lockedNoteId,
+        nonce: 1,
+      )
+    check execWithdraw(seeded, withdraw, high(EpochNumber) - 1).error ==
+      InvalidEpoch
+    check execWithdraw(seeded, withdraw, high(EpochNumber) - 2).error ==
+      VerifierNotInitialised
 
 {.pop.}

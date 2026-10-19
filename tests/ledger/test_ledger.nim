@@ -565,13 +565,14 @@ suite "tryApplyTx — SDP":
       lockedNoteId: input.id,
       nonce: 1,
     )
-    installTestWithdraw(state.sdp, withdraw, epoch = 5)
+    installTestWithdraw(state.sdp, withdraw, withdrawAt = 5)
+    state.sdp.state = finalizeWithdrawals(state.sdp.state, 5)
     let stillLocked = state.cryptarchiaLedger.applyTransferState(
       state.sdp.state.lockedNotes, state.mantleLedger.channelNotes, spendOp,
     )
     check stillLocked.isErr
 
-    state.sdp.state = finalizeWithdrawals(state.sdp.state, 7)
+    state.sdp.state = finalizeWithdrawals(state.sdp.state, 6)
     let unlocked = state.cryptarchiaLedger.applyTransferState(
       state.sdp.state.lockedNotes, state.mantleLedger.channelNotes, spendOp,
     )
