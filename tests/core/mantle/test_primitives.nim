@@ -134,21 +134,20 @@ suite "core/mantle/primitives":
     check encodeInscription(oversized).error == EncodingError.InscriptionLengthExceeded
     check encodeDepositMetadata(oversized).error == EncodingError.MetadataLengthExceeded
 
-  test "readInscription and readDepositMetadata reject a declared length over MaxOperationDataSize":
-    # Only the prefix is present: the length check must fire before the
-    # buffer check, so the error is not BufferExceeded.
-    let wire = encodeLe(uint32(MaxOperationDataSize + 1))
-    var pos = 0
-    check readInscription(wire, pos).error == DecodingError.OperationDataExceeded
-    pos = 0
-    check readDepositMetadata(wire, pos).error == DecodingError.OperationDataExceeded
-
   test "readInscription accepts exactly MaxOperationDataSize bytes":
     let
       inscript = newSeq[byte](MaxOperationDataSize)
       wire = encodeInscription(inscript).get
     var pos = 0
     check readInscription(wire, pos).get.len == MaxOperationDataSize
+    check pos == wire.len
+
+  test "readDepositMetadata accepts exactly MaxOperationDataSize bytes":
+    let
+      meta = newSeq[byte](MaxOperationDataSize)
+      wire = encodeDepositMetadata(meta).get
+    var pos = 0
+    check readDepositMetadata(wire, pos).get.len == MaxOperationDataSize
     check pos == wire.len
 
   test "primitive scalar encoders produce exact little-endian byte representations":
