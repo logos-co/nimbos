@@ -51,8 +51,6 @@ type
     LocatorLengthExceeded
     InvalidLocator
     LocatorsCountExceeded
-    InvalidProviderId
-    InvalidSigner
     UnsupportedOpcode
     UnknownActivityMetadataType
     OperationDataExceeded

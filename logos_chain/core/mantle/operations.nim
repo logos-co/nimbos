@@ -458,10 +458,7 @@ func readSdpDeclare(data: openArray[byte], pos: var int): Result[DeclarationMess
   var locators = newSeqOfCap[Locator](locatorCount)
   for _ in 0 ..< int(locatorCount):
     locators.add ?readLocator(data, pos)
-  var providerKey: Ed25519PublicKey
-  let raw = ?readFixed[EdPublicKeySize](data, pos)
-  if not providerKey.init(raw):
-    return err(DecodingError.InvalidProviderId)
+  let providerKey = Ed25519PublicKey(data: ?readFixed[EdPublicKeySize](data, pos))
   let zkId = ?decodeFieldElementAt(data, pos)
   let lockedNoteId = ?decodeFieldElementAt(data, pos)
   ok(DeclarationMessage(
@@ -528,11 +525,7 @@ func readChannelConfig(data: openArray[byte], pos: var int): Result[ChannelConfi
     keyCount = ?readLe[uint16](data, pos)
   var keys = newSeqOfCap[Ed25519PublicKey](keyCount)
   for _ in 0 ..< int(keyCount):
-    var key: Ed25519PublicKey
-    let raw = ?readFixed[EdPublicKeySize](data, pos)
-    if not key.init(raw):
-      return err(DecodingError.InvalidSigner)
-    keys.add(key)
+    keys.add(Ed25519PublicKey(data: ?readFixed[EdPublicKeySize](data, pos)))
   let postingTimeframe = PostingTimeframe(?readLe[uint32](data, pos))
   let postingTimeout = PostingTimeout(?readLe[uint32](data, pos))
   let configurationThreshold = ConfigurationThreshold(?readLe[uint16](data, pos))
@@ -552,10 +545,7 @@ func readChannelInscribe(data: openArray[byte], pos: var int): Result[ChannelIns
     channelId = ?readFixed[32](data, pos)
     inscription = ?readInscription(data, pos)
     parent = ?readFixed[32](data, pos)
-  var signerKey: Ed25519PublicKey
-  let raw = ?readFixed[EdPublicKeySize](data, pos)
-  if not signerKey.init(raw):
-    return err(DecodingError.InvalidSigner)
+  let signerKey = Ed25519PublicKey(data: ?readFixed[EdPublicKeySize](data, pos))
   ok(ChannelInscribePayload(
     channelId: channelId,
     inscription: inscription,
