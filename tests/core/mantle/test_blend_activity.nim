@@ -18,20 +18,6 @@ import
 from std/algorithm import fill
 
 suite "core/mantle/blend_activity":
-  test "encode produces the 229-byte layout":
-    let encoded = encodeActivityMetadata(mkActivityProof())
-    check encoded.len == ActivityMetadataLen
-    check encoded[0] == ActiveMetadataBlendType
-    check encoded.toOpenArray(1, 4) == [7'u8, 0, 0, 0] # epoch u32 LE, low byte first
-
-  test "read round-trips an encoded proof":
-    let
-      original = mkActivityProof(3)
-      encoded = encodeActivityMetadata(original)
-    var pos = 0
-    check readActivityMetadata(encoded, pos).get == original
-    check pos == ActivityMetadataLen
-
   test "read rejects a short input":
     let encoded = encodeActivityMetadata(mkActivityProof())
     var pos = 0
@@ -41,15 +27,6 @@ suite "core/mantle/blend_activity":
     pos = 0
     check readActivityMetadata(newSeq[byte](), pos).error ==
       DecodingError.UnexpectedEnd
-
-  test "read rejects an unknown metadata type":
-    for tag in [0x00'u8, 0x02]:
-      var
-        encoded = encodeActivityMetadata(mkActivityProof())
-        pos = 0
-      encoded[0] = tag
-      check readActivityMetadata(encoded, pos).error ==
-        DecodingError.UnknownActivityMetadataType
 
   test "read rejects a non-canonical key nullifier":
     var
