@@ -5,7 +5,7 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-## Spec: [Bedrock v1.1 — Mantle Specification v1.10.0](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md)
+## Spec: [Bedrock v1.1 — Mantle Specification v1.16.0](https://github.com/logos-co/logos-lips/blob/fddc2c1911626f7b1949360b8924bb6c05252bff/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md)
 
 {.push raises: [], gcsafe.}
 
@@ -64,6 +64,7 @@ type
 
   ChannelConfigPayload* = object
     channel*: ChannelId
+    parent*: Parent
     keys*: seq[Ed25519PublicKey]
     postingTimeframe*: PostingTimeframe
     postingTimeout*: PostingTimeout
@@ -231,6 +232,7 @@ func defaultOpForOpcode*(opcode: Opcode): Result[Op, EncodingError] =
   of OpChannelConfig:
     ok(createChannelConfigOp(ChannelConfigPayload(
       channel: default(ChannelId),
+      parent: default(Parent),
       keys: @[],
       postingTimeframe: default(PostingTimeframe),
       postingTimeout: default(PostingTimeout),
@@ -317,11 +319,12 @@ func encodeChannelDeposit*(value: ChannelDepositPayload): Result[seq[byte], Enco
   ok(res)
 
 func encodeChannelConfig*(value: ChannelConfigPayload): Result[seq[byte], EncodingError] =
-  ## ChannelConfig = ChannelId || KeyCount || *Signer || PostingTimeframe ||
+  ## ChannelConfig = ChannelId || Parent || KeyCount || *Signer || PostingTimeframe ||
   ##                 PostingTimeout || ConfigThreshold || TransferThreshold
   if value.keys.len > int(high(uint16)):
     return err(EncodingError.KeysCountExceeded)
   var res = @(encodeChannelId(value.channel))
+  res.add(encodeParent(value.parent))
   res.add(encodeKeyCount(KeyCount(value.keys.len)))
   for key in value.keys:
     res.add(encodeSigner(key))
@@ -411,7 +414,8 @@ func byteLen*(payload: OpPayload): int =
     sizeof(ChannelId) + byteLen(ct.inputs) + byteLen(ct.outputs)
   of ChannelConfig:
     template cfg: untyped = payload.channelConfig
-    sizeof(ChannelId) + sizeof(KeyCount) + cfg.keys.len * sizeof(Ed25519PublicKey) +
+    sizeof(ChannelId) + sizeof(Parent) + sizeof(KeyCount) +
+      cfg.keys.len * sizeof(Ed25519PublicKey) +
       sizeof(PostingTimeframe) + sizeof(PostingTimeout) +
       sizeof(ConfigurationThreshold) + sizeof(TransferThreshold)
   of SdpDeclare:
@@ -520,8 +524,10 @@ func readChannelDeposit(data: openArray[byte], pos: var int): Result[ChannelDepo
   ok(ChannelDepositPayload(channel: channel, inputs: inputs, metadata: metadata))
 
 func readChannelConfig(data: openArray[byte], pos: var int): Result[ChannelConfigPayload, DecodingError] =
-  let channel = ?readFixed[32](data, pos)
-  let keyCount = ?readLe[uint16](data, pos)
+  let
+    channel = ?readFixed[32](data, pos)
+    parent = ?readFixed[32](data, pos)
+    keyCount = ?readLe[uint16](data, pos)
   var keys = newSeqOfCap[Ed25519PublicKey](keyCount)
   for _ in 0 ..< int(keyCount):
     var key: Ed25519PublicKey
@@ -535,6 +541,7 @@ func readChannelConfig(data: openArray[byte], pos: var int): Result[ChannelConfi
   let transferThreshold = TransferThreshold(?readLe[uint16](data, pos))
   ok(ChannelConfigPayload(
     channel: channel,
+    parent: parent,
     keys: keys,
     postingTimeframe: postingTimeframe,
     postingTimeout: postingTimeout,
