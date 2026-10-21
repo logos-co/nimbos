@@ -484,4 +484,51 @@ suite "core/mantle/tx_validation — stateless invariants":
     let tx = SignedMantleTx(tx: MantleTx(ops: largeOps), opProofs: largeProofs)
     check validateMantleTxStateless(tx).error == StatelessLedgerError.TooManyOps
 
+  test "validateMantleTxStateless rejects an inscription over MaxOperationDataSize":
+    let
+      op = createChannelInscribeOp(ChannelInscribePayload(
+        channelId: mkChannelId(1),
+        inscription: newSeq[byte](MaxOperationDataSize + 1),
+        parent: default(Hash32),
+        signer: testKp.pubkey,
+      ))
+      # A second op that fails a later phase-1 check pins the order: the
+      # bound rejects op 0 before the empty inputs of op 1 are seen.
+      tx = SignedMantleTx(
+        tx: MantleTx(ops: @[op, createTransferOp(TransferPayload())]),
+        opProofs: @[
+          OpProof(kind: opfChannelInscribe, ed25519SigProof: DefaultEd25519Signature),
+          OpProof(kind: opfTransfer, transferProof: DefaultZkSignature),
+        ],
+      )
+    check validateMantleTxStateless(tx).error == StatelessLedgerError.OperationDataExceeded
+
+  test "validateMantleTxStateless rejects CHANNEL_DEPOSIT metadata over MaxOperationDataSize":
+    let
+      op = createChannelDepositOp(ChannelDepositPayload(
+        channel: mkChannelId(1),
+        inputs: Inputs(noteIds: @[mkUtxo(100, 1).id]),
+        metadata: newSeq[byte](MaxOperationDataSize + 1),
+      ))
+      tx = SignedMantleTx(
+        tx: MantleTx(ops: @[op]),
+        opProofs: @[
+          OpProof(kind: opfChannelDeposit, channelDepositProof: default(ZkSigProof))],
+      )
+    check validateMantleTxStateless(tx).error == StatelessLedgerError.OperationDataExceeded
+
+  test "validateMantleTxStateless accepts CHANNEL_DEPOSIT metadata of exactly MaxOperationDataSize":
+    let
+      op = createChannelDepositOp(ChannelDepositPayload(
+        channel: mkChannelId(1),
+        inputs: Inputs(noteIds: @[mkUtxo(100, 1).id]),
+        metadata: newSeq[byte](MaxOperationDataSize),
+      ))
+      tx = SignedMantleTx(
+        tx: MantleTx(ops: @[op]),
+        opProofs: @[
+          OpProof(kind: opfChannelDeposit, channelDepositProof: default(ZkSigProof))],
+      )
+    check validateMantleTxStateless(tx).isOk
+
 {.pop.}
