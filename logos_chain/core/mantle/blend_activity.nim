@@ -14,7 +14,6 @@
 import
   results,
   stew/assign2,
-  libp2p/crypto/ed25519/ed25519,
   ../crypto/types
 
 from ./primitives import EpochNumber
@@ -22,7 +21,7 @@ from ./primitives import EpochNumber
 export EpochNumber
 
 const
-  ActiveMetadataBlendType* = 0x01'u8
+  ActiveMetadataBlendType = 0x01'u8
     ## ActivityMetadataType selector for Blend activity metadata.
   ActivityProofBodyLen* = 224
     ## signing key(32) ‖ key nullifier(32) ‖ quota proof(128) ‖ selection(32).
@@ -72,10 +71,10 @@ func readActivityMetadata*(
   if ?readByte(data, pos) != ActiveMetadataBlendType:
     return err(DecodingError.UnknownActivityMetadataType)
   var proof = ActivityProof(epoch: ?readLe[EpochNumber](data, pos))
-  # Point validity is checked by proof-of-quota verification, where the
-  # key is a public input; the codec checks the length only.
-  if not proof.signingKey.init(?readFixed[32](data, pos)):
-    return err(DecodingError.InvalidSigner)
+  # The codec fixes the key length and checks nothing else. No later stage
+  # decompresses the point. Proof-of-quota verification splits the raw key
+  # bytes into two field elements.
+  proof.signingKey = Ed25519PublicKey(data: ?readFixed[32](data, pos))
   proof.proofOfQuota.keyNullifier = ?decodeFieldElementAt(data, pos)
   proof.proofOfQuota.proof = ?readFixed[CompressedGroth16ProofBytes](data, pos)
   proof.proofOfSelection = ?decodeFieldElementAt(data, pos)
