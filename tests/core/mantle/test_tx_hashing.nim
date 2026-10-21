@@ -250,6 +250,22 @@ suite "core/mantle/tx_hashing — op_id spec vectors":
     check opId(op).get.toHex ==
       "8bac7efe4c3ef10745c0d509ac88e2abaf1d3cda94987ed2eeb9ad71dd31d056"
 
+  test "CHANNEL_INSCRIBE op_id over ChannelId || Inscription || Parent || Signer":
+    let op = ChannelInscribePayload(
+      channelId: filledHash32(0x0e),
+      inscription: toBytes("hello logos"),
+      parent: default(Hash32),
+      signer: Ed25519PublicKey.init(
+        "d9bf2148748a85c89da5aad8ee0b0fc2d105fd39d41a4c796536354f0ae2900c").get,
+    )
+    check encodeChannelInscribe(op).get.toHex ==
+      "0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e" &
+      "0b000000" & "68656c6c6f206c6f676f73" &
+      "0000000000000000000000000000000000000000000000000000000000000000" &
+      "d9bf2148748a85c89da5aad8ee0b0fc2d105fd39d41a4c796536354f0ae2900c"
+    check opId(op).get.toHex ==
+      "fb9af7fb1384fff51780ec8c5afbcba76449ab7603484f797df3a472e48826c1"
+
   test "SDP_ACTIVE op_id over DeclarationId || Nonce || ActivityMetadata":
     check opId(mkSpecActiveMessage()).toHex ==
       "c4a2a639034016f52728f34041cf95fc2c7adb8f54cf94b4361b2d0cb72ebb70"
