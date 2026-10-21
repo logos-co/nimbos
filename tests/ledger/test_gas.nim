@@ -349,7 +349,7 @@ suite "gas: storage accumulation and epoch rotation":
       [tx], slot = 1'u64, verifyPoq = acceptAllPoq).expect("applied")
     check s.feeMarket.storageGasConsumedInEpoch == encodedLen
 
-    s = s.tryApplyHeader(100, sentinelProof(), testLedgerConfig).expect("rotation")
+    s = s.tryApplyHeader(100, sentinelProof(), [], testLedgerConfig).expect("rotation")
     check:
       s.epochs.activeEpoch.epoch == 1
       s.feeMarket.storageGasConsumedInEpoch == Gas(0)
@@ -357,9 +357,9 @@ suite "gas: storage accumulation and epoch rotation":
 
   test "multi-epoch skip runs the storage update once per crossed epoch":
     var s = mkState(@[])
-    s = s.tryApplyHeader(5, sentinelProof(), testLedgerConfig).expect("valid")
+    s = s.tryApplyHeader(5, sentinelProof(), [], testLedgerConfig).expect("valid")
     s.feeMarket.storageGasEma = 800 # seed a nonzero EMA to observe halving
-    s = s.tryApplyHeader(350, sentinelProof(), testLedgerConfig).expect("rotation")
+    s = s.tryApplyHeader(350, sentinelProof(), [], testLedgerConfig).expect("rotation")
     check:
       s.epochs.activeEpoch.epoch == 3
       s.feeMarket.storageGasEma == Gas(100) # 800 → 400 → 200 → 100
