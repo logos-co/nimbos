@@ -335,7 +335,7 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
       # Wait until GossipSub exchanges topic subscriptions and broadcast reaches listener
       check waitUntil((await peers.dialer.broadcast(topic, sampleProposal)).isOk)
       check waitUntil(listenerNode.processor.localTree.hasBlock(blockId(sampleProposal.header)))
-      check listenerNode.processor.localTree.localTipId == blockId(sampleProposal.header)
+      check listenerNode.processor.canonicalTip.tip == blockId(sampleProposal.header)
 
       # Verify reconstructed block content matches proposal
       let reconstructedBlock = listenerNode.processor.localTree.getBlock(blockId(sampleProposal.header)).get()
@@ -458,7 +458,7 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
         waitUntil(peers.dialer.switch.isConnected(peers.listenerPeerId))
         # 1. Dialer syncs b1 from listener via IBD
         waitUntil(dialerNode.processor.localTree.hasBlock(id1))
-        dialerNode.processor.localTree.localTipId == id1
+        dialerNode.processor.canonicalTip.tip == id1
         # 2. Upon IBD completion, syncer callback automatically subscribes to block gossip topic
         waitUntil(dialerNode.network.isSubscribed(blockTopic))
 
@@ -471,7 +471,7 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
       check:
         waitUntil((await peers.listener.broadcast(blockTopic, p2)).isOk)
         waitUntil(dialerNode.processor.localTree.hasBlock(id2))
-        dialerNode.processor.localTree.localTipId == id2
+        dialerNode.processor.canonicalTip.tip == id2
     finally:
       if dialerNode.syncer != nil:
         await dialerNode.syncer.stop()

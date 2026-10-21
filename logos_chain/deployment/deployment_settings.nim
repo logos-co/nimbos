@@ -24,6 +24,7 @@ import
 
 from ../core/mantle/primitives import EpochNumber, NumberOfEpochs
 from ../zk/pol_lottery import isSupportedLotteryF
+from ../consensus/consensus_state import densitySlotWindow
 
 export
   dom,
@@ -85,6 +86,7 @@ type
     epochConfig*: EpochConfig
     securityParam*: int
     slotActivationCoeff*: NonNegativeRatio ## f — exact rational, no float
+    densitySlotWindow*: uint64             ## s_gen = ⌊k / (4f)⌋
     learningRate*: NonNegativeRatio ## beta — parsed exactly from the decimal scalar
     sdpConfig*: SdpConfig
     gossipsubProtocol*: string
@@ -144,7 +146,14 @@ func validateDeploymentSettingsStructure(root: YamlNode): Result[void, string] =
   ok()
 
 func deploymentSettingsFromYaml(root: YamlNode): Result[DeploymentSettings, string] =
-  let parsedGenesis = ? parseDeploymentGenesisState(root)
+  let
+    parsedGenesis = ? parseDeploymentGenesisState(root)
+    secParam = ? reqInt(root, ["cryptarchia", "security_param"])
+    slotCoeff = NonNegativeRatio(
+      num: ? reqUInt64(root, ["cryptarchia", "slot_activation_coeff", "numerator"]),
+      den: ? reqUInt64(root, ["cryptarchia", "slot_activation_coeff", "denominator"])
+    )
+    sGen = if secParam > 0: densitySlotWindow(uint64(secParam), slotCoeff) else: 0'u64
   ok(DeploymentSettings(
     blend: BlendSettings(
       common: BlendCommon(
@@ -183,11 +192,9 @@ func deploymentSettingsFromYaml(root: YamlNode): Result[DeploymentSettings, stri
         epochPeriodNonceStabilization: ? reqInt(
           root, ["cryptarchia", "epoch_config", "epoch_period_nonce_stabilization"])
       ),
-      securityParam: ? reqInt(root, ["cryptarchia", "security_param"]),
-      slotActivationCoeff: NonNegativeRatio(
-        num: ? reqUInt64(root, ["cryptarchia", "slot_activation_coeff", "numerator"]),
-        den: ? reqUInt64(root, ["cryptarchia", "slot_activation_coeff", "denominator"])
-      ),
+      securityParam: secParam,
+      slotActivationCoeff: slotCoeff,
+      densitySlotWindow: sGen,
       learningRate: ? reqDecimalRatio(root, ["cryptarchia", "learning_rate"]),
       sdpConfig: SdpConfig(
         bn: BnServiceParams(
@@ -244,6 +251,12 @@ func validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
     "cryptarchia.slot_activation_coeff.numerator must be > 0")
   need(ds.cryptarchia.slotActivationCoeff.den > 0,
     "cryptarchia.slot_activation_coeff.denominator must be > 0")
+  need(
+    uint64(ds.cryptarchia.securityParam) <= uint64.high div ds.cryptarchia.slotActivationCoeff.den,
+    "cryptarchia: security_param * slot_activation_coeff denominator overflows uint64"
+  )
+  need(ds.cryptarchia.densitySlotWindow > 0,
+    "cryptarchia: density_slot_window (s_gen = ⌊k / (4f)⌋) must be > 0")
   need(isSupportedLotteryF(ds.cryptarchia.slotActivationCoeff),
     "cryptarchia.slot_activation_coeff must have pinned lottery constants")
   need(ds.cryptarchia.learningRate.num > 0, "cryptarchia.learning_rate must be > 0")

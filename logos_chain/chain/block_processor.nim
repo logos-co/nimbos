@@ -71,6 +71,9 @@ proc new*(T: type BlockProcessor, chain: sink Chain): T =
 func localTree*(bp: BlockProcessor): LocalTree =
   bp.chain.localTree
 
+func canonicalTip*(bp: BlockProcessor): Tip =
+  bp.chain.canonicalTip
+
 func ledger*(bp: BlockProcessor): lent Ledger[BlockId] =
   bp.chain.ledger
 
@@ -79,6 +82,17 @@ func mempool*(bp: BlockProcessor): Mempool =
 
 proc currentWallclockSlot*(bp: BlockProcessor): SlotNumber =
   bp.chain.currentWallclockSlot()
+
+func consensus*(bp: BlockProcessor): ConsensusState =
+  bp.chain.consensus
+
+func forkChoiceRule*(bp: BlockProcessor): ForkChoiceRule =
+  bp.chain.consensus.forkChoiceRule
+
+proc switchToOnline*(bp: BlockProcessor) =
+  ## Transitions the underlying chain from Bootstrap to Online fork choice rule.
+  ## Once online, LIB advancement becomes active and canonical states older than LIB are pruned.
+  bp.chain.switchToOnline()
 
 func running*(bp: BlockProcessor): bool =
   bp.loopFut != nil and not bp.loopFut.finished

@@ -24,7 +24,8 @@ proc setupChain(
   let
     genesis = createGenesisBlock(testGenesisTx()).get
     gid = blockId(genesis.header)
-  var c = initTestChain(genesis, securityParam = securityParam)
+  var c = initTestChain(
+    genesis, securityParam = securityParam, forkChoiceRule = ForkChoiceRule.Online)
   c.slotConfig.genesisTime = uint64(getTime().toUnix() - 500)
   var s = c.ledger.state(gid).get()
   s.feeMarket.executionBaseFee = 0
@@ -61,7 +62,7 @@ suite "chain/orphan_resolution":
     check applyB2Res.error.kind == BlockApplyErrorKind.OrphanBuffered
     check chain.orphanPool.hasOrphan(id2)
     check not chain.localTree.hasBlock(id2)
-    check chain.localTree.localTipId == gid
+    check chain.canonicalTip.tip == gid
 
     # Ingesting child B2 again returns OrphanAlreadyBuffered
     let applyB2DupRes = chain.tryApplyBlock(b2)
@@ -75,7 +76,7 @@ suite "chain/orphan_resolution":
     # 3. Both B1 and B2 should now be applied and promoted
     check chain.localTree.hasBlock(id1)
     check chain.localTree.hasBlock(id2)
-    check chain.localTree.localTipId == id2
+    check chain.canonicalTip.tip == id2
     check chain.ledger.state(id1).isSome
     check chain.ledger.state(id2).isSome
     check chain.orphanPool.len == 0
@@ -107,7 +108,7 @@ suite "chain/orphan_resolution":
     check chain.localTree.hasBlock(id2)
     check chain.localTree.hasBlock(id3)
     check chain.localTree.hasBlock(id4)
-    check chain.localTree.localTipId == id4
+    check chain.canonicalTip.tip == id4
     check chain.orphanPool.len == 0
 
   test "structurally invalid block or invalid header is rejected and not buffered":
@@ -181,7 +182,7 @@ suite "chain/orphan_resolution":
     check chain.syncApplyBlock(blocks[0]).isOk
     for i in 0 .. MaxOrphans - 1:
       check chain.localTree.hasBlock(blockId(blocks[i].header))
-    check chain.localTree.localTipId == blockId(blocks[MaxOrphans - 1].header)
+    check chain.canonicalTip.tip == blockId(blocks[MaxOrphans - 1].header)
     check chain.orphanPool.len == 1 # only blocks[MaxOrphans + 1] remains
     check chain.orphanPool.hasOrphan(blockId(blocks[MaxOrphans + 1].header))
 
@@ -278,7 +279,7 @@ suite "chain/orphan_resolution":
     check chain.orphanPool.len == 0
 
   test "orphan branching off unfinalized fork below LIB is rejected immediately":
-    var (chain, genesis, gid) = setupChain()
+    var (chain, genesis, gid) = setupChain(securityParam = 1'u64)
 
     let
       b1 = childBlock(genesis.header, gid, SlotNumber(1), [])
@@ -295,16 +296,14 @@ suite "chain/orphan_resolution":
     check chain.tryApplyBlock(b2b).isOk
     check chain.tryApplyBlock(b3a).isOk
 
-    # Finalize branch A at height 2 (B_imm = b2a)
-    chain.localTree.latestImmutableHeight = 2
-    check chain.localTree.latestImmutableBlockId == id2a
+    # With securityParam = 1 and tip height = 3 (b3a), LIB naturally advances to height 2 (b2a)
+    check chain.consensus.latestImmutableId == id2a
 
-    # Ingest orphan branching off b2b (which violates LIB b2a)
+    # Ingest orphan branching off b2b with slot <= LIB slot (which violates LIB b2a)
     let
-      uncommittedParent = childBlock(b2b.header, id2b, SlotNumber(6), [])
+      uncommittedParent = childBlock(b2b.header, id2b, SlotNumber(2), [])
 
-    # First buffer uncommittedParent: parent b2b is in localTree, but not a descendant of b2a (LIB).
-    # uncommittedParent fails canDescendFromImmutable and is rejected immediately.
+    # uncommittedParent fails canDescendFromImmutable / slot check and is rejected immediately.
     check chain.tryApplyBlock(uncommittedParent).error.kind == BlockApplyErrorKind.UnviableFork
     check chain.orphanPool.len == 0
 
@@ -327,7 +326,7 @@ suite "chain/orphan_resolution":
     # When parent arrives, promotion runs stateless transaction validation and rejects the invalid orphan
     let b1Res = chain.syncApplyBlock(b1)
     check b1Res.isOk
-    check chain.localTree.localTipId == b1Id
+    check chain.canonicalTip.tip == b1Id
     check chain.orphanPool.len == 0
     check not chain.localTree.hasBlock(blockId(orphan.header))
 
@@ -342,7 +341,7 @@ suite "chain/orphan_resolution":
     let a1 = childBlock(genesis.header, gid, SlotNumber(1), [txA])
     let resA1 = chain.tryApplyBlock(a1)
     check resA1.isOk
-    check chain.localTree.localTipId == blockId(a1.header)
+    check chain.canonicalTip.tip == blockId(a1.header)
     check chain.mempool.len == 0 # Pruned on block commit
 
     # Branch B: blocks b1 -> b2 -> b3 (heavier/taller branch)
@@ -360,12 +359,12 @@ suite "chain/orphan_resolution":
 
     # Ingest root b1 -> cascade promotes b2 and b3, triggering a reorg from a1 to b3
     check chain.syncApplyBlock(b1).isOk
-    check chain.localTree.localTipId == id3
+    check chain.canonicalTip.tip == id3
     check chain.orphanPool.len == 0
     # txA from abandoned branch A is restored to mempool
     check chain.mempool.len == 1
     # LIB advanced to b2 (height 3 - securityParam 1 = 2)
-    check chain.localTree.latestImmutableBlockId == id2
+    check chain.consensus.latestImmutableId == id2
 
   test "orphan pool prunes orphans whose ancestry cannot descend from newly advanced LIB":
     var (chain, genesis, gid) = setupChain(securityParam = 1)
@@ -396,7 +395,7 @@ suite "chain/orphan_resolution":
     check chain.tryApplyBlock(a3).isOk
     # Applying a4 advances LIB to a3 (height 4 - 1 = 3), pruning fork f1 (height 1)
     check chain.tryApplyBlock(a4).isOk
-    check chain.localTree.latestImmutableBlockId == idA3
+    check chain.consensus.latestImmutableId == idA3
 
     # Orphan o2 had slot 3 <= LIB slot 5, so pruneIncompatibleWithImmutable pruned it from orphanPool on LIB update!
     check chain.orphanPool.len == 0
@@ -446,7 +445,7 @@ suite "chain/orphan_resolution":
     check chain.tryApplyBlock(a4).isOk
 
     # LIB advanced to a3 (height 3, slot 5), pruning branch b1
-    check chain.localTree.latestImmutableBlockId == idA3
+    check chain.consensus.latestImmutableId == idA3
     # b3 (slot 7 > LIB slot 5) was not pruned by LIB slot check alone
     check chain.orphanPool.hasOrphan(idB3)
 

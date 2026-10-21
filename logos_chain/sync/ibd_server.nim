@@ -19,17 +19,16 @@ import
   ./[framing, syncer_types, types]
 
 from ../core/local_tree import
-  LocalTree, lcaBlockIdAndHeight, hasBlock, getBlock, blockHeight,
-  localTip
+  LocalTree, lcaBlockIdAndHeight, hasBlock, getBlock, blockHeight
 from ../core/types import BlockId
 
 logScope:
   topics = "cryptarchia_ibd"
 
-func getTipResponseFromLocalTree(localTree: LocalTree): GetTipResponse =
+func getTipResponse(syncer: Syncer): GetTipResponse =
   GetTipResponse(
     kind: gtrTip,
-    tipData: localTree.localTip(),
+    tipData: syncer.canonicalTip,
   )
 
 func distinctKnownBlockIds(known: KnownBlocks): seq[BlockId] =
@@ -95,10 +94,10 @@ func cappedDownloadPathBlockIds*(
   sendIds
 
 proc serveGetTipRequest(
-    conn: Connection, localTree: LocalTree,
+    conn: Connection, syncer: Syncer,
 ) {.async: (raises: [BincodeError, LPStreamError, CancelledError]).} =
   debug "IBD handler: GetTip request"
-  let tipResp = getTipResponseFromLocalTree(localTree)
+  let tipResp = getTipResponse(syncer)
   let respInner = try:
     encode(tipResp, cryptarchiaSyncBincodeConfig)
   except BincodeError:
@@ -183,7 +182,7 @@ proc dispatchCryptarchiaSyncRequest(
     return
   case reqMsg.kind
   of rmGetTip:
-    await serveGetTipRequest(conn, syncer.localTree)
+    await serveGetTipRequest(conn, syncer)
   of rmDownloadBlocksRequest:
     debug "IBD handler: download request decode ok",
       targetBlock = sbyteutils.toHex(reqMsg.downloadBlocksRequest.targetBlock)

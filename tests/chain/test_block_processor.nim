@@ -38,7 +38,7 @@ suite "chain/block_processor":
         b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
         r = await bp.addBlock(BlockSource.Sync, b1)
       check r.isOk
-      check bp.localTree.localTipId == blockId(b1.header)
+      check bp.canonicalTip.tip == blockId(b1.header)
       check bp.ledger.state(blockId(b1.header)).isSome
 
   asyncTest "addBlock on an applied block completes with AlreadyApplied":
@@ -115,7 +115,7 @@ suite "chain/block_processor":
       check (await fBad).error.kind == BlockApplyErrorKind.InvalidStructure
       check (await fBad_S).error.kind == BlockApplyErrorKind.InvalidStructure
       check (await fGood).isOk
-      check bp.localTree.localTipId == id1
+      check bp.canonicalTip.tip == id1
 
   asyncTest "queue is FIFO":
     withProcessor(chain):
@@ -130,7 +130,7 @@ suite "chain/block_processor":
       check (await f1).isOk
       # b2 is promoted asynchronously across event-loop turns
       check waitUntil(bp.localTree.hasBlock(blockId(b2.header)))
-      check bp.localTree.localTipId == blockId(b2.header)
+      check bp.canonicalTip.tip == blockId(b2.header)
       check (await bp.addBlock(BlockSource.Sync, b2)).error.kind == BlockApplyErrorKind.AlreadyApplied
 
   asyncTest "orphan cascade yields cooperatively between each promoted orphan":
@@ -170,7 +170,7 @@ suite "chain/block_processor":
       await tickerFut.cancelAndWait()
       for b in blocks:
         check bp.localTree.hasBlock(blockId(b.header))
-      check bp.localTree.localTipId == lastId
+      check bp.canonicalTip.tip == lastId
       check chain.orphanPool.len == 0
       # Verify cooperative yielding occurred between orphan promotions
       check ticksWhileBusy >= 4
@@ -318,7 +318,7 @@ suite "chain/block_processor":
       check not fRawB2.finished
 
       # 3. Buffer admitted copy of b2 in orphanPool before b1 finishes processing
-      let (admittedB2, isOrphan) = validateBlockHeaderAndTopology(b2, bp.localTree, bp.ledger).get()
+      let (admittedB2, isOrphan) = validateBlockHeaderAndTopology(b2, bp.consensus, bp.ledger).get()
       check isOrphan
       check chain.orphanPool.addOrphan(admittedB2)
 
@@ -347,7 +347,7 @@ suite "chain/block_processor":
       let fRawB2 = bp.addBlock(BlockSource.Sync, b2)
       check not fRawB2.finished
 
-      let (admittedB2, isOrphan) = validateBlockHeaderAndTopology(b2, bp.localTree, bp.ledger).get()
+      let (admittedB2, isOrphan) = validateBlockHeaderAndTopology(b2, bp.consensus, bp.ledger).get()
       check isOrphan
       check chain.orphanPool.addOrphan(admittedB2)
 
@@ -359,4 +359,15 @@ suite "chain/block_processor":
       check not bp.localTree.hasBlock(id2)
       check chain.orphanPool.len == 0
 
+  asyncTest "switchToOnline transitions rule and is idempotent":
+    let chainBootstrap = initTestChain(genesisBlk, forkChoiceRule = ForkChoiceRule.Bootstrap)
+    withProcessor(chainBootstrap):
+      check bp.forkChoiceRule == ForkChoiceRule.Bootstrap
+      bp.switchToOnline()
+      check bp.forkChoiceRule == ForkChoiceRule.Online
+      # Calling again is a safe no-op
+      bp.switchToOnline()
+      check bp.forkChoiceRule == ForkChoiceRule.Online
+
 {.pop.}
+

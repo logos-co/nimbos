@@ -51,7 +51,7 @@ type TimingCollector = ref object of OutputFormatter
 func toFloatSeconds(duration: times.Duration): float =
   duration.inNanoseconds().float / 1_000_000_000.0
 
-method testEnded*(formatter: TimingCollector, testResult: TestResult) =
+method testEnded(formatter: TimingCollector, testResult: TestResult) =
   {.gcsafe.}: # Lie!
     status.mgetOrPut(testResult.suiteName, initOrderedTable[string, Status]())[
       testResult.testName

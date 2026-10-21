@@ -30,6 +30,7 @@ proc initTestChain*(
     genesis: Block,
     securityParam: uint64 = DefaultSecurityParam,
     genesisTime: uint64 = uint64(max(getTime().toUnix() - 500, 0'i64)),
+    forkChoiceRule: ForkChoiceRule = ForkChoiceRule.Bootstrap,
 ): Chain =
   ## Chain over the genesis block's ledger state (epochs seeded under
   ## `testLedgerConfig`).
@@ -45,7 +46,9 @@ proc initTestChain*(
     Ledger[BlockId].init(blockId(genesis.header), state, testLedgerConfig,
         mockVerifyLeaderProof),
     SlotConfig(genesisTime: genesisTime, slotDurationSeconds: 1),
-    securityParam = securityParam)
+    densitySlotWindow = densitySlotWindow(securityParam, testLedgerConfig.slotActivationCoeff),
+    securityParam = securityParam,
+    forkChoiceRule = forkChoiceRule)
 
 proc startTestProcessor(chain: Chain): BlockProcessor =
   let bp = BlockProcessor.new(chain)

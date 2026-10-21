@@ -12,7 +12,7 @@
 import
   std/[deques, tables],
   ../core/types,
-  ../core/local_tree
+  ../consensus/consensus_state
 
 type
   OrphanPool* = ref object
@@ -86,7 +86,7 @@ func compactQueue*(pool: OrphanPool) =
       newOrder.addLast(id)
   pool.arrivalOrder = move(newOrder)
 
-proc pruneIncompatibleWithImmutable*(pool: OrphanPool, localTree: LocalTree) =
+proc pruneIncompatibleWithImmutable*(pool: OrphanPool, consensus: ConsensusState) =
   ## Evicts orphans (and their descendant subtrees) that cannot possibly
   ## descend from the latest immutable block in localTree.
   ## Time: O(N * D) worst case where N is pool size and D is tree depth | Space: O(I) where I <= N
@@ -95,7 +95,7 @@ proc pruneIncompatibleWithImmutable*(pool: OrphanPool, localTree: LocalTree) =
 
   var invalidIds: seq[BlockId]
   for id, blk in pool.byBlockId:
-    if not localTree.canDescendFromImmutable(blk.header):
+    if not consensus.canDescendFromImmutable(blk.header):
       invalidIds.add(id)
 
   for id in invalidIds:

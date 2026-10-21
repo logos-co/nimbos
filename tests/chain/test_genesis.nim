@@ -54,7 +54,7 @@ suite "chain/genesis":
     let
       gstate = ds.cryptarchia.genesisState
       genesisTx = gstate.signedMantleTx
-      testChain = Chain.init(ds).valueOr:
+      testChain = Chain.init(ds, forkChoiceRule = ForkChoiceRule.Online).valueOr:
         fail "Chain.init: " & $error
       gb = testChain.genesisBlock
 

@@ -8,13 +8,14 @@
 {.push raises: [], gcsafe.}
 
 import
-  std/cpuinfo,
+  std/[cpuinfo, times],
   chronos, chronicles, presto, presto/server,
   bearssl/rand,
   metrics, metrics/chronos_httpserver,
   stew/byteutils,
+  ./consensus/consensus_state,
   ./chain/[block_processor, gossip_processor],
-  ./[conf, process_state],
+  ./[conf, process_state, node_state],
   ./core/[types, utils],
   ./deployment/deployment_settings,
   ./networking/network,
@@ -96,7 +97,28 @@ proc init*(
       path = verificationKeyPath(circuitsDir, Circuit.Poq), err = $error
     return Opt.none(LBNode)
 
-  let chain = Chain.init(deploymentSettings).valueOr:
+  let
+    genesisId = blockId(deploymentSettings.cryptarchia.genesisState.header)
+    dataDirStr = string(config.dataDir)
+    savedState = loadNodeState(dataDirStr)
+    nowUnix = uint64(max(getTime().toUnix(), 0'i64))
+    (lastOnlineOpt, isLibAtGenesis) = parseSavedNodeState(savedState, genesisId)
+    initialForkChoiceRule = determineStartupForkChoiceRule(
+      explicitBootstrapFlag = config.bootstrap,
+      isLibAtGenesis = isLibAtGenesis,
+      lastOnlineTimestampUnix = lastOnlineOpt,
+      currentTimestampUnix = nowUnix,
+    )
+
+  info "Determined startup fork choice rule",
+    rule = $initialForkChoiceRule,
+    explicitBootstrap = config.bootstrap,
+    hasSavedState = savedState.isSome,
+    isLibAtGenesis = isLibAtGenesis
+
+  let chain = Chain.init(
+    deploymentSettings, forkChoiceRule = initialForkChoiceRule
+  ).valueOr:
     fatal "Failed to initialize chain", err = error
     return Opt.none(LBNode)
 
@@ -208,9 +230,16 @@ proc runSlotLoop(node: LBNode) {.async.} =
     if breakLoop:
       break
 
+proc persistNodeState(node: LBNode, timeUnix: uint64) =
+  if node.processor != nil and node.processor.forkChoiceRule == ForkChoiceRule.Online:
+    let libId = node.processor.consensus.latestImmutableId
+    saveNodeState(string(node.config.dataDir), timeUnix, libId)
+
 proc onSecond(node: LBNode, time: Moment) =
   # Nim GC metrics (for the main thread)
   updateThreadMetrics()
+  let nowUnix = uint64(max(getTime().toUnix(), 0'i64))
+  node.persistNodeState(nowUnix)
 
 proc runOnSecondLoop(node: LBNode) {.async.} =
   const
@@ -253,6 +282,9 @@ proc subscribeBlockTopic(node: LBNode) =
     debug "Subscribed to block gossip topic", topic = blockTopic
 
 proc stop(node: LBNode) =
+  let nowUnix = uint64(max(getTime().toUnix(), 0'i64))
+  node.persistNodeState(nowUnix)
+
   # The IBD task may be awaiting a queued result. Cancel it before the
   # processor cancels that future, so the cancellation comes from its owner.
   if node.syncer != nil:

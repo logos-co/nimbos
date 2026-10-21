@@ -12,13 +12,15 @@
 import
   std/times,
   chronicles,
-  ../core/local_tree,
+  results,
+  ../core/[local_tree, types],
+  ../consensus/consensus_state,
   ../deployment/deployment_settings,
   ../ledger/[ledger, stake_inference],
   ../mempool,
   ./[block_validation, genesis, orphan_pool]
 
-export genesis, local_tree, mempool, block_validation, orphan_pool
+export genesis, local_tree, mempool, block_validation, orphan_pool, consensus_state
 export ledger except config
 
 const DefaultSecurityParam*: uint64 = 1'u64
@@ -26,11 +28,10 @@ const DefaultSecurityParam*: uint64 = 1'u64
 type
   Chain* = object
     genesisBlock*: Block
-    localTree*: LocalTree
+    consensus*: ConsensusState
     ledger*: Ledger[BlockId]
     mempool*: Mempool
     slotConfig*: SlotConfig
-    securityParam*: uint64
     orphanPool*: OrphanPool
 
   BlockApplyErrorKind* {.pure.} = enum
@@ -91,24 +92,37 @@ func init*(
     genesisBlock: Block,
     ledger: Ledger[BlockId],
     slotConfig: SlotConfig,
+    densitySlotWindow: uint64,
     securityParam: uint64 = DefaultSecurityParam,
+    forkChoiceRule: ForkChoiceRule,
 ): T =
   let secParam = max(securityParam, DefaultSecurityParam)
   T(
     genesisBlock: genesisBlock,
-    localTree: newLocalTree(genesisBlock, secParam),
+    consensus: ConsensusState.init(
+      genesisBlock = genesisBlock,
+      securityParam = secParam,
+      densitySlotWindow = densitySlotWindow,
+      forkChoiceRule = forkChoiceRule,
+    ),
     ledger: ledger,
     mempool: Mempool.init(maxMempoolCapacity(secParam)),
     slotConfig: slotConfig,
-    securityParam: secParam,
     orphanPool: OrphanPool(),
   )
+
+func localTree*(chain: Chain): LocalTree =
+  chain.consensus.localTree
+
+func canonicalTip*(chain: Chain): Tip =
+  chain.consensus.canonicalTip
 
 proc init*(
     T: type Chain,
     settings: DeploymentSettings,
     leaderProofVerifier: LeaderProofVerifier = verifyLeaderProof,
     poqVerifier: ProofOfQuotaVerifier = verifyProofOfQuota,
+    forkChoiceRule: ForkChoiceRule,
 ): Result[T, string] =
   let
     genesisTx = settings.cryptarchia.genesisState.signedMantleTx
@@ -131,7 +145,9 @@ proc init*(
     SlotConfig(
       genesisTime: param.genesisTime,
       slotDurationSeconds: uint64(settings.time.slotDuration.seconds)),
-    securityParam = uint64(settings.cryptarchia.securityParam)))
+    securityParam = uint64(settings.cryptarchia.securityParam),
+    densitySlotWindow = settings.cryptarchia.densitySlotWindow,
+    forkChoiceRule = forkChoiceRule))
 
 proc currentWallclockSlot*(chain: Chain): SlotNumber =
   ## Slot containing the current system time.
@@ -173,6 +189,24 @@ proc pruneStatesBeforeLib(chain: var Chain, newLibId, oldLibId: BlockId) =
       break
     curr = header(blk).parentBlock
 
+proc updateLibAndPrune(chain: var Chain) =
+  let oldLibId = chain.consensus.latestImmutableId
+  let prunedBlockIds = chain.consensus.tryUpdateLib()
+  for prunedId in prunedBlockIds:
+    chain.ledger.pruneStateAt(prunedId)
+  let newLibId = chain.consensus.latestImmutableId
+  if newLibId != oldLibId:
+    chain.pruneStatesBeforeLib(newLibId, oldLibId)
+    chain.orphanPool.pruneIncompatibleWithImmutable(chain.consensus)
+
+proc switchToOnline*(chain: var Chain) =
+  ## Transitions the chain from Bootstrap to Online fork choice rule.
+  ## Once online, LIB advancement becomes active and canonical states older than LIB are pruned.
+  if chain.consensus.forkChoiceRule == ForkChoiceRule.Online:
+    return
+  chain.consensus.switchToOnline()
+  chain.updateLibAndPrune()
+
 proc handleTipChange(chain: var Chain, oldTip, newTip: BlockId) =
   if newTip == oldTip:
     return
@@ -186,14 +220,8 @@ proc handleTipChange(chain: var Chain, oldTip, newTip: BlockId) =
   # 3. Prune fork states and canonical states older than the new immutable block (retaining latestImmutableId as anchor).
   chain.readdBranchTxs(oldTip, lcaId)
   chain.removeBranchTxs(newTip, lcaId)
-  let oldLibId = chain.localTree.latestImmutableBlockId()
-  let prunedBlockIds = chain.localTree.tryUpdateLib()
-  for prunedId in prunedBlockIds:
-    chain.ledger.pruneStateAt(prunedId)
-  let newLibId = chain.localTree.latestImmutableBlockId()
-  if newLibId != oldLibId:
-    chain.pruneStatesBeforeLib(newLibId, oldLibId)
-    chain.orphanPool.pruneIncompatibleWithImmutable(chain.localTree)
+  if chain.consensus.forkChoiceRule == ForkChoiceRule.Online:
+    chain.updateLibAndPrune()
 
 func toBlockApplyError(err: BlockValidationError): BlockApplyError =
   case err.kind
@@ -207,6 +235,9 @@ func toBlockApplyError(err: BlockValidationError): BlockApplyError =
   of BlockValidationErrorKind.StatelessTxRejected:
     BlockApplyError(kind: StatelessTxRejected, statelessError: err.statelessError)
 
+proc tryUpdateTip*(chain: Chain, candidateId: BlockId) =
+  chain.consensus.tryUpdateTip(candidateId)
+
 func checkViability(
     chain: Chain, hdr: Header, curSlot: SlotNumber
 ): Result[BlockId, BlockApplyError] =
@@ -218,7 +249,7 @@ func checkViability(
     return err(BlockApplyError(kind: OrphanAlreadyBuffered))
   # Slots increase along a chain, so a block at or before the LIB slot cannot
   # descend from the LIB. Holds without the parent, which pruning may remove.
-  if hdr.slot <= chain.localTree.latestImmutableSlot():
+  if hdr.slot <= chain.consensus.latestImmutableSlot():
     return err(BlockApplyError(kind: UnviableFork))
   if hdr.slot > curSlot:
     return err(BlockApplyError(kind: FutureSlot))
@@ -241,13 +272,14 @@ proc applyAdmittedBlock(
     preparedState = prepareBlockUpdate(validBlk, chain.ledger, headerState).valueOr:
       chain.orphanPool.pruneDescendants(id)
       return err(BlockApplyError(kind: LedgerRejected, ledgerError: error.ledgerError))
-    oldTip = chain.localTree.localTipId()
+    oldTip = chain.canonicalTip.tip
 
-  if not chain.localTree.addBlockToTree(validBlk):
+  if not chain.localTree.addBlockToTree(Block(validBlk)):
     chain.orphanPool.pruneDescendants(id)
     return err(BlockApplyError(kind: UnviableFork))
+  chain.tryUpdateTip(id)
   chain.ledger.commitUpdate(id, preparedState)
-  let newTip = chain.localTree.localTipId()
+  let newTip = chain.canonicalTip.tip
   chain.handleTipChange(oldTip, newTip)
   chain.mempool.pruneExpiredTxs(curSlot)
   ok()
@@ -274,7 +306,7 @@ proc tryApplyBlock*(
 
   # Tiers 0-2: Structure, Topology Viability, Body Root, Header Signature
   let (admittedBlk, isOrphan) = validateBlockHeaderAndTopology(
-    blk, chain.localTree, chain.ledger
+    blk, chain.consensus, chain.ledger
   ).valueOr:
     return err(toBlockApplyError(error))
 
