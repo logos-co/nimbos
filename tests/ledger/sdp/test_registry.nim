@@ -67,20 +67,9 @@ suite "ledger/sdp/registry":
     check getDeclaration(seeded.registry.state, seeded.declId).isNone
 
   test "onEpochStarted asserts when the epoch does not advance":
-    var seeded = seedDeclaration(pkSeed = 31, declareEpoch = 1)
-    let withdraw = WithdrawMessage(
-      declarationId: seeded.declId,
-      lockedNoteId: seeded.declaration.lockedNoteId,
-      nonce: 1,
-    )
-    installTestWithdraw(seeded.registry, withdraw, withdrawAt = 5)
-    for epoch in EpochNumber(1) .. EpochNumber(5):
-      seeded.registry = onEpochStarted(seeded.registry, epoch)
-    check getDeclaration(seeded.registry.state, seeded.declId).isSome
-    seeded.registry = onEpochStarted(seeded.registry, 6)
-    check getDeclaration(seeded.registry.state, seeded.declId).isNone
+    let registry = onEpochStarted(testSdpRegistry(), 6)
     expect AssertionDefect:
-      discard onEpochStarted(seeded.registry, 6)
+      discard onEpochStarted(registry, 6)
 
 suite "ledger/sdp/registry — epoch snapshots":
   test "epochs 0 and 1 use genesis snapshot":
@@ -227,23 +216,6 @@ suite "ledger/sdp/registry — active blend providers":
 
     seeded.registry = onEpochStarted(seeded.registry, 4)
     check getDeclaration(seeded.registry.state, seeded.declId).isNone
-
-  test "the note unlocks one epoch after withdraw_at":
-    var seeded = seedDeclaration(pkSeed = 45, declareEpoch = 1)
-    let
-      noteId = seeded.declaration.lockedNoteId
-      withdraw = WithdrawMessage(
-        declarationId: seeded.declId, lockedNoteId: noteId, nonce: 1)
-      declaration = getDeclaration(seeded.registry.state, seeded.declId).get()
-    seeded.registry = applySdpWithdraw(seeded.registry, withdraw, declaration, 2)
-    for epoch in EpochNumber(3) .. EpochNumber(4):
-      seeded.registry = onEpochStarted(seeded.registry, epoch)
-      check getDeclaration(seeded.registry.state, seeded.declId).isSome
-      check getLockedNote(seeded.registry.state, noteId).isSome
-
-    seeded.registry = onEpochStarted(seeded.registry, 5)
-    check getDeclaration(seeded.registry.state, seeded.declId).isNone
-    check getLockedNote(seeded.registry.state, noteId).isNone
 
   test "a missing epoch snapshot yields no providers":
     check activeBlendProviders(testSdpRegistry(), 5).len == 0

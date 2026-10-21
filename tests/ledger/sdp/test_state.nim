@@ -127,6 +127,38 @@ suite "ledger/sdp/state":
     check declId notin state.declarations
     check noteId notin state.lockedNotes
 
+  test "finalizeWithdrawals removes a declaration when epochs are skipped":
+    var
+      state = SdpState.init()
+      info: DeclarationInfo
+    let
+      declId = seedDeclId(13)
+      noteId = seedNoteId(14)
+    info.lockedNoteId = noteId
+    info.withdrawAt = Opt.some(EpochNumber(5))
+    state = insertDeclaration(state, declId, info)
+    state = addDeclarationToLockedNote(state, noteId, declId)
+
+    state = finalizeWithdrawals(state, 8)
+    check declId notin state.declarations
+    check noteId notin state.lockedNotes
+
+  test "finalizeWithdrawals keeps a declaration withdrawn at the epoch limit":
+    var
+      state = SdpState.init()
+      info: DeclarationInfo
+    let
+      declId = seedDeclId(15)
+      noteId = seedNoteId(16)
+    info.lockedNoteId = noteId
+    info.withdrawAt = Opt.some(high(EpochNumber))
+    state = insertDeclaration(state, declId, info)
+    state = addDeclarationToLockedNote(state, noteId, declId)
+
+    state = finalizeWithdrawals(state, high(EpochNumber))
+    check declId in state.declarations
+    check noteId in state.lockedNotes
+
   test "hasProviderOrZkIdConflict uses secondary index maps":
     var state = SdpState.init()
     let declId = seedDeclId(10)
@@ -209,5 +241,23 @@ suite "ledger/sdp/state":
     let redeclared = applySdpDeclare(seeded.registry, redeclaration, 5).expect(
       "re-declaration with freed ids")
     check declarationId(redeclaration).get() in redeclared.state.declarations
+
+  test "a withdrawing declaration still blocks its ids":
+    var seeded = seedDeclaration(pkSeed = 4, declareEpoch = 1)
+    let
+      withdraw = WithdrawMessage(
+        declarationId: seeded.declId,
+        lockedNoteId: seeded.declaration.lockedNoteId,
+        nonce: 1,
+      )
+      declaration = getDeclaration(seeded.registry.state, seeded.declId).get()
+    seeded.registry = applySdpWithdraw(seeded.registry, withdraw, declaration, 1)
+    # The withdrawal at epoch 1 removes the declaration at epoch 4.
+    seeded.registry = onEpochStarted(seeded.registry, 3)
+    check:
+      seeded.declId in seeded.registry.state.declarations
+      hasProviderOrZkIdConflict(
+        seeded.registry.state, ServiceType.bn, seeded.declaration.providerId,
+        seeded.declaration.zkId)
 
 {.pop.}

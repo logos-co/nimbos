@@ -138,10 +138,21 @@ suite "core/mantle/operations — declarationId":
         lockedNoteId: default(NoteId),
       )
     check encodeServiceType(declaration.serviceType) == 0x00'u8
+    check encodeProviderId(declaration.providerId) == hexToByteArray[32](
+      "0x53470962558a6e0839022ae65c6b2723b32772e5c0c5f4776cb8e6a3e10ba2f3")
     check encodeZkId(declaration.zkId) == hexToByteArray[32](
       "0x1900000000000000000000000000000000000000000000000000000000000000")
     check encodeLocators(locators).get ==
       hexToSeqByte("0x010b00047f00000191020bb8cd03")
+    # The spec preimage row, assembled by hand on purpose.
+    var preimage = @[encodeServiceType(declaration.serviceType)]
+    preimage.add(encodeProviderId(declaration.providerId))
+    preimage.add(encodeZkId(declaration.zkId))
+    preimage.add(encodeLocators(locators).get)
+    check preimage == hexToSeqByte(
+      "0x0053470962558a6e0839022ae65c6b2723b32772e5c0c5f4776cb8e6a3e10ba2f3" &
+      "1900000000000000000000000000000000000000000000000000000000000000" &
+      "010b00047f00000191020bb8cd03")
     check declarationId(declaration).get == hexToByteArray[32](
       "0x7fb647c069bade94e06685b0825299d220e7cc14752cfc474773b6c4040e37b5")
 
