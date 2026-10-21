@@ -21,20 +21,58 @@ suite "ledger/block_density":
       bd.periodEnd == 59
       bd.density == 0
 
-  test "increment counts only slots inside the window":
+  test "markOccupied counts only slots inside the window":
     var bd = BlockDensity.init(1, testSchedule)
     check:
       bd.periodStart == 100
       bd.periodEnd == 159
-    bd = bd.increment(100)
+    bd = bd.markOccupied(100, [])
     check bd.density == 1
-    bd = bd.increment(159)
+    bd = bd.markOccupied(159, [])
     check bd.density == 2
-    bd = bd.increment(140) # slot order doesn't matter
+    bd = bd.markOccupied(140, []) # slot order does not matter
     check bd.density == 3
-    bd = bd.increment(95) # before the window — ignored
+    bd = bd.markOccupied(95, []) # before the window: ignored
     check bd.density == 3
-    bd = bd.increment(160) # after the window — ignored
+    bd = bd.markOccupied(160, []) # after the window: ignored
     check bd.density == 3
+
+  test "an uncle slot inside the window counts once":
+    let bd = BlockDensity.init(1, testSchedule).markOccupied(110, [105'u64])
+    check bd.density == 2
+
+  test "two distinct uncle slots in one block count twice":
+    let bd = BlockDensity.init(1, testSchedule).markOccupied(110, [105'u64, 106])
+    check bd.density == 3
+
+  test "an uncle slot outside the window is ignored":
+    let bd = BlockDensity.init(1, testSchedule).markOccupied(110, [99'u64, 160])
+    check bd.density == 1
+
+  test "a block outside the window adds nothing, even with in-window uncles":
+    let bd = BlockDensity.init(1, testSchedule).markOccupied(160, [150'u64])
+    check bd.density == 0
+
+  test "an uncle at the slot of an earlier chain block adds nothing":
+    let bd = BlockDensity.init(1, testSchedule)
+      .markOccupied(110, [])
+      .markOccupied(120, [110'u64])
+    check bd.density == 2
+
+  test "two uncles at one slot in one block count once":
+    let bd = BlockDensity.init(1, testSchedule).markOccupied(110, [105'u64, 105])
+    check bd.density == 2
+
+  test "the same uncle slot in a later block counts once":
+    let bd = BlockDensity.init(1, testSchedule)
+      .markOccupied(110, [105'u64])
+      .markOccupied(120, [105'u64])
+    check bd.density == 3
+
+  test "a chain block at a slot an earlier uncle occupied adds nothing":
+    let bd = BlockDensity.init(1, testSchedule)
+      .markOccupied(110, [105'u64])
+      .markOccupied(105, [])
+    check bd.density == 2
 
 {.pop.}
