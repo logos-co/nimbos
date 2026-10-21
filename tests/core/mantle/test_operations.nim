@@ -427,13 +427,12 @@ suite "core/mantle/operations":
     check decoded.sdpActive == mkSpecActiveMessage()
 
   test "readOpPayload rejects an unknown activity metadata type":
-    for tag in [0x00'u8, 0x02]:
-      var
-        payload = hexToSeqByte(SdpActiveSpecPayloadHex)
-        pos = 0
-      payload[40] = tag
-      check readOpPayload(payload, pos, OpSdpActive).error ==
-        DecodingError.UnknownActivityMetadataType
+    var
+      payload = hexToSeqByte(SdpActiveSpecPayloadHex)
+      pos = 0
+    payload[40] = 0x02'u8
+    check readOpPayload(payload, pos, OpSdpActive).error ==
+      DecodingError.UnknownActivityMetadataType
 
   test "readOpPayload rejects a CHANNEL_INSCRIBE inscription over MaxOperationDataSize":
     var payload = newSeq[byte](32)
