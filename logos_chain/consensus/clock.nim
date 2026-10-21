@@ -29,10 +29,10 @@ type
     genesisTime*: WallclockSeconds ## start of the first epoch
     slotDurationSeconds*: uint64
 
-func basePeriodLength*(securityParam: uint64, f: NonNegativeRatio): uint64 =
-  ## ⌊k/f⌋ — expected slots to produce `k` blocks at slot-activation rate `f`.
+func slotsForBlocks*(blocks: uint64, f: NonNegativeRatio): uint64 =
+  ## ⌊blocks/f⌋, the expected slots to produce `blocks` blocks at rate `f`.
   doAssert f.num > 0 and f.den > 0
-  securityParam * f.den div f.num
+  blocks * f.den div f.num
 
 func epochLength*(s: EpochSchedule): uint64 =
   (s.stakeDistributionStabilization + s.nonceBuffer + s.nonceStabilization) *
