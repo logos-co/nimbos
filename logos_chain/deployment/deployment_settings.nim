@@ -83,6 +83,7 @@ type
   CryptarchiaDeploymentSettings = object
     epochConfig*: EpochConfig
     securityParam*: int
+    uncleReferenceWindowInBlock*: uint32 ## W, in expected block intervals
     slotActivationCoeff*: NonNegativeRatio ## f — exact rational, no float
     learningRate*: NonNegativeRatio ## beta — parsed exactly from the decimal scalar
     sdpConfig*: SdpConfig
@@ -128,6 +129,7 @@ func validateDeploymentSettingsStructure(root: YamlNode): Result[void, string] =
   needPath(["cryptarchia", "epoch_config", "epoch_period_nonce_buffer"])
   needPath(["cryptarchia", "epoch_config", "epoch_period_nonce_stabilization"])
   needPath(["cryptarchia", "security_param"])
+  needPath(["cryptarchia", "uncle_reference_window_in_block"])
   needPath(["cryptarchia", "slot_activation_coeff", "numerator"])
   needPath(["cryptarchia", "slot_activation_coeff", "denominator"])
   needPath(["cryptarchia", "learning_rate"])
@@ -183,6 +185,8 @@ func deploymentSettingsFromYaml(root: YamlNode): Result[DeploymentSettings, stri
           root, ["cryptarchia", "epoch_config", "epoch_period_nonce_stabilization"])
       ),
       securityParam: ? reqInt(root, ["cryptarchia", "security_param"]),
+      uncleReferenceWindowInBlock: ? reqUInt32(
+        root, ["cryptarchia", "uncle_reference_window_in_block"]),
       slotActivationCoeff: NonNegativeRatio(
         num: ? reqUInt64(root, ["cryptarchia", "slot_activation_coeff", "numerator"]),
         den: ? reqUInt64(root, ["cryptarchia", "slot_activation_coeff", "denominator"])
@@ -239,6 +243,8 @@ func validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
   need(ds.cryptarchia.epochConfig.epochPeriodNonceStabilization > 0,
     "cryptarchia.epoch_config.epoch_period_nonce_stabilization must be > 0")
   need(ds.cryptarchia.securityParam > 0, "cryptarchia.security_param must be > 0")
+  need(ds.cryptarchia.uncleReferenceWindowInBlock > 0,
+    "cryptarchia.uncle_reference_window_in_block must be > 0")
   need(ds.cryptarchia.slotActivationCoeff.num > 0,
     "cryptarchia.slot_activation_coeff.numerator must be > 0")
   need(ds.cryptarchia.slotActivationCoeff.den > 0,

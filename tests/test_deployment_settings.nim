@@ -92,6 +92,7 @@ cryptarchia:
     epoch_period_nonce_buffer: 1
     epoch_period_nonce_stabilization: 1
   security_param: 1
+  uncle_reference_window_in_block: 12
   slot_activation_coeff:
     numerator: 1
     denominator: 20
@@ -168,6 +169,7 @@ cryptarchia:
     epoch_period_nonce_buffer: 1
     epoch_period_nonce_stabilization: 1
   security_param: 1
+  uncle_reference_window_in_block: 12
   slot_activation_coeff:
     numerator: 1
     denominator: 20
@@ -300,6 +302,13 @@ suite "deployment-settings":
     check r.isErr
     check "missing top-level section: blend" in r.error
 
+  test "parseDeploymentSettings: missing cryptarchia.uncle_reference_window_in_block":
+    let r = parseDeploymentSettings(
+      minimalValidYaml.replace("  uncle_reference_window_in_block: 12\n", ""))
+    check r.isErr
+    check "missing or invalid path: cryptarchia.uncle_reference_window_in_block" in
+      r.error
+
   test "parseDeploymentSettings: network not a mapping":
     check fileExists(wrongTypesFixturePath)
     let
@@ -374,6 +383,7 @@ suite "deployment-settings":
     check ds.blend.common.protocolName == "/stub/blend"
     check ds.time.slotDuration == 1.seconds
     check ds.cryptarchia.securityParam == 1
+    check ds.cryptarchia.uncleReferenceWindowInBlock == 12'u32
     check ds.cryptarchia.genesisState.validGenesisTx.tx.ops.len == 2
 
   test "validateDeploymentSettings: empty blend.common.protocol_name":
@@ -444,6 +454,15 @@ mempool:
       v = validateDeploymentSettings(ds)
     check v.isErr
     check "cryptarchia.slot_activation_coeff.denominator must be > 0" in v.error
+
+  test "validateDeploymentSettings: zero uncle reference window":
+    var ds = parseDeploymentSettings(minimalValidYaml).valueOr:
+      check false
+      return
+    ds.cryptarchia.uncleReferenceWindowInBlock = 0
+    let v = validateDeploymentSettings(ds)
+    check v.isErr
+    check "cryptarchia.uncle_reference_window_in_block must be > 0" in v.error
 
   test "validateDeploymentSettings: slot coeff without pinned lottery constants":
     let badYaml = deploymentSettingsBlendBlock & """

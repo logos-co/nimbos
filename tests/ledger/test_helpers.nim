@@ -35,7 +35,8 @@ const
     epochSchedule: testSchedule,
     slotActivationCoeff: NonNegativeRatio(num: 1, den: 10),
     learningRateFixed: fixedPoint(NonNegativeRatio(num: 1, den: 1)),
-    faucetPk: Opt.none(ZkPublicKey))
+    faucetPk: Opt.none(ZkPublicKey),
+    uncleWindowSlots: 20) # keeps the uncle window inside the 60-slot test phases
 
 func fe*(n: uint64): FieldElement =
   ## Small-integer field element for test vectors.

@@ -80,14 +80,16 @@ func ledgerConfig*(settings: DeploymentSettings): LedgerConfig =
   LedgerConfig(
     epochSchedule: EpochSchedule(
       basePeriodLength:
-        basePeriodLength(uint64(c.securityParam), c.slotActivationCoeff),
+        slotsForBlocks(uint64(c.securityParam), c.slotActivationCoeff),
       stakeDistributionStabilization:
         uint64(c.epochConfig.epochStakeDistributionStabilization),
       nonceBuffer: uint64(c.epochConfig.epochPeriodNonceBuffer),
       nonceStabilization: uint64(c.epochConfig.epochPeriodNonceStabilization)),
     slotActivationCoeff: c.slotActivationCoeff,
     learningRateFixed: fixedPoint(c.learningRate),
-    faucetPk: Opt.some(c.genesisState.faucetZkPublicKey))
+    faucetPk: Opt.some(c.genesisState.faucetZkPublicKey),
+    uncleWindowSlots:
+      slotsForBlocks(uint64(c.uncleReferenceWindowInBlock), c.slotActivationCoeff))
 
 func init*(
     T: type Chain,
