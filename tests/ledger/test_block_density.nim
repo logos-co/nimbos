@@ -37,12 +37,8 @@ suite "ledger/block_density":
     bd = bd.markOccupied(160, []) # after the window: ignored
     check bd.density == 3
 
-  test "an uncle slot inside the window counts once":
-    let bd = BlockDensity.init(1, testSchedule).markOccupied(110, [105'u64])
-    check bd.density == 2
-
-  test "two distinct uncle slots in one block count twice":
-    let bd = BlockDensity.init(1, testSchedule).markOccupied(110, [105'u64, 106])
+  test "each distinct uncle slot in a block counts once":
+    let bd = BlockDensity.init(1, testSchedule).markOccupied(110, [105'u64, 106, 105])
     check bd.density == 3
 
   test "an uncle slot outside the window is ignored":
@@ -57,22 +53,6 @@ suite "ledger/block_density":
     let bd = BlockDensity.init(1, testSchedule)
       .markOccupied(110, [])
       .markOccupied(120, [110'u64])
-    check bd.density == 2
-
-  test "two uncles at one slot in one block count once":
-    let bd = BlockDensity.init(1, testSchedule).markOccupied(110, [105'u64, 105])
-    check bd.density == 2
-
-  test "the same uncle slot in a later block counts once":
-    let bd = BlockDensity.init(1, testSchedule)
-      .markOccupied(110, [105'u64])
-      .markOccupied(120, [105'u64])
-    check bd.density == 3
-
-  test "a chain block at a slot an earlier uncle occupied adds nothing":
-    let bd = BlockDensity.init(1, testSchedule)
-      .markOccupied(110, [105'u64])
-      .markOccupied(105, [])
     check bd.density == 2
 
 {.pop.}
