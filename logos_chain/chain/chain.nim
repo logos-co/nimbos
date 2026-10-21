@@ -17,9 +17,10 @@ import
   ../deployment/deployment_settings,
   ../ledger/[ledger, stake_inference],
   ../mempool,
-  ./[block_validation, genesis, orphan_pool, proposal]
+  ./[block_validation, genesis, orphan_pool, proposal, uncle_validation]
 
-export types, genesis, local_tree, mempool, block_validation, orphan_pool, proposal
+export types, genesis, local_tree, mempool, block_validation, orphan_pool, proposal,
+  uncle_validation
 export ledger except config
 
 const DefaultSecurityParam*: uint64 = 1'u64
@@ -45,6 +46,7 @@ type
     StatelessTxRejected
     OrphanBuffered
     OrphanAlreadyBuffered
+    UncleRejected
 
   BlockApplyError* = object
     case kind*: BlockApplyErrorKind
@@ -52,6 +54,8 @@ type
       ledgerError*: LedgerError
     of BlockApplyErrorKind.StatelessTxRejected:
       statelessError*: StatelessLedgerError
+    of BlockApplyErrorKind.UncleRejected:
+      uncleError*: UncleError
     else:
       discard
 
@@ -59,6 +63,7 @@ func `$`*(e: BlockApplyError): string =
   case e.kind
   of BlockApplyErrorKind.LedgerRejected: "ledger: " & $e.ledgerError
   of BlockApplyErrorKind.StatelessTxRejected: "stateless tx: " & $e.statelessError
+  of BlockApplyErrorKind.UncleRejected: "uncle: " & $e.uncleError
   else: $e.kind
 
 func isRecoverable*(kind: BlockApplyErrorKind): bool =
@@ -70,7 +75,8 @@ func isRecoverable*(kind: BlockApplyErrorKind): bool =
       BlockApplyErrorKind.MissingReference:
     true
   of BlockApplyErrorKind.InvalidStructure, BlockApplyErrorKind.UnviableFork,
-      BlockApplyErrorKind.LedgerRejected, BlockApplyErrorKind.StatelessTxRejected:
+      BlockApplyErrorKind.LedgerRejected, BlockApplyErrorKind.StatelessTxRejected,
+      BlockApplyErrorKind.UncleRejected:
     false
 
 func ledgerConfig*(settings: DeploymentSettings): LedgerConfig =
@@ -261,6 +267,12 @@ proc applyAdmittedBlock(
     id: BlockId,
     curSlot: SlotNumber,
 ): Result[void, BlockApplyError] =
+  # Step 10 runs before the PoL of the block. The order does not change
+  # the verdict. A block with a bad PoL and `MaxUncles` valid uncles costs
+  # at most five proof checks. The uncle checks reject cheap failures first.
+  validateUncles(admittedBlk, chain.localTree, chain.ledger).isOkOr:
+    chain.orphanPool.pruneDescendants(id)
+    return err(BlockApplyError(kind: UncleRejected, uncleError: error))
   # Tier 3: PoL against parent state and stateless transaction validation (mempool fast path)
   let
     (validBlk, headerState) = validatePolAndStatelessTransactions(

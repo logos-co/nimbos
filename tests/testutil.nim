@@ -367,13 +367,19 @@ func childBlock*(
     txs: openArray[HashedSignedMantleTx],
     uncleHeaders: openArray[SignedHeader] = [],
     keyPair: EdKeyPair = testBlockKeyPair,
+    tag: byte = 0,
+    bedrockVersion: uint8 = parentHdr.bedrockVersion,
 ): Block =
+  ## Signed block over `parentHdr`. A nonzero `tag` lands in the entropy
+  ## contribution, so two blocks with equal inputs get distinct ids.
   var proofOfLeadership = parentHdr.proofOfLeadership
   proofOfLeadership.leaderKey = keyPair.pubkey
+  if tag != 0:
+    proofOfLeadership.entropyContribution[0] = tag
 
   let
     h = initHeader(
-      bedrockVersion = parentHdr.bedrockVersion,
+      bedrockVersion = bedrockVersion,
       parentBlock = parentId,
       slot = slot,
       uncleHeaders = uncleHeaders,

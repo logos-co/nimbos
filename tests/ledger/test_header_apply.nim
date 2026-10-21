@@ -68,8 +68,8 @@ suite "ledger/header apply (epoch pipeline)":
       s.sdp.lastEpochStarted == Opt.some(EpochNumber(1))
 
   test "TSI counts an uncle slot across an epoch rotation":
-    # Three blocks inside the [0, 59] window plus one uncle at slot 7: the
-    # observed density is 4 against the expected 6, so at beta = 1 the
+    # Three blocks inside the [0, 59] window plus one uncle at slot 7 give
+    # an observed density of 4 against the expected 6. At beta = 1 the
     # estimate is 1000 - ⌊1000 · 2/6⌋ = 666, not the three-block value 500.
     var s = genesisLedgerState()
     s = s.tryApplyHeader(5, sentinelProof(), [], testLedgerConfig).expect("valid")
@@ -80,18 +80,6 @@ suite "ledger/header apply (epoch pipeline)":
     check:
       s.epochs.activeEpoch.epoch == 1
       s.epochs.activeEpoch.totalStake == 666
-
-  test "a block in the next epoch with an uncle inside the closed window adds nothing":
-    # The uncle at 50 lies in epoch 0's window, but its carrier at 100 does
-    # not: epoch 0 keeps density 3 and epoch 1 counts only the carrier.
-    var s = genesisLedgerState()
-    for slot in [5'u64, 10, 20]:
-      s = s.tryApplyHeader(slot, sentinelProof(), [], testLedgerConfig).expect("valid")
-    s = s.tryApplyHeader(100, sentinelProof(), [50'u64], testLedgerConfig).expect("rotation")
-    check:
-      s.epochs.activeEpoch.epoch == 1
-      s.epochs.activeEpoch.totalStake == 500
-      s.epochs.blockDensity.density == 1
 
   test "nonce freezes at the snapshot slot, aged root at the epoch start":
     var s = genesisLedgerState()

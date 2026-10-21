@@ -49,6 +49,7 @@ import # Unit test
   ./chain/test_block_processor,
   ./chain/test_orphan_pool,
   ./chain/test_chain_orphans,
+  ./chain/test_uncle_validation,
   ./utils/test_hash_trie_map,
   ./utils/test_dynamic_merkle_tree,
   ./ledger/sdp/test_state,
