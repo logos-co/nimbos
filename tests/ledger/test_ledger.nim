@@ -15,11 +15,11 @@ import
   stew/io2,
   bearssl/rand,
   libp2p/crypto/ed25519/ed25519,
-  ../../logos_chain/ledger/
-    [balance, cryptarchia_state, ledger, types],
-  ../../logos_chain/ledger/sdp/[ops, registry, state],
-  ../../logos_chain/core/mantle/
-    [primitives, operations, proofs, tx_hashing, tx_types, utxo],
+  ../../logos_chain/ledger/[
+    balance, cryptarchia_state, ledger, types],
+  ../../logos_chain/ledger/sdp/[ops, registry, rewards, state],
+  ../../logos_chain/core/mantle/[
+    blend_activity, primitives, operations, proofs, tx_hashing, tx_types, utxo],
   ../../logos_chain/core/types,
   ../../logos_chain/zk/pol,
   ../zk/zksign_helpers,
@@ -55,6 +55,7 @@ const
   zksignFixtureDir = testsDir / "../fixtures/zksign"
   zksignFixtureVk = zksignFixtureDir / "verification_key.json"
   transferProofPath = zksignFixtureDir / "proof.json"
+  transferPublicPath = zksignFixtureDir / "public.json"
 
 proc mkProvider(seed: byte): ProviderId =
   var bytes: array[EdPublicKeySize, byte]
@@ -577,6 +578,79 @@ suite "tryApplyTx — SDP":
       state.sdp.state.lockedNotes, state.mantleLedger.channelNotes, spendOp,
     )
     check unlocked.isOk
+
+suite "ledger — sdp withdrawal through the epoch boundary":
+  test "a withdrawn provider is paid for its last served epoch at withdraw_at + 1":
+    # Payout reads the frozen reward target, so its order against the
+    # removal is not observable here. The test pins the timing-table rows
+    # e+1 to e+3 through the header path. No committed fixture signs an
+    # SDP_ACTIVE transaction, so the report goes through the registry op
+    # with the zksign fixture proof.
+    check installZksignVk(zksignFixtureVk)
+    let
+      noteA = mkUtxoWithPk(mkRealZkPubKey(1), value = 200)
+      noteB = mkUtxo(value = 200, pkSeed = 2)
+      declarationA = DeclarationMessage(
+        serviceType: ServiceType.bn,
+        locators: @[],
+        providerId: mkProvider(1),
+        lockedNoteId: noteA.id,
+        zkId: noteA.note.zkPublicKey,
+      )
+      declarationB = DeclarationMessage(
+        serviceType: ServiceType.bn,
+        locators: @[],
+        providerId: mkProvider(2),
+        lockedNoteId: noteB.id,
+        zkId: noteB.note.zkPublicKey,
+      )
+    var s = LedgerState.fromUtxos(
+      [noteA, noteB], default(FieldElement),
+      SdpRegistry.init(testSdpConfig(), testBlendLotteryParams),
+      testLedgerConfig).expect("seed")
+    let
+      declIdA = installTestDeclaration(s.sdp, declarationA, epoch = 0)
+      declIdB = installTestDeclaration(s.sdp, declarationB, epoch = 0)
+    s.sdp = onEpochStarted(s.sdp, 0)
+
+    # Epoch 1: A withdraws. So withdraw_at is 3.
+    s = s.tryApplyHeader(100'u64, mkProof(), testLedgerConfig).expect("epoch 1")
+    let infoA = getDeclaration(s.sdp.state, declIdA).get()
+    s.sdp = applySdpWithdraw(s.sdp, WithdrawMessage(
+      declarationId: declIdA, lockedNoteId: noteA.id, nonce: 1), infoA, 1)
+
+    # Epoch 2 is the last epoch A serves. Its income is 1000.
+    s = s.tryApplyHeader(200'u64, mkProof(), testLedgerConfig).expect("epoch 2")
+    check s.sdp.activeBlendProviders(2).len == 2
+    s.sdp.blendRewards = s.sdp.blendRewards.addIncome(1000).expect("income")
+
+    # Epoch 3: the boundary freezes epoch 2 as the reward target. A
+    # reports its epoch-2 activity at withdraw_at.
+    s = s.tryApplyHeader(300'u64, mkProof(), testLedgerConfig).expect("epoch 3")
+    check s.sdp.activeBlendProviders(3).len == 1
+    let
+      indexA = s.sdp.blendRewards.target.get.state.providers.get(
+        declarationA.providerId).get.index
+      report = ActiveMessage(
+        declarationId: declIdA,
+        nonce: 2,
+        metadata: mkActivity(findRho(indexA, 2), epoch = 2, keySeed = 3))
+    s.sdp = tryApplySdpActive(
+      s.sdp, report, loadProof(transferProofPath),
+      loadTxHash(transferPublicPath), 3, acceptAllPoq).expect(
+        "report at withdraw_at")
+
+    # Epoch 4: the boundary pays A for epoch 2. Then it removes A and
+    # unlocks the note of A. The reward note enters the live UTXO set.
+    s = s.tryApplyHeader(400'u64, mkProof(), testLedgerConfig).expect("epoch 4")
+    let reward = Utxo(
+      opId: rewardOpId(ServiceType.bn, 2),
+      outputIndex: 0,
+      note: Note(value: 1000, zkPublicKey: declarationA.zkId))
+    check s.latestUtxos.contains(reward.id)
+    check getDeclaration(s.sdp.state, declIdA).isNone
+    check getLockedNote(s.sdp.state, noteA.id).isNone
+    check getDeclaration(s.sdp.state, declIdB).isSome
 
   test "prepareUpdate commits registry state from parent":
     let input = mkUtxo(value = 200, pkSeed = 3)

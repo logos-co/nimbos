@@ -64,20 +64,22 @@ proc mkTargetActivity(target: BlendTarget, nonce: Nonce = 1): ActiveMessage =
     metadata: mkActivity(findRho(index, 2), 0, 3))
 
 suite "ledger/sdp/ops/active":
-  test "tryApplySdpActive rejects unknown declaration and bad nonce":
-    var seeded = seedDeclaration(pkSeed = 21, declareEpoch = 10)
+  test "tryApplySdpActive rejects unknown declaration":
+    let seeded = seedDeclaration(pkSeed = 21, declareEpoch = 10)
     var unknown = ActiveMessage(
       declarationId: seeded.declId,
       nonce: 1,
     )
     unknown.declarationId[0] = byte(77)
-    var seededCopy = seeded
-    check execActive(seededCopy, unknown, 15).error == DeclarationNotFound
+    check execActive(seeded, unknown, 15).error == DeclarationNotFound
 
-    let stale = ActiveMessage(
-      declarationId: seeded.declId,
-      nonce: 0,
-    )
+  test "tryApplySdpActive rejects a stale nonce":
+    let
+      seeded = seedDeclaration(pkSeed = 26, declareEpoch = 10)
+      stale = ActiveMessage(
+        declarationId: seeded.declId,
+        nonce: 0,
+      )
     check execActive(seeded, stale, 15).error == InvalidNonce
 
   test "tryApplySdpActive accepts declaration with withdraw intent":
@@ -116,9 +118,6 @@ suite "ledger/sdp/ops/active":
     let active = ActiveMessage(
       declarationId: seeded.declId, nonce: 2)
     check execActive(seeded, active, 6).error == AlreadyWithdrawn
-    let info = getDeclaration(seeded.registry.state, seeded.declId).get()
-    check info.nonce == 1'u64
-    check info.active.isNone
 
   test "the withdrawal check runs before the nonce check":
     var seeded = seedDeclaration(pkSeed = 25, declareEpoch = 1)
@@ -159,6 +158,17 @@ suite "ledger/sdp/ops/active — blend activity":
     let applied = tryApplySdpActive(
       registry, mkTargetActivity(target, nonce = 2), fixtureProof,
       fixtureTxHash, 1, acceptAllPoq).expect("report at withdraw_at")
+    check getDeclaration(applied.state, target.declId).get().active ==
+      Opt.some(1'u32)
+
+  test "accepts a report before withdraw_at":
+    var registry = target.registry
+    installTestWithdraw(registry, WithdrawMessage(
+      declarationId: target.declId, lockedNoteId: default(NoteId), nonce: 1),
+      withdrawAt = 2)
+    let applied = tryApplySdpActive(
+      registry, mkTargetActivity(target, nonce = 2), fixtureProof,
+      fixtureTxHash, 1, acceptAllPoq).expect("report before withdraw_at")
     check getDeclaration(applied.state, target.declId).get().active ==
       Opt.some(1'u32)
 
