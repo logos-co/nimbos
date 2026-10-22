@@ -11,7 +11,7 @@ import chronicles
 import stew/io2
 
 when defined(windows):
-  import stew/[windows/acl, windows/winutils]
+  import stew/windows/acl
   import std/widestrs
   proc moveFileExW(lpExistingFileName, lpNewFileName: pointer, dwFlags: uint32): int32 {.
     importc: "MoveFileExW", header: "<windows.h>", stdcall, sideEffect.}
