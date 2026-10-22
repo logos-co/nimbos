@@ -6,7 +6,7 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## Gas units, per-operation execution gas, and protocol gas constants.
-## Spec: [Bedrock v1.1 — Mantle Specification v1.10.0 — Gas Determination](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md#gas-determination)
+## Spec: [Bedrock v1.1 — Mantle Specification v1.16.0 — Gas Determination](https://github.com/logos-co/logos-lips/blob/fddc2c1911626f7b1949360b8924bb6c05252bff/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md#gas-determination)
 
 {.push raises: [], gcsafe.}
 
@@ -27,15 +27,16 @@ const
   # Spec: bedrock-v1.1-mantle-specification.md "Gas Determination" table.
   # Names verbatim from the spec.
   EXECUTION_TRANSFER_GAS = Gas(590)
-  EXECUTION_CHANNEL_INSCRIBE_GAS = Gas(56)
-  EXECUTION_CHANNEL_CONFIG_GAS = Gas(56)
+  EXECUTION_CHANNEL_INSCRIBE_GAS = Gas(59)
+  EXECUTION_CHANNEL_CONFIG_GAS = Gas(59)
   EXECUTION_CHANNEL_DEPOSIT_GAS = Gas(590)
-  EXECUTION_CHANNEL_WITHDRAW_GAS = Gas(56)
-  EXECUTION_CHANNEL_TRANSFER_GAS = Gas(56)
-  EXECUTION_SDP_DECLARE_GAS = Gas(646)
+  EXECUTION_CHANNEL_WITHDRAW_GAS = Gas(59)
+  EXECUTION_CHANNEL_TRANSFER_GAS = Gas(59)
+  EXECUTION_SDP_DECLARE_GAS = Gas(649)
   EXECUTION_SDP_WITHDRAW_GAS = Gas(590)
   EXECUTION_SDP_ACTIVE_GAS = Gas(590)
   EXECUTION_LEADER_CLAIM_GAS = Gas(580)
+  # EXECUTION_CLAIM_POW_REWARD_GAS: no CLAIM_POW_REWARD opcode yet.
 
   # execution-market.md G_max: 3,200,000 execution gas (1s at 80% of a
   # min-spec CPU) minus the 6,540 reserved for batch-verification init.
@@ -54,7 +55,7 @@ func checkedMul*(a: Gas, b: GasPrice): Opt[GasCost] =
 func execution_gas*(op: Op, multisigThreshold: uint16): Gas =
   ## Execution gas for one operation. `multisigThreshold` scales the channel
   ## config/withdraw/transfer cost; ignored otherwise.
-  # One 56-gas unit per Ed25519 verification, per the spec's Gas Determination.
+  # One channel-gas unit per Ed25519 signature verified.
   case op.payload.kind
   of Transfer: EXECUTION_TRANSFER_GAS
   of ChannelInscribe: EXECUTION_CHANNEL_INSCRIBE_GAS

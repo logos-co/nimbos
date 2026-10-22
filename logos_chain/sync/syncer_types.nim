@@ -14,6 +14,8 @@ import
 
 type
   PeerProvider* = proc(): seq[PeerId] {.gcsafe, raises: [].}
+  OnIbdComplete* = proc() {.gcsafe, raises: [].}
+  OnIbdFailure* = proc(reason: string) {.gcsafe, raises: [].}
 
   Syncer* = ref object
     sw*: Switch
