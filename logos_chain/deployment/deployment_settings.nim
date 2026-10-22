@@ -16,6 +16,7 @@ import
   std/strutils,
   chronos,
   confutils/defs,
+  intops,
   results,
   stew/io2,
   yaml/dom,
@@ -24,7 +25,6 @@ import
 
 from ../core/mantle/primitives import EpochNumber, NumberOfEpochs
 from ../zk/pol_lottery import isSupportedLotteryF
-from ../consensus/consensus_state import densitySlotWindow
 
 export
   dom,
@@ -144,6 +144,22 @@ func validateDeploymentSettingsStructure(root: YamlNode): Result[void, string] =
   needPath(["time", "slot_duration"])
   needPath(["mempool", "pubsub_topic"])
   ok()
+
+func densitySlotWindow(securityParam: uint64, f: NonNegativeRatio): uint64 =
+  ## Returns the density check slot window length s_gen = ⌊k / (4f)⌋ = ⌊(k * f.den) / (4 * f.num)⌋.
+  ## For default parameters (k=2160, f=1/30), s_gen = 16200 slots (4h 30m).
+  ## Guards against 64-bit integer multiplication overflow and division by zero.
+  if f.num == 0 or f.den == 0 or securityParam == 0:
+    return 0'u64
+  if f.num > uint64.high div 4'u64:
+    return 0'u64
+  let
+    den = 4'u64 * f.num
+    (numHi, numLo) = wideningMul(securityParam, f.den)
+  if numHi >= den:
+    return uint64.high
+  let (q, _) = narrowingDiv(numHi, numLo, den)
+  q
 
 func deploymentSettingsFromYaml(root: YamlNode): Result[DeploymentSettings, string] =
   let

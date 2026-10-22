@@ -157,7 +157,16 @@ func lcaBlockIdAndHeight*(
       return Opt.none((BlockId, BlockNumber))
   Opt.some((na.id, na.height))
 
-func highestAncestorInSlotWindow*(
+# TODO: Backwards pointer traversal in highestAncestorInSlotWindow, lcaBlockIdAndHeight,
+# and ancestorAtHeight is currently O(N). To optimize without breaking spec compliance:
+# 1. Add binary-skip pointers to BlockNode (e.g. Bitcoin-style pskip / skipHeight(height))
+#    to enable O(log N) ancestor and LCA lookups. In highestAncestorInSlotWindow, take skip
+#    pointers while skip.slot > maxSlot, then step to parent (valid because slots strictly
+#    increase along any chain).
+# 2. Alternatively or additionally, compute candidate density inductively from parent:
+#    if child.slot > maxSlot: density(child, lca) = density(parent, lca);
+#    else: density(child, lca) = child.height - lcaHeight (O(1) with cached parent).
+func highestAncestorInSlotWindow(
     localTree: LocalTree,
     tipId: BlockId,
     lcaSlot: SlotNumber,
@@ -187,8 +196,9 @@ func countChainDensity*(
   ## Uses the mathematical property that density equals the height delta between the
   ## highest block in the window and the LCA: height(B_upper) - lcaHeight.
   ## If tip.slot <= maxSlot, this evaluates in O(1) without backwards traversal.
-  let maxSlot = saturatingAdd(lcaSlot, densitySlotWindow)
-  let upperHeight = localTree.highestAncestorInSlotWindow(tipId, lcaSlot, maxSlot)
+  let
+    maxSlot = saturatingAdd(lcaSlot, densitySlotWindow)
+    upperHeight = localTree.highestAncestorInSlotWindow(tipId, lcaSlot, maxSlot)
   if upperHeight <= lcaHeight:
     0'u64
   else:

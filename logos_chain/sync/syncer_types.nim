@@ -22,10 +22,5 @@ type
     processor*: BlockProcessor
     chainSyncProtocol*: string
     ibdFut*: Future[void].Raising([CancelledError])
-    prolongedBootFut*: Future[void].Raising([CancelledError])
-
-template localTree*(syncer: Syncer): LocalTree = syncer.processor.localTree
-template canonicalTip*(syncer: Syncer): Tip = syncer.processor.canonicalTip
-template consensus*(syncer: Syncer): ConsensusState = syncer.processor.consensus
 
 {.pop.}

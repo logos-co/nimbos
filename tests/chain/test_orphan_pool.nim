@@ -12,7 +12,6 @@ import
   unittest2,
   ../logos_chain/sync/helpers,
   ../../logos_chain/core/types,
-  ../../logos_chain/core/local_tree,
   ../../logos_chain/consensus/consensus_state,
   ../../logos_chain/chain/orphan_pool
 
@@ -228,17 +227,17 @@ suite "chain/orphan_pool":
   test "pruneIncompatibleWithImmutable removes orphans incompatible with advancing LIB":
     let pool = OrphanPool()
     let genesis = Block(header: Header(slot: 0))
-    let cs = ConsensusState.init(genesis, securityParam = 1'u64, densitySlotWindow = 100'u64)
+    let cs = ConsensusState.init(
+      genesis, securityParam = 1'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Bootstrap
+    )
     let gid = blockId(genesis.header)
 
     let b1 = Block(header: Header(slot: 1, parentBlock: gid))
     let id1 = blockId(b1.header)
-    check cs.localTree.addBlockToTree(b1)
+    check cs.addBlockAndTryUpdateTip(b1)
 
     let b2 = Block(header: Header(slot: 2, parentBlock: id1))
-    let id2 = blockId(b2.header)
-    check cs.localTree.addBlockToTree(b2)
-    cs.tryUpdateTip(id2)
+    check cs.addBlockAndTryUpdateTip(b2)
     # LIB advances to b1 (height 2 - 1 = 1, slot 1)
     discard cs.tryUpdateLib()
     check cs.latestImmutableId == id1

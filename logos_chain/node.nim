@@ -8,14 +8,14 @@
 {.push raises: [], gcsafe.}
 
 import
-  std/[cpuinfo, times],
+  std/cpuinfo,
   chronos, chronicles, presto, presto/server,
   bearssl/rand,
   metrics, metrics/chronos_httpserver,
   stew/byteutils,
-  ./consensus/consensus_state,
+  ./consensus/[clock, consensus_state],
   ./chain/[block_processor, gossip_processor],
-  ./[conf, process_state, node_state],
+  ./[conf, process_state, node_state, fork_choice_lifecycle],
   ./core/[types, utils],
   ./deployment/deployment_settings,
   ./networking/network,
@@ -45,6 +45,7 @@ type
     deploymentSettings*: DeploymentSettings
     processor*: BlockProcessor
     syncer*: Syncer
+    lifecycle*: ForkChoiceLifecycle
     metricsServer*: Opt[MetricsHttpServerRef]
     shutdownEvent*: AsyncEvent
     taskpool*: Taskpool
@@ -97,24 +98,37 @@ proc init*(
       path = verificationKeyPath(circuitsDir, Circuit.Poq), err = $error
     return Opt.none(LBNode)
 
+  # TODO: Block storage is currently in-memory only and resets to genesis on startup.
+  # Once persistent block storage is implemented, verify whether the loaded block tree
+  # matches the saved LIB anchor before selecting Online mode, and use the actual
+  # `isLibAtGenesis` status. Until then, force `effectiveLibAtGenesis = true` so the node
+  # always safely starts in Bootstrap mode upon restart.
   let
     genesisId = blockId(deploymentSettings.cryptarchia.genesisState.header)
     dataDirStr = string(config.dataDir)
     savedState = loadNodeState(dataDirStr)
-    nowUnix = uint64(max(getTime().toUnix(), 0'i64))
-    (lastOnlineOpt, isLibAtGenesis) = parseSavedNodeState(savedState, genesisId)
-    initialForkChoiceRule = determineStartupForkChoiceRule(
+    nowUnix = nowWallclockSeconds()
+    (lastOnlineOpt, savedLibAtGenesis) = parseSavedNodeState(savedState, genesisId)
+    effectiveLibAtGenesis = true
+    (initialForkChoiceRule, startupReason) = determineStartupForkChoiceRule(
       explicitBootstrapFlag = config.bootstrap,
-      isLibAtGenesis = isLibAtGenesis,
+      isLibAtGenesis = effectiveLibAtGenesis,
       lastOnlineTimestampUnix = lastOnlineOpt,
       currentTimestampUnix = nowUnix,
     )
+
+  if startupReason == StartupForkChoiceReason.ClockSkew:
+    warn "Clock skew detected; saved node state timestamp is in the future",
+      nowUnix = nowUnix,
+      savedLastOnlineUnix = lastOnlineOpt.get(0'u64)
 
   info "Determined startup fork choice rule",
     rule = $initialForkChoiceRule,
     explicitBootstrap = config.bootstrap,
     hasSavedState = savedState.isSome,
-    isLibAtGenesis = isLibAtGenesis
+    savedLibAtGenesis = savedLibAtGenesis,
+    effectiveLibAtGenesis = effectiveLibAtGenesis,
+    reason = $startupReason
 
   let chain = Chain.init(
     deploymentSettings, forkChoiceRule = initialForkChoiceRule
@@ -156,10 +170,10 @@ proc init*(
       error "Failed to initialize node", err = error
       return Opt.none(LBNode)
     processor = BlockProcessor.new(chain)
+    lifecycle = ForkChoiceLifecycle.new(processor, dataDirStr)
 
   var nodeSyncer: Syncer = nil
-  if processor.localTree != nil and
-      deploymentSettings.network.chainSyncProtocolName.len > 0:
+  if deploymentSettings.network.chainSyncProtocolName.len > 0:
     nodeSyncer = Syncer.init(
       network.switch, processor, deploymentSettings.network.chainSyncProtocolName)
 
@@ -169,7 +183,6 @@ proc init*(
       genesisBlockId = blockId(genesisBlock.header)
   else:
     debug "Syncer not configured at node startup",
-      hasLocalTree = processor.localTree != nil,
       chainSyncProtocol = deploymentSettings.network.chainSyncProtocolName
 
   # Created last so every earlier failure path has nothing to release.
@@ -202,6 +215,7 @@ proc init*(
     deploymentSettings: deploymentSettings,
     processor: processor,
     syncer: nodeSyncer,
+    lifecycle: lifecycle,
     shutdownEvent: newAsyncEvent(),
     taskpool: taskpool,
     prover: zkProver)
@@ -209,14 +223,21 @@ proc init*(
 when defined(windows):
   from winservice import reportServiceStatusSuccess
 
-proc onSlotStart(node: LBNode): Future[bool] {.async.} =
+proc onSlotStart(node: LBNode): Future[bool] {.async: (raises: [CancelledError]).} =
   when defined(windows):
     if node.config.runAsService:
       reportServiceStatusSuccess()
 
+  # Spec: [Cryptarchia Bootstrapping & Synchronization - Proposing New Blocks]
+  # A node can start proposing blocks only after the Prolonged Bootstrap Period
+  # is complete and the fork choice rule has transitioned to Online:
+  if node.lifecycle != nil and not node.lifecycle.canProposeBlocks:
+    trace "Skipping block proposal during bootstrap period"
+    return false
+
   false
 
-proc runSlotLoop(node: LBNode) {.async.} =
+proc runSlotLoop(node: LBNode): Future[void] {.async: (raises: [CancelledError]).} =
   info "Scheduling first slot action"
 
   while true:
@@ -230,18 +251,11 @@ proc runSlotLoop(node: LBNode) {.async.} =
     if breakLoop:
       break
 
-proc persistNodeState(node: LBNode, timeUnix: uint64) =
-  if node.processor != nil and node.processor.forkChoiceRule == ForkChoiceRule.Online:
-    let libId = node.processor.consensus.latestImmutableId
-    saveNodeState(string(node.config.dataDir), timeUnix, libId)
-
 proc onSecond(node: LBNode, time: Moment) =
   # Nim GC metrics (for the main thread)
   updateThreadMetrics()
-  let nowUnix = uint64(max(getTime().toUnix(), 0'i64))
-  node.persistNodeState(nowUnix)
 
-proc runOnSecondLoop(node: LBNode) {.async.} =
+proc runOnSecondLoop(node: LBNode): Future[void] {.async: (raises: [CancelledError]).} =
   const
     sleepTime = chronos.seconds(1)
   while true:
@@ -282,13 +296,11 @@ proc subscribeBlockTopic(node: LBNode) =
     debug "Subscribed to block gossip topic", topic = blockTopic
 
 proc stop(node: LBNode) =
-  let nowUnix = uint64(max(getTime().toUnix(), 0'i64))
-  node.persistNodeState(nowUnix)
-
   # The IBD task may be awaiting a queued result. Cancel it before the
   # processor cancels that future, so the cancellation comes from its owner.
   if node.syncer != nil:
     waitFor node.syncer.stop()
+  waitFor node.lifecycle.stop()
   waitFor node.processor.stop()
   try:
     waitFor node.network.stop()
@@ -312,6 +324,7 @@ proc initializeNetworking*(node: LBNode) {.async: (raises: [CancelledError]).} =
   if node.syncer != nil:
     let onIbdComplete: OnIbdComplete = proc() =
       node.subscribeBlockTopic()
+      node.lifecycle.onSyncComplete()
     let onIbdFailure: OnIbdFailure = proc(reason: string) =
       ProcessState.scheduleStop(cstring(reason))
 
@@ -333,12 +346,14 @@ proc initializeNetworking*(node: LBNode) {.async: (raises: [CancelledError]).} =
       node.syncer.start(onIbdComplete, onIbdFailure)
   else:
     node.subscribeBlockTopic()
+    node.lifecycle.onSyncComplete()
 type StopFuture = Future[void].Raising([CancelledError])
 
 proc run*(node: LBNode, stopper: StopFuture) {.raises: [CatchableError].} =
   ## Caller is responsible for installing REST handlers and starting the
   ## REST server before calling `run`.
   node.processor.start()
+  node.lifecycle.start()
   waitFor node.initializeNetworking()
 
   ProcessState.notifyRunning()
@@ -346,19 +361,23 @@ proc run*(node: LBNode, stopper: StopFuture) {.raises: [CatchableError].} =
     node.stop()
     return
 
-  asyncSpawn runSlotLoop(node)
-  asyncSpawn runOnSecondLoop(node)
+  let loopFuts = [
+    runSlotLoop(node),
+    runOnSecondLoop(node),
+  ]
 
-  while true:
-    if (let reason = ProcessState.stopping(); reason.isSome()):
-      notice "Shutting down", reason = reason[]
-      break
-    if stopper != nil and stopper.finished():
-      break
+  try:
+    while true:
+      if (let reason = ProcessState.stopping(); reason.isSome()):
+        notice "Shutting down", reason = reason[]
+        break
+      if stopper != nil and stopper.finished():
+        break
 
-    chronos.poll()
-
-  # time to say goodbye
-  node.stop()
+      chronos.poll()
+  finally:
+    # time to say goodbye
+    waitFor cancelAndWait(loopFuts)
+    node.stop()
 
 {.pop.}

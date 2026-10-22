@@ -16,7 +16,7 @@ import
   unittest2,
   ../../logos_chain/consensus/consensus_state,
   ../../logos_chain/chain/[block_validation, genesis, proposal],
-  ../../logos_chain/core/[local_tree, types],
+  ../../logos_chain/core/types,
   ../../logos_chain/core/mantle/[opcodes, operations, proofs, tx_hashing, tx_types],
   ../../logos_chain/ledger/ledger,
   ../../logos_chain/mempool,
@@ -51,7 +51,10 @@ proc mkSizedTx(bytes: int): SignedMantleTx =
   )
 
 proc validate(genesis: Block, blk: Block): Result[ValidBlock, BlockValidationError] =
-  let cs = ConsensusState.init(genesis, securityParam = 10'u64, densitySlotWindow = 100'u64)
+  # securityParam = 10 ensures LIB remains at genesis during isolated block validation tests
+  let cs = ConsensusState.init(
+    genesis, securityParam = 10'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Online
+  )
   let state = LedgerState.fromGenesis(
     testGenesisTx(), default(FieldElement), testSdpRegistry(), testLedgerConfig
   ).valueOr:
@@ -69,13 +72,14 @@ proc treeWithLib(genesis: Block): tuple[cs: ConsensusState, b1, b2: Block] =
   ## ConsensusState with security parameter 1 holding genesis, b1, b2, b3; the LIB is b2.
   let
     sm = minimalSignedTx()
-    cs = ConsensusState.init(genesis, securityParam = 1'u64, densitySlotWindow = 100'u64)
+    cs = ConsensusState.init(
+      genesis, securityParam = 1'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Online
+    )
     b1 = childBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [sm])
     b2 = childBlock(b1.header, blockId(b1.header), SlotNumber(2), [sm])
     b3 = childBlock(b2.header, blockId(b2.header), SlotNumber(3), [sm])
   for blk in [b1, b2, b3]:
-    check cs.localTree.addBlockToTree(blk)
-    cs.tryUpdateTip(blockId(blk.header))
+    check cs.addBlockAndTryUpdateTip(blk)
     discard cs.tryUpdateLib()
   check cs.latestImmutableId == blockId(b2.header)
   (cs, b1, b2)
@@ -378,7 +382,9 @@ suite "core/block_validation — multi-tier evaluation order":
       badTx = mkTransferTx(@[note.id, note.id], @[mkNote(100, pkSeed = 2)])
       genesis = createGenesisBlock(testGenesisTx()).get
       gid = blockId(genesis.header)
-      cs = ConsensusState.init(genesis, securityParam = 10'u64, densitySlotWindow = 100'u64)
+      cs = ConsensusState.init(
+        genesis, securityParam = 10'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Online
+      )
       state = LedgerState.fromGenesis(
         testGenesisTx(), default(FieldElement), testSdpRegistry(), testLedgerConfig
       ).expect("genesis state")
@@ -436,7 +442,9 @@ suite "core/block_validation — multi-tier evaluation order":
       sm = minimalSignedTx()
       genesis = createGenesisBlock(testGenesisTx()).get
       gid = blockId(genesis.header)
-      cs = ConsensusState.init(genesis, securityParam = 10'u64, densitySlotWindow = 100'u64)
+      cs = ConsensusState.init(
+        genesis, securityParam = 10'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Online
+      )
       blk = childBlock(genesis.header, gid, SlotNumber(1), [sm])
       state = LedgerState.fromGenesis(
         testGenesisTx(), default(FieldElement), testSdpRegistry(), testLedgerConfig
@@ -457,7 +465,9 @@ suite "core/block_validation — multi-tier evaluation order":
       valid = testGenesisTx()
       genesis = createGenesisBlock(valid).get
       gid = blockId(genesis.header)
-      cs = ConsensusState.init(genesis, securityParam = 10'u64, densitySlotWindow = 100'u64)
+      cs = ConsensusState.init(
+        genesis, securityParam = 10'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Online
+      )
       blk = childBlock(genesis.header, gid, SlotNumber(1), [sm])
       
     var state = LedgerState.fromGenesis(
@@ -479,7 +489,9 @@ suite "core/block_validation — multi-tier evaluation order":
       note = mkUtxo(value = 100, pkSeed = 1)
       badTx = mkTransferTx(@[note.id, note.id], @[mkNote(100, pkSeed = 2)])
       genesis = createGenesisBlock(testGenesisTx()).get
-      cs = ConsensusState.init(genesis, securityParam = 10'u64, densitySlotWindow = 100'u64)
+      cs = ConsensusState.init(
+        genesis, securityParam = 10'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Online
+      )
       state = LedgerState.fromGenesis(
         testGenesisTx(), default(FieldElement), testSdpRegistry(), testLedgerConfig
       ).expect("genesis state")

@@ -8,13 +8,13 @@
 {.push raises: [].}
 
 import
-  std/[net, sequtils, times],
+  std/[net, os, sequtils, times],
   bearssl/rand,
   chronos,
   libp2p/[switch, builders, peerid, multiaddress],
   libp2p/crypto/rng,
   libp2p/crypto/ed25519/ed25519,
-  stew/[byteutils, endians2],
+  stew/[byteutils, endians2, io2],
   testutils/markdown_reports,
   unittest2,
   ../logos_chain/conf,
@@ -40,6 +40,15 @@ template fail*(msg: string) =
   fail()
   # ``unittest2.fail()`` may return when ``abortOnError`` is off; do not fall through.
   raiseAssert msg
+
+template withTempDir*(dirVar: untyped, prefix: string, body: untyped): untyped =
+  let dirVar = os.getTempDir() / (prefix & "_" & $os.getCurrentProcessId())
+  discard io2.removeDir(dirVar)
+  check io2.createPath(dirVar, 0o700).isOk
+  try:
+    body
+  finally:
+    discard io2.removeDir(dirVar)
 
 type TestDuration = tuple[duration: float, label: string]
 

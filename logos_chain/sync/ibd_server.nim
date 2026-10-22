@@ -16,19 +16,19 @@ import
   libp2p/protocols/protocol,
   libp2p/stream/connection,
   stew/byteutils as sbyteutils,
+  ../consensus/consensus_state,
+  ../chain/block_processor,
   ./[framing, syncer_types, types]
 
-from ../core/local_tree import
-  LocalTree, lcaBlockIdAndHeight, hasBlock, getBlock, blockHeight
 from ../core/types import BlockId
 
 logScope:
   topics = "cryptarchia_ibd"
 
-func getTipResponse(syncer: Syncer): GetTipResponse =
+func getTipResponse(consensus: ConsensusState): GetTipResponse =
   GetTipResponse(
     kind: gtrTip,
-    tipData: syncer.canonicalTip,
+    tipData: consensus.canonicalTip,
   )
 
 func distinctKnownBlockIds(known: KnownBlocks): seq[BlockId] =
@@ -42,15 +42,15 @@ func distinctKnownBlockIds(known: KnownBlocks): seq[BlockId] =
   ids
 
 func deepestKnownAncestor(
-    localTree: LocalTree, target: BlockId, known: KnownBlocks,
+    consensus: ConsensusState, target: BlockId, known: KnownBlocks,
 ): Opt[(BlockId, uint64)] =
   var ancestorId: BlockId
   var ancestorHeight: uint64
   var haveAncestor: bool
   for kid in distinctKnownBlockIds(known):
-    if not localTree.hasBlock(kid):
+    if not consensus.hasBlock(kid):
       continue
-    let (candidateId, candidateHeight) = lcaBlockIdAndHeight(localTree, kid, target).valueOr:
+    let (candidateId, candidateHeight) = consensus.lcaBlockIdAndHeight(kid, target).valueOr:
       continue
     if not haveAncestor or candidateHeight > ancestorHeight:
       ancestorHeight = candidateHeight
@@ -62,16 +62,16 @@ func deepestKnownAncestor(
     Opt.some((ancestorId, ancestorHeight))
 
 func cappedDownloadPathBlockIds*(
-    localTree: LocalTree, req: DownloadBlocksRequest,
+    consensus: ConsensusState, req: DownloadBlocksRequest,
     maxBlocks: int = MaxRequestBlocks,
 ): seq[BlockId] =
   let target = req.targetBlock
-  if not localTree.hasBlock(target):
+  if not consensus.hasBlock(target):
     return @[]
-  let targetHeight = localTree.blockHeight(target).valueOr:
+  let targetHeight = consensus.blockHeight(target).valueOr:
     return @[]
   let (ancestorId, ancestorHeight) = deepestKnownAncestor(
-    localTree, target, req.knownBlocks).valueOr:
+    consensus, target, req.knownBlocks).valueOr:
     return @[]
   if ancestorId == target:
     return @[]
@@ -88,16 +88,16 @@ func cappedDownloadPathBlockIds*(
       inc skipped
     else:
       sendIds.add curId
-    let blk = localTree.getBlock(curId).valueOr:
+    let blk = consensus.getBlock(curId).valueOr:
       return @[]
     curId = blk.header.parentBlock
   sendIds
 
 proc serveGetTipRequest(
-    conn: Connection, syncer: Syncer,
+    conn: Connection, consensus: ConsensusState,
 ) {.async: (raises: [BincodeError, LPStreamError, CancelledError]).} =
   debug "IBD handler: GetTip request"
-  let tipResp = getTipResponse(syncer)
+  let tipResp = getTipResponse(consensus)
   let respInner = try:
     encode(tipResp, cryptarchiaSyncBincodeConfig)
   except BincodeError:
@@ -110,7 +110,7 @@ proc serveGetTipRequest(
     height = tipResp.tipData.height
 
 proc serveDownloadBlocksRequest(
-    conn: Connection, localTree: LocalTree, req: DownloadBlocksRequest,
+    conn: Connection, consensus: ConsensusState, req: DownloadBlocksRequest,
 ) {.async: (raises: [BincodeError, LPStreamError, CancelledError]).} =
   proc writeResp(msg: DownloadBlocksResponse) {.async: (raises: [BincodeError, LPStreamError, CancelledError]).} =
     let innerBytes = try:
@@ -122,7 +122,7 @@ proc serveDownloadBlocksRequest(
 
   debug "IBD handler: download blocks request",
     targetBlock = sbyteutils.toHex(req.targetBlock)
-  if not localTree.hasBlock(req.targetBlock):
+  if not consensus.hasBlock(req.targetBlock):
     debug "IBD handler: target block not found",
       targetBlock = sbyteutils.toHex(req.targetBlock)
     await writeResp(DownloadBlocksResponse(
@@ -132,7 +132,7 @@ proc serveDownloadBlocksRequest(
     debug "IBD handler: download failure response ok",
       targetBlock = sbyteutils.toHex(req.targetBlock)
     return
-  let sendIds = cappedDownloadPathBlockIds(localTree, req)
+  let sendIds = cappedDownloadPathBlockIds(consensus, req)
   if sendIds.len == 0:
     debug "IBD handler: no blocks to send",
       targetBlock = sbyteutils.toHex(req.targetBlock)
@@ -144,7 +144,7 @@ proc serveDownloadBlocksRequest(
     targetBlock = sbyteutils.toHex(req.targetBlock), count = sendIds.len
   var blocksSent = 0
   for i in countdown(sendIds.high, 0):
-    let blk = localTree.getBlock(sendIds[i]).valueOr:
+    let blk = consensus.getBlock(sendIds[i]).valueOr:
       debug "IBD handler: block load failed", blockId = sbyteutils.toHex(sendIds[i])
       await writeResp(DownloadBlocksResponse(
         kind: dbrFailure,
@@ -182,12 +182,12 @@ proc dispatchCryptarchiaSyncRequest(
     return
   case reqMsg.kind
   of rmGetTip:
-    await serveGetTipRequest(conn, syncer)
+    await serveGetTipRequest(conn, syncer.processor.consensus)
   of rmDownloadBlocksRequest:
     debug "IBD handler: download request decode ok",
       targetBlock = sbyteutils.toHex(reqMsg.downloadBlocksRequest.targetBlock)
     await serveDownloadBlocksRequest(
-      conn, syncer.localTree, reqMsg.downloadBlocksRequest)
+      conn, syncer.processor.consensus, reqMsg.downloadBlocksRequest)
 
 proc mountCryptarchiaSyncHandler*(syncer: Syncer) {.raises: [LPError].} =
   proc handle(conn: Connection, proto: string) {.async: (raises: [CancelledError]).} =

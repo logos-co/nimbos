@@ -61,8 +61,8 @@ suite "chain/orphan_resolution":
     check applyB2Res.isErr
     check applyB2Res.error.kind == BlockApplyErrorKind.OrphanBuffered
     check chain.orphanPool.hasOrphan(id2)
-    check not chain.localTree.hasBlock(id2)
-    check chain.canonicalTip.tip == gid
+    check not chain.consensus.hasBlock(id2)
+    check chain.consensus.canonicalTip.tip == gid
 
     # Ingesting child B2 again returns OrphanAlreadyBuffered
     let applyB2DupRes = chain.tryApplyBlock(b2)
@@ -74,9 +74,9 @@ suite "chain/orphan_resolution":
     check applyB1Res.isOk
 
     # 3. Both B1 and B2 should now be applied and promoted
-    check chain.localTree.hasBlock(id1)
-    check chain.localTree.hasBlock(id2)
-    check chain.canonicalTip.tip == id2
+    check chain.consensus.hasBlock(id1)
+    check chain.consensus.hasBlock(id2)
+    check chain.consensus.canonicalTip.tip == id2
     check chain.ledger.state(id1).isSome
     check chain.ledger.state(id2).isSome
     check chain.orphanPool.len == 0
@@ -104,11 +104,11 @@ suite "chain/orphan_resolution":
     check chain.syncApplyBlock(b1).isOk
 
     # All 4 blocks must be applied in order
-    check chain.localTree.hasBlock(id1)
-    check chain.localTree.hasBlock(id2)
-    check chain.localTree.hasBlock(id3)
-    check chain.localTree.hasBlock(id4)
-    check chain.canonicalTip.tip == id4
+    check chain.consensus.hasBlock(id1)
+    check chain.consensus.hasBlock(id2)
+    check chain.consensus.hasBlock(id3)
+    check chain.consensus.hasBlock(id4)
+    check chain.consensus.canonicalTip.tip == id4
     check chain.orphanPool.len == 0
 
   test "structurally invalid block or invalid header is rejected and not buffered":
@@ -181,8 +181,8 @@ suite "chain/orphan_resolution":
     # Ingest parent blocks[0] (child of genesis) -> cascade-promotes blocks[0 .. MaxOrphans - 1]
     check chain.syncApplyBlock(blocks[0]).isOk
     for i in 0 .. MaxOrphans - 1:
-      check chain.localTree.hasBlock(blockId(blocks[i].header))
-    check chain.canonicalTip.tip == blockId(blocks[MaxOrphans - 1].header)
+      check chain.consensus.hasBlock(blockId(blocks[i].header))
+    check chain.consensus.canonicalTip.tip == blockId(blocks[MaxOrphans - 1].header)
     check chain.orphanPool.len == 1 # only blocks[MaxOrphans + 1] remains
     check chain.orphanPool.hasOrphan(blockId(blocks[MaxOrphans + 1].header))
 
@@ -207,9 +207,9 @@ suite "chain/orphan_resolution":
 
     # Ingest parent B1 -> resolves both branches
     check chain.syncApplyBlock(b1).isOk
-    check chain.localTree.hasBlock(id1)
-    check chain.localTree.hasBlock(id2a)
-    check chain.localTree.hasBlock(id2b)
+    check chain.consensus.hasBlock(id1)
+    check chain.consensus.hasBlock(id2a)
+    check chain.consensus.hasBlock(id2b)
     check chain.orphanPool.len == 0
 
   test "branching tree cascade: resolves multi-branch orphan tree when root arrives":
@@ -240,11 +240,11 @@ suite "chain/orphan_resolution":
 
     # Ingest root B1 -> all 4 orphan descendants across both branches are promoted
     check chain.syncApplyBlock(b1).isOk
-    check chain.localTree.hasBlock(id1)
-    check chain.localTree.hasBlock(id2a)
-    check chain.localTree.hasBlock(id3a)
-    check chain.localTree.hasBlock(id2b)
-    check chain.localTree.hasBlock(id3b)
+    check chain.consensus.hasBlock(id1)
+    check chain.consensus.hasBlock(id2a)
+    check chain.consensus.hasBlock(id3a)
+    check chain.consensus.hasBlock(id2b)
+    check chain.consensus.hasBlock(id3b)
     check chain.orphanPool.len == 0
 
   test "dangling sub-tree pruning: invalid promoted orphan purges all waiting descendants":
@@ -271,10 +271,10 @@ suite "chain/orphan_resolution":
     # Ingest parent b1 -> triggers promotion of b2, which fails state validation.
     # Its descendants b3 and b4 must be pruned immediately.
     check chain.syncApplyBlock(b1).isOk
-    check chain.localTree.hasBlock(id1)
-    check not chain.localTree.hasBlock(id2)
-    check not chain.localTree.hasBlock(id3)
-    check not chain.localTree.hasBlock(id4)
+    check chain.consensus.hasBlock(id1)
+    check not chain.consensus.hasBlock(id2)
+    check not chain.consensus.hasBlock(id3)
+    check not chain.consensus.hasBlock(id4)
     # The pool must have no dangling dead descendants remaining
     check chain.orphanPool.len == 0
 
@@ -291,21 +291,22 @@ suite "chain/orphan_resolution":
       b3a = childBlock(b2a.header, id2a, SlotNumber(4), [])
 
     # Apply b1, b2a, b2b, b3a to tree
-    check chain.tryApplyBlock(b1).isOk
-    check chain.tryApplyBlock(b2a).isOk
-    check chain.tryApplyBlock(b2b).isOk
-    check chain.tryApplyBlock(b3a).isOk
+    check:
+      chain.tryApplyBlock(b1).isOk
+      chain.tryApplyBlock(b2a).isOk
+      chain.tryApplyBlock(b2b).isOk
+      chain.tryApplyBlock(b3a).isOk
+      # With securityParam = 1 and tip height = 3 (b3a), LIB naturally advances to height 2 (b2a)
+      chain.consensus.latestImmutableId == id2a
 
-    # With securityParam = 1 and tip height = 3 (b3a), LIB naturally advances to height 2 (b2a)
-    check chain.consensus.latestImmutableId == id2a
-
-    # Ingest orphan branching off b2b with slot <= LIB slot (which violates LIB b2a)
+    # Ingest orphan branching off pruned fork b2b with slot <= LIB slot (violates LIB b2a slot feasibility)
     let
       uncommittedParent = childBlock(b2b.header, id2b, SlotNumber(2), [])
 
-    # uncommittedParent fails canDescendFromImmutable / slot check and is rejected immediately.
-    check chain.tryApplyBlock(uncommittedParent).error.kind == BlockApplyErrorKind.UnviableFork
-    check chain.orphanPool.len == 0
+    # uncommittedParent fails canDescendFromImmutable slot feasibility and is rejected immediately
+    check:
+      chain.tryApplyBlock(uncommittedParent).error.kind == BlockApplyErrorKind.UnviableFork
+      chain.orphanPool.len == 0
 
   test "orphan with invalid stateless transaction is buffered on ingestion and rejected during promotion":
     var (chain, genesis, gid) = setupChain()
@@ -326,9 +327,9 @@ suite "chain/orphan_resolution":
     # When parent arrives, promotion runs stateless transaction validation and rejects the invalid orphan
     let b1Res = chain.syncApplyBlock(b1)
     check b1Res.isOk
-    check chain.canonicalTip.tip == b1Id
+    check chain.consensus.canonicalTip.tip == b1Id
     check chain.orphanPool.len == 0
-    check not chain.localTree.hasBlock(blockId(orphan.header))
+    check not chain.consensus.hasBlock(blockId(orphan.header))
 
   test "orphan cascade triggering a reorg restores mempool transactions from abandoned branch":
     var (chain, genesis, gid) = setupChain(securityParam = 1)
@@ -341,7 +342,7 @@ suite "chain/orphan_resolution":
     let a1 = childBlock(genesis.header, gid, SlotNumber(1), [txA])
     let resA1 = chain.tryApplyBlock(a1)
     check resA1.isOk
-    check chain.canonicalTip.tip == blockId(a1.header)
+    check chain.consensus.canonicalTip.tip == blockId(a1.header)
     check chain.mempool.len == 0 # Pruned on block commit
 
     # Branch B: blocks b1 -> b2 -> b3 (heavier/taller branch)
@@ -359,7 +360,7 @@ suite "chain/orphan_resolution":
 
     # Ingest root b1 -> cascade promotes b2 and b3, triggering a reorg from a1 to b3
     check chain.syncApplyBlock(b1).isOk
-    check chain.canonicalTip.tip == id3
+    check chain.consensus.canonicalTip.tip == id3
     check chain.orphanPool.len == 0
     # txA from abandoned branch A is restored to mempool
     check chain.mempool.len == 1

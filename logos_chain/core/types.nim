@@ -80,7 +80,7 @@ type
   Tip* = object
     tip*: BlockId
     slot*: SlotNumber
-    height*: uint64
+    height*: BlockNumber
 
 const
   ExpectedBedrockVersion* = 1'u8

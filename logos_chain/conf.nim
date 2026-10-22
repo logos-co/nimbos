@@ -233,7 +233,7 @@ type
         name: "bootstrap-timeout" .}: int
 
       bootstrap* {.
-        desc: "Force the node to start using the Bootstrap fork choice rule regardless of offline duration"
+        desc: "Start with the Bootstrap fork choice rule (Ouroboros Genesis) regardless of saved state; unrelated to --bootstrap-node"
         defaultValue: false
         name: "bootstrap" .}: bool
 

@@ -261,4 +261,49 @@ suite "core/local_tree (lcaBlockIdAndHeight)":
       check tree.hasBlock(id)
     check tree.blocksIdsAtHeight(3'u64) == @[id3]
 
+suite "core/local_tree (countChainDensity)":
+  test "counts only blocks within the half-open window (lcaSlot, lcaSlot + densitySlotWindow]":
+    let
+      sm = minimalSignedTx()
+      genesis = createGenesisBlock(testGenesisTx()).get
+      gid = blockId(genesis.header)
+      tree = LocalTree.init(genesis)
+
+      # Genesis is at slot 0
+      # LCA block at slot 10
+      b1 = childBlock(genesis.header, gid, slot = 10'u64, [sm])
+      id1 = blockId(b1.header)
+
+      # Chain A: slots 15, 25, 45
+      b2 = childBlock(b1.header, id1, slot = 15'u64, [sm])
+      id2 = blockId(b2.header)
+      b3 = childBlock(b2.header, id2, slot = 25'u64, [sm])
+      id3 = blockId(b3.header)
+      b4 = childBlock(b3.header, id3, slot = 45'u64, [sm])
+      id4 = blockId(b4.header)
+
+    check:
+      tree.addBlockToTree(b1)
+      tree.addBlockToTree(b2)
+      tree.addBlockToTree(b3)
+      tree.addBlockToTree(b4)
+
+      # Window of 2 slots from slot 10 -> interval (10, 12]
+      # All blocks are outside (> 12) -> count = 0
+      countChainDensity(tree, id4, lcaSlot = 10'u64, lcaHeight = 1'u64, densitySlotWindow = 2'u64) == 0'u64
+
+      # Window of 5 slots from slot 10 -> interval (10, 15]
+      # Blocks in window: slot 15 -> count = 1
+      countChainDensity(tree, id4, lcaSlot = 10'u64, lcaHeight = 1'u64, densitySlotWindow = 5'u64) == 1'u64
+
+      # Window of 20 slots starting from LCA slot 10 -> interval (10, 30]
+      # Blocks in window: slot 15, slot 25 -> count = 2
+      # Block at slot 45 is outside (> 30) -> not counted
+      # Block at slot 10 is LCA (<= 10) -> not counted
+      countChainDensity(tree, id4, lcaSlot = 10'u64, lcaHeight = 1'u64, densitySlotWindow = 20'u64) == 2'u64
+
+      # Window of 40 slots from slot 10 -> interval (10, 50]
+      # Blocks in window: slot 15, 25, 45 -> count = 3
+      countChainDensity(tree, id4, lcaSlot = 10'u64, lcaHeight = 1'u64, densitySlotWindow = 40'u64) == 3'u64
+
 {.pop.}
