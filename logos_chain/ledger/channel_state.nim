@@ -5,7 +5,7 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-## Spec: [Bedrock v1.1 — Mantle Specification v1.10.0 — Channel Operations](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md#channel-operations)
+## Spec: [Bedrock v1.1 — Mantle Specification v1.16.0 — Channel Operations](https://github.com/logos-co/logos-lips/blob/fddc2c1911626f7b1949360b8924bb6c05252bff/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md#channel-operations)
 
 {.push raises: [], gcsafe.}
 
@@ -15,7 +15,8 @@ import
   libp2p/crypto/ed25519/ed25519,
   ./[channel_notes, cryptarchia_state, zksig_verify],
   ../core/[utils],
-  ../core/mantle/[operations, proofs, tx_hashing],
+  ../core/crypto/hashing,
+  ../core/mantle/[primitives, operations, proofs, tx_hashing, utxo],
   ../utils/hash_trie_map
 
 export hash_trie_map, channel_notes
@@ -24,7 +25,8 @@ type
   ChannelState* = object
     accreditedKeys*: seq[Ed25519PublicKey]
     configurationThreshold*: ConfigurationThreshold
-    tipMessage*: Hash32
+    tipHash*: Hash32
+    configTipHash*: Hash32
     tipSlot*: SlotNumber
     tipSequencer*: ChannelKeyIndex
     tipSequencerStartingSlot*: SlotNumber
@@ -39,6 +41,13 @@ func checkedAdd(a, b: TokenValue): Result[TokenValue, LedgerError] =
   let (res, didOverflow) = overflowingAdd(a, b)
   if didOverflow: err(BalanceOutOfRange) else: ok(res)
 
+func messageHash(
+    encoded: Result[seq[byte], EncodingError]): Result[Hash32, LedgerError] =
+  ## `hash(encode(msg))`: the BLAKE2b-256 of an encoded payload, no tag.
+  let bytes = encoded.valueOr:
+    return err(error.toLedgerError)
+  ok(blake2b256Hash(bytes))
+
 func default_channel(
     blockSlot: SlotNumber, keys: openArray[Ed25519PublicKey]
 ): ChannelState =
@@ -47,7 +56,8 @@ func default_channel(
   ChannelState(
     accreditedKeys: @keys,
     configurationThreshold: 1,
-    tipMessage: default(Hash32),
+    tipHash: default(Hash32),
+    configTipHash: default(Hash32),
     tipSlot: blockSlot,
     tipSequencer: 0,
     tipSequencerStartingSlot: blockSlot,
@@ -134,14 +144,14 @@ func validateChannelInscribe*(
     blockSlot: SlotNumber,
 ): Result[void, LedgerError] =
   ## Read-only checks for ChannelInscribe. If the channel exists, the parent
-  ## must match its `tipMessage` and the signer must be the current
+  ## must match its `tipHash` and the signer must be the current
   ## round-robin sequencer. JIT path requires `parent == ZERO`.
   ## Note: Assumes signer Ed25519 signature is verified statelessly at ingress
   ## via `validateMantleTxStateless`.
   let chanOpt = channels.get(op.channelId)
   if chanOpt.isSome:
     let chan = chanOpt.get
-    if op.parent != chan.tipMessage:
+    if op.parent != chan.tipHash:
       return err(InvalidParent)
     let (idx, _) = round_robin(blockSlot, chan)
     if op.signer != chan.accreditedKeys[idx]:
@@ -157,15 +167,13 @@ func applyChannelInscribe*(
     blockSlot: SlotNumber,
 ): Result[ChannelStore, LedgerError] =
   ## Mutation only; assumes `validateChannelInscribe` passed. JIT-creates
-  ## the channel if absent, then advances sequencer + tipMessage + tipSlot.
+  ## the channel if absent, then advances sequencer + tipHash + tipSlot.
   var chan = channels.get(op.channelId).valueOr:
     default_channel(blockSlot, [op.signer])
   let (newSeq, newStart) = round_robin(blockSlot, chan)
   chan.tipSequencer = newSeq
   chan.tipSequencerStartingSlot = newStart
-  let tipMsg = opId(op).valueOr:
-    return err(error.toLedgerError)
-  chan.tipMessage = tipMsg
+  chan.tipHash = ?messageHash(encodeChannelInscribe(op))
   chan.tipSlot = blockSlot
   ok(channels.insert(op.channelId, chan))
 
@@ -175,23 +183,25 @@ func validateChannelConfig*(
     proof: ChannelMultiSigProof,
     txHash: Hash32,
 ): Result[void, LedgerError] =
-  ## Read-only checks for ChannelConfig. If the channel exists, verifies
-  ## `configuration_threshold` signatures from current accredited keys.
-  ## On JIT-create path no signature is required.
-  ## Note: Assumes config structure (non-empty keys, valid thresholds) is
-  ## verified statelessly at ingress via `validateMantleTxStateless`.
-  channels.get(op.channel).isErrOr:
-    ?verifyChannelMultiSig(
-      proof, value.accreditedKeys, value.configurationThreshold, txHash)
-  ok()
+  ## Checks the parent against `configTipHash`, then the threshold signatures.
+  ## A new channel needs a ZERO parent and an empty proof.
+  let chan = channels.get(op.channel).valueOr:
+    if not op.parent.isZero:
+      return err(InvalidParent)
+    # No key is accredited yet, so the threshold to verify against is 0.
+    return verifyChannelMultiSig(proof, [], 0, txHash)
+  if op.parent != chan.configTipHash:
+    return err(InvalidParent)
+  verifyChannelMultiSig(
+    proof, chan.accreditedKeys, chan.configurationThreshold, txHash)
 
 func applyChannelConfig*(
     channels: ChannelStore,
     op: ChannelConfigPayload,
     blockSlot: SlotNumber,
 ): Result[ChannelStore, LedgerError] =
-  ## Mutation only; assumes `validateChannelConfig` passed. Overwrites the
-  ## channel's keys/thresholds/rotation, or JIT-creates with `op.keys`.
+  ## Mutation only; assumes `validateChannelConfig` passed. JIT-creates the
+  ## channel if absent, then sets its config and `configTipHash`, not `tipHash`.
   var chan = channels.get(op.channel).valueOr:
     default_channel(blockSlot, op.keys)
   chan.accreditedKeys = op.keys
@@ -202,9 +212,7 @@ func applyChannelConfig*(
   chan.postingTimeout = op.postingTimeout
   chan.transferThreshold = op.transferThreshold
   chan.tipSlot = blockSlot
-  let tipMsg = opId(op).valueOr:
-    return err(error.toLedgerError)
-  chan.tipMessage = tipMsg
+  chan.configTipHash = ?messageHash(encodeChannelConfig(op))
   ok(channels.insert(op.channel, chan))
 
 proc validateChannelDeposit*(

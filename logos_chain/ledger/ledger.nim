@@ -197,25 +197,22 @@ proc tryApplyHeader*(
   s.epochs = s.epochs.recordBlock(slot, entropy)
   ok(s)
 
-func opMultisigThreshold(op: Op, proof: OpProof): Result[uint16, LedgerError] =
-  ## Signature count for channel multisig operations (ChannelConfig, ChannelWithdraw, ChannelTransfer).
-  ##
-  ## We count signatures directly from the attached proof (`proof.signatures.len`) rather
-  ## than querying the ledger state. This avoids ordering issues when multiple ops in the
-  ## same tx create or update a channel before using it, and charges for the signatures
-  ## actually verified by `verifyChannelMultiSig` in `channel_state.nim` (L92-L107) — if
-  ## `proof.signatures.len != threshold`, the transaction will not be validated (`ThresholdUnmet`).
+func opGasMultiplier(op: Op, proof: OpProof): Result[uint16, LedgerError] =
+  ## Gas multiplier of `op`: the signature count of its channel multisig proof.
+  # `verifyChannelMultiSig` accepts only a count equal to the threshold in the
+  # channel state (0 for a channel that does not exist yet). So, for an
+  # accepted op, the count is the threshold that the spec prices.
   let expectedKind = expectedOpProofKindForOpcode(op.opcode).valueOr:
     return err(error.toLedgerError)
   if proof.kind != expectedKind:
     return err(PermanentInvalidTxProof)
   case op.payload.kind
   of ChannelConfig:
-    ok(max(uint16(proof.channelConfigOpProof.signatures.len), 1'u16))
+    ok(uint16(proof.channelConfigOpProof.signatures.len))
   of ChannelWithdraw:
-    ok(max(uint16(proof.channelWithdrawOpProof.signatures.len), 1'u16))
+    ok(uint16(proof.channelWithdrawOpProof.signatures.len))
   of ChannelTransfer:
-    ok(max(uint16(proof.channelTransferOpProof.signatures.len), 1'u16))
+    ok(uint16(proof.channelTransferOpProof.signatures.len))
   else:
     ok(1'u16)
 
@@ -316,8 +313,8 @@ func txExecutionGas*(
     let
       op = tx.tx.ops[i]
       proof = tx.opProofs[i]
-      thresh = ? opMultisigThreshold(op, proof)
-      added = checkedAdd(total, execution_gas(op, thresh)).valueOr:
+      multiplier = ? opGasMultiplier(op, proof)
+      added = checkedAdd(total, execution_gas(op, multiplier)).valueOr:
         return err(GasOverflow)
     total = added
   ok(total)

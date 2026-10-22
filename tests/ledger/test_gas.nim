@@ -15,6 +15,7 @@ import
   libp2p/crypto/ed25519/ed25519,
   ../../logos_chain/ledger/ledger,
   ../../logos_chain/core/types,
+  ../../logos_chain/core/crypto/hashing,
   ../zk/zksign_helpers,
   ./sdp/test_helpers,
   ./test_helpers,
@@ -67,12 +68,12 @@ suite "gas: per-operation execution gas":
   test "each op kind against its Gas Determination constant":
     check:
       execution_gas(defaultOpForOpcode(OpTransfer).get, 0) == Gas(590)
-      execution_gas(defaultOpForOpcode(OpChannelInscribe).get, 0) == Gas(56)
-      execution_gas(defaultOpForOpcode(OpChannelConfig).get, 1) == Gas(56)
+      execution_gas(defaultOpForOpcode(OpChannelInscribe).get, 0) == Gas(59)
+      execution_gas(defaultOpForOpcode(OpChannelConfig).get, 1) == Gas(59)
       execution_gas(defaultOpForOpcode(OpChannelDeposit).get, 0) == Gas(590)
-      execution_gas(defaultOpForOpcode(OpChannelWithdraw).get, 1) == Gas(56)
-      execution_gas(defaultOpForOpcode(OpChannelTransfer).get, 1) == Gas(56)
-      execution_gas(defaultOpForOpcode(OpSdpDeclare).get, 0) == Gas(646)
+      execution_gas(defaultOpForOpcode(OpChannelWithdraw).get, 1) == Gas(59)
+      execution_gas(defaultOpForOpcode(OpChannelTransfer).get, 1) == Gas(59)
+      execution_gas(defaultOpForOpcode(OpSdpDeclare).get, 0) == Gas(649)
       execution_gas(defaultOpForOpcode(OpSdpWithdraw).get, 0) == Gas(590)
       execution_gas(defaultOpForOpcode(OpSdpActive).get, 0) == Gas(590)
       execution_gas(defaultOpForOpcode(OpLeaderClaim).get, 0) == Gas(580)
@@ -84,52 +85,17 @@ suite "gas: per-operation execution gas":
       trf = defaultOpForOpcode(OpChannelTransfer).get
     check:
       execution_gas(cfg, 0) == Gas(0)
-      execution_gas(cfg, 1) == Gas(56)
-      execution_gas(cfg, 3) == Gas(168)
-      execution_gas(cfg, uint16.high) == Gas(3_669_960)
+      execution_gas(cfg, 1) == Gas(59)
+      execution_gas(cfg, 3) == Gas(177)
+      execution_gas(cfg, uint16.high) == Gas(3_866_565)
       execution_gas(wdr, 0) == Gas(0)
-      execution_gas(wdr, 1) == Gas(56)
-      execution_gas(wdr, 3) == Gas(168)
-      execution_gas(wdr, uint16.high) == Gas(3_669_960)
+      execution_gas(wdr, 1) == Gas(59)
+      execution_gas(wdr, 3) == Gas(177)
+      execution_gas(wdr, uint16.high) == Gas(3_866_565)
       execution_gas(trf, 0) == Gas(0)
-      execution_gas(trf, 1) == Gas(56)
-      execution_gas(trf, 3) == Gas(168)
-      execution_gas(trf, uint16.high) == Gas(3_669_960)
-
-  test "withdraw and transfer bill against transferThreshold, 0 when absent":
-    let
-      rng = HmacDrbgContext.new()
-      kp = mkEdKeyPair(rng)
-      cid = mkChannelId(0x41)
-      configured = MantleState.init().tryApplyChannelConfig(
-        ChannelConfigPayload(
-          channel: cid,
-          keys: @[kp.pubkey],
-          configurationThreshold: 1,
-          transferThreshold: 3,
-        ),
-        ChannelMultiSigProof(), default(Hash32), blockSlot = 0'u64,
-      ).expect("valid config")
-      chan = configured.channels.getOrDefault(cid)
-    check:
-      chan.transferThreshold == 3
-      execution_gas(
-        createChannelWithdrawOp(
-          ChannelWithdrawPayload(channel: cid, inputs: Inputs(noteIds: @[]))),
-        chan.transferThreshold) == Gas(168)
-      execution_gas(
-        createChannelTransferOp(
-          ChannelTransferPayload(channel: cid, inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @[]))),
-        chan.transferThreshold) == Gas(168)
-    # A channel that doesn't exist yet bills a zero multiplier — the same
-    # just-in-time path a first ChannelConfig takes.
-    let absent = MantleState.init().channels.getOrDefault(mkChannelId(0x42))
-    check:
-      absent.transferThreshold == 0
-      execution_gas(
-        createChannelTransferOp(
-          ChannelTransferPayload(channel: cid, inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @[]))),
-        absent.transferThreshold) == Gas(0)
+      execution_gas(trf, 1) == Gas(59)
+      execution_gas(trf, 3) == Gas(177)
+      execution_gas(trf, uint16.high) == Gas(3_866_565)
 
 suite "gas: fee-market genesis state":
   test "FeeMarket.init opens both markets at price 1, counters at 0":
@@ -240,7 +206,7 @@ suite "gas: storage market update":
 suite "gas: tx execution gas and block limit":
   test "tryApplyTx sums per-op execution gas over the tx":
     # Two transfer ops would sum to 1180; driven here with Ed25519-signable
-    # channel-inscribe ops (56 each), since transfers need a prover fixture.
+    # channel-inscribe ops, since transfers need a prover fixture.
     let transferOp = defaultOpForOpcode(OpTransfer).get
     check execution_gas(transferOp, 0) + execution_gas(transferOp, 0) == Gas(1180)
 
@@ -270,7 +236,41 @@ suite "gas: tx execution gas and block limit":
     let mf = s.mandatory_fees(ValidSignedMantleTx(tx))
     check:
       mf.isOk
-      mf.get.executionGas == Gas(112)
+      mf.get.executionGas == Gas(118)
+
+  test "a JIT config then a 2-of-2 config on the same channel costs 118":
+    let
+      rng = HmacDrbgContext.new()
+      kp1 = mkEdKeyPair(rng)
+      kp2 = mkEdKeyPair(rng)
+      cid = mkChannelId(0x43)
+      createPayload = ChannelConfigPayload(
+        channel: cid, keys: @[kp1.pubkey, kp2.pubkey],
+        configurationThreshold: 2, transferThreshold: 1)
+      create = createChannelConfigOp(createPayload)
+      update = createChannelConfigOp(ChannelConfigPayload(
+        channel: cid,
+        parent: blake2b256Hash(encodeChannelConfig(createPayload).get),
+        keys: @[kp1.pubkey],
+        configurationThreshold: 1, transferThreshold: 1))
+      body = MantleTx(ops: @[create, update])
+      txHash = mantleTxHash(body).get
+      tx = SignedMantleTx(
+        tx: body,
+        opProofs: @[
+          OpProof(kind: opfChannelConfig, channelConfigOpProof: ChannelMultiSigProof()),
+          OpProof(
+            kind: opfChannelConfig,
+            channelConfigOpProof: twoOfTwo(kp1, kp2, txHash)),
+        ],
+      )
+      vtx = ValidSignedMantleTx(tx)
+    var s = mkState(@[])
+    let r = s.tryApplyTx(
+      vtx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
+    check r.isOk
+    # 0 for the JIT config, plus 2 × 59 for the 2-of-2 config.
+    check txExecutionGas(vtx).get == Gas(118)
 
   test "per-block execution gas limit constant and accumulator overflow":
     # The TooMuchExecutionGas branch fires when the block's summed execution

@@ -11,12 +11,14 @@
 import
   unittest2,
   bearssl/rand,
-  ../../logos_chain/ledger/[mantle_state, types],
-  ../../logos_chain/core/mantle/[operations, tx_hashing],
+  libp2p/crypto/ed25519/ed25519,
+  ../../logos_chain/ledger/[channel_state, mantle_state, types],
+  ../../logos_chain/core/crypto/hashing,
+  ../../logos_chain/core/mantle/operations,
   ../core/mantle/test_helpers
 
 suite "MantleState.tryApplyChannelInscribe — JIT creation":
-  test "fresh channel with ZERO parent → created, tipMessage advanced":
+  test "fresh channel with ZERO parent → created, tipHash advanced":
     let
       rng = HmacDrbgContext.new()
       kp = mkEdKeyPair(rng)
@@ -32,7 +34,7 @@ suite "MantleState.tryApplyChannelInscribe — JIT creation":
     let chan = r.get.channels.getOrDefault(cid)
     check:
       chan.accreditedKeys == @[kp.pubkey]
-      chan.tipMessage == opId(op).get
+      chan.tipHash == blake2b256Hash(encodeChannelInscribe(op).get)
       chan.tipSlot == 7'u64
 
   test "fresh channel with non-ZERO parent → InvalidParent":
@@ -50,7 +52,7 @@ suite "MantleState.tryApplyChannelInscribe — JIT creation":
     check r.error == InvalidParent
 
 suite "MantleState.tryApplyChannelInscribe — existing channel":
-  test "second inscribe with correct parent and signer → tipMessage advances":
+  test "second inscribe with correct parent and signer → tipHash advances":
     let
       rng = HmacDrbgContext.new()
       kp = mkEdKeyPair(rng)
@@ -62,7 +64,7 @@ suite "MantleState.tryApplyChannelInscribe — existing channel":
       seedMantle = MantleState.init().tryApplyChannelInscribe(
         seedOp, blockSlot = 1'u64,
       ).get
-      prevTip = seedMantle.channels.getOrDefault(cid).tipMessage
+      prevTip = seedMantle.channels.getOrDefault(cid).tipHash
       op = ChannelInscribePayload(
         channelId: cid, inscription: @[byte 0x62],
         parent: prevTip, signer: kp.pubkey,
@@ -71,8 +73,8 @@ suite "MantleState.tryApplyChannelInscribe — existing channel":
     check r.isOk
     let newChan = r.get.channels.getOrDefault(cid)
     check:
-      newChan.tipMessage == opId(op).get
-      newChan.tipMessage != prevTip
+      newChan.tipHash == blake2b256Hash(encodeChannelInscribe(op).get)
+      newChan.tipHash != prevTip
       newChan.tipSlot == 2'u64
 
   test "wrong parent → InvalidParent":
@@ -110,7 +112,7 @@ suite "MantleState.tryApplyChannelInscribe — existing channel":
       chan = seedMantle.channels.getOrDefault(cid)
       op = ChannelInscribePayload(
         channelId: cid, inscription: @[byte 0x62],
-        parent: chan.tipMessage, signer: other.pubkey,
+        parent: chan.tipHash, signer: other.pubkey,
       )
       r = seedMantle.tryApplyChannelInscribe(op, blockSlot = 2'u64)
     check r.error == UnauthorizedSigner

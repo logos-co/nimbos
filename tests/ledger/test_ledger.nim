@@ -174,7 +174,7 @@ suite "tryApplyTx — channel ops":
     # never fund its own fees — a Transfer op in the same tx must.
     check:
       balance == Balance.zero
-      s0.mandatory_fees(ValidSignedMantleTx(tx)).get.executionGas == Gas(56)
+      s0.mandatory_fees(ValidSignedMantleTx(tx)).get.executionGas == Gas(59)
       s0.latestUtxos.len == 1
       s0.latestUtxos.contains(note.id)
       s0.mantleLedger.channelNotes.isEmpty
@@ -208,7 +208,7 @@ suite "tryApplyTx — channel ops":
       minted = Utxo(opId: opId(op).get, outputIndex: 0, note: reassigned)
     check:
       balance == Balance.zero
-      s0.mandatory_fees(ValidSignedMantleTx(tx)).get.executionGas == Gas(56)
+      s0.mandatory_fees(ValidSignedMantleTx(tx)).get.executionGas == Gas(59)
       not s0.latestUtxos.contains(note.id)
       s0.latestUtxos.contains(minted.id)
       s0.mantleLedger.channelNotes.isChannelNoteOf(minted.id, cid)

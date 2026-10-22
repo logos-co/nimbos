@@ -19,7 +19,7 @@ import
 from ../../../logos_chain/core/mantle/tx_validation import validateGenesisTxStateless
 from ../../ledger/test_helpers import testLedgerConfig
 
-const testChainSyncProtocol = "/logos-blockchain-testnet-v0.1.2/chainsync/1.0.0"
+const testChainSyncProtocol* = "/logos-blockchain-testnet-v0.1.2/chainsync/1.0.0"
 
 proc initTestChain*(
     genesis: Block,

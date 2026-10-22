@@ -51,6 +51,14 @@ suite "core/mantle/tx_hashing":
     let tx = MantleTx(ops: @[])
     check mantleTxHash(tx).get == mantleTxHash(tx).get
 
+  test "empty transaction spec vector":
+    # The spec's one-of-each-operation vector needs the tagged SDP_ACTIVE
+    # metadata encoding (Encoding 1.10.0) and lands with it.
+    let tx = MantleTx(ops: @[])
+    check encodeMantleTx(tx).get.toHex == "00"
+    check mantleTxHash(tx).get.toHex ==
+      "2eba3f667b80a508f3d44d149a1c27a90ea365a51e4fc8209289088142b364e5"
+
   test "sdp opId is deterministic and payload-sensitive":
     let
       utxo = mkUtxo(pkSeed = 1)
@@ -157,5 +165,30 @@ suite "core/mantle/tx_hashing — channel op_id spec vectors":
         "1700000000000000000000000000000000000000000000000000000000000000"
       opId(op).get.toHex ==
         "fb24c17731954e8bbe1b0dedd69e4857c8083d1689aff331ba16f3ed5883f0ce"
+
+  test "CHANNEL_CONFIG op_id over ChannelId || Parent || KeyCount || …":
+    let op = ChannelConfigPayload(
+      channel: filledHash32(0x07),
+      parent: default(Hash32),
+      keys: @[
+        Ed25519PublicKey.init(
+          "1398f62c6d1a457c51ba6a4b5f3dbd2f69fca93216218dc8997e416bd17d93ca").get,
+        Ed25519PublicKey.init(
+          "fd1724385aa0c75b64fb78cd602fa1d991fdebf76b13c58ed702eac835e9f618").get,
+      ],
+      postingTimeframe: 10,
+      postingTimeout: 11,
+      configurationThreshold: 12,
+      transferThreshold: 13,
+    )
+    check encodeChannelConfig(op).get.toHex ==
+      "0707070707070707070707070707070707070707070707070707070707070707" &
+      "0000000000000000000000000000000000000000000000000000000000000000" &
+      "0200" &
+      "1398f62c6d1a457c51ba6a4b5f3dbd2f69fca93216218dc8997e416bd17d93ca" &
+      "fd1724385aa0c75b64fb78cd602fa1d991fdebf76b13c58ed702eac835e9f618" &
+      "0a000000" & "0b000000" & "0c00" & "0d00"
+    check opId(op).get.toHex ==
+      "8bac7efe4c3ef10745c0d509ac88e2abaf1d3cda94987ed2eeb9ad71dd31d056"
 
 {.pop.}

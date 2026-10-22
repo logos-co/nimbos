@@ -29,7 +29,7 @@ func mkChan(
     postingTimeout: PostingTimeout(postingTimeout),
     accreditedKeys: newSeq[Ed25519PublicKey](numKeys),
     configurationThreshold: 0,
-    tipMessage: default(Hash32),
+    tipHash: default(Hash32),
     transferThreshold: 0,
   )
 
