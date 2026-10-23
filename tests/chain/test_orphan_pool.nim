@@ -12,7 +12,7 @@ import
   unittest2,
   ../logos_chain/sync/helpers,
   ../../logos_chain/core/types,
-  ../../logos_chain/core/local_tree,
+  ../../logos_chain/consensus/consensus_state,
   ../../logos_chain/chain/orphan_pool
 
 converter toAdmittedBlock(b: Block): AdmittedBlock =
@@ -227,18 +227,20 @@ suite "chain/orphan_pool":
   test "pruneIncompatibleWithImmutable removes orphans incompatible with advancing LIB":
     let pool = OrphanPool()
     let genesis = Block(header: Header(slot: 0))
-    let tree = newLocalTree(genesis, securityParam = 1'u64)
+    let cs = ConsensusState.init(
+      genesis, securityParam = 1'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Bootstrap
+    )
     let gid = blockId(genesis.header)
 
     let b1 = Block(header: Header(slot: 1, parentBlock: gid))
     let id1 = blockId(b1.header)
-    check tree.addBlockToTree(b1)
+    check cs.addBlockAndTryUpdateTip(b1)
 
     let b2 = Block(header: Header(slot: 2, parentBlock: id1))
-    check tree.addBlockToTree(b2)
+    check cs.addBlockAndTryUpdateTip(b2)
     # LIB advances to b1 (height 2 - 1 = 1, slot 1)
-    discard tree.tryUpdateLib()
-    check tree.latestImmutableBlockId == id1
+    discard cs.tryUpdateLib()
+    check cs.latestImmutableId == id1
 
     # Orphan o1 has slot 1 <= LIB slot 1 (incompatible)
     let o1 = Block(header: Header(slot: 1, parentBlock: exampleBlockId(99)))
@@ -251,7 +253,7 @@ suite "chain/orphan_pool":
     check pool.addOrphan(o2)
     check pool.len == 2
 
-    pool.pruneIncompatibleWithImmutable(tree)
+    pool.pruneIncompatibleWithImmutable(cs)
     check pool.len == 1
     check not pool.hasOrphan(o1Id)
     check pool.hasOrphan(o2Id)

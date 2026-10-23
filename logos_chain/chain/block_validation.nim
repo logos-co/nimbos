@@ -15,7 +15,7 @@
 
 import
   libp2p/crypto/ed25519/ed25519,
-  ../core/local_tree,
+  ../consensus/consensus_state,
   ../core/mantle/tx_validation,
   ../ledger/ledger
 
@@ -24,7 +24,8 @@ export tx_validation.StatelessLedgerError
 from ../core/types import
   Block, body_root, ExpectedBedrockVersion,
   MaxBlockSize, MaxUncles, asSeq, len, header, txs, verify_signature,
-  ValidBlock, AdmittedBlock
+  ValidBlock, AdmittedBlock, BlockId
+from ../core/mantle/primitives import MaxBlockTxs
 from ../core/mantle/tx_types import SignedMantleTx, ValidSignedMantleTx, byteLen
 
 type
@@ -151,7 +152,7 @@ proc validatePolAndStatelessTransactions*(
 
 proc validateBlockHeaderAndTopology*(
     blk: Block,
-    localTree: LocalTree,
+    consensus: ConsensusState,
     ledger: Ledger[BlockId],
 ): Result[tuple[admittedBlk: AdmittedBlock, isOrphan: bool], BlockValidationError] =
   ## Multi-tier block admission and staged header/topology validation:
@@ -167,12 +168,12 @@ proc validateBlockHeaderAndTopology*(
 
   let isOrphan = not ledger.hasState(blk.header.parentBlock)
   if not isOrphan:
-    let parentHdr = localTree.fetchHeader(blk.header.parentBlock).valueOr:
+    let parentHdr = consensus.fetchHeader(blk.header.parentBlock).valueOr:
       return err(BlockValidationError(kind: BlockValidationErrorKind.UnviableFork))
     if blk.header.slot <= parentHdr.slot:
       return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))
 
-  if not localTree.canDescendFromImmutable(blk.header):
+  if not consensus.canDescendFromImmutable(blk.header):
     return err(BlockValidationError(kind: BlockValidationErrorKind.UnviableFork))
 
   if not validateBlockHeader(blk):

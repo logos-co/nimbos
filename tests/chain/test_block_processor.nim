@@ -38,7 +38,7 @@ suite "chain/block_processor":
         b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
         r = await bp.addBlock(BlockSource.Sync, b1)
       check r.isOk
-      check bp.localTree.localTipId == blockId(b1.header)
+      check bp.consensus.canonicalTip.tip == blockId(b1.header)
       check bp.ledger.state(blockId(b1.header)).isSome
 
   asyncTest "addBlock on an applied block completes with AlreadyApplied":
@@ -115,7 +115,7 @@ suite "chain/block_processor":
       check (await fBad).error.kind == BlockApplyErrorKind.InvalidStructure
       check (await fBad_S).error.kind == BlockApplyErrorKind.InvalidStructure
       check (await fGood).isOk
-      check bp.localTree.localTipId == id1
+      check bp.consensus.canonicalTip.tip == id1
 
   asyncTest "queue is FIFO":
     withProcessor(chain):
@@ -129,8 +129,8 @@ suite "chain/block_processor":
       check (await f2).error.kind == BlockApplyErrorKind.OrphanBuffered
       check (await f1).isOk
       # b2 is promoted asynchronously across event-loop turns
-      check waitUntil(bp.localTree.hasBlock(blockId(b2.header)))
-      check bp.localTree.localTipId == blockId(b2.header)
+      check waitUntil(bp.consensus.hasBlock(blockId(b2.header)))
+      check bp.consensus.canonicalTip.tip == blockId(b2.header)
       check (await bp.addBlock(BlockSource.Sync, b2)).error.kind == BlockApplyErrorKind.AlreadyApplied
 
   asyncTest "orphan cascade yields cooperatively between each promoted orphan":
@@ -157,7 +157,7 @@ suite "chain/block_processor":
       proc ticker() {.async: (raises: [CancelledError]).} =
         while true:
           await sleepAsync(0.milliseconds)
-          if not bp.localTree.hasBlock(lastId):
+          if not bp.consensus.hasBlock(lastId):
             inc ticksWhileBusy
       let tickerFut = ticker()
 
@@ -165,12 +165,12 @@ suite "chain/block_processor":
       check (await bp.addBlock(BlockSource.Sync, blocks[0])).isOk
 
       # Wait for all orphans to be promoted
-      check waitUntil(bp.localTree.hasBlock(lastId))
+      check waitUntil(bp.consensus.hasBlock(lastId))
 
       await tickerFut.cancelAndWait()
       for b in blocks:
-        check bp.localTree.hasBlock(blockId(b.header))
-      check bp.localTree.localTipId == lastId
+        check bp.consensus.hasBlock(blockId(b.header))
+      check bp.consensus.canonicalTip.tip == lastId
       check chain.orphanPool.len == 0
       # Verify cooperative yielding occurred between orphan promotions
       check ticksWhileBusy >= 4
@@ -200,10 +200,10 @@ suite "chain/block_processor":
       # Allow event loop to process the promoted orphan failure and prune descendants
       check waitUntil(chain.orphanPool.len == 0)
 
-      check bp.localTree.hasBlock(id1)
-      check not bp.localTree.hasBlock(id2)
-      check not bp.localTree.hasBlock(id3)
-      check not bp.localTree.hasBlock(id4)
+      check bp.consensus.hasBlock(id1)
+      check not bp.consensus.hasBlock(id2)
+      check not bp.consensus.hasBlock(id3)
+      check not bp.consensus.hasBlock(id4)
 
   asyncTest "loop yields to other tasks between blocks":
     withProcessor(chain):
@@ -246,7 +246,7 @@ suite "chain/block_processor":
         b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
       discard bp.addBlock(BlockSource.Gossip, orphan)
       check (await bp.addBlock(BlockSource.Sync, b1)).isOk
-      check not bp.localTree.hasBlock(blockId(orphan.header))
+      check not bp.consensus.hasBlock(blockId(orphan.header))
 
   asyncTest "error kinds: OrphanBuffered and InvalidStructure":
     withProcessor(chain):
@@ -295,11 +295,11 @@ suite "chain/block_processor":
       check (await f1).isOk
 
       # Both b2 and b3 are promoted and applied
-      check waitUntil(bp.localTree.hasBlock(id3))
+      check waitUntil(bp.consensus.hasBlock(id3))
 
-      check bp.localTree.hasBlock(id1)
-      check bp.localTree.hasBlock(id2)
-      check bp.localTree.hasBlock(id3)
+      check bp.consensus.hasBlock(id1)
+      check bp.consensus.hasBlock(id2)
+      check bp.consensus.hasBlock(id3)
       check chain.orphanPool.len == 0
 
   asyncTest "promoted orphan supersedes pending raw incoming block in queue and fulfills its future":
@@ -318,7 +318,7 @@ suite "chain/block_processor":
       check not fRawB2.finished
 
       # 3. Buffer admitted copy of b2 in orphanPool before b1 finishes processing
-      let (admittedB2, isOrphan) = validateBlockHeaderAndTopology(b2, bp.localTree, bp.ledger).get()
+      let (admittedB2, isOrphan) = validateBlockHeaderAndTopology(b2, chain.consensus, bp.ledger).get()
       check isOrphan
       check chain.orphanPool.addOrphan(admittedB2)
 
@@ -330,8 +330,8 @@ suite "chain/block_processor":
       let resRawB2 = await fRawB2
       check resRawB2.isOk
 
-      check bp.localTree.hasBlock(id1)
-      check bp.localTree.hasBlock(id2)
+      check bp.consensus.hasBlock(id1)
+      check bp.consensus.hasBlock(id2)
       check chain.orphanPool.len == 0
 
   asyncTest "promoted orphan failing validation completes stolen caller future with error":
@@ -347,7 +347,7 @@ suite "chain/block_processor":
       let fRawB2 = bp.addBlock(BlockSource.Sync, b2)
       check not fRawB2.finished
 
-      let (admittedB2, isOrphan) = validateBlockHeaderAndTopology(b2, bp.localTree, bp.ledger).get()
+      let (admittedB2, isOrphan) = validateBlockHeaderAndTopology(b2, chain.consensus, bp.ledger).get()
       check isOrphan
       check chain.orphanPool.addOrphan(admittedB2)
 
@@ -356,7 +356,68 @@ suite "chain/block_processor":
       # Promoted b2 fails validation and completes the stolen future fRawB2 with an error
       let resRawB2 = await fRawB2
       check resRawB2.isErr
-      check not bp.localTree.hasBlock(id2)
+      check not bp.consensus.hasBlock(id2)
       check chain.orphanPool.len == 0
+
+  asyncTest "switchToOnline transitions rule, advances LIB, prunes ledger states, and is idempotent":
+    const k = 2'u64
+    let chainBootstrap = initTestChain(genesisBlk, securityParam = k, forkChoiceRule = ForkChoiceRule.Bootstrap)
+    withProcessor(chainBootstrap):
+      let
+        b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
+        id1 = blockId(b1.header)
+        b2 = childBlock(b1.header, id1, SlotNumber(2), [])
+        id2 = blockId(b2.header)
+        b3 = childBlock(b2.header, id2, SlotNumber(3), [])
+        id3 = blockId(b3.header)
+        b4 = childBlock(b3.header, id3, SlotNumber(4), [])
+        id4 = blockId(b4.header)
+        sideB = childBlock(genesisBlk.header, gid, SlotNumber(5), [])
+        idSide = blockId(sideB.header)
+
+      check (await bp.addBlock(BlockSource.Sync, b1)).isOk
+      check (await bp.addBlock(BlockSource.Sync, b2)).isOk
+      check (await bp.addBlock(BlockSource.Sync, b3)).isOk
+      check (await bp.addBlock(BlockSource.Sync, b4)).isOk
+
+      # Competing side block off genesis at slot 5
+      check chainBootstrap.consensus.localTree.addBlockToTree(sideB)
+
+      check:
+        bp.consensus.forkChoiceRule == ForkChoiceRule.Bootstrap
+        bp.consensus.canonicalTip.tip == id4
+        bp.consensus.canonicalTip.height == 4'u64
+        # In Bootstrap mode, LIB does not advance automatically
+        bp.consensus.latestImmutableId == gid
+        bp.consensus.latestImmutableSlot == SlotNumber(0)
+        # All ledger states exist
+        bp.ledger.hasState(gid)
+        bp.ledger.hasState(id1)
+        bp.ledger.hasState(id2)
+        bp.ledger.hasState(id3)
+        bp.ledger.hasState(id4)
+        bp.consensus.hasBlock(idSide)
+
+      # Transition to Online: triggers updateLibAndPrune
+      bp.switchToOnline()
+
+      check:
+        bp.consensus.forkChoiceRule == ForkChoiceRule.Online
+        # Tip height 4 - k (2) = immHeight 2 (block b2)
+        bp.consensus.latestImmutableId == id2
+        bp.consensus.latestImmutableSlot == SlotNumber(2)
+        # States older than LIB (b1, genesis) are pruned
+        not bp.ledger.hasState(gid)
+        not bp.ledger.hasState(id1)
+        # LIB and subsequent states are retained
+        bp.ledger.hasState(id2)
+        bp.ledger.hasState(id3)
+        bp.ledger.hasState(id4)
+        # Competing fork below LIB height is pruned from tree
+        not bp.consensus.hasBlock(idSide)
+
+      # Calling again is a safe no-op
+      bp.switchToOnline()
+      check bp.consensus.forkChoiceRule == ForkChoiceRule.Online
 
 {.pop.}

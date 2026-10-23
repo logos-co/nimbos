@@ -8,9 +8,8 @@
 {.push raises: [], gcsafe.}
 
 import
-  ../core/[local_tree, types],
+  ../core/types,
   bincode
-export local_tree.Tip
 export types
 
 const MaxRequestBlocks* = 128

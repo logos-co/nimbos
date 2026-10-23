@@ -19,8 +19,6 @@ import
   ../chain/block_processor,
   ./[framing, syncer_types, types]
 
-from ../core/local_tree import
-  LocalTree, localTipId, latestImmutableBlockId, hasBlock
 from ../core/types import Block, BlockId, blockId, header
 from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
 
@@ -89,13 +87,13 @@ proc sendGetTipRequest*(
 const MaxKnownAdditionalBlocks = 5
 
 func buildKnownBlocks*(
-    localTree: LocalTree,
+    consensus: ConsensusState,
     additionalBlocks: openArray[BlockId] = [],
 ): KnownBlocks =
   let takeCount = min(additionalBlocks.len, MaxKnownAdditionalBlocks)
   KnownBlocks(
-    localTip: localTipId(localTree),
-    latestImmutableBlock: latestImmutableBlockId(localTree),
+    localTip: consensus.canonicalTip.tip,
+    latestImmutableBlock: consensus.latestImmutableId,
     additionalBlocks: (0 ..< takeCount).mapIt(additionalBlocks[it]),
   )
 
@@ -254,7 +252,7 @@ proc downloadBlocks(
     if effectiveTarget.isNone:
       debug "IBD: no effective target", peer
       return false
-    if hasBlock(syncer.localTree, effectiveTarget.get):
+    if syncer.processor.consensus.hasBlock(effectiveTarget.get):
       debug "IBD: target already local", peer, targetBlock = sbyteutils.toHex(effectiveTarget.get)
       return true
 
@@ -263,7 +261,7 @@ proc downloadBlocks(
       .valueOr(@[])
     let downloadReq = DownloadBlocksRequest(
       targetBlock: effectiveTarget.get,
-      knownBlocks: buildKnownBlocks(syncer.localTree, additionalKnown),
+      knownBlocks: buildKnownBlocks(syncer.processor.consensus, additionalKnown),
     )
     let blocks = (await sendDownloadBlocksRequest(
       syncer,

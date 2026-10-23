@@ -11,7 +11,16 @@ import chronicles
 import stew/io2
 
 when defined(windows):
-  import stew/[windows/acl]
+  import stew/windows/acl
+  import std/widestrs
+  proc moveFileExW(lpExistingFileName, lpNewFileName: pointer, dwFlags: uint32): int32 {.
+    importc: "MoveFileExW", header: "<windows.h>", stdcall, sideEffect.}
+  const
+    MOVEFILE_REPLACE_EXISTING = 0x00000001'u32
+    MOVEFILE_WRITE_THROUGH = 0x00000008'u32
+else:
+  proc posix_rename(oldpath, newpath: cstring): cint {.
+    importc: "rename", header: "<stdio.h>", sideEffect.}
 
 type
   ByteChar = byte | char
@@ -54,3 +63,20 @@ proc secureWriteFile*[T: ByteChar](path: string,
       err(res.error())
     else:
       ok()
+
+proc secureReplaceFile*(src, dst: string): IoResult[void] =
+  ## Atomically replaces `dst` with `src` on the same filesystem.
+  when defined(windows):
+    let
+      wsrc = newWideCString(src)
+      wdst = newWideCString(dst)
+    if moveFileExW(wsrc[0].addr, wdst[0].addr,
+                   MOVEFILE_REPLACE_EXISTING or MOVEFILE_WRITE_THROUGH) == 0:
+      return err(ioLastError())
+    ok()
+  else:
+    if posix_rename(src.cstring, dst.cstring) != 0:
+      return err(ioLastError())
+    ok()
+
+{.pop.}

@@ -16,6 +16,7 @@ import
   std/strutils,
   chronos,
   confutils/defs,
+  intops,
   results,
   stew/io2,
   yaml/dom,
@@ -85,6 +86,7 @@ type
     epochConfig*: EpochConfig
     securityParam*: int
     slotActivationCoeff*: NonNegativeRatio ## f — exact rational, no float
+    densitySlotWindow*: uint64             ## s_gen = ⌊k / (4f)⌋
     learningRate*: NonNegativeRatio ## beta — parsed exactly from the decimal scalar
     sdpConfig*: SdpConfig
     gossipsubProtocol*: string
@@ -143,8 +145,31 @@ func validateDeploymentSettingsStructure(root: YamlNode): Result[void, string] =
   needPath(["mempool", "pubsub_topic"])
   ok()
 
+func densitySlotWindow(securityParam: uint64, f: NonNegativeRatio): uint64 =
+  ## Returns the density check slot window length s_gen = ⌊k / (4f)⌋ = ⌊(k * f.den) / (4 * f.num)⌋.
+  ## For default parameters (k=2160, f=1/30), s_gen = 16200 slots (4h 30m).
+  ## Guards against 64-bit integer multiplication overflow and division by zero.
+  if f.num == 0 or f.den == 0 or securityParam == 0:
+    return 0'u64
+  if f.num > uint64.high div 4'u64:
+    return 0'u64
+  let
+    den = 4'u64 * f.num
+    (numHi, numLo) = wideningMul(securityParam, f.den)
+  if numHi >= den:
+    return uint64.high
+  let (q, _) = narrowingDiv(numHi, numLo, den)
+  q
+
 func deploymentSettingsFromYaml(root: YamlNode): Result[DeploymentSettings, string] =
-  let parsedGenesis = ? parseDeploymentGenesisState(root)
+  let
+    parsedGenesis = ? parseDeploymentGenesisState(root)
+    secParam = ? reqInt(root, ["cryptarchia", "security_param"])
+    slotCoeff = NonNegativeRatio(
+      num: ? reqUInt64(root, ["cryptarchia", "slot_activation_coeff", "numerator"]),
+      den: ? reqUInt64(root, ["cryptarchia", "slot_activation_coeff", "denominator"])
+    )
+    sGen = if secParam > 0: densitySlotWindow(uint64(secParam), slotCoeff) else: 0'u64
   ok(DeploymentSettings(
     blend: BlendSettings(
       common: BlendCommon(
@@ -183,11 +208,9 @@ func deploymentSettingsFromYaml(root: YamlNode): Result[DeploymentSettings, stri
         epochPeriodNonceStabilization: ? reqInt(
           root, ["cryptarchia", "epoch_config", "epoch_period_nonce_stabilization"])
       ),
-      securityParam: ? reqInt(root, ["cryptarchia", "security_param"]),
-      slotActivationCoeff: NonNegativeRatio(
-        num: ? reqUInt64(root, ["cryptarchia", "slot_activation_coeff", "numerator"]),
-        den: ? reqUInt64(root, ["cryptarchia", "slot_activation_coeff", "denominator"])
-      ),
+      securityParam: secParam,
+      slotActivationCoeff: slotCoeff,
+      densitySlotWindow: sGen,
       learningRate: ? reqDecimalRatio(root, ["cryptarchia", "learning_rate"]),
       sdpConfig: SdpConfig(
         bn: BnServiceParams(
@@ -244,6 +267,12 @@ func validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
     "cryptarchia.slot_activation_coeff.numerator must be > 0")
   need(ds.cryptarchia.slotActivationCoeff.den > 0,
     "cryptarchia.slot_activation_coeff.denominator must be > 0")
+  need(
+    uint64(ds.cryptarchia.securityParam) <= uint64.high div ds.cryptarchia.slotActivationCoeff.den,
+    "cryptarchia: security_param * slot_activation_coeff denominator overflows uint64"
+  )
+  need(ds.cryptarchia.densitySlotWindow > 0,
+    "cryptarchia: density_slot_window (s_gen = ⌊k / (4f)⌋) must be > 0")
   need(isSupportedLotteryF(ds.cryptarchia.slotActivationCoeff),
     "cryptarchia.slot_activation_coeff must have pinned lottery constants")
   need(ds.cryptarchia.learningRate.num > 0, "cryptarchia.learning_rate must be > 0")

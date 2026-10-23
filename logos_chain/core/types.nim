@@ -77,6 +77,11 @@ type
     references*: References
     signature*: Ed25519Signature
 
+  Tip* = object
+    tip*: BlockId
+    slot*: SlotNumber
+    height*: BlockNumber
+
 const
   ExpectedBedrockVersion* = 1'u8
   MaxBlockSize* = 2_097_152
@@ -88,6 +93,7 @@ deriveBincode(Header)
 deriveBincode(SignedHeader)
 deriveBincode(Block)
 deriveBincode(Proposal)
+deriveBincode(Tip)
 
 template header*(blk: Block): auto = blk.header
 template header*(blk: AdmittedBlock): auto = Block(blk).header
