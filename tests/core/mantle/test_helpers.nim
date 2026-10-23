@@ -28,18 +28,6 @@ proc mkRealZkPubKey*(sk: byte): ZkPublicKey =
   ## e.g. when verifying against committed fixture proofs.
   zkPublicKeyFromSecret(frFromBytesLE([sk]).get)
 
-func mkUtxo*(
-    value: Value = 100, pkSeed: byte = 1, opIdSeed: byte = 0,
-    outputIndex: uint64 = 0,
-): Utxo =
-  var opId: Hash32
-  opId[0] = opIdSeed
-  Utxo(
-    opId: opId,
-    outputIndex: outputIndex,
-    note: Note(value: value, zkPublicKey: mkZkPubKey(pkSeed)),
-  )
-
 func mkUtxoWithPk*(
     pk: ZkPublicKey, value: Value = 100, opIdSeed: byte = 0,
     outputIndex: uint64 = 0,
@@ -54,32 +42,99 @@ func mkUtxoWithPk*(
     note: Note(value: value, zkPublicKey: pk),
   )
 
+func mkUtxo*(
+    value: Value = 100, pkSeed: byte = 1, opIdSeed: byte = 0,
+    outputIndex: uint64 = 0,
+): Utxo =
+  mkUtxoWithPk(mkZkPubKey(pkSeed), value, opIdSeed, outputIndex)
+
 func mkNote*(value: Value, pkSeed: byte): Note =
   Note(value: value, zkPublicKey: mkZkPubKey(pkSeed))
-
-func mkTxHash*(seed: byte = 0x42): ZkHash =
-  var h: ZkHash
-  h[0] = seed
-  h
 
 func mkId*(seed: byte): TestId =
   var id: TestId
   id[0] = seed
   id
 
-func mkTransferTx*(
-    inputs: openArray[NoteId], outputs: openArray[Note]
+func mkTxHash*(seed: byte = 0x42): ZkHash =
+  mkId(seed)
+
+func mkSignedTransferTx*(
+    inputs: openArray[NoteId],
+    outputs: openArray[Note],
+    opProofs: seq[OpProof] = @[OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))],
 ): SignedMantleTx =
   let op = createTransferOp(
     TransferPayload(inputs: Inputs(noteIds: @inputs), outputs: Outputs(notes: @outputs))
   )
   SignedMantleTx(
     tx: MantleTx(ops: @[op]),
-    opProofs: @[OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))],
+    opProofs: opProofs,
   )
+
+func createHashedSignedMantleTx*(
+    signedTx: sink SignedMantleTx,
+): Result[HashedSignedMantleTx, EncodingError] {.inline.} =
+  let h = ?mantleTxHash(signedTx.tx)
+  ok(createHashedSignedMantleTxForTest(signedTx, h))
+
+func mkHashedSignedTx*(stx: sink SignedMantleTx): HashedSignedMantleTx =
+  let h = mantleTxHash(stx.tx).expect("valid tx for mkHashedSignedTx")
+  createHashedSignedMantleTxForTest(stx, h)
+
+func mkHashedSignedTx*(stx: sink SignedMantleTx, hash: Hash32): HashedSignedMantleTx =
+  createHashedSignedMantleTxForTest(stx, hash)
+
+func mkTransferTx*(
+    inputs: openArray[NoteId],
+    outputs: openArray[Note],
+    opProofs: seq[OpProof] = @[OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))],
+): HashedSignedMantleTx =
+  mkHashedSignedTx(mkSignedTransferTx(inputs, outputs, opProofs))
+
+func mkHashedTx*(
+    ops: seq[Op],
+    opProofs: seq[OpProof],
+): HashedSignedMantleTx =
+  mkHashedSignedTx(SignedMantleTx(tx: MantleTx(ops: ops), opProofs: opProofs))
+
+func mkValidTransferTx*(
+    inputs: openArray[NoteId], outputs: openArray[Note]
+): ValidSignedMantleTx =
+  createValidTxForTest(mkTransferTx(inputs, outputs))
 
 func mkProof*(): ProofOfLeadership =
   default(ProofOfLeadership)
+
+func unhashed*(tx: sink SignedMantleTx): HashedSignedMantleTx =
+  ## Wraps `tx` in a HashedSignedMantleTx with default(Hash32).
+  ## Only for tests where the code under test does not read `htx.hash` (e.g. stage-1 genesis validation,
+  ## non-cryptographic stateless validation).
+  createHashedSignedMantleTxForTest(tx, default(Hash32))
+
+func unhashedTx*(ops: openArray[Op]): HashedSignedMantleTx =
+  ## Creates an unhashed HashedSignedMantleTx with default proofs for multiple ops.
+  var proofs = newSeqOfCap[OpProof](ops.len)
+  for op in ops:
+    proofs.add defaultOpProofForOpcode(op.opcode).expect("supported opcode")
+  createHashedSignedMantleTxForTest(
+    SignedMantleTx(tx: MantleTx(ops: @ops), opProofs: proofs),
+    default(Hash32),
+  )
+
+func unhashedTx*(op: Op): HashedSignedMantleTx =
+  ## Creates an unhashed HashedSignedMantleTx with default proof for a single op.
+  ## For tests that only validate stateless logic where hash is not verified.
+  unhashedTx([op])
+
+func mkValidTx*(htx: HashedSignedMantleTx): ValidSignedMantleTx =
+  createValidTxForTest(htx)
+
+func mkValidTx*(stx: sink SignedMantleTx): ValidSignedMantleTx =
+  mkValidTx(mkHashedSignedTx(stx))
+
+func mkValidGenesisTx*(htx: HashedSignedMantleTx): ValidGenesisMantleTx =
+  createValidGenesisTxForTest(htx)
 
 proc mkEdKeyPair*(rng: ref HmacDrbgContext): EdKeyPair =
   ## Random Ed25519 keypair. Caller provides the rng so all keypairs minted

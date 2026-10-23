@@ -376,6 +376,9 @@ func encodeOpPayload(payload: OpPayload): Result[seq[byte], EncodingError] =
   of ChannelConfig:
     encodeChannelConfig(payload.channelConfig)
 
+# TODO (perf): `encodeOp` and `encodeOps` allocate separate `seq[byte]` buffers for each op and payload,
+# concatenating them with `res.add`. Optimize by accepting an `OutputStreamHandle` (faststreams)
+# across the hierarchy to write opcodes, counts, and payload fields directly into a shared output stream.
 func encodeOp*(op: Op): Result[seq[byte], EncodingError] =
   ## Op = Opcode || OpPayload
   var res = @[encodeOpcode(op.opcode)]
@@ -589,6 +592,9 @@ func readOpPayload*(data: openArray[byte], pos: var int, opcode: Opcode): Result
   else:
     err(DecodingError.UnsupportedOpcode)
 
+# TODO (perf): `readOp` and `readOpPayload` return Result[T, DecodingError] by value,
+# which causes genericAssign/genericSeqAssign deep-copies of inner sequences (e.g. inputs/outputs,
+# locators) under --mm:refc. Optimize via var out-parameters (e.g. `readOpInto`).
 func readOp*(data: openArray[byte], pos: var int): Result[Op, DecodingError] =
   let opcode = Opcode(?readByte(data, pos))
   let payload = ?readOpPayload(data, pos, opcode)
