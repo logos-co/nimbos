@@ -147,7 +147,7 @@ func mkChannelId*(seed: byte): ChannelId =
   c[0] = seed
   c
 
-proc mkActivityProof*(seed: byte = 1): ActivityProof =
+func mkActivityProof*(seed: byte = 1): ActivityProof =
   var
     proof = ActivityProof(
       epoch: EpochNumber(7),
@@ -161,7 +161,7 @@ proc mkActivityProof*(seed: byte = 1): ActivityProof =
     proof.proofOfQuota.proof[i] = byte((i + int(seed)) mod 256)
   proof
 
-proc mkSpecActiveMessage*(): ActiveMessage =
+func mkSpecActiveMessage*(): ActiveMessage =
   ## The SDP_ACTIVE message of the spec's op_id vector.
   var
     declarationId: DeclarationId
