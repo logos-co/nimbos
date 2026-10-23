@@ -49,7 +49,6 @@ type
     InvalidNonce
     LockedNoteIdMismatch
     DeclarationNotInLockedNote
-    MalformedActivityMetadata ## Active metadata failed to decode
     TargetEpochNotSet ## SDP Active submitted while no target epoch is set
     InvalidEpoch ## activity proof's epoch is not the target epoch
     UnknownProvider ## activity submitter is not in the target-epoch snapshot

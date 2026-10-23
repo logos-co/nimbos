@@ -26,28 +26,35 @@ from ../../logos_chain/core/mantle/primitives import MaxBlockTxs, SlotNumber
 from ../ledger/sdp/test_helpers import testSdpRegistry
 from ../ledger/test_helpers import testLedgerConfig
 
-const inscribeTxFraming = 166
-  ## OpCount, Opcode, ChannelId, the u32 inscription length, Parent, Signer
-  ## and the 64-byte Ed25519 proof — everything but the inscription itself.
+const
+  inscribeOpFraming = 165
+    ## Opcode, ChannelId, the u32 inscription length, Parent, Signer and the
+    ## 64-byte Ed25519 proof — everything but the inscription itself.
+  inscribeTxFraming = 1 + 2 * inscribeOpFraming
+    ## OpCount plus two inscribe ops.
 
 proc mkSizedTx(bytes: int): SignedMantleTx =
-  ## ChannelInscribe transaction padded to encode to exactly `bytes`.
+  ## Two-inscription transaction padded to encode to exactly `bytes`. Two ops
+  ## keep each inscription under MaxOperationDataSize at MaxBlockSize.
   doAssert bytes >= inscribeTxFraming
   let
     rng = HmacDrbgContext.new()
     kp = mkEdKeyPair(rng)
-    tx = MantleTx(ops: @[createChannelInscribeOp(ChannelInscribePayload(
+    padding = bytes - inscribeTxFraming
+    first = padding div 2
+  func inscribe(size: int): Op =
+    createChannelInscribeOp(ChannelInscribePayload(
       channelId: default(ChannelId),
-      inscription: newSeq[byte](bytes - inscribeTxFraming),
+      inscription: newSeq[byte](size),
       parent: default(Parent),
       signer: kp.pubkey,
-    ))])
+    ))
+  let
+    tx = MantleTx(ops: @[inscribe(first), inscribe(padding - first)])
     txHash = mantleTxHash(tx).get
     sig = sign(kp.seckey, txHash)
-  SignedMantleTx(
-    tx: tx,
-    opProofs: @[OpProof(kind: opfChannelInscribe, ed25519SigProof: sig)],
-  )
+    proof = OpProof(kind: opfChannelInscribe, ed25519SigProof: sig)
+  SignedMantleTx(tx: tx, opProofs: @[proof, proof])
 
 proc validate(genesis: Block, blk: Block): Result[ValidBlock, BlockValidationError] =
   let tree = newLocalTree(genesis, 1'u64)

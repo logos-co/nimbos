@@ -6,7 +6,7 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## Stateless and cryptographic transaction validation for Mantle transactions.
-## Spec: [Bedrock v1.1 — Mantle Specification v1.10.0](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md)
+## Spec: [Bedrock v1.1 — Mantle Specification v1.17.0](https://github.com/logos-co/logos-lips/blob/949faa9563027de366514247a2a62b0de2f8c45f/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md)
 
 {.push raises: [], gcsafe.}
 
@@ -60,7 +60,12 @@ proc validateMantleTxStateless*(
       ?assert_valid_output(t.outputs.notes)
 
     of ChannelDeposit:
-      checkInputs(op.payload.channelDeposit.inputs)
+      # Mantle 1.17.0 bounds the deposit metadata in "Validate", before any
+      # proof check. A deposit has no proof branch here, so an oversized
+      # deposit would otherwise pass this function.
+      template cd: untyped = op.payload.channelDeposit
+      ?checkOperationData(cd.metadata)
+      checkInputs(cd.inputs)
 
     of ChannelWithdraw:
       checkInputs(op.payload.channelWithdraw.inputs)
@@ -79,6 +84,7 @@ proc validateMantleTxStateless*(
         return err(StatelessLedgerError.InvalidChannelConfig)
 
     of ChannelInscribe:
+      ?checkOperationData(op.payload.channelInscribe.inscription)
       hasSigCrypto = true
 
     of SdpDeclare:

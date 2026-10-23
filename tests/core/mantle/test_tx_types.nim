@@ -47,6 +47,29 @@ suite "core/mantle/tx_types":
     check back.opProofs.len == signed.opProofs.len
     check back.opProofs[0].kind == signed.opProofs[0].kind
 
+  test "signed inscribe tx at MaxOperationDataSize round-trips and matches byteLen":
+    let
+      signed = SignedMantleTx(
+        tx: MantleTx(ops: @[createChannelInscribeOp(ChannelInscribePayload(
+          channelId: default(ChannelId),
+          inscription: newSeq[byte](MaxOperationDataSize),
+          parent: default(Parent),
+          signer: default(Signer),
+        ))]),
+        opProofs: @[OpProof(
+          kind: opfChannelInscribe, ed25519SigProof: DefaultEd25519Signature)],
+      )
+      wire = encodeSignedMantleTx(signed).get
+      back = decodeSignedMantleTx(wire).get
+    # decodeSignedMantleTx rejects trailing bytes, so a decode that succeeds
+    # consumed the whole buffer.
+    check wire.len == byteLen(signed)
+    check back.tx.ops.len == 1
+    check back.tx.ops[0].payload.channelInscribe ==
+      signed.tx.ops[0].payload.channelInscribe
+    check back.opProofs.len == 1
+    check back.opProofs[0].ed25519SigProof == DefaultEd25519Signature
+
   test "byteLen parity across all 10 operation and proof variants":
     let
       # 1. Transfer
@@ -124,7 +147,7 @@ suite "core/mantle/tx_types":
       # 9. SdpActive
       txSdpActive = SignedMantleTx(
         tx: MantleTx(ops: @[createSdpActiveOp(ActiveMessage(
-          declarationId: default(DeclarationId), nonce: 42, metadata: @[7'u8, 8, 9]))]),
+          declarationId: default(DeclarationId), nonce: 42))]),
         opProofs: @[OpProof(kind: opfSdpActive, sdpActiveProof: DefaultZkSignature)])
 
       # 10. LeaderClaim
