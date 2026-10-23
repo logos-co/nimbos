@@ -422,15 +422,17 @@ suite "core/mantle/operations":
     let payload = hexToSeqByte(SdpActiveSpecPayloadHex)
     var pos = 0
     let decoded = readOpPayload(payload, pos, OpSdpActive).get
-    check pos == 269
+    check pos == payload.len
     check decoded.kind == SdpActive
     check decoded.sdpActive == mkSpecActiveMessage()
 
   test "readOpPayload rejects an unknown activity metadata type":
+    const metadataTypeOffset = sizeof(DeclarationId) + sizeof(Nonce)
     var
       payload = hexToSeqByte(SdpActiveSpecPayloadHex)
       pos = 0
-    payload[40] = 0x02'u8
+    # Overwrite the metadata type byte with an unknown value (0x02).  
+    payload[metadataTypeOffset] = 0x02'u8
     check readOpPayload(payload, pos, OpSdpActive).error ==
       DecodingError.UnknownActivityMetadataType
 
