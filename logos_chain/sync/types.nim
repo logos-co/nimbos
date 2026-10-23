@@ -10,8 +10,7 @@
 import
   ../core/[local_tree, types],
   bincode
-export local_tree.Tip
-export types
+export local_tree.Tip, types
 
 const MaxRequestBlocks* = 128
   ## Maximum blocks served per ``DownloadBlocksRequest`` (DoS limit).
@@ -26,11 +25,9 @@ type
     targetBlock*: BlockId
     knownBlocks*: KnownBlocks
 
-type
   SerializedBlock = seq[byte]
     ## Bincode-encoded ``Block`` bytes (``encode`` / ``decode``).
 
-type
   BlocksUnavailableReasonKind* {.pure.} = enum
     burBlockNotFound = 0
     burStartBlockNotFound = 1
@@ -59,7 +56,6 @@ type
     of dbrFailure:
       blocksUnavailableReason*: BlocksUnavailableReason
 
-type
   RequestMessageKind* {.pure.} = enum
     rmDownloadBlocksRequest = 0
     rmGetTip = 1
@@ -71,7 +67,6 @@ type
     of rmGetTip:
       discard
 
-type
   GetTipResponseKind* {.pure.} = enum
     gtrTip = 0
     gtrFailure = 1
@@ -83,7 +78,6 @@ type
     of gtrFailure:
       failureMessage*: string
 
-type
   IBDFailure* = object of CatchableError
 
 const

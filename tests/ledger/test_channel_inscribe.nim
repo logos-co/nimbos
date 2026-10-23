@@ -10,7 +10,6 @@
 
 import
   unittest2,
-  results,
   bearssl/rand,
   libp2p/crypto/ed25519/ed25519,
   ../../logos_chain/ledger/[channel_state, mantle_state, types],
@@ -33,9 +32,10 @@ suite "MantleState.tryApplyChannelInscribe — JIT creation":
       r = MantleState.init().tryApplyChannelInscribe(op, blockSlot = 7'u64)
     check r.isOk
     let chan = r.get.channels.getOrDefault(cid)
-    check chan.accreditedKeys == @[kp.pubkey]
-    check chan.tipHash == blake2b256Hash(encodeChannelInscribe(op).get)
-    check chan.tipSlot == 7'u64
+    check:
+      chan.accreditedKeys == @[kp.pubkey]
+      chan.tipHash == blake2b256Hash(encodeChannelInscribe(op).get)
+      chan.tipSlot == 7'u64
 
   test "fresh channel with non-ZERO parent → InvalidParent":
     let
@@ -72,9 +72,10 @@ suite "MantleState.tryApplyChannelInscribe — existing channel":
       r = seedMantle.tryApplyChannelInscribe(op, blockSlot = 2'u64)
     check r.isOk
     let newChan = r.get.channels.getOrDefault(cid)
-    check newChan.tipHash == blake2b256Hash(encodeChannelInscribe(op).get)
-    check newChan.tipHash != prevTip
-    check newChan.tipSlot == 2'u64
+    check:
+      newChan.tipHash == blake2b256Hash(encodeChannelInscribe(op).get)
+      newChan.tipHash != prevTip
+      newChan.tipSlot == 2'u64
 
   test "wrong parent → InvalidParent":
     let

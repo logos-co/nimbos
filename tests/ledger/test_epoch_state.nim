@@ -67,7 +67,7 @@ suite "ledger/epoch_state":
       frozen.agedUtxoRoot == fe(1)
 
   test "epoch 1 aged root never chases (snapshot is slot 0)":
-    var state = genesisEpochState(1, fe(1), fe(9), 1000, mainnetF).expect(
+    let state = genesisEpochState(1, fe(1), fe(9), 1000, mainnetF).expect(
       "supported f")
     let updated = state.updateFromLedger(fe(11), fe(22), 5, testSchedule)
     check:

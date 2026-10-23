@@ -11,7 +11,6 @@
 {.push raises: [], gcsafe.}
 
 import
-  results,
   stew/endians2,
   libp2p/crypto/ed25519/ed25519,
   ../crypto/types

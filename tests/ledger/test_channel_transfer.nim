@@ -11,12 +11,10 @@
 import
   std/sets,
   unittest2,
-  results,
   bearssl/rand,
   libp2p/crypto/ed25519/ed25519,
-  ../../logos_chain/ledger/
-    [channel_state, cryptarchia_state, leader_state, mantle_state, types],
-  ../../logos_chain/core/mantle/[primitives, operations, proofs, tx_hashing, utxo],
+  ../../logos_chain/ledger/[cryptarchia_state, mantle_state],
+  ../../logos_chain/core/mantle/[operations, proofs, tx_hashing],
   ../core/mantle/test_helpers
 
 from ./test_helpers import seedChannelNotes, seedMantle, twoOfTwo
@@ -43,13 +41,14 @@ suite "MantleState.tryApplyChannelTransfer":
       (newMs, newCs) = r.get
       expected0 = Utxo(opId: opId(op).get, outputIndex: 0, note: out0)
       expected1 = Utxo(opId: opId(op).get, outputIndex: 1, note: out1)
-    check newCs.len == 2
-    check not newCs.utxos.contains(note.id)
-    check newCs.utxos.get(expected0.id) == Opt.some(expected0)
-    check newCs.utxos.get(expected1.id) == Opt.some(expected1)
-    check not newMs.channelNotes.isChannelNote(note.id)
-    check newMs.channelNotes.isChannelNoteOf(expected0.id, cid)
-    check newMs.channelNotes.isChannelNoteOf(expected1.id, cid)
+    check:
+      newCs.len == 2
+      not newCs.utxos.contains(note.id)
+      newCs.utxos.get(expected0.id) == Opt.some(expected0)
+      newCs.utxos.get(expected1.id) == Opt.some(expected1)
+      not newMs.channelNotes.isChannelNote(note.id)
+      newMs.channelNotes.isChannelNoteOf(expected0.id, cid)
+      newMs.channelNotes.isChannelNoteOf(expected1.id, cid)
 
   test "outputs worth more than the inputs → UnbalancedTransfer":
     let
@@ -125,8 +124,6 @@ suite "MantleState.tryApplyChannelTransfer":
     let r = m.tryApplyChannelTransfer(
       cs, LockedNotes.init(), op, ChannelMultiSigProof(), mkTxHash())
     check r.error == NotAChannelNote
-
-
 
   test "input missing from the UTXO set → InvalidNote":
     let
@@ -230,8 +227,9 @@ suite "MantleState.tryApplyChannelTransfer":
         channel: cid, inputs: Inputs(noteIds: @[note.id]), outputs: Outputs(notes: @[mkNote(100, pkSeed = 5)]))
       r = m.tryApplyChannelTransfer(
         cs, LockedNotes.init(), op, twoOfTwo(kp1, kp2, txHash), txHash)
-    check r.isOk
-    check r.get.cs.leader == leader
+    check:
+      r.isOk
+      r.get.cs.leader == leader
 
 suite "channel notes lifecycle":
   test "deposit → transfer → withdraw → regular Transfer spends the release":
@@ -247,8 +245,9 @@ suite "channel notes lifecycle":
       ).expect("deposit applies")
       channelNote = Utxo(
         opId: opId(depositOp).get, outputIndex: 0, note: deposited.note)
-    check afterDeposit.channelNotes.isChannelNoteOf(channelNote.id, cid)
-    check not afterDeposit.cs.utxos.contains(deposited.id)
+    check:
+      afterDeposit.channelNotes.isChannelNoteOf(channelNote.id, cid)
+      not afterDeposit.cs.utxos.contains(deposited.id)
 
     # Reassign the value to a sequencer-controlled key.
     let
@@ -260,8 +259,9 @@ suite "channel notes lifecycle":
       ).expect("transfer applies")
       transferred = Utxo(
         opId: opId(transferOp).get, outputIndex: 0, note: reassigned)
-    check afterTransfer.channelNotes.isChannelNoteOf(transferred.id, cid)
-    check not afterTransfer.channelNotes.isChannelNote(channelNote.id)
+    check:
+      afterTransfer.channelNotes.isChannelNoteOf(transferred.id, cid)
+      not afterTransfer.channelNotes.isChannelNote(channelNote.id)
 
     # Release it, then spend it as an ordinary note.
     let
@@ -273,8 +273,9 @@ suite "channel notes lifecycle":
         inputs: Inputs(noteIds: @[transferred.id]),
         outputs: Outputs(notes: @[mkNote(100, pkSeed = 8)]),
       )
-    check afterWithdraw.isEmpty
-    check afterTransfer.cs.applyTransferState(
-      LockedNotes.init(), afterWithdraw, spend).isOk
+    check:
+      afterWithdraw.isEmpty
+      afterTransfer.cs.applyTransferState(
+        LockedNotes.init(), afterWithdraw, spend).isOk
 
 {.pop.}

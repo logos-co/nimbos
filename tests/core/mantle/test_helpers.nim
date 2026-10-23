@@ -9,11 +9,9 @@
 
 import
   bearssl/rand,
-  libp2p/crypto/ed25519/ed25519,
+  libp2p/[crypto/ed25519/ed25519, multiaddress],
   ../../../logos_chain/core/types,
-  ../../../logos_chain/core/mantle/
-    [primitives, operations, proofs, utxo],
-  ../../../logos_chain/zk/poseidon2/hasher
+  ../../../logos_chain/core/mantle/utxo
 
 from libp2p/crypto/rng import newBearSslRng
 
@@ -41,7 +39,7 @@ func mkUtxo*(
   )
 
 func mkUtxoWithPk*(
-    pk: ZkPublicKey, value: Value = 100, opIdSeed: byte = 0,
+    pk: ZkPublicKey, value: Value, opIdSeed: byte = 0,
     outputIndex: uint64 = 0,
 ): Utxo =
   ## Sibling of `mkUtxo` that takes a raw pk instead of deriving one from a
@@ -81,7 +79,7 @@ func mkTransferTx*(
 func mkProof*(): ProofOfLeadership =
   default(ProofOfLeadership)
 
-proc mkEdKeyPair*(rng: ref HmacDrbgContext): EdKeyPair =
+func mkEdKeyPair*(rng: ref HmacDrbgContext): EdKeyPair =
   ## Random Ed25519 keypair. Caller provides the rng so all keypairs minted
   ## within a single test share one source and remain reproducible-by-order.
   EdKeyPair.random(newBearSslRng(rng))
@@ -90,5 +88,8 @@ func mkChannelId*(seed: byte): ChannelId =
   var c: ChannelId
   c[0] = seed
   c
+
+func mkLocator*(port: int): Locator =
+  MultiAddress.init("/ip4/127.0.0.1/tcp/" & $port).get()
 
 {.pop.}

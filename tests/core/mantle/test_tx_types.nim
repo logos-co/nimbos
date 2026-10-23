@@ -11,7 +11,6 @@
 import
   unittest2,
   libp2p/multiaddress,
-  ../../../logos_chain/core/crypto/types,
   ../../../logos_chain/core/mantle/tx_types
 
 suite "core/mantle/tx_types":
@@ -21,10 +20,11 @@ suite "core/mantle/tx_types":
       wire = encodeMantleTx(tx).get
     var pos = 0
     let back = readMantleTx(wire, pos).get
-    check pos == wire.len
-    check back.ops.len == tx.ops.len
-    check wire.len == 1
-    check wire[0] == byte(0)
+    check:
+      pos == wire.len
+      back.ops.len == tx.ops.len
+      wire.len == 1
+      wire[0] == byte(0)
 
   test "decodeSignedMantleTx roundtrips encodeSignedMantleTx":
     let
@@ -43,9 +43,10 @@ suite "core/mantle/tx_types":
       )
       wire = encodeSignedMantleTx(signed).get
       back = decodeSignedMantleTx(wire).get
-    check back.tx.ops.len == signed.tx.ops.len
-    check back.opProofs.len == signed.opProofs.len
-    check back.opProofs[0].kind == signed.opProofs[0].kind
+    check:
+      back.tx.ops.len == signed.tx.ops.len
+      back.opProofs.len == signed.opProofs.len
+      back.opProofs[0].kind == signed.opProofs[0].kind
 
   test "byteLen parity across all 10 operation and proof variants":
     let
@@ -145,20 +146,20 @@ suite "core/mantle/tx_types":
           OpProof(kind: opfChannelInscribe, ed25519SigProof: DefaultEd25519Signature),
           OpProof(kind: opfSdpWithdraw, sdpWithdrawProof: DefaultZkSignature),
         ])
-
-    let allTxs = [
-      txTransferEmpty, txTransferPopulated,
-      txInscribeEmpty, txInscribeData,
-      txDepositEmpty, txDepositPopulated,
-      txWithdraw, txChannelTransfer, txChannelConfig,
-      txSdpDeclare, txSdpWithdraw, txSdpActive, txLeaderClaim,
-      txMultiOp,
-    ]
+      allTxs = [
+        txTransferEmpty, txTransferPopulated,
+        txInscribeEmpty, txInscribeData,
+        txDepositEmpty, txDepositPopulated,
+        txWithdraw, txChannelTransfer, txChannelConfig,
+        txSdpDeclare, txSdpWithdraw, txSdpActive, txLeaderClaim,
+        txMultiOp,
+      ]
 
     for tx in allTxs:
       let enc = encodeSignedMantleTx(tx).get
-      check byteLen(tx) == enc.len
-      check byteLen(ValidSignedMantleTx(tx)) == enc.len
+      check:
+        byteLen(tx) == enc.len
+        byteLen(ValidSignedMantleTx(tx)) == enc.len
 
   test "encodeSignedMantleTx returns error on proof count mismatch":
     let tx = SignedMantleTx(

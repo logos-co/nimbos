@@ -28,15 +28,16 @@ suite "zk/groth16/verifier":
     publicInputs: seq[FieldElement]
 
   setup:
-    let vkText = readAllChars(fixtureVk).valueOr:
-      check false
-      return
-    let proofText = readAllChars(fixtureProof).valueOr:
-      check false
-      return
-    let publicText = readAllChars(fixturePublic).valueOr:
-      check false
-      return
+    let
+      vkText = readAllChars(fixtureVk).valueOr:
+        check false
+        return
+      proofText = readAllChars(fixtureProof).valueOr:
+        check false
+        return
+      publicText = readAllChars(fixturePublic).valueOr:
+        check false
+        return
     vk = parseVk(vkText).valueOr:
       check false
       return

@@ -10,7 +10,7 @@
 import
   chronicles,
   chronos,
-  libp2p/[switch, peerid, errors],
+  libp2p/[switch, errors],
   ../chain/block_processor,
   ./[syncer_types, ibd_server, ibd_client, types]
 

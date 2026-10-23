@@ -10,12 +10,11 @@
 
 import
   unittest2,
-  results,
   ../test_helpers
 
 suite "ledger/sdp/ops/withdraw":
   test "tryApplySdpWithdraw rejects unknown declaration":
-    var seeded = seedDeclaration(pkSeed = 11, declareEpoch = 10)
+    let seeded = seedDeclaration(pkSeed = 11, declareEpoch = 10)
     var unknown = WithdrawMessage(
       declarationId: seeded.declId,
       lockedNoteId: seeded.declaration.lockedNoteId,
@@ -33,7 +32,7 @@ suite "ledger/sdp/ops/withdraw":
     )
     installTestWithdraw(seeded.registry, withdraw, 15)
 
-    var seededCopy = seeded
+    let seededCopy = seeded
     check execWithdraw(seededCopy, withdraw, 16).isErr
 
     var replay = withdraw
@@ -49,14 +48,16 @@ suite "ledger/sdp/ops/withdraw":
     )
     installTestWithdraw(seeded.registry, withdraw, 5)
     let info = getDeclaration(seeded.registry.state, seeded.declId).get()
-    check info.withdrawAt == Opt.some(5'u64)
-    check info.nonce == 1'u64
-    check getLockedNote(seeded.registry.state, seeded.declaration.lockedNoteId).isSome
+    check:
+      info.withdrawAt == Opt.some(5'u64)
+      info.nonce == 1'u64
+      getLockedNote(seeded.registry.state, seeded.declaration.lockedNoteId).isSome
 
     seeded.registry.state = finalizeWithdrawals(seeded.registry.state, 6)
     check getDeclaration(seeded.registry.state, seeded.declId).isSome
     seeded.registry.state = finalizeWithdrawals(seeded.registry.state, 7)
-    check getDeclaration(seeded.registry.state, seeded.declId).isNone
-    check getLockedNote(seeded.registry.state, seeded.declaration.lockedNoteId).isNone
+    check:
+      getDeclaration(seeded.registry.state, seeded.declId).isNone
+      getLockedNote(seeded.registry.state, seeded.declaration.lockedNoteId).isNone
 
 {.pop.}

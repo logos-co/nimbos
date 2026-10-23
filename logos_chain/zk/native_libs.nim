@@ -67,7 +67,7 @@ when not defined(windows):
       InvalidInput = 2
       OutOfMemory = 3
 
-    Status* = object
+    Status = object
       ## Returned by value (260 bytes).
       code*: StatusCode
       message*: NativeMessage

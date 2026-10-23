@@ -9,28 +9,25 @@
 {.used.}
 
 import
-  results,
   std/sets,
   unittest2,
   libp2p/multiaddress,
-  ./test_helpers,
-  ../../../logos_chain/core/mantle/primitives,
-  ../../../logos_chain/ledger/sdp/state,
-  ../../../logos_chain/zk/poseidon2/hasher
+  ./test_helpers
 
 suite "ledger/sdp/state":
   test "DeclarationInfo fields are default-zero":
     var d: DeclarationInfo
-    check d.nonce == 0'u64
-    check d.service == ServiceType.bn
-    check d.active.isNone
-    check d.withdrawAt.isNone
+    check:
+      d.nonce == 0'u64
+      d.service == ServiceType.bn
+      d.active.isNone
+      d.withdrawAt.isNone
 
   test "validateLocator accepts valid locator and rejects oversized ones":
     let good = MultiAddress.init("/ip4/127.0.0.1/tcp/30303").tryGet()
-    check isValidLocator(good)
-
-    check MultiAddress.init("not-a-multiaddr").isErr
+    check:
+      isValidLocator(good)
+      MultiAddress.init("not-a-multiaddr").isErr
 
     var longMaStr = "/ip4/127.0.0.1/tcp/30303"
     while MultiAddress.init(longMaStr).tryGet().data().buffer.len <= MaxLocatorMultiaddrBytes:
@@ -49,33 +46,39 @@ suite "ledger/sdp/state":
     id
 
   proc checkInvariants(state: SdpState) =
-    check state.activeProviders.len == state.declarations.len
-    check state.activeZkIds.len == state.declarations.len
+    check:
+      state.activeProviders.len == state.declarations.len
+      state.activeZkIds.len == state.declarations.len
     for declId, info in state.declarations.pairs:
-      check (info.service, info.providerId) in state.activeProviders
-      check (info.service, info.zkId) in state.activeZkIds
-      check info.lockedNoteId in state.lockedNotes
+      check:
+        (info.service, info.providerId) in state.activeProviders
+        (info.service, info.zkId) in state.activeZkIds
+        info.lockedNoteId in state.lockedNotes
       let declsInNote = state.lockedNotes.get(info.lockedNoteId).get()
       check declId in declsInNote
 
   test "stores declarations and locked notes":
     var state = SdpState.init()
-    let declId = seedDeclId(1)
-    let noteId = seedNoteId(2)
+    let
+      declId = seedDeclId(1)
+      noteId = seedNoteId(2)
 
-    check declId notin state.declarations
-    check getDeclaration(state, declId).isNone
+    check:
+      declId notin state.declarations
+      getDeclaration(state, declId).isNone
 
     var info: DeclarationInfo
     info.service = ServiceType.bn
     info.created = EpochNumber(10)
     state = insertDeclaration(state, declId, info)
-    check declId in state.declarations
-    check getDeclaration(state, declId).get().created == EpochNumber(10)
+    check:
+      declId in state.declarations
+      getDeclaration(state, declId).get().created == EpochNumber(10)
 
     state = addDeclarationToLockedNote(state, noteId, declId)
-    check noteId in state.lockedNotes
-    check getLockedNote(state, noteId).get().len == 1
+    check:
+      noteId in state.lockedNotes
+      getLockedNote(state, noteId).get().len == 1
 
     let otherDecl = seedDeclId(3)
     state = addDeclarationToLockedNote(state, noteId, otherDecl)
@@ -91,8 +94,9 @@ suite "ledger/sdp/state":
 
   test "finalizeWithdrawals removes declarations and unlocks notes":
     var state = SdpState.init()
-    let declId = seedDeclId(7)
-    let noteId = seedNoteId(8)
+    let
+      declId = seedDeclId(7)
+      noteId = seedNoteId(8)
     var info: DeclarationInfo
     info.service = ServiceType.bn
     info.lockedNoteId = noteId
@@ -101,12 +105,14 @@ suite "ledger/sdp/state":
     state = addDeclarationToLockedNote(state, noteId, declId)
 
     state = finalizeWithdrawals(state, 6)
-    check declId in state.declarations
-    check noteId in state.lockedNotes
+    check:
+      declId in state.declarations
+      noteId in state.lockedNotes
 
     state = finalizeWithdrawals(state, 7)
-    check declId notin state.declarations
-    check noteId notin state.lockedNotes
+    check:
+      declId notin state.declarations
+      noteId notin state.lockedNotes
 
   test "hasProviderOrZkIdConflict uses secondary index maps":
     var state = SdpState.init()
@@ -130,27 +136,27 @@ suite "ledger/sdp/state":
     checkInvariants(seeded1.registry.state)
 
     # Apply second declaration into seeded1 registry
-    let declareRes2 = applySdpDeclare(seeded1.registry, seeded2.declaration, 1)
-    check declareRes2.isOk
-    seeded1.registry = declareRes2.get()
+    seeded1.registry = applySdpDeclare(seeded1.registry, seeded2.declaration, 1).get()
     checkInvariants(seeded1.registry.state)
 
     # Execute active on decl 1
-    let activeMsg1 = ActiveMessage(
-      declarationId: seeded1.declId,
-      nonce: 1,
-    )
-    let decl1 = seeded1.registry.state.declarations.get(seeded1.declId).get()
+    let
+      activeMsg1 = ActiveMessage(
+        declarationId: seeded1.declId,
+        nonce: 1,
+      )
+      decl1 = seeded1.registry.state.declarations.get(seeded1.declId).get()
     seeded1.registry = applySdpActive(seeded1.registry, activeMsg1, decl1, 2)
     checkInvariants(seeded1.registry.state)
 
     # Execute withdraw on decl 1 at epoch 5
-    let withdrawMsg1 = WithdrawMessage(
-      declarationId: seeded1.declId,
-      lockedNoteId: seeded1.declaration.lockedNoteId,
-      nonce: 2,
-    )
-    let decl1Active = seeded1.registry.state.declarations.get(seeded1.declId).get()
+    let
+      withdrawMsg1 = WithdrawMessage(
+        declarationId: seeded1.declId,
+        lockedNoteId: seeded1.declaration.lockedNoteId,
+        nonce: 2,
+      )
+      decl1Active = seeded1.registry.state.declarations.get(seeded1.declId).get()
     seeded1.registry = applySdpWithdraw(seeded1.registry, withdrawMsg1, decl1Active, 5)
     checkInvariants(seeded1.registry.state)
 
