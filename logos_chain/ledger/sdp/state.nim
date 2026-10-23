@@ -6,7 +6,7 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## SDP declaration records and in-memory validator state store.
-## Spec: [Service Declaration Protocol v1.3.0](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/bedrock-service-declaration-protocol.md)
+## Spec: [Service Declaration Protocol v1.6.0](https://github.com/logos-co/logos-lips/blob/7c2ec59fadcdc2ba0ae74ff7600a14b55d90efcd/docs/blockchain/raw/bedrock-service-declaration-protocol.md)
 
 {.push raises: [], gcsafe.}
 
@@ -131,13 +131,13 @@ func finalizeWithdrawals*(
     state: sink SdpState,
     currentEpoch: EpochNumber,
 ): SdpState =
-  ## Removes declarations withdrawn at or before
-  ## ``current_epoch - SnapshotFinalizationDelay``, and unlocks the freed notes.
-  if currentEpoch < SnapshotFinalizationDelay:
-    return state
-  let threshold = currentEpoch - SnapshotFinalizationDelay
+  ## Removes the declarations past ``withdraw_at`` and unlocks their notes.
   for declId, info in state.declarations.pairs:
-    if info.withdrawAt.valueOr(high(EpochNumber)) <= threshold:
+    let withdrawAt = info.withdrawAt.valueOr:
+      continue
+    # This is `withdrawAt + 1 <= currentEpoch` without the addition. The
+    # addition can wrap at the EpochNumber limit.
+    if withdrawAt < currentEpoch:
       state = removeDeclarationFromLockedNote(state, info.lockedNoteId, declId)
       state = removeDeclaration(state, declId)
   state

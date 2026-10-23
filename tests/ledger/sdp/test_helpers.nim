@@ -156,11 +156,11 @@ proc installTestActive*(
 proc installTestWithdraw*(
     registry: var SdpRegistry,
     withdraw: WithdrawMessage,
-    epoch: EpochNumber,
+    withdrawAt: EpochNumber,
 ) =
   var declaration = registry.state.declarations.getOrDefault(withdraw.declarationId)
   declaration.nonce = withdraw.nonce
-  declaration.withdrawAt = Opt.some(epoch)
+  declaration.withdrawAt = Opt.some(withdrawAt)
   registry.state = insertDeclaration(
     registry.state, withdraw.declarationId, declaration,
   )
