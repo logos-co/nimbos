@@ -18,7 +18,7 @@ import
   stew/[byteutils, io2],
   yaml/dom,
   ../../logos_chain/deployment/[deployment_settings, deployment_settings_helpers],
-  ../../logos_chain/chain/genesis,
+  ../../logos_chain/chain/block_validation,
   ../../logos_chain/core/[types, crypto/hashing],
   ../../logos_chain/core/mantle/[tx_types, tx_hashing]
 
@@ -57,54 +57,43 @@ proc signedMantleTxFromDevnetFixture(text: string): Result[SignedMantleTx, strin
     "ops_proofs",
   )
 
+let
+  devnetFixtureSmt = block:
+    let text = readAllChars(mantleTxFixturePath).expect("valid fixture file")
+    signedMantleTxFromDevnetFixture(text).expect("valid mantle tx fixture")
+  devnetDeploymentSettings = block:
+    let text = readAllChars(deploymentSettingsPath).expect("valid deployment settings file")
+    parseDeploymentSettings(text).expect("valid deployment settings")
+
 suite "devnet genesis mantle_tx body root":
   test "genesis fixture single-tx body root matches deployment header.body_root":
-    check fileExists(mantleTxFixturePath)
     let
-      text = readAllChars(mantleTxFixturePath).valueOr:
-        check false
-        return
-      smt = signedMantleTxFromDevnetFixture(text).valueOr:
-        check false
-        return
-      txRoot = merkle_root([smt]).get
-      bodyRoot = body_root([], txRoot)
-      dsText = readAllChars(deploymentSettingsPath).valueOr:
-        check false
-        return
-      ds = parseDeploymentSettings(dsText).valueOr:
-        check false
-        return
+      smt = devnetFixtureSmt
+      ds = devnetDeploymentSettings
+      smtHash = mantleTxHash(smt.tx).get
       gstate = ds.cryptarchia.genesisState
-      smtFromDeployment = gstate.signedMantleTx
-    check mantleTxHash(smt.tx).get == mantleTxHash(smtFromDeployment.tx).get
-    check txRoot == merkle_root([SignedMantleTx(smtFromDeployment)]).get
-    check txRoot == mantleTxHash(smt.tx).get
+      smtFromDeployment = gstate.validGenesisTx
+      smtDeploymentHash = mantleTxHash(smtFromDeployment.tx).get
+      txRoot = merkle_root([smtHash])
+      bodyRoot = body_root([], txRoot)
+    check smtHash == smtDeploymentHash
+    check txRoot == merkle_root([smtDeploymentHash])
+    check txRoot == smtHash
     check toHex(txRoot) == expectedDevnetMantleTxHash
     check toHex(bodyRoot) == expectedDevnetGenesisBodyRoot
     check bodyRoot == gstate.header.bodyRoot
 
   test "deployment genesis block id matches devnet header preimage":
     let
-      dsText = readAllChars(deploymentSettingsPath).valueOr:
-        check false
-        return
-      ds = parseDeploymentSettings(dsText).valueOr:
-        check false
-        return
-    check validateDeploymentSettings(ds).isOk
-    let gb = createGenesisBlock(ds.cryptarchia.genesisState.signedMantleTx).get
+      ds = devnetDeploymentSettings
+      validGenesisTx = ds.cryptarchia.genesisState.validGenesisTx
+      gb = createGenesisBlock(validGenesisTx)
     check toHex(gb.header.bodyRoot) == expectedDevnetGenesisBodyRoot
     check toHex(blockId(gb.header)) == expectedDevnetGenesisBlockId
 
   test "devnet genesis mantle tx encoding and hashes match fixed vectors":
     let
-      text = readAllChars(mantleTxFixturePath).valueOr:
-        check false
-        return
-      smt = signedMantleTxFromDevnetFixture(text).valueOr:
-        check false
-        return
+      smt = devnetFixtureSmt
       txBytes = encodeMantleTx(smt.tx).get
     check toHex(txBytes) == fixedGenesisTxBytesHex
     check txBytes == hexToSeqByte(fixedGenesisTxBytesHex)

@@ -83,8 +83,8 @@ func validateLocators*(decl: DeclarationMessage): Result[void, StatelessLedgerEr
     return err(StatelessLedgerError.InvalidLocator)
   ok()
 
-func validateGenesisTxStateless*(
-    tx: SignedMantleTx): Result[ValidGenesisMantleTx, StatelessLedgerError] =
+func validateGenesisTxStructural*(
+    tx: SignedMantleTx): Result[void, StatelessLedgerError] =
   ## Stateless genesis checks; no proof is verified.
   template ops: untyped = tx.tx.ops
   if ops.len > MantleMaxOps:
@@ -109,6 +109,6 @@ func validateGenesisTxStateless*(
   ?assert_valid_output(transfer.outputs.notes)
   for op in ops.toOpenArray(2, ops.high):
     ?validateLocators(op.payload.sdpDeclare)
-  ok(ValidGenesisMantleTx(tx))
+  ok()
 
 {.pop.}

@@ -37,6 +37,22 @@ suite "core/mantle/primitives":
     check readOutputs(outWire, outPos).get == outputs
     check outPos == outWire.len
 
+  test "decodeFieldElement and decodeFieldElementAt roundtrip encodeFieldElement":
+    let
+      fe = slotToFr(987654321'u64)
+      wire = encodeFieldElement(fe)
+    check wire.len == 32
+    var pos = 0
+    let atFe = decodeFieldElementAt(wire, pos).get
+    check pos == 32
+    check atFe == fe
+    let fullFe = decodeFieldElement(wire).get
+    check fullFe == fe
+    # Trailing bytes rejection
+    var withTrailing = @wire
+    withTrailing.add(1'u8)
+    check decodeFieldElement(withTrailing).error == DecodingError.TrailingBytes
+
   test "encodeServiceType maps BN to wire byte 0":
     check encodeServiceType(ServiceType.bn) == 0'u8
     check encodeServiceType(ServiceType.bn) == byte(ord(ServiceType.bn))

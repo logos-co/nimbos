@@ -14,15 +14,16 @@ import
   results,
   ../testutil,
   ../logos_chain/sync/helpers,
-  ../../logos_chain/core/types,
-  ../../logos_chain/chain/[chain, genesis]
-from ../../logos_chain/core/mantle/primitives import SlotNumber
+  ../../logos_chain/zk/poc,
+  ../../logos_chain/chain/chain,
+  ../../logos_chain/utils/dynamic_merkle_tree,
+  ../core/mantle/test_helpers
 
 proc setupChain(
     securityParam: uint64 = 10'u64,
-): tuple[chain: Chain, genesis: Block, gid: BlockId] =
+): tuple[chain: Chain, genesis: ValidBlock, gid: BlockId] =
   let
-    genesis = createGenesisBlock(testGenesisTx()).get
+    genesis = createGenesisBlock(testValidGenesisTx())
     gid = blockId(genesis.header)
   var c = initTestChain(genesis, securityParam = securityParam)
   c.slotConfig.genesisTime = uint64(getTime().toUnix() - 500)
@@ -311,12 +312,11 @@ suite "chain/orphan_resolution":
   test "orphan with invalid stateless transaction is buffered on ingestion and rejected during promotion":
     var (chain, genesis, gid) = setupChain()
 
-    var badTx = signedTxWithOps(1, 1)
-    badTx.opProofs = @[] # MismatchedOpProofCount
+    let badHtx = mkTransferTx([], [], opProofs = @[]) # MismatchedOpProofCount
 
     let b1 = childBlock(genesis.header, gid, SlotNumber(1), [])
     let b1Id = blockId(b1.header)
-    let orphan = childBlock(b1.header, b1Id, SlotNumber(2), [badTx])
+    let orphan = childBlock(b1.header, b1Id, SlotNumber(2), [badHtx])
 
     # Ingestion: orphan is buffered without expensive tx validation
     let applyRes = chain.tryApplyBlock(orphan)
@@ -334,12 +334,12 @@ suite "chain/orphan_resolution":
   test "orphan cascade triggering a reorg restores mempool transactions from abandoned branch":
     var (chain, genesis, gid) = setupChain(securityParam = 1)
 
-    let txA = minimalSignedTx()
-    check chain.mempool.add(ValidSignedMantleTx(txA), SlotNumber(1)).get
+    let txA = minimalValidSignedTx()
+    check chain.mempool.add(txA, SlotNumber(1))
     check chain.mempool.len == 1
 
     # Branch A: block a1 with txA
-    let a1 = childBlock(genesis.header, gid, SlotNumber(1), [txA])
+    let a1 = childBlock(genesis.header, gid, SlotNumber(1), [txA.hashed])
     let resA1 = chain.tryApplyBlock(a1)
     check resA1.isOk
     check chain.localTree.localTipId == blockId(a1.header)
@@ -458,6 +458,157 @@ suite "chain/orphan_resolution":
 
     # With the fix, tryApplyAdmittedBlock pruned descendants of b2 upon failure -> b3 is purged!
     check not chain.orphanPool.hasOrphan(idB3)
+    check chain.orphanPool.len == 0
+
+  test "promoted wire orphan picks up mempool valid transaction and skips stateless validation":
+    var (chain, genesis, gid) = setupChain()
+
+    # 1. Construct a transaction with Groth16 proof (LeaderClaim)
+    let
+      rewardsRoot = chain.ledger.state(gid).get().cryptarchiaLedger.leader.voucherTree.root()
+      op = createLeaderClaimOp(LeaderClaimPayload(
+        rewardsRoot: rewardsRoot,
+        voucherNullifier: default(VoucherNullifier),
+        publicKey: mkZkPubKey(1),
+      ))
+      tx = SignedMantleTx(
+        tx: MantleTx(ops: @[op]),
+        opProofs: @[OpProof(kind: opfLeaderClaim, proofOfClaimProof: default(ProofOfClaimProof))],
+      )
+      wireHtx = mkHashedSignedTx(tx)
+      memHtx = mkHashedSignedTx(tx, wireHtx.hash)
+      vtx = mkValidTx(memHtx)
+
+    # 2. Add to mempool
+    check chain.mempool.add(vtx, chain.currentWallclockSlot())
+
+    # 3. Wire orphan B2 arrives before parent B1
+    let
+      b1 = childBlock(genesis.header, gid, SlotNumber(1), [])
+      id1 = blockId(b1.header)
+      b2 = childBlock(b1.header, id1, SlotNumber(2), [wireHtx])
+      id2 = blockId(b2.header)
+
+    let applyB2Res = chain.tryApplyBlock(b2)
+    check applyB2Res.isErr
+    check applyB2Res.error.kind == BlockApplyErrorKind.OrphanBuffered
+    check chain.orphanPool.hasOrphan(id2)
+
+    # 4. Reset the PoC verifier so that if Tier 3 falls back to stateless validation,
+    #    it would fail with VerifierNotInitialised.
+    poc.resetVkForTesting()
+
+    # 5. Ingest parent B1
+    let applyB1Res = chain.tryApplyBlock(b1)
+    check applyB1Res.isOk
+
+    # 6. Promote B2 from orphan pool and apply it
+    let promoted = chain.orphanPool.takeChildren(id1)
+    check promoted.len == 1
+    check blockId(promoted[0].header) == id2
+
+    let promoteRes = chain.tryApplyAdmittedBlock(promoted[0])
+    check promoteRes.isOk
+    check chain.localTree.hasBlock(id2)
+    check chain.localTree.localTipId == id2
+
+  test "promoted proposal orphan does not require mempool to retain its transactions":
+    var (chain, genesis, gid) = setupChain()
+
+    # 1. Add valid transaction to mempool
+    let vtx = minimalValidSignedTx()
+    check chain.mempool.add(vtx, chain.currentWallclockSlot())
+    check chain.mempool.contains(vtx.hash)
+
+    # 2. Buffer proposal orphan before parent B1 arrives
+    let
+      b1 = childBlock(genesis.header, gid, SlotNumber(1), [])
+      id1 = blockId(b1.header)
+      proposal = childProposal(b1.header, id1, SlotNumber(2), [vtx])
+      id2 = blockId(proposal.header)
+
+    let applyPropRes = chain.tryApplyProposal(proposal)
+    check applyPropRes.isErr
+    check applyPropRes.error.kind == BlockApplyErrorKind.OrphanBuffered
+    check chain.orphanPool.hasOrphan(id2)
+
+    # 3. Evict transaction completely from mempool (including grace cache)
+    chain.mempool.remove(vtx.hash, moveToGrace = false)
+    check not chain.mempool.contains(vtx.hash)
+
+    # 4. Ingest parent B1
+    check chain.tryApplyBlock(b1).isOk
+
+    # 5. Promote proposal orphan: it already holds reconstructed txs in AdmittedBlock
+    #    (txsVerified: true), so promotion succeeds without requiring the mempool.
+    let promoted = chain.orphanPool.takeChildren(id1)
+    check promoted.len == 1
+    check blockId(promoted[0].header) == id2
+
+    let promoteRes = chain.tryApplyAdmittedBlock(promoted[0])
+    check promoteRes.isOk
+    check chain.localTree.hasBlock(id2)
+    check chain.localTree.localTipId == id2
+
+  test "promoted orphan with slot <= parent slot is rejected and pruned upon promotion":
+    let
+      genesis = createGenesisBlock(testValidGenesisTx())
+      gid = blockId(genesis.header)
+    var chain = initTestChain(genesis)
+
+    let
+      b1 = childBlock(genesis.header, gid, SlotNumber(2), [])
+      id1 = blockId(b1.header)
+      b2 = childBlock(b1.header, id1, SlotNumber(2), [])
+      id2 = blockId(b2.header)
+
+    let b2Res = chain.tryApplyBlock(b2)
+    check b2Res.isErr
+    check b2Res.error.kind == BlockApplyErrorKind.OrphanBuffered
+    check chain.orphanPool.hasOrphan(id2)
+
+    check chain.tryApplyBlock(b1).isOk
+    check chain.localTree.hasBlock(id1)
+
+    let promoted = chain.orphanPool.takeChildren(id1)
+    check promoted.len == 1
+    check blockId(header(promoted[0])) == id2
+
+    let promoteRes = chain.tryApplyAdmittedBlock(promoted[0])
+    check promoteRes.isErr
+    check promoteRes.error.kind == BlockApplyErrorKind.InvalidStructure
+    check not chain.localTree.hasBlock(id2)
+    check not chain.orphanPool.hasOrphan(id2)
+
+  test "promoted orphan whose parent state is gone is rejected and its descendants pruned":
+    var (chain, genesis, gid) = setupChain()
+
+    let
+      p = childBlock(genesis.header, gid, SlotNumber(1), [])
+      idP = blockId(p.header)
+      o = childBlock(p.header, idP, SlotNumber(2), [])
+      idO = blockId(o.header)
+      g = childBlock(o.header, idO, SlotNumber(3), [])
+      idG = blockId(g.header)
+
+    # 1. Ingest grandchild g: buffers as orphan waiting for o
+    let gRes = chain.tryApplyBlock(g)
+    check gRes.isErr
+    check gRes.error.kind == BlockApplyErrorKind.OrphanBuffered
+    check chain.orphanPool.hasOrphan(idG)
+    check chain.orphanPool.len == 1
+
+    # 2. Ingest admitted o (parent p was never applied or was pruned):
+    #    checkTopology returns TopologyStatus.Orphan because p is not in ledger
+    let
+      admittedO = admitBlock(o).get()
+      oRes = chain.tryApplyAdmittedBlock(admittedO)
+    check oRes.isErr
+    check oRes.error.kind == BlockApplyErrorKind.UnviableFork
+
+    # 3. Assert o was not added to tree, and its descendant g was pruned from orphan pool
+    check not chain.localTree.hasBlock(idO)
+    check not chain.orphanPool.hasOrphan(idG)
     check chain.orphanPool.len == 0
 
 {.pop.}

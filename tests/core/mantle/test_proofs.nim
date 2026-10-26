@@ -54,6 +54,13 @@ suite "core/mantle/proofs":
     check readOpProof(fixture, pos, opfChannelWithdraw).get.channelWithdrawOpProof == proof
     check pos == fixture.len
 
+  func decodeOpsProofs(
+      ops: openArray[Op], data: openArray[byte]
+  ): Result[seq[OpProof], DecodingError] =
+    var res: seq[OpProof]
+    ?decodeOpsProofsInto(ops, data, res)
+    ok(move(res))
+
   test "decodeOpsProofs roundtrips encodeOpsProofs and verifies wire length":
     let
       ops = @[
@@ -84,19 +91,21 @@ suite "core/mantle/proofs":
     check encodeChannelMultiSigProof(@[sig], @[]).error == EncodingError.MultiSigSignaturesMismatch
     check encodeChannelMultiSigProof(@[sig, sig], @[1'u16, 1'u16]).error == EncodingError.MultiSigIndicesNonIncreasing
     check encodeChannelMultiSigProof(@[sig, sig], @[2'u16, 1'u16]).error == EncodingError.MultiSigIndicesNonIncreasing
-    var tooManySigs = newSeq[Ed25519Signature](65536)
-    var tooManyIdxs = newSeq[ChannelKeyIndex](65536)
+    var
+      tooManySigs = newSeq[Ed25519Signature](65536)
+      tooManyIdxs = newSeq[ChannelKeyIndex](65536)
     for i in 0 ..< 65536:
       tooManyIdxs[i] = ChannelKeyIndex(i)
     check encodeChannelMultiSigProof(tooManySigs, tooManyIdxs).error == EncodingError.MultiSigCountExceeded
 
   test "encodeOpsProofs returns error on length mismatch or proof kind mismatch":
-    let transferOp = createTransferOp(TransferPayload(
-      inputs: Inputs(noteIds: @[]),
-      outputs: Outputs(notes: @[]),
-    ))
-    let transferProof = OpProof(kind: opfTransfer, transferProof: DefaultZkSignature)
-    let activeProof = OpProof(kind: opfSdpActive, sdpActiveProof: DefaultZkSignature)
+    let
+      transferOp = createTransferOp(TransferPayload(
+        inputs: Inputs(noteIds: @[]),
+        outputs: Outputs(notes: @[]),
+      ))
+      transferProof = OpProof(kind: opfTransfer, transferProof: DefaultZkSignature)
+      activeProof = OpProof(kind: opfSdpActive, sdpActiveProof: DefaultZkSignature)
 
     check encodeOpsProofs(@[transferOp], @[]).error == EncodingError.ProofCountMismatch
     check encodeOpsProofs(@[transferOp], @[activeProof]).error == EncodingError.ProofKindMismatch
