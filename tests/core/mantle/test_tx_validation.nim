@@ -406,8 +406,8 @@ suite "core/mantle/tx_validation — stateless invariants":
     check toStatelessLedgerError(EncodingError.MultiSigSignaturesMismatch) == StatelessLedgerError.InvalidProof
     check toStatelessLedgerError(EncodingError.MultiSigIndicesNonIncreasing) == StatelessLedgerError.InvalidProof
     check toStatelessLedgerError(EncodingError.LengthExceeded) == StatelessLedgerError.InvalidProof
-    check toStatelessLedgerError(EncodingError.MetadataLengthExceeded) == StatelessLedgerError.InvalidProof
-    check toStatelessLedgerError(EncodingError.InscriptionLengthExceeded) == StatelessLedgerError.InvalidProof
+    check toStatelessLedgerError(EncodingError.MetadataLengthExceeded) == StatelessLedgerError.OperationDataExceeded
+    check toStatelessLedgerError(EncodingError.InscriptionLengthExceeded) == StatelessLedgerError.OperationDataExceeded
     check toStatelessLedgerError(EncodingError.InputsCountExceeded) == StatelessLedgerError.InvalidProof
     check toStatelessLedgerError(EncodingError.OpsCountExceeded) == StatelessLedgerError.TooManyOps
 
@@ -420,5 +420,33 @@ suite "core/mantle/tx_validation — stateless invariants":
     for i in 0 .. MantleMaxOps:
       largeOps.add dummyOp
     check validateMantleTxStateless(unhashedTx(largeOps)).error == StatelessLedgerError.TooManyOps
+
+  test "validateMantleTxStateless rejects an inscription over MaxOperationDataSize":
+    let op = createChannelInscribeOp(ChannelInscribePayload(
+      channelId: mkChannelId(1),
+      inscription: newSeq[byte](MaxOperationDataSize + 1),
+      parent: default(Hash32),
+      signer: testKp.pubkey,
+    ))
+    # A second op that fails a later phase-1 check pins the order: the
+    # bound rejects op 0 before the empty inputs of op 1 are seen.
+    check validateMantleTxStateless(unhashedTx([op, createTransferOp(TransferPayload())])).error ==
+      StatelessLedgerError.OperationDataExceeded
+
+  test "validateMantleTxStateless rejects CHANNEL_DEPOSIT metadata over MaxOperationDataSize":
+    let op = createChannelDepositOp(ChannelDepositPayload(
+      channel: mkChannelId(1),
+      inputs: Inputs(noteIds: @[mkUtxo(100, 1).id]),
+      metadata: newSeq[byte](MaxOperationDataSize + 1),
+    ))
+    check validateMantleTxStateless(unhashedTx(op)).error == StatelessLedgerError.OperationDataExceeded
+
+  test "validateMantleTxStateless accepts CHANNEL_DEPOSIT metadata of exactly MaxOperationDataSize":
+    let op = createChannelDepositOp(ChannelDepositPayload(
+      channel: mkChannelId(1),
+      inputs: Inputs(noteIds: @[mkUtxo(100, 1).id]),
+      metadata: newSeq[byte](MaxOperationDataSize),
+    ))
+    check validateMantleTxStateless(unhashedTx(op)).isOk
 
 {.pop.}

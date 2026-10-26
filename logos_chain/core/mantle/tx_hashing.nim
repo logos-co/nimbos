@@ -6,7 +6,7 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## Mantle transaction hashing helpers.
-## Spec: [Bedrock v1.1 — Mantle Specification v1.10.0](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md)
+## Spec: [Bedrock v1.1 — Mantle Specification v1.17.0](https://github.com/logos-co/logos-lips/blob/949faa9563027de366514247a2a62b0de2f8c45f/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md)
 
 {.push raises: [], gcsafe.}
 
@@ -123,10 +123,9 @@ func opId*(op: WithdrawMessage): Hash32 =
   ## op_id = Blake2b-256("OPERATION_ID_V1" || encode_op_bytes(op))
   blake2b256Hash(OperationIdV1DomainTag, encodeSdpWithdraw(op))
 
-func opId*(op: ActiveMessage): Result[Hash32, EncodingError] =
+func opId*(op: ActiveMessage): Hash32 =
   ## op_id = Blake2b-256("OPERATION_ID_V1" || encode_op_bytes(op))
-  let encoded = ?encodeSdpActive(op)
-  ok(blake2b256Hash(OperationIdV1DomainTag, encoded))
+  blake2b256Hash(OperationIdV1DomainTag, encodeSdpActive(op))
 
 func opId*(op: ChannelInscribePayload): Result[Hash32, EncodingError] =
   let encoded = ?encodeChannelInscribe(op)

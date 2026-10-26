@@ -7,7 +7,7 @@
 
 ## Pure structural and stateless validation rules for Mantle transactions
 ## with zero cryptographic or ZK dependencies.
-## Spec: [Bedrock v1.1 — Mantle Specification v1.10.0](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md)
+## Spec: [Bedrock v1.1 — Mantle Specification v1.17.0](https://github.com/logos-co/logos-lips/blob/949faa9563027de366514247a2a62b0de2f8c45f/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md)
 
 {.push raises: [], gcsafe.}
 
@@ -15,6 +15,8 @@ import
   std/sequtils,
   results,
   ./tx_types
+
+from ./primitives import MaxOperationDataSize
 
 type
   StatelessLedgerError* {.pure.} = enum
@@ -34,6 +36,7 @@ type
     GenesisInputs ## the genesis Transfer consumes notes
     TooManyOps ## more ops than the u8 wire count holds
     TooManyOutputs ## more outputs than the u8 wire count holds
+    OperationDataExceeded ## inscription or deposit metadata over MAX_OPERATION_DATA_SIZE
 
 export results, StatelessLedgerError
 
@@ -49,11 +52,11 @@ func toStatelessLedgerError*(err: EncodingError): StatelessLedgerError =
     StatelessLedgerError.InvalidChannelConfig
   of EncodingError.OpsCountExceeded:
     StatelessLedgerError.TooManyOps
+  of EncodingError.MetadataLengthExceeded, EncodingError.InscriptionLengthExceeded:
+    StatelessLedgerError.OperationDataExceeded
   of EncodingError.ProofCountMismatch, EncodingError.ProofKindMismatch,
      EncodingError.MultiSigCountExceeded, EncodingError.MultiSigSignaturesMismatch,
-     EncodingError.MultiSigIndicesNonIncreasing,
-     EncodingError.LengthExceeded, EncodingError.MetadataLengthExceeded,
-     EncodingError.InscriptionLengthExceeded,
+     EncodingError.MultiSigIndicesNonIncreasing, EncodingError.LengthExceeded,
      EncodingError.InputsCountExceeded, EncodingError.OutputsCountExceeded:
     StatelessLedgerError.InvalidProof
 
@@ -71,6 +74,12 @@ func assert_valid_output*(outputs: openArray[Note]): Result[void, StatelessLedge
   ## Output Notes Validation: every value is non-zero.
   if outputs.anyIt(it.value == 0):
     return err(StatelessLedgerError.ZeroValueNote)
+  ok()
+
+func checkOperationData*(data: openArray[byte]): Result[void, StatelessLedgerError] =
+  ## An inscription or deposit metadata is at most MAX_OPERATION_DATA_SIZE bytes.
+  if data.len > MaxOperationDataSize:
+    return err(StatelessLedgerError.OperationDataExceeded)
   ok()
 
 func validateLocators*(decl: DeclarationMessage): Result[void, StatelessLedgerError] =

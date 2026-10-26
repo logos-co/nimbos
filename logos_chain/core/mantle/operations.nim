@@ -5,14 +5,15 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-## Spec: [Bedrock v1.1 — Mantle Specification v1.16.0](https://github.com/logos-co/logos-lips/blob/fddc2c1911626f7b1949360b8924bb6c05252bff/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md)
+## Spec: [Bedrock v1.1 — Mantle Specification v1.17.0](https://github.com/logos-co/logos-lips/blob/949faa9563027de366514247a2a62b0de2f8c45f/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md)
 
 {.push raises: [], gcsafe.}
 
 import
-  ./[primitives, opcodes],
-  ../crypto/types,
-  libp2p/crypto/ed25519/ed25519
+  stew/assign2,
+  libp2p/crypto/ed25519/ed25519,
+  ./[primitives, opcodes, blend_activity],
+  ../crypto/types
 export primitives, opcodes
 
 type
@@ -29,7 +30,7 @@ type
   ChannelDepositPayload* = object
     channel*: ChannelId
     inputs*: Inputs
-    metadata*: Metadata
+    metadata*: DepositMetadata
 
   ChannelWithdrawPayload* = object
     channel*: ChannelId
@@ -55,7 +56,7 @@ type
   ActiveMessage* = object
     declarationId*: DeclarationId
     nonce*: Nonce
-    metadata*: Metadata
+    metadata*: ActivityProof
 
   LeaderClaimPayload* = object
     rewardsRoot*: RewardsRoot
@@ -221,7 +222,6 @@ func defaultOpForOpcode*(opcode: Opcode): Result[Op, EncodingError] =
     ok(createSdpActiveOp(ActiveMessage(
       declarationId: default(DeclarationId),
       nonce: default(Nonce),
-      metadata: @[],
     )))
   of OpLeaderClaim:
     ok(createLeaderClaimOp(LeaderClaimPayload(
@@ -277,13 +277,15 @@ func encodeSdpWithdraw*(value: WithdrawMessage): array[72, byte] =
   res[40 ..< 72] = encodeLockedNoteId(value.lockedNoteId)
   res
 
-func encodeSdpActive*(value: ActiveMessage): Result[seq[byte], EncodingError] =
-  ## SDPActive = DeclarationId || Nonce || Metadata
-  var res = @(encodeDeclarationId(value.declarationId))
-  res.add(encodeNonce(value.nonce))
-  let meta = ?encodeMetadata(value.metadata)
-  res.add(meta)
-  ok(res)
+const SdpActiveLen = sizeof(DeclarationId) + sizeof(Nonce) + ActivityMetadataLen
+
+func encodeSdpActive*(value: ActiveMessage): array[SdpActiveLen, byte] =
+  ## SDPActive = DeclarationId || Nonce || ActivityMetadata
+  var res {.noinit.}: array[SdpActiveLen, byte]
+  assign(res.toOpenArray(0, 31), encodeDeclarationId(value.declarationId))
+  assign(res.toOpenArray(32, 39), encodeNonce(value.nonce))
+  assign(res.toOpenArray(40, SdpActiveLen - 1), encodeActivityMetadata(value.metadata))
+  res
 
 func encodeLeaderClaim*(value: LeaderClaimPayload): array[96, byte] =
   ## LeaderClaim = RewardsRoot || VoucherNullifier || PublicKey
@@ -310,11 +312,11 @@ func encodeChannelTransfer*(value: ChannelTransferPayload): Result[seq[byte], En
   ok(res)
 
 func encodeChannelDeposit*(value: ChannelDepositPayload): Result[seq[byte], EncodingError] =
-  ## ChannelDeposit = ChannelId || Inputs || Metadata
+  ## ChannelDeposit = ChannelId || Inputs || DepositMetadata
   var res = @(encodeChannelId(value.channel))
   let ins = ?encodeInputs(value.inputs)
   res.add(ins)
-  let meta = ?encodeMetadata(value.metadata)
+  let meta = ?encodeDepositMetadata(value.metadata)
   res.add(meta)
   ok(res)
 
@@ -370,7 +372,7 @@ func encodeOpPayload(payload: OpPayload): Result[seq[byte], EncodingError] =
   of SdpWithdraw:
     ok(@(encodeSdpWithdraw(payload.sdpWithdraw)))
   of SdpActive:
-    encodeSdpActive(payload.sdpActive)
+    ok(@(encodeSdpActive(payload.sdpActive)))
   of LeaderClaim:
     ok(@(encodeLeaderClaim(payload.leaderClaim)))
   of ChannelConfig:
@@ -431,8 +433,7 @@ func byteLen*(payload: OpPayload): int =
   of SdpWithdraw:
     sizeof(DeclarationId) + sizeof(Nonce) + sizeof(LockedNoteId)
   of SdpActive:
-    template act: untyped = payload.sdpActive
-    sizeof(DeclarationId) + sizeof(Nonce) + sizeof(uint32) + act.metadata.len
+    SdpActiveLen
   of LeaderClaim:
     sizeof(RewardsRoot) + sizeof(VoucherNullifier) + sizeof(ZkPublicKey)
 
@@ -460,10 +461,7 @@ func readSdpDeclare(data: openArray[byte], pos: var int): Result[DeclarationMess
   var locators = newSeqOfCap[Locator](locatorCount)
   for _ in 0 ..< int(locatorCount):
     locators.add ?readLocator(data, pos)
-  var providerKey: Ed25519PublicKey
-  let raw = ?readFixed[EdPublicKeySize](data, pos)
-  if not providerKey.init(raw):
-    return err(DecodingError.InvalidProviderId)
+  let providerKey = Ed25519PublicKey(data: ?readFixed[EdPublicKeySize](data, pos))
   let zkId = ?decodeFieldElementAt(data, pos)
   let lockedNoteId = ?decodeFieldElementAt(data, pos)
   ok(DeclarationMessage(
@@ -485,14 +483,11 @@ func readSdpWithdraw(data: openArray[byte], pos: var int): Result[WithdrawMessag
   ))
 
 func readSdpActive(data: openArray[byte], pos: var int): Result[ActiveMessage, DecodingError] =
-  let declarationId = ?readFixed[32](data, pos)
-  let nonce = ?readLe[uint64](data, pos)
-  let metadata = ?readU32LeLenPrefixed(data, pos)
-  ok(ActiveMessage(
-    declarationId: declarationId,
-    nonce: nonce,
-    metadata: metadata,
-  ))
+  let
+    declarationId = ?readFixed[32](data, pos)
+    nonce = ?readLe[uint64](data, pos)
+    metadata = ?readActivityMetadata(data, pos)
+  ok(ActiveMessage(declarationId: declarationId, nonce: nonce, metadata: metadata))
 
 func readLeaderClaim(data: openArray[byte], pos: var int): Result[LeaderClaimPayload, DecodingError] =
   let rewardsRoot = ?decodeFieldElementAt(data, pos)
@@ -523,7 +518,7 @@ func readChannelDeposit(data: openArray[byte], pos: var int): Result[ChannelDepo
   let
     channel = ?readFixed[32](data, pos)
     inputs = ?readInputs(data, pos)
-    metadata = ?readU32LeLenPrefixed(data, pos)
+    metadata = ?readDepositMetadata(data, pos)
   ok(ChannelDepositPayload(channel: channel, inputs: inputs, metadata: metadata))
 
 func readChannelConfig(data: openArray[byte], pos: var int): Result[ChannelConfigPayload, DecodingError] =
@@ -533,11 +528,7 @@ func readChannelConfig(data: openArray[byte], pos: var int): Result[ChannelConfi
     keyCount = ?readLe[uint16](data, pos)
   var keys = newSeqOfCap[Ed25519PublicKey](keyCount)
   for _ in 0 ..< int(keyCount):
-    var key: Ed25519PublicKey
-    let raw = ?readFixed[EdPublicKeySize](data, pos)
-    if not key.init(raw):
-      return err(DecodingError.InvalidSigner)
-    keys.add(key)
+    keys.add(Ed25519PublicKey(data: ?readFixed[EdPublicKeySize](data, pos)))
   let postingTimeframe = PostingTimeframe(?readLe[uint32](data, pos))
   let postingTimeout = PostingTimeout(?readLe[uint32](data, pos))
   let configurationThreshold = ConfigurationThreshold(?readLe[uint16](data, pos))
@@ -553,13 +544,11 @@ func readChannelConfig(data: openArray[byte], pos: var int): Result[ChannelConfi
   ))
 
 func readChannelInscribe(data: openArray[byte], pos: var int): Result[ChannelInscribePayload, DecodingError] =
-  let channelId = ?readFixed[32](data, pos)
-  let inscription = ?readU32LeLenPrefixed(data, pos)
-  let parent = ?readFixed[32](data, pos)
-  var signerKey: Ed25519PublicKey
-  let raw = ?readFixed[EdPublicKeySize](data, pos)
-  if not signerKey.init(raw):
-    return err(DecodingError.InvalidSigner)
+  let
+    channelId = ?readFixed[32](data, pos)
+    inscription = ?readInscription(data, pos)
+    parent = ?readFixed[32](data, pos)
+  let signerKey = Ed25519PublicKey(data: ?readFixed[EdPublicKeySize](data, pos))
   ok(ChannelInscribePayload(
     channelId: channelId,
     inscription: inscription,
