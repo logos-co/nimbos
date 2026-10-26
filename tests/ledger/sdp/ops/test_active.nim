@@ -64,48 +64,35 @@ proc mkTargetActivity(target: BlendTarget, nonce: Nonce = 1): ActiveMessage =
     metadata: mkActivity(findRho(index, 2), 0, 3))
 
 suite "ledger/sdp/ops/active":
-  test "tryApplySdpActive rejects unknown declaration and bad nonce":
-    var seeded = seedDeclaration(pkSeed = 21, declareEpoch = 10)
+  test "tryApplySdpActive rejects unknown declaration":
+    let seeded = seedDeclaration(pkSeed = 21, declareEpoch = 10)
     var unknown = ActiveMessage(
       declarationId: seeded.declId,
       nonce: 1,
     )
     unknown.declarationId[0] = byte(77)
-    var seededCopy = seeded
-    check execActive(seededCopy, unknown, 15).error == DeclarationNotFound
+    check execActive(seeded, unknown, 15).error == DeclarationNotFound
 
-    let stale = ActiveMessage(
-      declarationId: seeded.declId,
-      nonce: 0,
-    )
+  test "tryApplySdpActive rejects a stale nonce":
+    let
+      seeded = seedDeclaration(pkSeed = 26, declareEpoch = 10)
+      stale = ActiveMessage(
+        declarationId: seeded.declId,
+        nonce: 0,
+      )
     check execActive(seeded, stale, 15).error == InvalidNonce
 
-  test "tryApplySdpActive accepts declaration with withdraw intent":
-    var seeded = seedDeclaration(pkSeed = 22, declareEpoch = 10)
-    let withdraw = WithdrawMessage(
+  test "rejects a report after withdraw_at":
+    # Pins the SDP Active validity rule. The epoch boundary removes the
+    # declaration first, so on a valid chain this path is defensive.
+    var seeded = seedDeclaration(pkSeed = 24, declareEpoch = 1)
+    installTestWithdraw(seeded.registry, WithdrawMessage(
       declarationId: seeded.declId,
       lockedNoteId: seeded.declaration.lockedNoteId,
-      nonce: 1,
-    )
-    installTestWithdraw(seeded.registry, withdraw, 15)
+      nonce: 1), withdrawAt = 5)
     let active = ActiveMessage(
-      declarationId: seeded.declId,
-      nonce: 2,
-    )
-    installTestActive(seeded.registry, active, 15)
-    let info = getDeclaration(seeded.registry.state, seeded.declId).get()
-    check info.active == Opt.some(15'u64)
-
-  test "tryApplySdpActive updates active field":
-    var seeded = seedDeclaration(pkSeed = 23, declareEpoch = 10)
-    let active = ActiveMessage(
-      declarationId: seeded.declId,
-      nonce: 1,
-    )
-    installTestActive(seeded.registry, active, 25)
-    let info = getDeclaration(seeded.registry.state, seeded.declId).get()
-    check info.active == Opt.some(25'u64)
-    check info.nonce == 1'u64
+      declarationId: seeded.declId, nonce: 2)
+    check execActive(seeded, active, 6).error == AlreadyWithdrawn
 
 suite "ledger/sdp/ops/active — blend activity":
   setup:
@@ -120,8 +107,9 @@ suite "ledger/sdp/ops/active — blend activity":
       target.registry, mkTargetActivity(target), fixtureProof,
       fixtureTxHash, 1, acceptAllPoq).expect("valid blend activity")
     check applied.blendRewards.target.get.tracker.submitted.len == 1
-    check getDeclaration(applied.state, target.declId).get().active ==
-      Opt.some(1'u64)
+    let info = getDeclaration(applied.state, target.declId).get()
+    check info.active == Opt.some(1'u32)
+    check info.nonce == 1'u64
 
   test "a rejected proof of quota invalidates the op":
     check tryApplySdpActive(
