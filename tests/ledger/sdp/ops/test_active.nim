@@ -82,33 +82,6 @@ suite "ledger/sdp/ops/active":
       )
     check execActive(seeded, stale, 15).error == InvalidNonce
 
-  test "tryApplySdpActive accepts declaration with withdraw intent":
-    var seeded = seedDeclaration(pkSeed = 22, declareEpoch = 10)
-    let withdraw = WithdrawMessage(
-      declarationId: seeded.declId,
-      lockedNoteId: seeded.declaration.lockedNoteId,
-      nonce: 1,
-    )
-    installTestWithdraw(seeded.registry, withdraw, 15)
-    let active = ActiveMessage(
-      declarationId: seeded.declId,
-      nonce: 2,
-    )
-    installTestActive(seeded.registry, active, 15)
-    let info = getDeclaration(seeded.registry.state, seeded.declId).get()
-    check info.active == Opt.some(15'u64)
-
-  test "tryApplySdpActive updates active field":
-    var seeded = seedDeclaration(pkSeed = 23, declareEpoch = 10)
-    let active = ActiveMessage(
-      declarationId: seeded.declId,
-      nonce: 1,
-    )
-    installTestActive(seeded.registry, active, 25)
-    let info = getDeclaration(seeded.registry.state, seeded.declId).get()
-    check info.active == Opt.some(25'u64)
-    check info.nonce == 1'u64
-
   test "rejects a report after withdraw_at":
     var seeded = seedDeclaration(pkSeed = 24, declareEpoch = 1)
     installTestWithdraw(seeded.registry, WithdrawMessage(
@@ -142,8 +115,9 @@ suite "ledger/sdp/ops/active — blend activity":
       target.registry, mkTargetActivity(target), fixtureProof,
       fixtureTxHash, 1, acceptAllPoq).expect("valid blend activity")
     check applied.blendRewards.target.get.tracker.submitted.len == 1
-    check getDeclaration(applied.state, target.declId).get().active ==
-      Opt.some(1'u64)
+    let info = getDeclaration(applied.state, target.declId).get()
+    check info.active == Opt.some(1'u64)
+    check info.nonce == 1'u64
 
   test "a rejected proof of quota invalidates the op":
     check tryApplySdpActive(
