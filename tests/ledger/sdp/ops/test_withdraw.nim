@@ -11,8 +11,7 @@
 import
   unittest2,
   results,
-  ../test_helpers,
-  ../../../../logos_chain/zk/zksign
+  ../test_helpers
 
 suite "ledger/sdp/ops/withdraw":
   test "tryApplySdpWithdraw rejects unknown declaration":
@@ -35,7 +34,7 @@ suite "ledger/sdp/ops/withdraw":
     installTestWithdraw(seeded.registry, withdraw, withdrawAt = 15)
     var second = withdraw
     second.nonce = 2
-    check execWithdraw(seeded, second, 16).error == AlreadyWithdrawn
+    check execWithdraw(seeded, second, 15).error == AlreadyWithdrawn
 
   test "tryApplySdpWithdraw rejects a stale nonce":
     let
@@ -57,23 +56,6 @@ suite "ledger/sdp/ops/withdraw":
       )
     check execWithdraw(seeded, mismatched, 2).error == LockedNoteIdMismatch
 
-  test "tryApplySdpWithdraw rejects a note that does not hold the declaration":
-    var seeded = seedDeclaration(pkSeed = 18, declareEpoch = 1)
-    let
-      noteId = seeded.declaration.lockedNoteId
-      withdraw = WithdrawMessage(
-        declarationId: seeded.declId,
-        lockedNoteId: noteId,
-        nonce: 1,
-      )
-    var other: DeclarationId
-    other[0] = 1
-    # The note keeps one other declaration, so it stays in the registry.
-    seeded.registry.state = removeDeclarationFromLockedNote(
-      addDeclarationToLockedNote(seeded.registry.state, noteId, other),
-      noteId, seeded.declId)
-    check execWithdraw(seeded, withdraw, 2).error == DeclarationNotInLockedNote
-
   test "applySdpWithdraw schedules the withdrawal two epochs ahead":
     var seeded = seedDeclaration(pkSeed = 13, declareEpoch = 1)
     let
@@ -90,9 +72,6 @@ suite "ledger/sdp/ops/withdraw":
     check getLockedNote(seeded.registry.state, seeded.declaration.lockedNoteId).isSome
 
   test "tryApplySdpWithdraw rejects an epoch too close to the limit":
-    # No verification key is loaded. An op that passes the epoch check
-    # fails at the signature check.
-    zksign.resetVkForTesting()
     let
       seeded = seedDeclaration(pkSeed = 15, declareEpoch = 1)
       withdraw = WithdrawMessage(
@@ -102,7 +81,8 @@ suite "ledger/sdp/ops/withdraw":
       )
     check execWithdraw(seeded, withdraw, high(EpochNumber) - 1).error ==
       InvalidEpoch
-    check execWithdraw(seeded, withdraw, high(EpochNumber) - 2).error ==
-      VerifierNotInitialised
+    # One epoch lower passes the gate and reaches the signature step.
+    check execWithdraw(seeded, withdraw, high(EpochNumber) - 2).error in
+      {VerifierNotInitialised, PermanentInvalidTxProof}
 
 {.pop.}

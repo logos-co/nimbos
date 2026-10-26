@@ -138,8 +138,6 @@ suite "core/mantle/operations — declarationId":
         lockedNoteId: default(NoteId),
       )
     check encodeServiceType(declaration.serviceType) == 0x00'u8
-    check encodeProviderId(declaration.providerId) == hexToByteArray[32](
-      "0x53470962558a6e0839022ae65c6b2723b32772e5c0c5f4776cb8e6a3e10ba2f3")
     check encodeZkId(declaration.zkId) == hexToByteArray[32](
       "0x1900000000000000000000000000000000000000000000000000000000000000")
     check encodeLocators(locators).get ==

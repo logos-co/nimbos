@@ -642,6 +642,8 @@ suite "ledger — sdp withdrawal through the epoch boundary":
 
     # Epoch 4: the boundary pays A for epoch 2. Then it removes A and
     # unlocks the note of A. The reward note enters the live UTXO set.
+    # The base is 1000 div 2 = 500. The only submitter is premium, so it
+    # gets two times the base.
     s = s.tryApplyHeader(400'u64, mkProof(), testLedgerConfig).expect("epoch 4")
     let reward = Utxo(
       opId: rewardOpId(ServiceType.bn, 2),
