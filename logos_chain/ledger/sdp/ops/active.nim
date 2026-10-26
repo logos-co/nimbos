@@ -60,11 +60,6 @@ proc tryApplySdpActive*(
   of ServiceType.bn:
     registry.blendRewards = ?recordActivity(
       registry.blendRewards, active.metadata, declaration.providerId, verifyPoq)
-
-  var updated = declaration
-  updated.nonce = active.nonce
-  updated.active = Opt.some(epoch)
-  registry.state = insertDeclaration(registry.state, active.declarationId, updated)
-  ok(registry)
+  ok(applySdpActive(registry, active, declaration, epoch))
 
 {.pop.}
