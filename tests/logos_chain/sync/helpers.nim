@@ -17,7 +17,7 @@ import
   ../../../logos_chain/chain/[chain, block_processor, local_tree],
   ../../../logos_chain/core/types,
   ../../../logos_chain/ledger/ledger,
-  ../../../logos_chain/sync/[framing, types, ibd_server, syncer]
+  ../../../logos_chain/sync/[framing, types, sync_server, syncer]
 from ../../../logos_chain/core/mantle/primitives import SlotNumber
 from ../../ledger/test_helpers import testLedgerConfig, testGenesisLedgerState
 
@@ -48,14 +48,14 @@ proc initTestChain*(
 
 proc startTestProcessor(chain: Chain): BlockProcessor =
   let bp = BlockProcessor.new(chain)
-  bp.start()
+  bp.start(nil)
   bp
 
 proc mountTestServer*(
     sw: Switch, chain: Chain, protocol = testChainSyncProtocol
 ) {.raises: [LPError].} =
   ## Syncer that only serves. Its processor loop does not run.
-  let syncer = Syncer.init(sw, BlockProcessor.new(chain), protocol)
+  let syncer = Syncer.init(sw, BlockProcessor.new(chain), protocol, nil)
   mountCryptarchiaSyncHandler(syncer)
 
 template withProcessor*(chain: Chain, body: untyped) =
@@ -68,13 +68,17 @@ template withProcessor*(chain: Chain, body: untyped) =
 
 template withClientSyncerOn*(sw: Switch, clientChain: Chain, body: untyped) =
   ## Client syncer on the caller's switch, stopped with its processor after `body`.
+  let bp = BlockProcessor.new(clientChain)
   let clientSyncer {.inject.} =
-    Syncer.init(sw, startTestProcessor(clientChain), testChainSyncProtocol)
+    Syncer.init(sw, bp, testChainSyncProtocol, nil)
+  bp.start(proc(orphanId: BlockId, parentId: BlockId, slot: SlotNumber) =
+    clientSyncer.handleOrphan(orphanId, parentId, slot)
+  )
   try:
     body
   finally:
     await clientSyncer.stop()
-    await clientSyncer.processor.stop()
+    await bp.stop()
 
 template withClientSyncer*(clientChain: Chain, body: untyped) =
   ## One switch and a client syncer, stopped after `body`.

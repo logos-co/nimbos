@@ -88,7 +88,7 @@ const MaxKnownAdditionalBlocks = 5
 
 func buildKnownBlocks*(
     localTree: LocalTree,
-    additionalBlocks: openArray[BlockId] = [],
+    additionalBlocks: openArray[BlockId],
 ): KnownBlocks =
   let takeCount = min(additionalBlocks.len, MaxKnownAdditionalBlocks)
   KnownBlocks(
@@ -97,26 +97,12 @@ func buildKnownBlocks*(
     additionalBlocks: (0 ..< takeCount).mapIt(additionalBlocks[it]),
   )
 
-func decodeSyncBlock(wire: openArray[byte]): Result[Block, string] =
+func decodeSyncBlock*(wire: openArray[byte]): Result[Block, string] =
   # Decodes a sync-wire block; `UncleHeaders` and `BlockTxs` bound both lists.
   try:
     ok(decode(wire, Block, cryptarchiaSyncBincodeConfig))
   except BincodeError as exc:
     err(exc.msg)
-
-func decodeBlocksFromDownloadResponses*(messages: seq[DownloadBlocksResponse]): Opt[seq[Block]] =
-  var blks = newSeqOfCap[Block](messages.len)
-  for msg in messages:
-    case msg.kind
-    of dbrFailure:
-      return Opt.none(seq[Block])
-    of dbrNoMoreBlocks:
-      discard
-    of dbrBlock:
-      let blk = decodeSyncBlock(msg.downloadedBlock).valueOr:
-        return Opt.none(seq[Block])
-      blks.add blk
-  Opt.some(blks)
 
 proc sendDownloadBlocksRequest*(
     syncer: Syncer,
@@ -220,7 +206,7 @@ proc onBlock(
     blockSignature = sbyteutils.toHex(blk.signature.data)
   res
 
-proc downloadBlocks(
+proc downloadBlocks*(
     syncer: Syncer,
     peer: PeerId,
     targetBlock: Opt[BlockId],
@@ -232,35 +218,28 @@ proc downloadBlocks(
       .valueOr("unset")
 
   while true:
-    let effectiveTarget =
-      if targetBlock.isSome:
-        targetBlock
-      else:
-        let tipOpt = await sendGetTipRequest(syncer, peer)
-        if tipOpt.isNone:
-          debug "IBD: GetTip failed", peer
-          Opt.none(BlockId)
-        else:
-          case tipOpt.get.kind
-          of gtrFailure:
-            debug "IBD: GetTip returned failure", peer
-            Opt.none(BlockId)
-          of gtrTip:
-            let tip = tipOpt.get.tipData.tip
-            info "IBD: GetTip returned success", peer, targetBlock = sbyteutils.toHex(tip)
-            Opt.some(tip)
-    if effectiveTarget.isNone:
-      debug "IBD: no effective target", peer
-      return false
-    if hasBlock(syncer.localTree, effectiveTarget.get):
-      debug "IBD: target already local", peer, targetBlock = sbyteutils.toHex(effectiveTarget.get)
+    let target = targetBlock.valueOr:
+      let tipResp = (await sendGetTipRequest(syncer, peer)).valueOr:
+        debug "IBD: GetTip failed", peer
+        return false
+      case tipResp.kind
+      of gtrFailure:
+        debug "IBD: GetTip returned failure", peer
+        return false
+      of gtrTip:
+        let tip = tipResp.tipData.tip
+        info "IBD: GetTip returned success", peer, targetBlock = sbyteutils.toHex(tip)
+        tip
+
+    if hasBlock(syncer.localTree, target):
+      debug "IBD: target already local", peer, targetBlock = sbyteutils.toHex(target)
       return true
 
     let additionalKnown = latestDownloadedId
       .map(proc (id: BlockId): seq[BlockId] = @[id])
       .valueOr(@[])
     let downloadReq = DownloadBlocksRequest(
-      targetBlock: effectiveTarget.get,
+      targetBlock: target,
       knownBlocks: buildKnownBlocks(syncer.localTree, additionalKnown),
     )
     let blocks = (await sendDownloadBlocksRequest(
@@ -268,14 +247,14 @@ proc downloadBlocks(
       peer,
       downloadReq,
     )).valueOr:
-      debug "IBD: download request failed", peer, targetBlock = sbyteutils.toHex(effectiveTarget.get)
+      debug "IBD: download request failed", peer, targetBlock = sbyteutils.toHex(target)
       return false
 
     debug "IBD: download response ok", peer, blocks = blocks.len, targetBlock = sbyteutils.toHex(downloadReq.targetBlock)
     if blocks.len == 0:
-      debug "IBD: download returned no blocks", peer, targetBlock = sbyteutils.toHex(effectiveTarget.get)
+      debug "IBD: download returned no blocks", peer, targetBlock = sbyteutils.toHex(target)
       return false
-    info "IBD: applying downloaded blocks", peer, count = blocks.len, targetBlock = sbyteutils.toHex(effectiveTarget.get)
+    info "IBD: applying downloaded blocks", peer, count = blocks.len, targetBlock = sbyteutils.toHex(target)
 
     var targetReached = false
     for blk in blocks:
@@ -297,20 +276,20 @@ proc downloadBlocks(
             peer, blockId = sbyteutils.toHex(id), err = $error
           return false
       debug "IBD: block ingest ok", peer, blockId = sbyteutils.toHex(id)
-      if id == effectiveTarget.get:
+      if id == target:
         targetReached = true
         break
 
     if targetReached:
-      debug "IBD: target reached", peer, targetBlock = sbyteutils.toHex(effectiveTarget.get)
+      debug "IBD: target reached", peer, targetBlock = sbyteutils.toHex(target)
       return true
     info "IBD: batch applied, continuing", peer, blocksApplied = blocks.len
 
 proc initialBlockDownload*(
     syncer: Syncer,
-    peerProvider: Opt[PeerProvider],
+    peerProvider: PeerProvider,
 ): Future[void] {.async: (raises: [IBDFailure, CancelledError]).} =
-  let provider = peerProvider.valueOr:
+  if peerProvider == nil:
     debug "IBD skipped: no configured peers"
     return
 
@@ -320,7 +299,7 @@ proc initialBlockDownload*(
     numSuccess = 0
 
   while true:
-    let currentPeers = provider()
+    let currentPeers = peerProvider()
     var newlyAttempted = 0
     for peer in currentPeers:
       if peer notin attemptedPeers:
