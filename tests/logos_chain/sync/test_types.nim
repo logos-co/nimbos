@@ -17,7 +17,7 @@ import
   ../../../logos_chain/core/types,
   ../../../logos_chain/chain/local_tree,
   ../../../logos_chain/deployment/deployment_settings,
-  ../../../logos_chain/sync/[types, ibd_client],
+  ../../../logos_chain/sync/[types, sync_client],
   ./helpers
 from ../../../logos_chain/core/mantle/primitives import SlotNumber
 
@@ -48,13 +48,11 @@ suite "sync/types (GetTip RequestMessage / response wire)":
 
   test "Example GetTipResponse Tip wire (tip=[0xAB;32], slot=12345, height=999)":
     let wOpt = exampleSerializedGetTipResponseTipWire()
-    check wOpt.isSome
     check byteutils.toHex(wOpt.get) ==
       "00000000abababababababababababababababababababababababababababababababab3930000000000000e703000000000000"
 
   test "Example GetTipResponse Failure wire (example: tip unavailable)":
     let wOpt = exampleSerializedGetTipResponseFailureWire("example: tip unavailable")
-    check wOpt.isSome
     check byteutils.toHex(wOpt.get) ==
       "0100000018000000000000006578616d706c653a2074697020756e617661696c61626c65"
 
@@ -91,9 +89,7 @@ suite "sync/types (GetTip RequestMessage / response wire)":
     let tip = exampleGetTipTipFixture()
     check tip.tip[0] == 0xAB'u8 and tip.tip[^1] == 0xAB'u8
     check tip.slot == SlotNumber(12_345'u64) and tip.height == 999'u64
-    let wOpt = exampleSerializedGetTipResponseTipWire()
-    check wOpt.isSome
-    let wire = wOpt.get
+    let wire = exampleSerializedGetTipResponseTipWire().get
     let d = try:
       Opt.some(decode(wire, GetTipResponse, cryptarchiaSyncBincodeConfig))
     except BincodeError as exc:
@@ -101,9 +97,7 @@ suite "sync/types (GetTip RequestMessage / response wire)":
     check d.isSome and d.get.kind == gtrTip and d.get.tipData == tip
 
   test "Example GetTipResponse Failure wire roundtrips":
-    let wOpt = exampleSerializedGetTipResponseFailureWire("example: tip unavailable")
-    check wOpt.isSome
-    let wire = wOpt.get
+    let wire = exampleSerializedGetTipResponseFailureWire("example: tip unavailable").get
     let d = try:
       Opt.some(decode(wire, GetTipResponse, cryptarchiaSyncBincodeConfig))
     except BincodeError as exc:
@@ -117,7 +111,7 @@ suite "sync/types (download RequestMessage / request & response payloads)":
       genesis = createGenesisBlock(validGenesisTx)
       gid = blockId(genesis.header)
       tree = newLocalTree(genesis, 1'u64)
-      req = DownloadBlocksRequest(targetBlock: gid, knownBlocks: buildKnownBlocks(tree))
+      req = DownloadBlocksRequest(targetBlock: gid, knownBlocks: buildKnownBlocks(tree, []))
     let inner = try:
       encode(req, cryptarchiaSyncBincodeConfig)
     except BincodeError:
@@ -135,7 +129,7 @@ suite "sync/types (download RequestMessage / request & response payloads)":
       genesis = createGenesisBlock(validGenesisTx)
       gid = blockId(genesis.header)
       tree = newLocalTree(genesis, 1'u64)
-      req = DownloadBlocksRequest(targetBlock: gid, knownBlocks: buildKnownBlocks(tree))
+      req = DownloadBlocksRequest(targetBlock: gid, knownBlocks: buildKnownBlocks(tree, []))
     let wire = try:
       encode(
         RequestMessage(kind: rmDownloadBlocksRequest, downloadBlocksRequest: req),
@@ -183,12 +177,10 @@ suite "sync/types (download RequestMessage / request & response payloads)":
         Opt.some(decode(inner, DownloadBlocksResponse, cryptarchiaSyncBincodeConfig))
       except BincodeError as exc:
         fail exc.msg
-    check backOpt.isSome
     let back = backOpt.get
     check back.kind == dbrBlock
-    let blksOpt = decodeBlocksFromDownloadResponses(@[back])
-    check blksOpt.isSome and blksOpt.unsafeGet.len == 1
-    check blockId(blksOpt.unsafeGet[0].header) == blockId(genesis.header)
+    let blk = decodeSyncBlock(back.downloadedBlock).get
+    check blockId(blk.header) == blockId(genesis.header)
 
   test "encode / decode DownloadBlocksResponse (Failure reasons)":
     let cases = @[
@@ -226,11 +218,11 @@ suite "sync/types (download RequestMessage / request & response payloads)":
           Opt.some(decode(inner, DownloadBlocksResponse, cryptarchiaSyncBincodeConfig))
         except BincodeError as exc:
           fail exc.msg
-    check dec.isSome
-    check dec.get.kind == dbrFailure
-    check dec.get.blocksUnavailableReason.kind == burUnknown
-    check dec.get.blocksUnavailableReason.message ==
-      "Failed to create a block stream: StartBlockNotFound"
+    check:
+      dec.get.kind == dbrFailure
+      dec.get.blocksUnavailableReason.kind == burUnknown
+      dec.get.blocksUnavailableReason.message ==
+        "Failed to create a block stream: StartBlockNotFound"
 
 suite "sync/types (cryptarchia u32 length-prefixed wire fixtures 1-9)":
   test "u32 length-prefixed hex matches cryptarchia sync wire fixtures (1-9)":

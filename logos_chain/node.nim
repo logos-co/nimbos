@@ -138,7 +138,11 @@ proc init*(
   if processor.localTree != nil and
       deploymentSettings.network.chainSyncProtocolName.len > 0:
     nodeSyncer = Syncer.init(
-      network.switch, processor, deploymentSettings.network.chainSyncProtocolName)
+      network.switch,
+      processor,
+      deploymentSettings.network.chainSyncProtocolName,
+      peerProvider = proc(): seq[PeerId] = network.connectedPeerIds(),
+    )
 
   if nodeSyncer != nil:
     info "Syncer configured at node startup",
@@ -294,7 +298,7 @@ proc initializeNetworking*(node: LBNode) {.async: (raises: [CancelledError]).} =
       node.syncer.start(
         onIbdComplete,
         onIbdFailure,
-        Opt.some(proc(): seq[PeerId] = node.network.connectedBootstrapPeerIds()),
+        proc(): seq[PeerId] = node.network.connectedBootstrapPeerIds(),
       )
     else:
       node.syncer.start(onIbdComplete, onIbdFailure)
@@ -305,7 +309,13 @@ type StopFuture = Future[void].Raising([CancelledError])
 proc run*(node: LBNode, stopper: StopFuture) {.raises: [CatchableError].} =
   ## Caller is responsible for installing REST handlers and starting the
   ## REST server before calling `run`.
-  node.processor.start()
+  node.processor.start(
+    if node.syncer != nil:
+      proc(orphanId: BlockId, parentId: BlockId, slot: SlotNumber) =
+        node.syncer.handleOrphan(orphanId, parentId, slot)
+    else:
+      nil
+  )
   waitFor node.initializeNetworking()
 
   ProcessState.notifyRunning()

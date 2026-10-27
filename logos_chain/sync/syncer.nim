@@ -12,19 +12,30 @@ import
   chronos,
   libp2p/[switch, peerid, errors],
   ../chain/block_processor,
-  ./[syncer_types, ibd_server, ibd_client, types]
+  ./[syncer_types, sync_server, sync_client, orphan_sync, types]
 
-export syncer_types
+export syncer_types, orphan_sync
 
-func init*(
-    T: type Syncer, sw: Switch, processor: BlockProcessor, protocol: string): T =
-  T(sw: sw, processor: processor, chainSyncProtocol: protocol)
+proc init*(
+    T: type Syncer,
+    sw: Switch,
+    processor: BlockProcessor,
+    protocol: string,
+    peerProvider: PeerProvider,
+): T =
+  T(
+    sw: sw,
+    processor: processor,
+    chainSyncProtocol: protocol,
+    peerProvider: peerProvider,
+    orphans: OrphanSync.init(),
+  )
 
 proc runAtStartup(
     syncer: Syncer,
     onIbdComplete: OnIbdComplete,
-    peerProvider: Opt[PeerProvider],
     onIbdFailure: OnIbdFailure,
+    bootstrapPeerProvider: PeerProvider,
 ) {.async: (raises: [CancelledError]).} =
   try:
     mountCryptarchiaSyncHandler(syncer)
@@ -37,7 +48,7 @@ proc runAtStartup(
   debug "Syncer started chain-sync handler",
     protocol = syncer.chainSyncProtocol
   try:
-    await initialBlockDownload(syncer, peerProvider)
+    await initialBlockDownload(syncer, bootstrapPeerProvider)
     notice "Syncer completed initial block download",
       protocol = syncer.chainSyncProtocol
     if onIbdComplete != nil:
@@ -53,16 +64,16 @@ proc start*(
     syncer: Syncer,
     onIbdComplete: OnIbdComplete,
     onIbdFailure: OnIbdFailure,
-    peerProvider: Opt[PeerProvider] = Opt.none(PeerProvider),
+    bootstrapPeerProvider: PeerProvider = nil,
 ) =
   doAssert syncer.ibdFut == nil, "syncer already started"
-  syncer.ibdFut = syncer.runAtStartup(onIbdComplete, peerProvider, onIbdFailure)
+  syncer.ibdFut = syncer.runAtStartup(onIbdComplete, onIbdFailure, bootstrapPeerProvider)
 
 proc stop*(syncer: Syncer) {.async: (raises: []).} =
-  ## Cancel the initial block download if it still runs.
-  if syncer.ibdFut == nil:
-    return
-  await syncer.ibdFut.cancelAndWait()
-  syncer.ibdFut = nil
+  ## Cancel orphan sync and initial block download if running.
+  await syncer.stopOrphanSync()
+  if syncer.ibdFut != nil:
+    await syncer.ibdFut.cancelAndWait()
+    syncer.ibdFut = nil
 
 {.pop.}

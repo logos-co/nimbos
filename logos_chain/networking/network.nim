@@ -774,6 +774,10 @@ proc connectedBootstrapPeerIds*(node: LBP2PNode): seq[PeerId] =
       res.add(b.peerId)
   res
 
+func connectedPeerIds*(node: LBP2PNode): seq[PeerId] =
+  ## Returns the PeerIds of all peers currently connected and in the peer pool.
+  toSeq(node.peerPool.keys)
+
 proc waitForBootstrapPeers*(
     node: LBP2PNode,
 ): Future[seq[PeerId]] {.async: (raises: [CancelledError]).} =

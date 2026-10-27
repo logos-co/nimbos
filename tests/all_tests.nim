@@ -81,6 +81,7 @@ import # Unit test
   ./logos_chain/sync/test_framing,
   ./logos_chain/sync/test_types,
   ./logos_chain/sync/test_ibd,
+  ./logos_chain/sync/test_orphan_sync,
   ./zk/test_circuits,
   ./zk/test_pol,
   ./zk/test_poc,
