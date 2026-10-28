@@ -193,7 +193,6 @@ suite "ledger/poq_verifier — end-to-end activity verification":
     let
       rho = frFromDecimal(
         meta["selection_randomness"].getStr).expect("rho parses")
-      memberIndex = uint64(meta["member_index"].getInt)
       # Provider 1 holds the proving member's zk-id (zk_ids[0]).
       snapshot = [
         (providerId: mkProvider(1), zkId: zkIds[0]),
@@ -234,6 +233,7 @@ suite "ledger/poq_verifier — end-to-end activity verification":
     let
       r = rotatedWith(fixture.public.chain).rewards
       target = r.target.get.state
+      memberIndex = uint64(meta["member_index"].getInt)
     check:
       target.poqPublic.coreRoot == fixture.public.coreRoot
       target.poqPublic.coreQuota == fixture.public.coreQuota

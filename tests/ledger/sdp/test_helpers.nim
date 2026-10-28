@@ -9,7 +9,7 @@
 
 import
   results,
-  libp2p/[crypto/ed25519/ed25519, multiaddress],
+  libp2p/crypto/ed25519/ed25519,
   ../../../logos_chain/ledger/sdp/[registry, ops],
   ../../../logos_chain/core/crypto/types,
   ../../../logos_chain/core/mantle/[operations, proofs, utxo],

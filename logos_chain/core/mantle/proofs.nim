@@ -72,10 +72,7 @@ func `==`*(a, b: ChannelMultiSigProof): bool {.raises: [].} =
       return false
   true
 
-func `==`(a, b: ZkAndEd25519SigsProof): bool {.raises: [].} =
-  a.zkSig == b.zkSig and a.ed25519Sig == b.ed25519Sig
-
-func `==`(a, b: OpProof): bool {.raises: [].} =
+func `==`*(a, b: OpProof): bool {.raises: [].} =
   if a.kind != b.kind:
     return false
   case a.kind

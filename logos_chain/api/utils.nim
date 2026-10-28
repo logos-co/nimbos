@@ -7,11 +7,11 @@
 
 {.push raises: [], gcsafe.}
 
-import std/macros,
-       results, stew/byteutils, presto/route,
-       ../core/crypto/hashing,
-       ../core/crypto/types,
-       ./[types, serialization, common, constants]
+import
+  results, stew/byteutils, presto/route,
+  ../core/crypto/hashing,
+  ../core/crypto/types,
+  ./[types, serialization, common, constants]
 
 ## NOTE: The `types` / `serialization` / `common` modules mirror the upstream
 ## Eth2 REST API type definitions, but the Logos-specific
@@ -26,25 +26,6 @@ export
   results, serialization, types,
   constants, common, route, decodeString,
   Hash32, ZkPublicKey
-
-func disallowInterruptionsAux(body: NimNode) =
-  for n in body:
-    const because =
-      "because the `state` variable may be mutated (and thus invalidated) " &
-      "before the function resumes execution."
-
-    if n.kind == nnkYieldStmt:
-      macros.error "You cannot use yield in this block " & because, n
-
-    if (n.kind in {nnkCall, nnkCommand} and
-       n[0].kind in {nnkIdent, nnkSym} and
-       $n[0] == "await"):
-      macros.error "You cannot use await in this block " & because, n
-
-    disallowInterruptionsAux(n)
-
-macro disallowInterruptions(body: untyped) =
-  disallowInterruptionsAux(body)
 
 template strData*(body: ContentBody): string =
   bind fromBytes
