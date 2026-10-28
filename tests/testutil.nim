@@ -473,10 +473,7 @@ func childProposal*(
       proofOfLeadership = proofOfLeadership,
     )
     sig = signHeader(keyPair.seckey, h)
-  var refs: References
-  for i, tx in txs:
-    refs[i] = tx.hash
-  initProposal(h, [], refs, sig)
+  initProposal(h, [], txs.mapIt(txReference(it.hash)), sig)
 
 func initGenesisBlock*(validGenesisTx: ValidGenesisMantleTx): Block =
   initBlock(

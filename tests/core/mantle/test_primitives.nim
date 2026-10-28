@@ -21,9 +21,6 @@ suite "core/mantle/primitives":
       MantleMaxOps == 255
       MaxOperationDataSize == 1_835_008
 
-  test "References is MaxBlockTxs of Hash32":
-    check default(References).len == MaxBlockTxs
-
   test "readInputs and readOutputs roundtrip encoders":
     let
       inputs = Inputs(noteIds: @[default(NoteId)])

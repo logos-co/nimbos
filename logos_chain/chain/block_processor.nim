@@ -156,7 +156,7 @@ proc addProposal*(
 ): BlockApplyFuture =
   ## Queue `proposal` from gossip. The future completes with the apply result, or is cancelled
   ## when the loop is not running. Cancelling it does not dequeue the proposal.
-  ## Caller must ensure `proposal.bodyMatchesHeader` before calling (verified at gossip gate).
+  ## Caller must have passed `reconstructProposalTxs`, which checks the body root (gossip gate).
   let sig = proposal.signature
   bp.enqueueIncoming(
     BlockEntry(kind: BlockEntryKind.GossipIncoming, proposal: proposal),

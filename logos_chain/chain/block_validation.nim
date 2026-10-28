@@ -29,7 +29,7 @@ from ../core/types import
   Block, BlockTxs, Proposal, body_root, ExpectedBedrockVersion,
   MaxBlockSize, MaxUncles, asSeq, len, header, BlockId,
   Header, UncleHeaders, encode, MaxBlockTxs,
-  createGenesisHeader, activeLen, verify_signature
+  createGenesisHeader, verify_signature
 from ../core/mantle/tx_hashing import
   HashedSignedMantleTx, byteLen, signedTx
 
@@ -88,14 +88,6 @@ func txBytesLen[T: AnyHashedSignedMantleTx](txs: openArray[T]): int =
     total += byteLen(txs[i])
   total
 
-func bodyMatchesHeader*(proposal: Proposal): bool =
-  ## Binding of the reference list (Block Construction 1.3.0): references and
-  ## uncle headers must commit to header.bodyRoot, before the copy may suppress
-  ## any other copy of the same block ID.
-  let n = proposal.references.activeLen
-  body_root(proposal.uncleHeaders.asSeq,
-            proposal.references.toOpenArray(0, n - 1)) == proposal.header.bodyRoot
-
 func bodyMatchesHeader*(blk: Block): bool =
   body_root(blk.uncleHeaders.asSeq, blk.txs.asSeq) == blk.header.bodyRoot
 
@@ -118,9 +110,11 @@ func validateHeader[T: AnyHashedSignedMantleTx](
   # validity rules (Cryptarchia "Block Header Validation" step 10) live in
   # `uncle_validation.nim` and run against the parent chain.
   # Body root computed directly from precomputed tx hashes in txs
-  # TODO: remove this body-root check once a way to enforce at compile-time that
-  # a caller checked bodyMatchesHeader is established without heavy wrapper types.
-  # This check is currently redundant for blocks/proposals arriving via block_processor ingress.
+  # TODO: remove this body-root check, and the signature check below, once a way
+  # to enforce at compile-time that a caller checked bodyMatchesHeader and
+  # verify_signature is established without heavy wrapper types.
+  # The body-root check is currently redundant for blocks/proposals arriving via
+  # block_processor ingress. The signature check is redundant for proposals.
   let root = body_root(uncleHeaders.asSeq, txs)
   if root != header.bodyRoot:
     return false

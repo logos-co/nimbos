@@ -12,7 +12,7 @@
 {.push raises: [], gcsafe.}
 
 import
-  std/tables,
+  std/[sequtils, tables],
   chronicles,
   libp2p/crypto/ed25519/ed25519,
   ../core/types,
@@ -26,6 +26,8 @@ const
 type
   ProposalValidationError* {.pure.} = enum
     MissingReference
+    CollidingReference
+    BodyRootMismatch
 
 proc selectProposalReferences*(
     m: Mempool,
@@ -35,14 +37,11 @@ proc selectProposalReferences*(
     verifyPoq: ProofOfQuotaVerifier = verifyProofOfQuota,
     maxTxs: int = MaxBlockTxs,
     maxBytes: int = MaxBlockSize,
-): tuple[references: References, count: int] =
-  ## Selects transactions for block proposal according to the Execution Market spec:
-  ## https://github.com/logos-co/logos-lips/blob/38916aa474164ac4acd81e62d19715e17626be17/docs/blockchain/raw/execution-market.md
-  ## Enforces count (maxTxs), execution gas (MAX_EXECUTION_GAS_PER_BLOCK), and body byte size (maxBytes).
-  ## Populates and returns the fixed-size References array and the selected count directly for proposal creation.
+): seq[Hash32] =
+  ## Selects the hashes to reference, in block order, within the count,
+  ## execution-gas and byte budgets.
   var
-    refs: References
-    count = 0
+    refs = newSeqOfCap[Hash32](maxTxs)
     workingLedger = tipLedgerState.advanceEpochAndMarket(currentSlot, cfg).valueOr:
       tipLedgerState
     cumulativeExecutionGas = Gas(0)
@@ -53,7 +52,7 @@ proc selectProposalReferences*(
   let epoch = workingLedger.epochs.activeEpoch.epoch
 
   for hash in m.queue:
-    if count >= maxTxs:
+    if refs.len >= maxTxs:
       break
 
     m.txs.withValue(hash, item):
@@ -92,8 +91,7 @@ proc selectProposalReferences*(
         continue
 
       if balance.covers(totalCost):
-        refs[count] = hash
-        inc count
+        refs.add(hash)
         cumulativeExecutionGas = nextExecutionGas
         cumulativeBytes += txBytes
         workingLedger = move(candidate)
@@ -104,7 +102,7 @@ proc selectProposalReferences*(
         txHash = h
     m.remove(h, moveToGrace = false)
 
-  (refs, count)
+  refs
 
 proc constructProposal*(
     m: Mempool,
@@ -121,41 +119,44 @@ proc constructProposal*(
   ## signs it with the leader's private key, and produces the Proposal.
   # No uncle selection yet; the list stays empty.
   let
-    (refs, count) = m.selectProposalReferences(
+    hashes = m.selectProposalReferences(
       tipLedgerState, cfg, currentSlot, verifyPoq)
     h = initHeader(
       bedrockVersion = ExpectedBedrockVersion,
       parentBlock = parentBlock,
       slot = currentSlot,
       uncleHeaders = [],
-      txHashes = refs.toOpenArray(0, count - 1),
+      txHashes = hashes,
       proofOfLeadership = proofOfLeadership,
     )
     sig = signHeader(leaderSecKey, h)
-  initProposal(h, [], refs, sig)
+  initProposal(h, [], hashes.mapIt(txReference(it)), sig)
 
 func reconstructProposalTxs*(
     proposal: Proposal,
     mempool: Mempool,
 ): Result[seq[ValidSignedMantleTx], ProposalValidationError] =
-  ## Resolves proposal references directly to mempool's cached ValidSignedMantleTx,
-  ## preserving full stateless validity typing across block reconstruction.
-  var txs: seq[ValidSignedMantleTx]
-  for r in proposal.references.activeReferences:
-    let vtx = mempool.get(r).valueOr:
-      return err(ProposalValidationError.MissingReference)
+  ## Resolves every reference and checks the body root over the result.
+  var
+    hashes = newSeqOfCap[Hash32](proposal.references.len)
+    txs = newSeqOfCap[ValidSignedMantleTx](proposal.references.len)
+  for reference in proposal.references:
+    let
+      hash = mempool.resolve(reference).valueOr:
+        return err(
+          if error == MempoolError.CollidingReference:
+            ProposalValidationError.CollidingReference
+          else:
+            ProposalValidationError.MissingReference)
+      vtx = mempool.get(hash).valueOr:
+        return err(ProposalValidationError.MissingReference)
+    hashes.add(hash)
     txs.add(vtx)
 
-  ok(move(txs))
+  # Only the body root binds the unsigned reference list to the signed header.
+  if body_root(proposal.uncleHeaders.asSeq, hashes) != proposal.header.bodyRoot:
+    return err(ProposalValidationError.BodyRootMismatch)
 
-func hasMissingReference*(
-    proposal: Proposal,
-    mempool: Mempool,
-): bool =
-  ## Returns true if any reference in the proposal is not found in the mempool.
-  for r in proposal.references.activeReferences:
-    if r notin mempool:
-      return true
-  false
+  ok(move(txs))
 
 {.pop.}

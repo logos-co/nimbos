@@ -371,8 +371,11 @@ proc tryApplyProposal*(
 
   let validTxs = reconstructProposalTxs(proposal, chain.mempool).valueOr:
     case error
-    of ProposalValidationError.MissingReference:
+    of ProposalValidationError.MissingReference,
+        ProposalValidationError.CollidingReference:
       return err(BlockApplyError(kind: BlockApplyErrorKind.MissingReference))
+    of ProposalValidationError.BodyRootMismatch:
+      return err(BlockApplyError(kind: BlockApplyErrorKind.InvalidStructure))
 
   let admittedBlk = admitProposal(proposal, validTxs).valueOr:
     return err(toBlockApplyError(error))

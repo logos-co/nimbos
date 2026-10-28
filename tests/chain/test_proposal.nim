@@ -40,9 +40,9 @@ suite "chain/proposal":
     state.feeMarket.executionBaseFee = 0
     state.feeMarket.storageGasPrice = 0
 
-    let (_, count) = m.selectProposalReferences(
+    let refs = m.selectProposalReferences(
       state, testLedgerConfig, SlotNumber(10), verifyPoq = acceptAllPoq)
-    check count == 1
+    check refs.len == 1
 
     # After selection, metrics are cached
     check m.txs[tx1.hash].byteSize.isSome
@@ -67,19 +67,19 @@ suite "chain/proposal":
       tx2Bytes = tx2.byteLen
 
     # With byte limit allowing only 1 tx
-    let (refs, count) = m.selectProposalReferences(
+    let refs = m.selectProposalReferences(
       state, testLedgerConfig, SlotNumber(10),
       maxBytes = tx1Bytes + tx2Bytes - 1, verifyPoq = acceptAllPoq
     )
-    check count == 1
+    check refs.len == 1
     check refs[0] == tx1.hash
 
     # With byte limit allowing both txs
-    let (refsAll, countAll) = m.selectProposalReferences(
+    let refsAll = m.selectProposalReferences(
       state, testLedgerConfig, SlotNumber(10),
       maxBytes = tx1Bytes + tx2Bytes, verifyPoq = acceptAllPoq
     )
-    check countAll == 2
+    check refsAll.len == 2
     check refsAll[0] == tx1.hash
     check refsAll[1] == tx2.hash
 
@@ -105,12 +105,12 @@ suite "chain/proposal":
     state.feeMarket.executionBaseFee = 0
     state.feeMarket.storageGasPrice = 0
 
-    let (refs, count) = m.selectProposalReferences(
+    let refs = m.selectProposalReferences(
       state, testLedgerConfig, SlotNumber(10),
       maxBytes = initialTxBytes + tinyTxBytes, verifyPoq = acceptAllPoq,
     )
     # Search terminated after MaxConsecutiveCandidateMisses (10 misses), tinyTx was not evaluated
-    check count == 1
+    check refs.len == 1
     check refs[0] == initialTx.hash
 
   test "selectProposalReferences continues search when misses < MaxConsecutiveCandidateMisses":
@@ -135,12 +135,12 @@ suite "chain/proposal":
     state.feeMarket.executionBaseFee = 0
     state.feeMarket.storageGasPrice = 0
 
-    let (refs, count) = m.selectProposalReferences(
+    let refs = m.selectProposalReferences(
       state, testLedgerConfig, SlotNumber(10),
       maxBytes = initialTxBytes + tinyTxBytes, verifyPoq = acceptAllPoq,
     )
     # Search did not cut off (9 misses < 10), so tinyTx was evaluated and included
-    check count == 2
+    check refs.len == 2
     check refs[0] == initialTx.hash
     check refs[1] == tinyTx.hash
 
@@ -159,11 +159,11 @@ suite "chain/proposal":
     check m.add(transientTx, SlotNumber(1)) == true
     check m.len == 1
 
-    let (_, count) = m.selectProposalReferences(
+    let refs = m.selectProposalReferences(
       state, testLedgerConfig, SlotNumber(10), verifyPoq = acceptAllPoq,
     )
     # Not selected because prerequisite condition is not yet satisfied
-    check count == 0
+    check refs.len == 0
 
     # Transient transaction is NOT purged; it remains in active mempool for subsequent blocks
     check transientTx.hash in m.txs
@@ -242,11 +242,11 @@ suite "chain/proposal":
       txInvalid.hash in m
       m.len == 1
 
-    let (_, count) = m.selectProposalReferences(
+    let refs = m.selectProposalReferences(
       state, testLedgerConfig, SlotNumber(10), verifyPoq = acceptAllPoq,
     )
     # Transaction rejected from proposal
-    check count == 0
+    check refs.len == 0
 
     # Cryptographically invalid transaction is permanently evicted from mempool
     check:
@@ -281,7 +281,7 @@ suite "chain/proposal":
     check proposal.header.slot == SlotNumber(10)
     check proposal.header.parentBlock == gid
     check proposal.header.proofOfLeadership.leaderKey == testTxKeyPair.pubkey
-    check proposal.references[0] == tx.hash
+    check proposal.references[0] == txReference(tx.hash)
     check proposal.uncleHeaders.len == 0
     check verify_signature(proposal.header, proposal.signature)
 
@@ -325,24 +325,21 @@ suite "chain/proposal":
       m = Mempool.init()
       tx = mkValidTxWithOps(1, 1)
       genesis = testGenesisBlock()
-    var
-      pol = default(ProofOfLeadership)
-      refs: References
+    var pol = default(ProofOfLeadership)
     pol.leaderKey = testTxKeyPair.pubkey
-    refs[0] = tx.hash
-    let h = initHeader(
-      bedrockVersion = ExpectedBedrockVersion,
-      parentBlock = blockId(genesis.header),
-      slot = SlotNumber(10),
-      uncleHeaders = [],
-      txHashes = [tx.hash],
-      proofOfLeadership = pol,
-    )
-    let sig = testTxKeyPair.seckey.sign(blockId(h))
-    let proposal = initProposal(h, [], refs, sig)
-    let res = reconstructProposalTxs(proposal, m)
-    check res.isErr
-    check res.error == ProposalValidationError.MissingReference
+    let
+      h = initHeader(
+        bedrockVersion = ExpectedBedrockVersion,
+        parentBlock = blockId(genesis.header),
+        slot = SlotNumber(10),
+        uncleHeaders = [],
+        txHashes = [tx.hash],
+        proofOfLeadership = pol,
+      )
+      sig = signHeader(testTxKeyPair.seckey, h)
+      proposal = initProposal(h, [], [txReference(tx.hash)], sig)
+    check reconstructProposalTxs(proposal, m).error ==
+      ProposalValidationError.MissingReference
 
   test "reconstructProposalTxs preserves ValidSignedMantleTx typestate":
     var m = Mempool.init()
