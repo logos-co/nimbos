@@ -55,6 +55,13 @@ suite "core/mantle/proofs":
     check readOpProof(fixture, pos, opfChannelWithdraw).get.channelWithdrawOpProof == proof
     check pos == fixture.len
 
+  func decodeOpsProofs(
+      ops: openArray[Op], data: openArray[byte]
+  ): Result[seq[OpProof], DecodingError] =
+    var res: seq[OpProof]
+    ?decodeOpsProofsInto(ops, data, res)
+    ok(move(res))
+
   test "decodeOpsProofs roundtrips encodeOpsProofs and verifies wire length":
     let
       ops = @[
@@ -65,7 +72,6 @@ suite "core/mantle/proofs":
         createSdpActiveOp(ActiveMessage(
           declarationId: default(DeclarationId),
           nonce: default(Nonce),
-          metadata: @[],
         )),
       ]
       proofs = @[

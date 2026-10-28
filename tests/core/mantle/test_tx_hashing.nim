@@ -16,6 +16,66 @@ import
   ./test_helpers,
   ../../../logos_chain/core/mantle/[tx_hashing, tx_types, utxo]
 
+const OneOfEachPayloadHex =
+  # Payload of the Mantle specification's "Transaction with one of each
+  # operation" vector, one group of lines for each operation.
+  # op count
+  "0a" &
+  # TRANSFER
+  "0002010000000000000000000000000000000000000000000000000000000000" &
+  "0000020000000000000000000000000000000000000000000000000000000000" &
+  "0000020300000000000000040000000000000000000000000000000000000000" &
+  "0000000000000000000000050000000000000006000000000000000000000000" &
+  "00000000000000000000000000000000000000" &
+  # CHANNEL_CONFIG
+  "1007070707070707070707070707070707070707070707070707070707070707" &
+  "0700000000000000000000000000000000000000000000000000000000000000" &
+  "0002001398f62c6d1a457c51ba6a4b5f3dbd2f69fca93216218dc8997e416bd1" &
+  "7d93cafd1724385aa0c75b64fb78cd602fa1d991fdebf76b13c58ed702eac835" &
+  "e9f6180a0000000b0000000c000d00" &
+  # CHANNEL_INSCRIBE
+  "110e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e" &
+  "0e0b00000068656c6c6f206c6f676f7300000000000000000000000000000000" &
+  "00000000000000000000000000000000d9bf2148748a85c89da5aad8ee0b0fc2" &
+  "d105fd39d41a4c796536354f0ae2900c" &
+  # CHANNEL_DEPOSIT
+  "1210101010101010101010101010101010101010101010101010101010101010" &
+  "1001110000000000000000000000000000000000000000000000000000000000" &
+  "0000100000006465706f7369742d6d65746164617461" &
+  # CHANNEL_WITHDRAW
+  "1312121212121212121212121212121212121212121212121212121212121212" &
+  "1201130000000000000000000000000000000000000000000000000000000000" &
+  "0000" &
+  # CHANNEL_TRANSFER
+  "1414141414141414141414141414141414141414141414141414141414141414" &
+  "1401150000000000000000000000000000000000000000000000000000000000" &
+  "0000011600000000000000170000000000000000000000000000000000000000" &
+  "0000000000000000000000" &
+  # SDP_DECLARE
+  "2000010b00047f00000191020bb8cd0353470962558a6e0839022ae65c6b2723" &
+  "b32772e5c0c5f4776cb8e6a3e10ba2f319000000000000000000000000000000" &
+  "000000000000000000000000000000001a000000000000000000000000000000" &
+  "00000000000000000000000000000000" &
+  # SDP_WITHDRAW
+  "211b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b" &
+  "1b1d000000000000001c00000000000000000000000000000000000000000000" &
+  "000000000000000000" &
+  # SDP_ACTIVE
+  "221e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e" &
+  "1e1f00000000000000010a0000008a88e3dd7409f195fd52db2d3cba5d72ca67" &
+  "09bf1d94121bf3748801b40f6f5c020202020202020202020202020202020202" &
+  "0202020202020202020202020202020202020202020202020202020202020202" &
+  "0202020202020202020202020202020202020202020202020202020202020202" &
+  "0202020202020202020202020202020202020202020202020202020202020202" &
+  "0202020202020202020202020202020202020202020202020202020202020202" &
+  "0202020202020202020202020202030303030303030303030303030303030303" &
+  "0303030303030303030303030303" &
+  # LEADER_CLAIM
+  "3020000000000000000000000000000000000000000000000000000000000000" &
+  "0021000000000000000000000000000000000000000000000000000000000000" &
+  "0022000000000000000000000000000000000000000000000000000000000000" &
+  "00"
+
 func mkProvider(seed: byte): ProviderId =
   var bytes: array[EdPublicKeySize, byte]
   bytes[0] = seed
@@ -52,12 +112,23 @@ suite "core/mantle/tx_hashing":
     check mantleTxHash(tx).get == mantleTxHash(tx).get
 
   test "empty transaction spec vector":
-    # The spec's one-of-each-operation vector needs the tagged SDP_ACTIVE
-    # metadata encoding (Encoding 1.10.0) and lands with it.
     let tx = MantleTx(ops: @[])
     check encodeMantleTx(tx).get.toHex == "00"
     check mantleTxHash(tx).get.toHex ==
       "2eba3f667b80a508f3d44d149a1c27a90ea365a51e4fc8209289088142b364e5"
+
+  test "transaction with one of each operation spec vector":
+    let payload = hexToSeqByte(OneOfEachPayloadHex)
+    var pos = 0
+    let count = readByte(payload, pos).expect("op count decodes")
+    var ops = newSeqOfCap[Op](count)
+    for _ in 0 ..< int(count):
+      ops.add readOp(payload, pos).expect("spec vector decodes")
+    let tx = MantleTx(ops: ops)
+    check pos == payload.len
+    check encodeMantleTx(tx).get == payload
+    check mantleTxHash(tx).get.toHex ==
+      "01d051d472817b7b6dfd18ff9a6cc5160579c5dad22aa000db527263af851edb"
 
   test "sdp opId is deterministic and payload-sensitive":
     let
@@ -98,15 +169,13 @@ suite "core/mantle/tx_hashing":
     let active = ActiveMessage(
       declarationId: declarationId,
       nonce: 1'u64,
-      metadata: @[],
     )
     check:
-      opId(active).get == opId(active).get
-      opId(active).get != opId(ActiveMessage(
+      opId(active) == opId(active)
+      opId(active) != opId(ActiveMessage(
         declarationId: declarationId,
         nonce: 2'u64,
-        metadata: @[],
-      )).get
+      ))
 
   test "sdp declare opId is over wire-encoded payload, not declaration_id preimage":
     let
@@ -122,7 +191,7 @@ suite "core/mantle/tx_hashing":
       wire[0] == encodeServiceType(ServiceType.bn)
       opId(declare).get != declarationId(declare).get
 
-suite "core/mantle/tx_hashing — channel op_id spec vectors":
+suite "core/mantle/tx_hashing — op_id spec vectors":
   # Payload/op_id pairs from the Mantle specification's "Operation Id" table.
   test "CHANNEL_DEPOSIT payload and op_id are unchanged by the notes rework":
     let op = ChannelDepositPayload(
@@ -190,5 +259,25 @@ suite "core/mantle/tx_hashing — channel op_id spec vectors":
       "0a000000" & "0b000000" & "0c00" & "0d00"
     check opId(op).get.toHex ==
       "8bac7efe4c3ef10745c0d509ac88e2abaf1d3cda94987ed2eeb9ad71dd31d056"
+
+  test "CHANNEL_INSCRIBE op_id over ChannelId || Inscription || Parent || Signer":
+    let op = ChannelInscribePayload(
+      channelId: filledHash32(0x0e),
+      inscription: toBytes("hello logos"),
+      parent: default(Hash32),
+      signer: Ed25519PublicKey.init(
+        "d9bf2148748a85c89da5aad8ee0b0fc2d105fd39d41a4c796536354f0ae2900c").get,
+    )
+    check encodeChannelInscribe(op).get.toHex ==
+      "0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e" &
+      "0b000000" & "68656c6c6f206c6f676f73" &
+      "0000000000000000000000000000000000000000000000000000000000000000" &
+      "d9bf2148748a85c89da5aad8ee0b0fc2d105fd39d41a4c796536354f0ae2900c"
+    check opId(op).get.toHex ==
+      "fb9af7fb1384fff51780ec8c5afbcba76449ab7603484f797df3a472e48826c1"
+
+  test "SDP_ACTIVE op_id over DeclarationId || Nonce || ActivityMetadata":
+    check opId(mkSpecActiveMessage()).toHex ==
+      "c4a2a639034016f52728f34041cf95fc2c7adb8f54cf94b4361b2d0cb72ebb70"
 
 {.pop.}

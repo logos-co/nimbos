@@ -17,6 +17,8 @@ import
   ../chain/block_processor,
   ./[framing, syncer_types, types]
 
+from ../chain/local_tree import
+  LocalTree, localTipId, latestImmutableBlockId, hasBlock
 from ../core/types import Block, BlockId, blockId, header
 from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
 
@@ -199,7 +201,7 @@ proc sendDownloadBlocksRequest*(
 proc onBlock(
     syncer: Syncer, blk: Block, id: BlockId
 ): Future[Result[void, BlockApplyError]] {.async: (raises: [CancelledError]).} =
-  let res = await syncer.processor.addBlock(BlockSource.Sync, blk, id)
+  let res = await syncer.processor.addBlock(blk, id)
   res.isOkOr:
     return res
   var leaderKeyBytes: array[EdPublicKeySize, byte]
@@ -223,7 +225,7 @@ proc downloadBlocks(
     peer: PeerId,
     targetBlock: Opt[BlockId],
 ): Future[bool] {.async: (raises: [CancelledError]).} =
-  var latestDownloaded = Opt.none(Block)
+  var latestDownloadedId = Opt.none(BlockId)
   debug "IBD download loop start", peer,
     targetBlock = targetBlock
       .map(proc (id: BlockId): string = sbyteutils.toHex(id))
@@ -254,21 +256,20 @@ proc downloadBlocks(
       debug "IBD: target already local", peer, targetBlock = sbyteutils.toHex(effectiveTarget.get)
       return true
 
-    let
-      additionalKnown = latestDownloaded
-        .map(proc (b: Block): seq[BlockId] = @[blockId(b.header)])
-        .valueOr(@[])
-      downloadReq = DownloadBlocksRequest(
-        targetBlock: effectiveTarget.get,
-        knownBlocks: buildKnownBlocks(syncer.localTree, additionalKnown),
-      )
-      blocks = (await sendDownloadBlocksRequest(
-        syncer,
-        peer,
-        downloadReq,
-      )).valueOr:
-        debug "IBD: download request failed", peer, targetBlock = sbyteutils.toHex(effectiveTarget.get)
-        return false
+    let additionalKnown = latestDownloadedId
+      .map(proc (id: BlockId): seq[BlockId] = @[id])
+      .valueOr(@[])
+    let downloadReq = DownloadBlocksRequest(
+      targetBlock: effectiveTarget.get,
+      knownBlocks: buildKnownBlocks(syncer.localTree, additionalKnown),
+    )
+    let blocks = (await sendDownloadBlocksRequest(
+      syncer,
+      peer,
+      downloadReq,
+    )).valueOr:
+      debug "IBD: download request failed", peer, targetBlock = sbyteutils.toHex(effectiveTarget.get)
+      return false
 
     debug "IBD: download response ok", peer, blocks = blocks.len, targetBlock = sbyteutils.toHex(downloadReq.targetBlock)
     if blocks.len == 0:
@@ -278,8 +279,8 @@ proc downloadBlocks(
 
     var targetReached = false
     for blk in blocks:
-      latestDownloaded = Opt.some(blk)
       let id = blockId(blk.header)
+      latestDownloadedId = Opt.some(id)
       (await onBlock(syncer, blk, id)).isOkOr:
         # IBD streams blocks in parent order, so even a recoverable error
         # means this peer's stream is unusable (unless already applied or in flight).

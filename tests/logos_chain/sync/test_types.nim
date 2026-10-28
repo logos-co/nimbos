@@ -13,6 +13,8 @@ import
   stew/byteutils as byteutils,
   bincode,
   ../../testutil,
+  ../../../logos_chain/core/types,
+  ../../../logos_chain/chain/local_tree,
   ../../../logos_chain/deployment/deployment_settings,
   ../../../logos_chain/sync/[types, ibd_client],
   ./helpers
@@ -117,7 +119,8 @@ suite "sync/types (GetTip RequestMessage / response wire)":
 suite "sync/types (download RequestMessage / request & response payloads)":
   test "encode / decode DownloadBlocksRequest roundtrip":
     let
-      genesis = createGenesisBlock(testGenesisTx()).get
+      validGenesisTx = testValidGenesisTx()
+      genesis = createGenesisBlock(validGenesisTx)
       gid = blockId(genesis.header)
       tree = newLocalTree(genesis, 1'u64)
       req = DownloadBlocksRequest(targetBlock: gid, knownBlocks: buildKnownBlocks(tree))
@@ -134,7 +137,8 @@ suite "sync/types (download RequestMessage / request & response payloads)":
 
   test "RequestMessage download discriminant roundtrips":
     let
-      genesis = createGenesisBlock(testGenesisTx()).get
+      validGenesisTx = testValidGenesisTx()
+      genesis = createGenesisBlock(validGenesisTx)
       gid = blockId(genesis.header)
       tree = newLocalTree(genesis, 1'u64)
       req = DownloadBlocksRequest(targetBlock: gid, knownBlocks: buildKnownBlocks(tree))
@@ -171,7 +175,8 @@ suite "sync/types (download RequestMessage / request & response payloads)":
 
   test "encode / decode DownloadBlocksResponse roundtrip (one block)":
     let
-      genesis = createGenesisBlock(testGenesisTx()).get
+      validGenesisTx = testValidGenesisTx()
+      genesis = createGenesisBlock(validGenesisTx)
       blockWire = try:
         encode(genesis, cryptarchiaSyncBincodeConfig)
       except BincodeError:
@@ -186,7 +191,8 @@ suite "sync/types (download RequestMessage / request & response payloads)":
           Opt.some(decode(inner, DownloadBlocksResponse, cryptarchiaSyncBincodeConfig))
         except BincodeError as exc:
           fail exc.msg
-      back = backOpt.get
+    check backOpt.isSome
+    let back = backOpt.get
     check back.kind == dbrBlock
     let blksOpt = decodeBlocksFromDownloadResponses(@[back])
     check:
@@ -290,8 +296,8 @@ suite "sync/types (cryptarchia u32 length-prefixed wire fixtures 1-9)":
     let pr = parseDeploymentSettings(readFile(deploymentSettingsPath))
     require pr.isOk
     let
-      genesisFromDeployment =
-        createGenesisBlock(pr.get.cryptarchia.genesisState.signedMantleTx).get
+      validGenesisTx = pr.get.cryptarchia.genesisState.validGenesisTx
+      genesisFromDeployment = createGenesisBlock(validGenesisTx)
       genesisWire = try:
         encode(genesisFromDeployment, cryptarchiaSyncBincodeConfig)
       except BincodeError:

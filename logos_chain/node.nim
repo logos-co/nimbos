@@ -235,9 +235,9 @@ proc installMessageValidators(node: LBNode) =
   let mempoolTopic = node.deploymentSettings.mempool.pubsubTopic
   if mempoolTopic.len > 0:
     node.network.addValidator(mempoolTopic) do (
-        tx: SignedMantleTx, src: PeerId
+        htx: HashedSignedMantleTx, src: PeerId
     ) -> ValidationResult:
-      node.processor.processTx(tx, src)
+      node.processor.processTx(htx, src)
     node.network.subscribe(mempoolTopic, TopicParams.init())
     debug "Subscribed to mempool gossip topic", topic = mempoolTopic
   else:

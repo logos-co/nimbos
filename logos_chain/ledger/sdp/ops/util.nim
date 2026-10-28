@@ -28,6 +28,18 @@ func checkNotWithdrawn*(info: DeclarationInfo): Result[void, LedgerError] =
     return err(AlreadyWithdrawn)
   ok()
 
+func checkWithinWithdrawal*(
+    info: DeclarationInfo, epoch: EpochNumber,
+): Result[void, LedgerError] =
+  ## Fails when the current epoch is past ``withdraw_at``.
+  # The report for epoch `withdraw_at - 1` is due in epoch `withdraw_at`.
+  # Thus a message included at `withdraw_at` passes.
+  let withdrawAt = info.withdrawAt.valueOr:
+    return ok()
+  if withdrawAt < epoch:
+    return err(AlreadyWithdrawn)
+  ok()
+
 func checkNonceMonotonic*(
     info: DeclarationInfo, nonce: Nonce,
 ): Result[void, LedgerError] =

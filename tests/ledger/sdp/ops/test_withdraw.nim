@@ -10,6 +10,7 @@
 
 import
   unittest2,
+  results,
   ../test_helpers
 
 suite "ledger/sdp/ops/withdraw":
@@ -21,43 +22,68 @@ suite "ledger/sdp/ops/withdraw":
       nonce: 1,
     )
     unknown.declarationId[0] = byte(99)
-    check execWithdraw(seeded, unknown, 15).isErr
+    check execWithdraw(seeded, unknown, 15).error == DeclarationNotFound
 
-  test "tryApplySdpWithdraw rejects bad nonce and already withdrawn":
+  test "tryApplySdpWithdraw rejects a second withdraw":
     var seeded = seedDeclaration(pkSeed = 12, declareEpoch = 10)
     let withdraw = WithdrawMessage(
       declarationId: seeded.declId,
       lockedNoteId: seeded.declaration.lockedNoteId,
       nonce: 1,
     )
-    installTestWithdraw(seeded.registry, withdraw, 15)
+    installTestWithdraw(seeded.registry, withdraw, withdrawAt = 15)
+    var second = withdraw
+    second.nonce = 2
+    check execWithdraw(seeded, second, 15).error == AlreadyWithdrawn
 
-    let seededCopy = seeded
-    check execWithdraw(seededCopy, withdraw, 16).isErr
+  test "tryApplySdpWithdraw rejects a stale nonce":
+    let
+      seeded = seedDeclaration(pkSeed = 14, declareEpoch = 10)
+      stale = WithdrawMessage(
+        declarationId: seeded.declId,
+        lockedNoteId: seeded.declaration.lockedNoteId,
+        nonce: 0,
+      )
+    check execWithdraw(seeded, stale, 16).error == InvalidNonce
 
-    var replay = withdraw
-    replay.nonce = 0
-    check execWithdraw(seeded, replay, 16).isErr
+  test "tryApplySdpWithdraw rejects a mismatched locked note":
+    let
+      seeded = seedDeclaration(pkSeed = 16, declareEpoch = 1)
+      mismatched = WithdrawMessage(
+        declarationId: seeded.declId,
+        lockedNoteId: default(NoteId),
+        nonce: 1,
+      )
+    check execWithdraw(seeded, mismatched, 2).error == LockedNoteIdMismatch
 
-  test "tryApplySdpWithdraw sets withdraw_at and keeps note locked until finalization":
-    var seeded = seedDeclaration(pkSeed = 13, declareEpoch = 10)
-    let withdraw = WithdrawMessage(
-      declarationId: seeded.declId,
-      lockedNoteId: seeded.declaration.lockedNoteId,
-      nonce: 1,
-    )
-    installTestWithdraw(seeded.registry, withdraw, 5)
+  test "applySdpWithdraw schedules the withdrawal two epochs ahead":
+    var seeded = seedDeclaration(pkSeed = 13, declareEpoch = 1)
+    let
+      withdraw = WithdrawMessage(
+        declarationId: seeded.declId,
+        lockedNoteId: seeded.declaration.lockedNoteId,
+        nonce: 1,
+      )
+      declaration = getDeclaration(seeded.registry.state, seeded.declId).get()
+    seeded.registry = applySdpWithdraw(seeded.registry, withdraw, declaration, 3)
     let info = getDeclaration(seeded.registry.state, seeded.declId).get()
     check:
-      info.withdrawAt == Opt.some(5'u64)
+      info.withdrawAt == Opt.some(5'u32)
       info.nonce == 1'u64
       getLockedNote(seeded.registry.state, seeded.declaration.lockedNoteId).isSome
 
-    seeded.registry.state = finalizeWithdrawals(seeded.registry.state, 6)
-    check getDeclaration(seeded.registry.state, seeded.declId).isSome
-    seeded.registry.state = finalizeWithdrawals(seeded.registry.state, 7)
-    check:
-      getDeclaration(seeded.registry.state, seeded.declId).isNone
-      getLockedNote(seeded.registry.state, seeded.declaration.lockedNoteId).isNone
+  test "tryApplySdpWithdraw rejects an epoch too close to the limit":
+    let
+      seeded = seedDeclaration(pkSeed = 15, declareEpoch = 1)
+      withdraw = WithdrawMessage(
+        declarationId: seeded.declId,
+        lockedNoteId: seeded.declaration.lockedNoteId,
+        nonce: 1,
+      )
+    check execWithdraw(seeded, withdraw, high(EpochNumber) - 1).error ==
+      InvalidEpoch
+    # One epoch lower passes the gate and reaches the signature step.
+    check execWithdraw(seeded, withdraw, high(EpochNumber) - 2).error in
+      {VerifierNotInitialised, PermanentInvalidTxProof}
 
 {.pop.}

@@ -15,9 +15,11 @@ import
   stew/byteutils as sbyteutils,
   ./[framing, syncer_types, types]
 
-from ../core/local_tree import
+from ../chain/local_tree import
   LocalTree, lcaBlockIdAndHeight, hasBlock, getBlock, blockHeight,
   localTip
+from ../core/types import BlockId
+from ../chain/block_validation import encode, header
 
 logScope:
   topics = "cryptarchia_ibd"

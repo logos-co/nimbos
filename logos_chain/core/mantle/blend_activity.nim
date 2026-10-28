@@ -6,13 +6,14 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## Blend service activity metadata carried by SDP Active operations.
-## Spec: [Blend Protocol](https://github.com/logos-co/logos-lips/blob/a2a85cbe444e9727ae7f42b2f6d6f4c6bf8d63e9/docs/blockchain/raw/blend-protocol.md)
+## Spec: [Blend Protocol v1.6.1](https://github.com/logos-co/logos-lips/blob/949faa9563027de366514247a2a62b0de2f8c45f/docs/blockchain/raw/blend-protocol.md)
+## Spec: [Mantle Transaction Encoding v1.10.0](https://github.com/logos-co/logos-lips/blob/949faa9563027de366514247a2a62b0de2f8c45f/docs/blockchain/raw/mantle-transaction-encoding.md)
 
 {.push raises: [], gcsafe.}
 
 import
-  stew/endians2,
-  libp2p/crypto/ed25519/ed25519,
+  results,
+  stew/assign2,
   ../crypto/types
 
 from ./primitives import EpochNumber
@@ -20,16 +21,12 @@ from ./primitives import EpochNumber
 export EpochNumber
 
 const
-  ActiveMetadataBlendType* = 0x01'u8
-    ## metadata_type selector for Blend activity metadata.
-  BlendActiveMetadataVersion* = 0x01'u8
-    ## Version of the Blend activity proof format.
-  ActivityMetadataLen* = 230
-    ## type(1) ‖ version(1) ‖ epoch u32 LE(4) ‖ signing key(32) ‖
-    ## key nullifier frLE(32) ‖ quota proof(128) ‖ selection frLE(32).
+  ActiveMetadataBlendType = 0x01'u8
+    ## ActivityMetadataType selector for Blend activity metadata.
   ActivityProofBodyLen* = 224
-    ## signing key(32) ‖ key nullifier frLE(32) ‖ quota proof(128) ‖
-    ## selection randomness frLE(32); also the blending-token hash preimage.
+    ## signing key(32) ‖ key nullifier(32) ‖ quota proof(128) ‖ selection(32).
+  ActivityMetadataLen* = 229
+    ## tag(1) ‖ epoch u32 LE(4) ‖ ActivityProofBodyLen.
 
 type
   ProofOfQuota* = object
@@ -52,48 +49,35 @@ func encodeActivityProofBody*(
   # The lottery hashes exactly these bytes, so wire form and token
   # preimage must come from one encoder.
   var body {.noinit.}: array[ActivityProofBodyLen, byte]
-  body[0 ..< 32] = encodeEd25519PublicKey(signingKey)
-  body[32 ..< 64] = encodeFieldElement(proofOfQuota.keyNullifier)
-  body[64 ..< 192] = proofOfQuota.proof
-  body[192 ..< 224] = encodeFieldElement(selectionRandomness)
+  assign(body.toOpenArray(0, 31), encodeEd25519PublicKey(signingKey))
+  assign(body.toOpenArray(32, 63), encodeFieldElement(proofOfQuota.keyNullifier))
+  assign(body.toOpenArray(64, 191), proofOfQuota.proof)
+  assign(body.toOpenArray(192, 223), encodeFieldElement(selectionRandomness))
   body
 
-func encodeActivityMetadata*(proof: ActivityProof): seq[byte] =
-  ## Full SDP Active metadata payload for a Blend activity proof.
-  var res = newSeqOfCap[byte](ActivityMetadataLen)
-  res.add ActiveMetadataBlendType
-  res.add BlendActiveMetadataVersion
-  res.add encodeLe(proof.epoch)
-  res.add encodeActivityProofBody(
-    proof.signingKey, proof.proofOfQuota, proof.proofOfSelection)
+func encodeActivityMetadata*(proof: ActivityProof): array[ActivityMetadataLen, byte] =
+  ## ActivityMetadata = ActivityMetadataType ‖ epoch ‖ activity proof body.
+  var res {.noinit.}: array[ActivityMetadataLen, byte]
+  res[0] = ActiveMetadataBlendType
+  assign(res.toOpenArray(1, 4), encodeLe(proof.epoch))
+  assign(res.toOpenArray(5, ActivityMetadataLen - 1), encodeActivityProofBody(
+    proof.signingKey, proof.proofOfQuota, proof.proofOfSelection))
   res
 
-func decodeActivityMetadata*(
-    metadata: openArray[byte]
-): Result[ActivityProof, cstring] =
-  ## Parses a Blend activity metadata payload, rejecting non-canonical
-  ## field elements.
-  if metadata.len != ActivityMetadataLen:
-    return err("activity metadata: wrong length")
-  if metadata[0] != ActiveMetadataBlendType:
-    return err("activity metadata: unknown metadata type")
-  if metadata[1] != BlendActiveMetadataVersion:
-    return err("activity metadata: unsupported version")
-  var proof = ActivityProof(
-    epoch: EpochNumber.fromBytesLE(metadata.toOpenArray(2, 5)))
-  # The signing key's point validity is checked with proof-of-quota
-  # verification, where the key is a public input; the codec checks
-  # length only.
-  if not proof.signingKey.init(metadata.toOpenArray(6, 37)):
-    return err("activity metadata: bad signing key")
-  proof.proofOfQuota.keyNullifier = frFromBytesLE(
-      metadata.toOpenArray(38, 69)).valueOr:
-    return err("activity metadata: non-canonical key nullifier")
-  proof.proofOfQuota.proof[0 ..< CompressedGroth16ProofBytes] =
-    metadata.toOpenArray(70, 197)
-  proof.proofOfSelection = frFromBytesLE(
-      metadata.toOpenArray(198, 229)).valueOr:
-    return err("activity metadata: non-canonical proof of selection")
+func readActivityMetadata*(
+    data: openArray[byte], pos: var int
+): Result[ActivityProof, DecodingError] =
+  ## Reads one tagged activity metadata at `pos`.
+  if ?readByte(data, pos) != ActiveMetadataBlendType:
+    return err(DecodingError.UnknownActivityMetadataType)
+  var proof = ActivityProof(epoch: ?readLe[EpochNumber](data, pos))
+  # The codec fixes the key length and checks nothing else. No later stage
+  # decompresses the point. Proof-of-quota verification splits the raw key
+  # bytes into two field elements.
+  proof.signingKey = Ed25519PublicKey(data: ?readFixed[32](data, pos))
+  proof.proofOfQuota.keyNullifier = ?decodeFieldElementAt(data, pos)
+  proof.proofOfQuota.proof = ?readFixed[CompressedGroth16ProofBytes](data, pos)
+  proof.proofOfSelection = ?decodeFieldElementAt(data, pos)
   ok(proof)
 
 {.pop.}

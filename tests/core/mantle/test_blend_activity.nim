@@ -10,69 +10,46 @@
 
 import
   unittest2,
-  libp2p/crypto/ed25519/ed25519,
+  results,
+  ./test_helpers,
   ../../../logos_chain/core/crypto/types,
   ../../../logos_chain/core/mantle/blend_activity
 
-func mkActivityProof(seed: byte = 1): ActivityProof =
-  var
-    proof = ActivityProof(
-      epoch: EpochNumber(7),
-      proofOfQuota: ProofOfQuota(
-        keyNullifier: frFromBytesLE([seed]).get),
-      proofOfSelection: frFromBytesLE([seed, 2'u8]).get)
-    keyBytes: array[32, byte]
-  keyBytes[0] = seed
-  doAssert proof.signingKey.init(keyBytes)
-  for i in 0 ..< proof.proofOfQuota.proof.len:
-    proof.proofOfQuota.proof[i] = byte((i + int(seed)) mod 256)
-  proof
+from std/algorithm import fill
 
 suite "core/mantle/blend_activity":
-  test "encode produces the 230-byte layout":
+  test "read rejects a short input":
     let encoded = encodeActivityMetadata(mkActivityProof())
-    check:
-      encoded.len == ActivityMetadataLen
-      encoded[0] == ActiveMetadataBlendType
-      encoded[1] == BlendActiveMetadataVersion
-      encoded[2] == 7'u8 # epoch u32 LE, low byte first
-      encoded[3 .. 5] == @[0'u8, 0, 0]
+    var pos = 0
+    check readActivityMetadata(
+      encoded.toOpenArray(0, ActivityMetadataLen - 2), pos).error ==
+        DecodingError.UnexpectedEnd
+    pos = 0
+    check readActivityMetadata(newSeq[byte](), pos).error ==
+      DecodingError.UnexpectedEnd
 
-  test "decode round-trips an encoded proof":
-    let
-      original = mkActivityProof(3)
-      decoded = decodeActivityMetadata(
-        encodeActivityMetadata(original)).expect("valid metadata")
-    check decoded == original
+  test "read rejects a non-canonical key nullifier":
+    var
+      encoded = encodeActivityMetadata(mkActivityProof())
+      pos = 0
+    encoded.toOpenArray(37, 68).fill(0xFF)
+    check readActivityMetadata(encoded, pos).error ==
+      DecodingError.InvalidFieldElement
 
-  test "decode rejects a wrong length":
-    var encoded = encodeActivityMetadata(mkActivityProof())
+  test "read rejects a non-canonical proof of selection":
+    var
+      encoded = encodeActivityMetadata(mkActivityProof())
+      pos = 0
+    encoded.toOpenArray(197, 228).fill(0xFF)
+    check readActivityMetadata(encoded, pos).error ==
+      DecodingError.InvalidFieldElement
+
+  test "read leaves trailing bytes to the caller":
+    var
+      encoded = @(encodeActivityMetadata(mkActivityProof()))
+      pos = 0
     encoded.add 0'u8
-    check:
-      decodeActivityMetadata(encoded).isErr
-      decodeActivityMetadata(encoded.toOpenArray(0, ActivityMetadataLen - 2)).isErr
-      decodeActivityMetadata(newSeq[byte]()).isErr
-
-  test "decode rejects an unknown metadata type":
-    var encoded = encodeActivityMetadata(mkActivityProof())
-    encoded[0] = 0x02
-    check decodeActivityMetadata(encoded).isErr
-
-  test "decode rejects an unsupported version":
-    var encoded = encodeActivityMetadata(mkActivityProof())
-    encoded[1] = 0x99
-    check decodeActivityMetadata(encoded).isErr
-
-  test "decode rejects a non-canonical key nullifier":
-    var encoded = encodeActivityMetadata(mkActivityProof())
-    for i in 38 .. 69:
-      encoded[i] = 0xFF
-    check decodeActivityMetadata(encoded).isErr
-
-  test "decode rejects a non-canonical proof of selection":
-    var encoded = encodeActivityMetadata(mkActivityProof())
-    for i in 198 .. 229:
-      encoded[i] = 0xFF
-    check decodeActivityMetadata(encoded).isErr
+    check readActivityMetadata(encoded, pos).isOk
+    check pos == ActivityMetadataLen
 
 {.pop.}

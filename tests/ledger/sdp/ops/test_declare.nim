@@ -10,7 +10,9 @@
 
 import
   unittest2,
-  ../test_helpers
+  results,
+  ../test_helpers,
+  ../test_utxo_helpers
 
 suite "ledger/sdp/ops/declare":
   test "tryApplySdpDeclare rejects invalid proof":

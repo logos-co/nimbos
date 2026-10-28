@@ -8,14 +8,19 @@
 {.push raises: [], gcsafe.}
 
 import
-  libp2p/crypto/ed25519/ed25519,
-  ../../../logos_chain/ledger/sdp/ops,
+  results,
+  libp2p/[crypto/ed25519/ed25519, multiaddress],
+  ../../../logos_chain/ledger/sdp/[registry, ops],
+  ../../../logos_chain/core/crypto/types,
   ../../../logos_chain/core/mantle/[operations, proofs, utxo],
   ../../../logos_chain/ledger/[channel_notes, utxo_store],
+  ../../../logos_chain/zk/poseidon2/hasher,
   ../../../logos_chain/deployment/deployment_settings as deploy,
-  ../../core/mantle/test_helpers
+  ./test_utxo_helpers
 
-export ops, utxo, utxo_store, operations, channel_notes, test_helpers
+from ../../core/mantle/test_helpers import mkLocator
+
+export ops, utxo, utxo_store, operations, channel_notes, mkLocator
 
 # Devnet-shaped reward parameters; two providers is the smallest network
 # that can freeze a target epoch.
@@ -43,7 +48,7 @@ const testBlendLotteryParams* = BlendRewardsParams(
   minimumNetworkSize: 2,
   activityThresholdSensitivity: 0)
 
-func testSdpConfig(): deploy.SdpConfig =
+func testSdpConfig*(): deploy.SdpConfig =
   deploy.SdpConfig(
     bn: deploy.BnServiceParams(inactivityPeriod: 2, epoch: 0),
     minStake: deploy.MinStake(threshold: 100, epoch: 0),
@@ -150,16 +155,16 @@ proc installTestActive*(
 proc installTestWithdraw*(
     registry: var SdpRegistry,
     withdraw: WithdrawMessage,
-    epoch: EpochNumber,
+    withdrawAt: EpochNumber,
 ) =
   var declaration = registry.state.declarations.getOrDefault(withdraw.declarationId)
   declaration.nonce = withdraw.nonce
-  declaration.withdrawAt = Opt.some(epoch)
+  declaration.withdrawAt = Opt.some(withdrawAt)
   registry.state = insertDeclaration(
     registry.state, withdraw.declarationId, declaration,
   )
 
-func mkTxHash(seed: byte = 0x42): ZkHash =
+func mkTxHash*(seed: byte = 0x42): ZkHash =
   var h: ZkHash
   h[0] = seed
   h
@@ -173,7 +178,7 @@ func defaultWithdrawProof(): ZkSigProof =
 func defaultActiveProof(): ZkSigProof =
   defaultOpProofForOpcode(OpSdpActive).get.sdpActiveProof
 
-type SeededDeclaration = object
+type SeededDeclaration* = object
   registry*: SdpRegistry
   store*: UtxoStore
   declaration*: DeclarationMessage
@@ -225,7 +230,7 @@ proc execActive*(
   )
 
 proc seedDeclaration*(
-    pkSeed: byte, declareEpoch: EpochNumber,
+    pkSeed: byte = 1, declareEpoch: EpochNumber = 10,
 ): SeededDeclaration =
   let utxo = mkUtxo(value = 200, pkSeed = pkSeed)
   var store = UtxoStore.init()

@@ -12,7 +12,8 @@
 import
   std/[deques, tables],
   ../core/types,
-  ../core/local_tree
+  ./local_tree,
+  ./block_validation
 
 type
   OrphanPool* = ref object

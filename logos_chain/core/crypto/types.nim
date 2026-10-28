@@ -9,7 +9,7 @@
 ## **byte** encoders and decoders shared across Bedrock (block ids, Ed25519
 ## wire, Groth16 bytes, Mantle wire, etc.).
 ## Spec: [Common Cryptographic Components v1.0.2](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/common-cryptographic-components.md)
-## Spec: [Bedrock v1.1 — Mantle Specification v1.10.0](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md)
+## Spec: [Bedrock v1.1 — Mantle Specification v1.17.0](https://github.com/logos-co/logos-lips/blob/949faa9563027de366514247a2a62b0de2f8c45f/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md)
 
 {.push raises: [], gcsafe.}
 
@@ -50,9 +50,9 @@ type
     LocatorLengthExceeded
     InvalidLocator
     LocatorsCountExceeded
-    InvalidProviderId
-    InvalidSigner
     UnsupportedOpcode
+    UnknownActivityMetadataType
+    OperationDataExceeded
     MultiSigIndicesNonIncreasing
     ProofCountMismatch
     MissingProofs
@@ -106,7 +106,7 @@ func encodeByte*(value: byte): byte =
   value
 
 func encodeU32LeLenPrefixed*(data: openArray[byte]): Result[seq[byte], EncodingError] =
-  ## ``UINT32`` length (LE) then payload (Inscription, Metadata, …).
+  ## ``UINT32`` length (LE) then payload (Inscription, DepositMetadata, …).
   if data.len > int(high(uint32)):
     return err(EncodingError.LengthExceeded)
   var res = @(encodeLe(uint32(data.len)))

@@ -10,13 +10,16 @@
 import
   std/[math, strutils],
   chronos,
+  results,
   stew/byteutils,
   yaml/[dom, loading],
   libp2p/multiaddress,
   libp2p/crypto/ed25519/ed25519,
-  ../chain/genesis
+  ../chain/genesis,
+  ../core/[types, mantle/tx_types],
+  ../zk/poseidon2/hasher
 
-from ../core/mantle/tx_structural_validation import validateGenesisTxStateless
+from ../core/mantle/tx_validation import validateGenesisTxStateless
 from ../core/utils import NonNegativeRatio
 
 export genesis, chronos, NonNegativeRatio
@@ -624,7 +627,7 @@ func parseDeploymentGenesisState*(root: YamlNode): Result[GenesisState, string] 
       return err("deployment-settings: missing cryptarchia.faucet_pk")
     faucetPk = ? parseFieldElementNode(faucetNode, "cryptarchia.faucet_pk")
   ok(GenesisState(
-    signedMantleTx: validTx,
+    validGenesisTx: validTx,
     faucetZkPublicKey: faucetPk,
     header: signedHeader,
     blockSignature: blockSig,

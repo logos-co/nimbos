@@ -10,30 +10,28 @@
 
 import
   unittest2,
+  ../testutil,
+  ./mantle/test_helpers,
   ../../logos_chain/core/types
 
 suite "core/types":
   const testBedrockVersion = 1'u8
 
-  func sampleTx(op: Op): SignedMantleTx =
-    SignedMantleTx(tx: MantleTx(ops: @[op]), opProofs: @[])
-
   test "initBlock accepts empty tx list":
     let
-      tx = MantleTx(ops: @[])
       h = initHeader(
         bedrockVersion = testBedrockVersion,
         parentBlock = default(BlockId),
         slot = 0'u64,
         uncleHeaders = [],
-        txs = [SignedMantleTx(tx: tx, opProofs: @[])],
+        txHashes = openArray[Hash32]([]),
         proofOfLeadership = ProofOfLeadership(
           leaderVoucher: default(RewardVoucher),
           entropyContribution: default(ZkHash),
           proof: DefaultCompressedGroth16Proof,
           leaderKey: default(Ed25519PublicKey),
         ),
-      ).get
+      )
       b = initBlock(h, uncleHeaders = [], txs = [])
     check:
       b.txs.len == 0
@@ -41,81 +39,41 @@ suite "core/types":
 
   test "blockId returns 32-byte hash":
     let
-      tx = MantleTx(ops: @[])
+      hx = mkTxHash(1)
       h = initHeader(
         bedrockVersion = testBedrockVersion,
         parentBlock = default(BlockId),
         slot = 0'u64,
         uncleHeaders = [],
-        txs = [SignedMantleTx(tx: tx, opProofs: @[])],
+        txHashes = [hx],
         proofOfLeadership = ProofOfLeadership(
           leaderVoucher: default(RewardVoucher),
           entropyContribution: default(ZkHash),
           proof: DefaultCompressedGroth16Proof,
           leaderKey: default(Ed25519PublicKey),
         ),
-      ).get
+      )
       id = blockId(h)
     check id.len == 32
 
   test "merkle_root changes when tx order changes":
     let
-      txA = sampleTx(
-        createTransferOp(TransferPayload(
-          inputs: Inputs(noteIds: @[]),
-          outputs: Outputs(notes: @[]),
-        )),
-      )
-      txB = sampleTx(
-        createSdpActiveOp(ActiveMessage(
-          declarationId: default(DeclarationId),
-          nonce: 1'u64,
-          metadata: @[],
-        )),
-      )
-      hA = mantleTxHash(txA.tx).get
-      hB = mantleTxHash(txB.tx).get
+      hA = mkTxHash(1)
+      hB = mkTxHash(2)
     check merkle_root([hA, hB]) != merkle_root([hB, hA])
 
   test "merkle_root returns zero hash for empty tx list":
     check merkle_root(openArray[Hash32]([])) == default(Hash32)
 
   test "merkle_root single tx equals that tx hash":
-    let
-      tx = sampleTx(
-        createTransferOp(TransferPayload(
-          inputs: Inputs(noteIds: @[]),
-          outputs: Outputs(notes: @[]),
-        )),
-      )
-      h = mantleTxHash(tx.tx).get
+    let h = mkTxHash(1)
     check merkle_root([h]) == h
 
   test "merkle_root odd leaf count uses zero padding not duplicate last":
     let
-      txA = sampleTx(
-        createTransferOp(TransferPayload(
-          inputs: Inputs(noteIds: @[]),
-          outputs: Outputs(notes: @[]),
-        )),
-      )
-      txB = sampleTx(
-        createSdpActiveOp(ActiveMessage(
-          declarationId: default(DeclarationId),
-          nonce: 2'u64,
-          metadata: @[],
-        )),
-      )
-      txC = sampleTx(
-        createSdpWithdrawOp(WithdrawMessage(
-          declarationId: default(DeclarationId),
-          lockedNoteId: default(NoteId),
-          nonce: 3'u64,
-        )),
-      )
-      hA = mantleTxHash(txA.tx).get
-      hB = mantleTxHash(txB.tx).get
-      hC = mantleTxHash(txC.tx).get
+      hA = mkTxHash(1)
+      hB = mkTxHash(2)
+      hC = mkTxHash(3)
       zero = default(Hash32)
     check:
       merkle_root([hA, hB, hC]) == hashPair(hashPair(hA, hB), hashPair(hC, zero))
@@ -123,82 +81,58 @@ suite "core/types":
 
   test "blockId is deterministic for same header":
     let
-      tx = sampleTx(
-        createTransferOp(TransferPayload(
-          inputs: Inputs(noteIds: @[]),
-          outputs: Outputs(notes: @[]),
-        )),
-      )
+      hx = mkTxHash(1)
       h = initHeader(
         bedrockVersion = 1'u8,
         parentBlock = default(BlockId),
         slot = SlotNumber(100),
         uncleHeaders = [],
-        txs = [tx],
+        txHashes = [hx],
         proofOfLeadership = ProofOfLeadership(
           leaderVoucher: default(RewardVoucher),
           entropyContribution: default(ZkHash),
           proof: DefaultCompressedGroth16Proof,
           leaderKey: default(Ed25519PublicKey),
         ),
-      ).get
+      )
     check blockId(h) == blockId(h)
 
   test "merkle_root directly accepts list of hashes":
     let
-      txA = sampleTx(createTransferOp(TransferPayload(inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @[]))))
-      txB = sampleTx(createSdpActiveOp(ActiveMessage(declarationId: default(DeclarationId), nonce: 1'u64, metadata: @[])))
+      txA = txWithPlaceholderProofs([createTransferOp(TransferPayload(inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @[])))])
+      txB = txWithPlaceholderProofs([createSdpActiveOp(ActiveMessage(declarationId: default(DeclarationId), nonce: 1'u64))])
       hA = mantleTxHash(txA.tx).get
       hB = mantleTxHash(txB.tx).get
       hashes = [hA, hB]
+    let
+      htxA = mkHashedSignedTx(txA, hA)
+      htxB = mkHashedSignedTx(txB, hB)
+      expectedRoot = body_root(openArray[SignedHeader]([]), merkle_root(hashes))
+      vtxA = mkValidTx(htxA)
+      vtxB = mkValidTx(htxB)
     check:
       merkle_root(hashes) == hashPair(hA, hB)
-      merkle_root([txA, txB]).get == merkle_root(hashes)
+      body_root(openArray[SignedHeader]([]), [htxA, htxB]) == expectedRoot
+      body_root(openArray[SignedHeader]([]), [vtxA, vtxB]) ==
+        body_root(openArray[SignedHeader]([]), [vtxA.hashed, vtxB.hashed])
       merkle_root(openArray[Hash32]([])) == default(Hash32)
       merkle_root([hA]) == hA
 
-    # Malformed tx (e.g. inputs exceeding uint8 limit) returns EncodingError
-    let malformedTx = sampleTx(createTransferOp(TransferPayload(
-      inputs: Inputs(noteIds: newSeq[NoteId](256)),
-      outputs: Outputs(notes: @[]),
-    )))
-    check merkle_root([malformedTx]).error == EncodingError.InputsCountExceeded
-
   test "initHeader accepts openArray[Hash32]":
     let
-      tx = sampleTx(createTransferOp(TransferPayload(inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @[]))))
-      hx = mantleTxHash(tx.tx).get
+      hx = mkTxHash(1)
       pol = ProofOfLeadership(
         leaderVoucher: default(RewardVoucher),
         entropyContribution: default(ZkHash),
         proof: DefaultCompressedGroth16Proof,
         leaderKey: default(Ed25519PublicKey),
       )
-      hFromHashes = initHeader(1'u8, default(BlockId), SlotNumber(10), [], [hx], pol)
-      hFromTxs = initHeader(1'u8, default(BlockId), SlotNumber(10), [], [tx], pol).get
-    check hFromHashes == hFromTxs
-
-  test "initHeader returns error for malformed tx":
-    var invalidInputs: seq[NoteId]
-    for i in 0 .. 255:
-      invalidInputs.add(default(NoteId))
-    let
-      malformedTx = sampleTx(createTransferOp(TransferPayload(
-        inputs: Inputs(noteIds: invalidInputs), outputs: Outputs(notes: @[])
-      )))
-      pol = ProofOfLeadership(
-        leaderVoucher: default(RewardVoucher),
-        entropyContribution: default(ZkHash),
-        proof: DefaultCompressedGroth16Proof,
-        leaderKey: default(Ed25519PublicKey),
-      )
-    check initHeader(1'u8, default(BlockId), SlotNumber(10), [], [malformedTx], pol).error == EncodingError.InputsCountExceeded
+      h = initHeader(1'u8, default(BlockId), SlotNumber(10), [], [hx], pol)
+    check h.bodyRoot == body_root([], hx)
 
   test "initProposal accepts References directly":
     var refs: References
-    let
-      tx = sampleTx(createTransferOp(TransferPayload(inputs: Inputs(noteIds: @[]), outputs: Outputs(notes: @[]))))
-      hx = mantleTxHash(tx.tx).get
+    let hx = mkTxHash(1)
     refs[0] = hx
 
     let
@@ -211,5 +145,12 @@ suite "core/types":
       h = initHeader(1'u8, default(BlockId), SlotNumber(10), [], [hx], pol)
       prop = initProposal(h, [], refs, DefaultEd25519Signature)
     check prop.references[0] == hx
+
+  test "binary layout equivalence of transaction types":
+    static:
+      doAssert sizeof(typeof(default(HashedSignedMantleTx)[])) == sizeof(typeof(default(ValidSignedMantleTx).hashed[]))
+      doAssert sizeof(HashedSignedMantleTx) == sizeof(ValidSignedMantleTx)
+    check sizeof(typeof(default(HashedSignedMantleTx)[])) == sizeof(typeof(default(ValidSignedMantleTx).hashed[]))
+    check sizeof(HashedSignedMantleTx) == sizeof(ValidSignedMantleTx)
 
 {.pop.}

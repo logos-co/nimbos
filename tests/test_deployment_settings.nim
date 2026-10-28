@@ -12,7 +12,9 @@ import
   std/[os, strutils],
   unittest2,
   stew/io2,
-  ../logos_chain/conf
+  ../logos_chain/conf,
+  ../logos_chain/core/types,
+  ../logos_chain/deployment/deployment_settings
 
 const
   testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
@@ -207,7 +209,7 @@ suite "deployment-settings":
       ds.network.kademliaProtocolName.len > 0
       ds.mempool.pubsubTopic.startsWith("/")
       ds.blend.common.numBlendLayers > 0
-      ds.cryptarchia.genesisState.signedMantleTx.tx.ops.len > 0
+      ds.cryptarchia.genesisState.validGenesisTx.tx.ops.len > 0
 
   test "deployment-settings: mantle_tx ops and ops_proofs are block sequences":
     let
@@ -387,7 +389,7 @@ suite "deployment-settings":
       ds.blend.common.protocolName == "/stub/blend"
       ds.time.slotDuration == 1.seconds
       ds.cryptarchia.securityParam == 1
-      ds.cryptarchia.genesisState.signedMantleTx.tx.ops.len == 2
+      ds.cryptarchia.genesisState.validGenesisTx.tx.ops.len == 2
 
   test "validateDeploymentSettings: empty blend.common.protocol_name":
     let badYaml = deploymentSettingsBlendBlock.replace(

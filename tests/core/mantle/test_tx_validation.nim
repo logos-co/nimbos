@@ -15,7 +15,10 @@ import
   libp2p/crypto/ed25519/ed25519,
   libp2p/multiaddress,
   ../../../logos_chain/core/types,
-  ../../../logos_chain/core/mantle/[tx_validation, poc_verifier, utxo],
+  ../../../logos_chain/core/mantle/[
+    operations, proofs, primitives, tx_hashing, tx_types, tx_validation, poc_verifier, utxo
+  ],
+  ../../../logos_chain/zk/poc,
   ./test_helpers
 
 from libp2p/crypto/rng import newBearSslRng
@@ -32,204 +35,140 @@ let
 
 suite "core/mantle/tx_validation — stateless invariants":
   test "Transfer: rejects empty inputs":
-    let
-      tx = mkTransferTx([], [mkNote(100, 1)])
-      r = validateMantleTxStateless(tx)
+    let tx = mkTransferTx([], [mkNote(100, 1)])
+    let r = validateMantleTxStateless(tx)
     check r.error == StatelessLedgerError.EmptyInputs
 
   test "Transfer: rejects duplicate inputs (DoubleSpend)":
-    let
-      u = mkUtxo(100, 1)
-      tx = mkTransferTx([u.id, u.id], [mkNote(200, 2)])
-      r = validateMantleTxStateless(tx)
+    let u = mkUtxo(100, 1)
+    let tx = mkTransferTx([u.id, u.id], [mkNote(200, 2)])
+    let r = validateMantleTxStateless(tx)
     check r.error == StatelessLedgerError.DoubleSpend
 
   test "Transfer: rejects zero-value output note (ZeroValueNote)":
-    let
-      u = mkUtxo(100, 1)
-      tx = mkTransferTx([u.id], [mkNote(0, 2)])
-      r = validateMantleTxStateless(tx)
+    let u = mkUtxo(100, 1)
+    let tx = mkTransferTx([u.id], [mkNote(0, 2)])
+    let r = validateMantleTxStateless(tx)
     check r.error == StatelessLedgerError.ZeroValueNote
 
   test "Transfer: accepts valid transfer":
-    let
-      u1 = mkUtxo(100, 1, opIdSeed = 1)
-      u2 = mkUtxo(100, 2, opIdSeed = 2)
-      tx = mkTransferTx([u1.id, u2.id], [mkNote(200, 3)])
+    let u1 = mkUtxo(100, 1, opIdSeed = 1)
+    let u2 = mkUtxo(100, 2, opIdSeed = 2)
+    let tx = mkTransferTx([u1.id, u2.id], [mkNote(200, 3)])
     check validateMantleTxStateless(tx).isOk
 
   test "ChannelDeposit: rejects empty inputs":
-    let
-      op = createChannelDepositOp(ChannelDepositPayload(
-        channel: mkChannelId(1),
-        inputs: Inputs(noteIds: @[]),
-      ))
-      tx = SignedMantleTx(
-        tx: MantleTx(ops: @[op]),
-        opProofs: @[OpProof(kind: opfChannelDeposit, channelDepositProof: default(ZkSigProof))],
-      )
-      r = validateMantleTxStateless(tx)
+    let op = createChannelDepositOp(ChannelDepositPayload(
+      channel: mkChannelId(1),
+      inputs: Inputs(noteIds: @[]),
+    ))
+    let r = validateMantleTxStateless(unhashedTx(op))
     check r.error == StatelessLedgerError.EmptyInputs
 
   test "ChannelDeposit: rejects duplicate inputs":
-    let
-      u = mkUtxo(100, 1)
-      op = createChannelDepositOp(ChannelDepositPayload(
-        channel: mkChannelId(1),
-        inputs: Inputs(noteIds: @[u.id, u.id]),
-      ))
-      tx = SignedMantleTx(
-        tx: MantleTx(ops: @[op]),
-        opProofs: @[OpProof(kind: opfChannelDeposit, channelDepositProof: default(ZkSigProof))],
-      )
-      r = validateMantleTxStateless(tx)
+    let u = mkUtxo(100, 1)
+    let op = createChannelDepositOp(ChannelDepositPayload(
+      channel: mkChannelId(1),
+      inputs: Inputs(noteIds: @[u.id, u.id]),
+    ))
+    let r = validateMantleTxStateless(unhashedTx(op))
     check r.error == StatelessLedgerError.DoubleSpend
 
   test "ChannelWithdraw: rejects empty inputs":
-    let
-      op = createChannelWithdrawOp(ChannelWithdrawPayload(
-        channel: mkChannelId(1),
-        inputs: Inputs(noteIds: @[]),
-      ))
-      tx = SignedMantleTx(
-        tx: MantleTx(ops: @[op]),
-        opProofs: @[OpProof(kind: opfChannelWithdraw, channelWithdrawOpProof: default(ChannelMultiSigProof))],
-      )
-      r = validateMantleTxStateless(tx)
+    let op = createChannelWithdrawOp(ChannelWithdrawPayload(
+      channel: mkChannelId(1),
+      inputs: Inputs(noteIds: @[]),
+    ))
+    let r = validateMantleTxStateless(unhashedTx(op))
     check r.error == StatelessLedgerError.EmptyInputs
 
   test "ChannelWithdraw: rejects duplicate inputs":
-    let
-      u = mkUtxo(100, 1)
-      op = createChannelWithdrawOp(ChannelWithdrawPayload(
-        channel: mkChannelId(1),
-        inputs: Inputs(noteIds: @[u.id, u.id]),
-      ))
-      tx = SignedMantleTx(
-        tx: MantleTx(ops: @[op]),
-        opProofs: @[OpProof(kind: opfChannelWithdraw, channelWithdrawOpProof: default(ChannelMultiSigProof))],
-      )
-      r = validateMantleTxStateless(tx)
+    let u = mkUtxo(100, 1)
+    let op = createChannelWithdrawOp(ChannelWithdrawPayload(
+      channel: mkChannelId(1),
+      inputs: Inputs(noteIds: @[u.id, u.id]),
+    ))
+    let r = validateMantleTxStateless(unhashedTx(op))
     check r.error == StatelessLedgerError.DoubleSpend
 
   test "ChannelTransfer: rejects empty inputs":
-    let
-      op = createChannelTransferOp(ChannelTransferPayload(
-        channel: mkChannelId(1),
-        inputs: Inputs(noteIds: @[]),
-        outputs: Outputs(notes: @[mkNote(100, 1)]),
-      ))
-      tx = SignedMantleTx(
-        tx: MantleTx(ops: @[op]),
-        opProofs: @[OpProof(kind: opfChannelTransfer, channelTransferOpProof: default(ChannelMultiSigProof))],
-      )
-      r = validateMantleTxStateless(tx)
+    let op = createChannelTransferOp(ChannelTransferPayload(
+      channel: mkChannelId(1),
+      inputs: Inputs(noteIds: @[]),
+      outputs: Outputs(notes: @[mkNote(100, 1)]),
+    ))
+    let r = validateMantleTxStateless(unhashedTx(op))
     check r.error == StatelessLedgerError.EmptyInputs
 
   test "ChannelTransfer: rejects duplicate inputs":
-    let
-      u = mkUtxo(100, 1)
-      op = createChannelTransferOp(ChannelTransferPayload(
-        channel: mkChannelId(1),
-        inputs: Inputs(noteIds: @[u.id, u.id]),
-        outputs: Outputs(notes: @[mkNote(200, 2)]),
-      ))
-      tx = SignedMantleTx(
-        tx: MantleTx(ops: @[op]),
-        opProofs: @[OpProof(kind: opfChannelTransfer, channelTransferOpProof: default(ChannelMultiSigProof))],
-      )
-      r = validateMantleTxStateless(tx)
+    let u = mkUtxo(100, 1)
+    let op = createChannelTransferOp(ChannelTransferPayload(
+      channel: mkChannelId(1),
+      inputs: Inputs(noteIds: @[u.id, u.id]),
+      outputs: Outputs(notes: @[mkNote(200, 2)]),
+    ))
+    let r = validateMantleTxStateless(unhashedTx(op))
     check r.error == StatelessLedgerError.DoubleSpend
 
   test "ChannelTransfer: rejects zero-value output note":
-    let
-      u = mkUtxo(100, 1)
-      op = createChannelTransferOp(ChannelTransferPayload(
-        channel: mkChannelId(1),
-        inputs: Inputs(noteIds: @[u.id]),
-        outputs: Outputs(notes: @[mkNote(0, 2)]),
-      ))
-      tx = SignedMantleTx(
-        tx: MantleTx(ops: @[op]),
-        opProofs: @[OpProof(kind: opfChannelTransfer, channelTransferOpProof: default(ChannelMultiSigProof))],
-      )
-      r = validateMantleTxStateless(tx)
+    let u = mkUtxo(100, 1)
+    let op = createChannelTransferOp(ChannelTransferPayload(
+      channel: mkChannelId(1),
+      inputs: Inputs(noteIds: @[u.id]),
+      outputs: Outputs(notes: @[mkNote(0, 2)]),
+    ))
+    let r = validateMantleTxStateless(unhashedTx(op))
     check r.error == StatelessLedgerError.ZeroValueNote
 
   test "ChannelConfig: rejects empty keys":
-    let
-      op = createChannelConfigOp(ChannelConfigPayload(
-        channel: mkChannelId(1),
-        keys: @[],
-        configurationThreshold: 1,
-        transferThreshold: 1,
-      ))
-      tx = SignedMantleTx(
-        tx: MantleTx(ops: @[op]),
-        opProofs: @[OpProof(kind: opfChannelConfig, channelConfigOpProof: default(ChannelMultiSigProof))],
-      )
-      r = validateMantleTxStateless(tx)
+    let op = createChannelConfigOp(ChannelConfigPayload(
+      channel: mkChannelId(1),
+      keys: @[],
+      configurationThreshold: 1,
+      transferThreshold: 1,
+    ))
+    let r = validateMantleTxStateless(unhashedTx(op))
     check r.error == StatelessLedgerError.InvalidChannelConfig
 
   test "ChannelConfig: rejects zero configurationThreshold":
-    let
-      op = createChannelConfigOp(ChannelConfigPayload(
-        channel: mkChannelId(1),
-        keys: @[testKp.pubkey],
-        configurationThreshold: 0,
-        transferThreshold: 1,
-      ))
-      tx = SignedMantleTx(
-        tx: MantleTx(ops: @[op]),
-        opProofs: @[OpProof(kind: opfChannelConfig, channelConfigOpProof: default(ChannelMultiSigProof))],
-      )
-      r = validateMantleTxStateless(tx)
+    let op = createChannelConfigOp(ChannelConfigPayload(
+      channel: mkChannelId(1),
+      keys: @[testKp.pubkey],
+      configurationThreshold: 0,
+      transferThreshold: 1,
+    ))
+    let r = validateMantleTxStateless(unhashedTx(op))
     check r.error == StatelessLedgerError.InvalidChannelConfig
 
   test "ChannelConfig: rejects configurationThreshold > keys.len":
-    let
-      op = createChannelConfigOp(ChannelConfigPayload(
-        channel: mkChannelId(1),
-        keys: @[testKp.pubkey],
-        configurationThreshold: 2,
-        transferThreshold: 1,
-      ))
-      tx = SignedMantleTx(
-        tx: MantleTx(ops: @[op]),
-        opProofs: @[OpProof(kind: opfChannelConfig, channelConfigOpProof: default(ChannelMultiSigProof))],
-      )
-      r = validateMantleTxStateless(tx)
+    let op = createChannelConfigOp(ChannelConfigPayload(
+      channel: mkChannelId(1),
+      keys: @[testKp.pubkey],
+      configurationThreshold: 2,
+      transferThreshold: 1,
+    ))
+    let r = validateMantleTxStateless(unhashedTx(op))
     check r.error == StatelessLedgerError.InvalidChannelConfig
 
   test "ChannelConfig: rejects zero transferThreshold":
-    let
-      op = createChannelConfigOp(ChannelConfigPayload(
-        channel: mkChannelId(1),
-        keys: @[testKp.pubkey],
-        configurationThreshold: 1,
-        transferThreshold: 0,
-      ))
-      tx = SignedMantleTx(
-        tx: MantleTx(ops: @[op]),
-        opProofs: @[OpProof(kind: opfChannelConfig, channelConfigOpProof: default(ChannelMultiSigProof))],
-      )
-      r = validateMantleTxStateless(tx)
+    let op = createChannelConfigOp(ChannelConfigPayload(
+      channel: mkChannelId(1),
+      keys: @[testKp.pubkey],
+      configurationThreshold: 1,
+      transferThreshold: 0,
+    ))
+    let r = validateMantleTxStateless(unhashedTx(op))
     check r.error == StatelessLedgerError.InvalidChannelConfig
 
   test "SdpDeclare: rejects empty locators":
-    let
-      op = createSdpDeclareOp(DeclarationMessage(
-        serviceType: ServiceType.bn,
-        locators: @[],
-        providerId: testKp.pubkey,
-        zkId: mkZkPubKey(1),
-        lockedNoteId: mkUtxo(100, 1).id,
-      ))
-      tx = SignedMantleTx(
-        tx: MantleTx(ops: @[op]),
-        opProofs: @[OpProof(kind: opfSdpDeclare, declarationProof: default(ZkAndEd25519SigsProof))],
-      )
-      r = validateMantleTxStateless(tx)
+    let op = createSdpDeclareOp(DeclarationMessage(
+      serviceType: ServiceType.bn,
+      locators: @[],
+      providerId: testKp.pubkey,
+      zkId: mkZkPubKey(1),
+      lockedNoteId: mkUtxo(100, 1).id,
+    ))
+    let r = validateMantleTxStateless(unhashedTx(op))
     check r.error == StatelessLedgerError.EmptyLocators
 
   test "SdpDeclare: rejects too many locators (> MaxSdpLocators)":
@@ -237,126 +176,110 @@ suite "core/mantle/tx_validation — stateless invariants":
     var locators = newSeq[Locator]()
     for _ in 0 .. MaxSdpLocators:
       locators.add(validLoc)
-    let
-      op = createSdpDeclareOp(DeclarationMessage(
-        serviceType: ServiceType.bn,
-        locators: locators,
-        providerId: testKp.pubkey,
-        zkId: mkZkPubKey(1),
-        lockedNoteId: mkUtxo(100, 1).id,
-      ))
-      tx = SignedMantleTx(
-        tx: MantleTx(ops: @[op]),
-        opProofs: @[OpProof(kind: opfSdpDeclare, declarationProof: default(ZkAndEd25519SigsProof))],
-      )
-      r = validateMantleTxStateless(tx)
+    let op = createSdpDeclareOp(DeclarationMessage(
+      serviceType: ServiceType.bn,
+      locators: locators,
+      providerId: testKp.pubkey,
+      zkId: mkZkPubKey(1),
+      lockedNoteId: mkUtxo(100, 1).id,
+    ))
+    let r = validateMantleTxStateless(unhashedTx(op))
     check r.error == StatelessLedgerError.TooManyLocators
 
   test "SdpDeclare: rejects invalid multiaddress locators":
     # Exceeds MaxLocatorMultiaddrBytes (329 bytes)
-    let
-      longStr = "/dns4/" & repeat('a', 350) & "/tcp/1234"
-      badLoc = MultiAddress.init(longStr).get
-      op = createSdpDeclareOp(DeclarationMessage(
-        serviceType: ServiceType.bn,
-        locators: @[badLoc],
-        providerId: testKp.pubkey,
-        zkId: mkZkPubKey(1),
-        lockedNoteId: mkUtxo(100, 1).id,
-      ))
-      tx = SignedMantleTx(
-        tx: MantleTx(ops: @[op]),
-        opProofs: @[OpProof(kind: opfSdpDeclare, declarationProof: default(ZkAndEd25519SigsProof))],
-      )
-      r = validateMantleTxStateless(tx)
+    let longStr = "/dns4/" & repeat('a', 350) & "/tcp/1234"
+    let badLoc = MultiAddress.init(longStr).get
+    let op = createSdpDeclareOp(DeclarationMessage(
+      serviceType: ServiceType.bn,
+      locators: @[badLoc],
+      providerId: testKp.pubkey,
+      zkId: mkZkPubKey(1),
+      lockedNoteId: mkUtxo(100, 1).id,
+    ))
+    let r = validateMantleTxStateless(unhashedTx(op))
     check r.error == StatelessLedgerError.InvalidLocator
 
   test "SdpDeclare: verifies Ed25519 provider signature":
-    let
-      validLoc = MultiAddress.init("/ip4/127.0.0.1/tcp/1234").get
-      op = createSdpDeclareOp(DeclarationMessage(
-        serviceType: ServiceType.bn,
-        locators: @[validLoc],
-        providerId: testKp.pubkey,
-        zkId: mkZkPubKey(1),
-        lockedNoteId: mkUtxo(100, 1).id,
-      ))
-      body = MantleTx(ops: @[op])
-      txHash = mantleTxHash(body).get
-      sig = sign(testKp.seckey, txHash)
-      validTx = SignedMantleTx(
-        tx: body,
-        opProofs: @[OpProof(
-          kind: opfSdpDeclare,
-          declarationProof: ZkAndEd25519SigsProof(ed25519Sig: sig, zkSig: default(ZkSigProof)),
-        )],
-      )
-    check validateMantleTxStateless(validTx).isOk
+    let validLoc = MultiAddress.init("/ip4/127.0.0.1/tcp/1234").get
+    let op = createSdpDeclareOp(DeclarationMessage(
+      serviceType: ServiceType.bn,
+      locators: @[validLoc],
+      providerId: testKp.pubkey,
+      zkId: mkZkPubKey(1),
+      lockedNoteId: mkUtxo(100, 1).id,
+    ))
+    let body = MantleTx(ops: @[op])
+    let txHash = mantleTxHash(body).get
+    let sig = sign(testKp.seckey, txHash)
+    let validTx = SignedMantleTx(
+      tx: body,
+      opProofs: @[OpProof(
+        kind: opfSdpDeclare,
+        declarationProof: ZkAndEd25519SigsProof(ed25519Sig: sig, zkSig: default(ZkSigProof)),
+      )],
+    )
+    check validateMantleTxStateless(mkHashedSignedTx(validTx, txHash)).isOk
 
     # Tampered signature rejects
-    let
-      badSig = sign(otherKp.seckey, txHash)
-      badTx = SignedMantleTx(
-        tx: body,
-        opProofs: @[OpProof(
-          kind: opfSdpDeclare,
-          declarationProof: ZkAndEd25519SigsProof(ed25519Sig: badSig, zkSig: default(ZkSigProof)),
-        )],
-      )
-      r = validateMantleTxStateless(badTx)
+    let badSig = sign(otherKp.seckey, txHash)
+    let badTx = SignedMantleTx(
+      tx: body,
+      opProofs: @[OpProof(
+        kind: opfSdpDeclare,
+        declarationProof: ZkAndEd25519SigsProof(ed25519Sig: badSig, zkSig: default(ZkSigProof)),
+      )],
+    )
+    let r = validateMantleTxStateless(mkHashedSignedTx(badTx, txHash))
     check r.error == StatelessLedgerError.InvalidProof
 
   test "ChannelInscribe: verifies Ed25519 signer signature":
-    let
-      op = createChannelInscribeOp(ChannelInscribePayload(
-        channelId: mkChannelId(1),
-        inscription: @[1'u8, 2, 3],
-        parent: default(Hash32),
-        signer: testKp.pubkey,
-      ))
-      body = MantleTx(ops: @[op])
-      txHash = mantleTxHash(body).get
-      sig = sign(testKp.seckey, txHash)
-      validTx = SignedMantleTx(
-        tx: body,
-        opProofs: @[OpProof(kind: opfChannelInscribe, ed25519SigProof: sig)],
-      )
-    check validateMantleTxStateless(validTx).isOk
+    let op = createChannelInscribeOp(ChannelInscribePayload(
+      channelId: mkChannelId(1),
+      inscription: @[1'u8, 2, 3],
+      parent: default(Hash32),
+      signer: testKp.pubkey,
+    ))
+    let body = MantleTx(ops: @[op])
+    let txHash = mantleTxHash(body).get
+    let sig = sign(testKp.seckey, txHash)
+    let validTx = SignedMantleTx(
+      tx: body,
+      opProofs: @[OpProof(kind: opfChannelInscribe, ed25519SigProof: sig)],
+    )
+    check validateMantleTxStateless(mkHashedSignedTx(validTx, txHash)).isOk
 
-    let
-      badTx = SignedMantleTx(
-        tx: body,
-        opProofs: @[OpProof(kind: opfChannelInscribe, ed25519SigProof: sign(otherKp.seckey, txHash))],
-      )
-      r = validateMantleTxStateless(badTx)
+    let badTx = SignedMantleTx(
+      tx: body,
+      opProofs: @[OpProof(kind: opfChannelInscribe, ed25519SigProof: sign(otherKp.seckey, txHash))],
+    )
+    let r = validateMantleTxStateless(mkHashedSignedTx(badTx, txHash))
     check r.error == StatelessLedgerError.InvalidProof
 
   test "Structural: rejects ops / opProofs length mismatch":
-    let
-      u = mkUtxo(100, 1)
-      op = createTransferOp(TransferPayload(
-        inputs: Inputs(noteIds: @[u.id]),
-        outputs: Outputs(notes: @[mkNote(100, 2)]),
-      ))
-      tx = SignedMantleTx(
-        tx: MantleTx(ops: @[op]),
-        opProofs: @[],
-      )
-      r = validateMantleTxStateless(tx)
+    let u = mkUtxo(100, 1)
+    let op = createTransferOp(TransferPayload(
+      inputs: Inputs(noteIds: @[u.id]),
+      outputs: Outputs(notes: @[mkNote(100, 2)]),
+    ))
+    let tx = SignedMantleTx(
+      tx: MantleTx(ops: @[op]),
+      opProofs: @[],
+    )
+    let r = validateMantleTxStateless(unhashed(tx))
     check r.error == StatelessLedgerError.InvalidProof
 
   test "Structural: rejects mismatched proof kind":
-    let
-      u = mkUtxo(100, 1)
-      op = createTransferOp(TransferPayload(
-        inputs: Inputs(noteIds: @[u.id]),
-        outputs: Outputs(notes: @[mkNote(100, 2)]),
-      ))
-      tx = SignedMantleTx(
-        tx: MantleTx(ops: @[op]),
-        opProofs: @[OpProof(kind: opfChannelInscribe, ed25519SigProof: default(Ed25519Signature))],
-      )
-      r = validateMantleTxStateless(tx)
+    let u = mkUtxo(100, 1)
+    let op = createTransferOp(TransferPayload(
+      inputs: Inputs(noteIds: @[u.id]),
+      outputs: Outputs(notes: @[mkNote(100, 2)]),
+    ))
+    let tx = SignedMantleTx(
+      tx: MantleTx(ops: @[op]),
+      opProofs: @[OpProof(kind: opfChannelInscribe, ed25519SigProof: default(Ed25519Signature))],
+    )
+    let r = validateMantleTxStateless(unhashed(tx))
     check r.error == StatelessLedgerError.InvalidProof
 
   test "Structural: rejects unsupported opcode":
@@ -366,12 +289,11 @@ suite "core/mantle/tx_validation — stateless invariants":
       outputs: Outputs(notes: @[mkNote(100, 2)]),
     ))
     op.opcode = Opcode(0xFF)
-    let
-      tx = SignedMantleTx(
-        tx: MantleTx(ops: @[op]),
-        opProofs: @[OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))],
-      )
-      r = validateMantleTxStateless(tx)
+    let tx = SignedMantleTx(
+      tx: MantleTx(ops: @[op]),
+      opProofs: @[OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))],
+    )
+    let r = validateMantleTxStateless(unhashed(tx))
     check r.error == StatelessLedgerError.UnsupportedOp
 
   test "Structural: rejects opcode / payload kind mismatch":
@@ -381,104 +303,96 @@ suite "core/mantle/tx_validation — stateless invariants":
       outputs: Outputs(notes: @[mkNote(100, 2)]),
     ))
     op.opcode = OpChannelDeposit # mismatched opcode vs Transfer payload
-    let
-      tx = SignedMantleTx(
-        tx: MantleTx(ops: @[op]),
-        opProofs: @[OpProof(kind: opfChannelDeposit, channelDepositProof: default(ZkSigProof))],
-      )
-      r = validateMantleTxStateless(tx)
+    let tx = SignedMantleTx(
+      tx: MantleTx(ops: @[op]),
+      opProofs: @[OpProof(kind: opfChannelDeposit, channelDepositProof: default(ZkSigProof))],
+    )
+    let r = validateMantleTxStateless(unhashed(tx))
     check r.error == StatelessLedgerError.UnsupportedOp
 
   test "LeaderClaim: verifies PoC Groth16 proof with verifier hook":
-    let
-      op = createLeaderClaimOp(LeaderClaimPayload(
-        rewardsRoot: default(RewardsRoot),
-        voucherNullifier: default(VoucherNullifier),
-        publicKey: mkZkPubKey(1),
-      ))
-      tx = SignedMantleTx(
-        tx: MantleTx(ops: @[op]),
-        opProofs: @[OpProof(kind: opfLeaderClaim, proofOfClaimProof: default(ProofOfClaimProof))],
-      )
-      mockAccept: ProofOfClaimVerifier = proc(
-        proof: ProofOfClaimProof, public: ProofOfClaimPublic
-      ): Result[bool, PocLoadError] =
-        ok(true)
-      mockReject: ProofOfClaimVerifier = proc(
-        proof: ProofOfClaimProof, public: ProofOfClaimPublic
-      ): Result[bool, PocLoadError] =
-        ok(false)
+    let op = createLeaderClaimOp(LeaderClaimPayload(
+      rewardsRoot: default(RewardsRoot),
+      voucherNullifier: default(VoucherNullifier),
+      publicKey: mkZkPubKey(1),
+    ))
+    let tx = SignedMantleTx(
+      tx: MantleTx(ops: @[op]),
+      opProofs: @[OpProof(kind: opfLeaderClaim, proofOfClaimProof: default(ProofOfClaimProof))],
+    )
+    let txHash = mantleTxHash(tx.tx).get
+    let htx = mkHashedSignedTx(tx, txHash)
+    let mockAccept: ProofOfClaimVerifier = proc(
+      proof: ProofOfClaimProof, public: ProofOfClaimPublic
+    ): Result[bool, PocLoadError] =
+      ok(true)
+    let mockReject: ProofOfClaimVerifier = proc(
+      proof: ProofOfClaimProof, public: ProofOfClaimPublic
+    ): Result[bool, PocLoadError] =
+      ok(false)
 
-    check validateMantleTxStateless(tx, verifyProof = mockAccept).isOk
-    let r = validateMantleTxStateless(tx, verifyProof = mockReject)
+    check validateMantleTxStateless(htx, verifyProof = mockAccept).isOk
+    let r = validateMantleTxStateless(htx, verifyProof = mockReject)
     check r.error == StatelessLedgerError.InvalidProof
 
   test "LeaderClaim: uninitialised verifier returns VerifierNotInitialised":
-    let
-      op = createLeaderClaimOp(LeaderClaimPayload(
-        rewardsRoot: default(RewardsRoot),
-        voucherNullifier: default(VoucherNullifier),
-        publicKey: mkZkPubKey(1),
-      ))
-      tx = SignedMantleTx(
-        tx: MantleTx(ops: @[op]),
-        opProofs: @[OpProof(kind: opfLeaderClaim, proofOfClaimProof: default(ProofOfClaimProof))],
-      )
-      mockUninitialised: ProofOfClaimVerifier = proc(
-        proof: ProofOfClaimProof, public: ProofOfClaimPublic
-      ): Result[bool, PocLoadError] =
-        err(PocLoadError.VkNotLoaded)
-      r1 = validateMantleTxStateless(tx, verifyProof = mockUninitialised)
+    let op = createLeaderClaimOp(LeaderClaimPayload(
+      rewardsRoot: default(RewardsRoot),
+      voucherNullifier: default(VoucherNullifier),
+      publicKey: mkZkPubKey(1),
+    ))
+    let tx = SignedMantleTx(
+      tx: MantleTx(ops: @[op]),
+      opProofs: @[OpProof(kind: opfLeaderClaim, proofOfClaimProof: default(ProofOfClaimProof))],
+    )
+    let txHash = mantleTxHash(tx.tx).get
+    let htx = mkHashedSignedTx(tx, txHash)
+    let mockUninitialised: ProofOfClaimVerifier = proc(
+      proof: ProofOfClaimProof, public: ProofOfClaimPublic
+    ): Result[bool, PocLoadError] =
+      err(PocLoadError.VkNotLoaded)
+    let r1 = validateMantleTxStateless(htx, verifyProof = mockUninitialised)
     check r1.error == StatelessLedgerError.VerifierNotInitialised
 
-    let r2 = validateMantleTxStateless(tx, verifyProof = nil)
+    let r2 = validateMantleTxStateless(htx, verifyProof = nil)
     check r2.error == StatelessLedgerError.VerifierNotInitialised
 
   test "Multi-op transaction: accepts multiple valid operations":
-    let
-      u1 = mkUtxo(100, 1, opIdSeed = 10)
-      u2 = mkUtxo(100, 2, opIdSeed = 11)
-      op1 = createTransferOp(TransferPayload(
-        inputs: Inputs(noteIds: @[u1.id, u2.id]),
-        outputs: Outputs(notes: @[mkNote(200, 3)]),
-      ))
-      op2 = createChannelInscribeOp(ChannelInscribePayload(
-        channelId: mkChannelId(1),
-        inscription: @[1'u8, 2, 3],
-        parent: default(Hash32),
-        signer: testKp.pubkey,
-      ))
-      body = MantleTx(ops: @[op1, op2])
-      txHash = mantleTxHash(body).get
-      sig2 = sign(testKp.seckey, txHash)
-      tx = SignedMantleTx(
-        tx: body,
-        opProofs: @[
-          OpProof(kind: opfTransfer, transferProof: default(ZkSigProof)),
-          OpProof(kind: opfChannelInscribe, ed25519SigProof: sig2),
-        ],
-      )
-    check validateMantleTxStateless(tx).isOk
+    let u1 = mkUtxo(100, 1, opIdSeed = 10)
+    let u2 = mkUtxo(100, 2, opIdSeed = 11)
+    let op1 = createTransferOp(TransferPayload(
+      inputs: Inputs(noteIds: @[u1.id, u2.id]),
+      outputs: Outputs(notes: @[mkNote(200, 3)]),
+    ))
+    let op2 = createChannelInscribeOp(ChannelInscribePayload(
+      channelId: mkChannelId(1),
+      inscription: @[1'u8, 2, 3],
+      parent: default(Hash32),
+      signer: testKp.pubkey,
+    ))
+    let body = MantleTx(ops: @[op1, op2])
+    let txHash = mantleTxHash(body).get
+    let sig2 = sign(testKp.seckey, txHash)
+    let tx = SignedMantleTx(
+      tx: body,
+      opProofs: @[
+        OpProof(kind: opfTransfer, transferProof: default(ZkSigProof)),
+        OpProof(kind: opfChannelInscribe, ed25519SigProof: sig2),
+      ],
+    )
+    check validateMantleTxStateless(mkHashedSignedTx(tx, txHash)).isOk
 
   test "Multi-op transaction: rejects cross-op double-spend":
-    let
-      u1 = mkUtxo(100, 1, opIdSeed = 20)
-      op1 = createTransferOp(TransferPayload(
-        inputs: Inputs(noteIds: @[u1.id]),
-        outputs: Outputs(notes: @[mkNote(100, 2)]),
-      ))
-      op2 = createChannelDepositOp(ChannelDepositPayload(
-        channel: mkChannelId(1),
-        inputs: Inputs(noteIds: @[u1.id]), # double-spent across ops
-      ))
-      tx = SignedMantleTx(
-        tx: MantleTx(ops: @[op1, op2]),
-        opProofs: @[
-          OpProof(kind: opfTransfer, transferProof: default(ZkSigProof)),
-          OpProof(kind: opfChannelDeposit, channelDepositProof: default(ZkSigProof)),
-        ],
-      )
-      r = validateMantleTxStateless(tx)
+    let u1 = mkUtxo(100, 1, opIdSeed = 20)
+    let op1 = createTransferOp(TransferPayload(
+      inputs: Inputs(noteIds: @[u1.id]),
+      outputs: Outputs(notes: @[mkNote(100, 2)]),
+    ))
+    let op2 = createChannelDepositOp(ChannelDepositPayload(
+      channel: mkChannelId(1),
+      inputs: Inputs(noteIds: @[u1.id]), # double-spent across ops
+    ))
+    let r = validateMantleTxStateless(unhashedTx([op1, op2]))
     check r.error == StatelessLedgerError.DoubleSpend
 
   test "toStatelessLedgerError: maps EncodingError variants correctly":
@@ -493,25 +407,47 @@ suite "core/mantle/tx_validation — stateless invariants":
       toStatelessLedgerError(EncodingError.MultiSigSignaturesMismatch) == StatelessLedgerError.InvalidProof
       toStatelessLedgerError(EncodingError.MultiSigIndicesNonIncreasing) == StatelessLedgerError.InvalidProof
       toStatelessLedgerError(EncodingError.LengthExceeded) == StatelessLedgerError.InvalidProof
-      toStatelessLedgerError(EncodingError.MetadataLengthExceeded) == StatelessLedgerError.InvalidProof
-      toStatelessLedgerError(EncodingError.InscriptionLengthExceeded) == StatelessLedgerError.InvalidProof
+      toStatelessLedgerError(EncodingError.MetadataLengthExceeded) == StatelessLedgerError.OperationDataExceeded
+      toStatelessLedgerError(EncodingError.InscriptionLengthExceeded) == StatelessLedgerError.OperationDataExceeded
       toStatelessLedgerError(EncodingError.InputsCountExceeded) == StatelessLedgerError.InvalidProof
       toStatelessLedgerError(EncodingError.OpsCountExceeded) == StatelessLedgerError.TooManyOps
 
   test "validateMantleTxStateless rejects tx exceeding MantleMaxOps with TooManyOps":
-    var
-      largeOps: seq[Op]
-      largeProofs: seq[OpProof]
-    let
-      dummyOp = createTransferOp(TransferPayload(
-        inputs: Inputs(noteIds: @[default(NoteId)]),
-        outputs: Outputs(notes: @[]),
-      ))
-      dummyProof = OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))
+    var largeOps: seq[Op]
+    let dummyOp = createTransferOp(TransferPayload(
+      inputs: Inputs(noteIds: @[default(NoteId)]),
+      outputs: Outputs(notes: @[]),
+    ))
     for i in 0 .. MantleMaxOps:
       largeOps.add dummyOp
-      largeProofs.add dummyProof
-    let tx = SignedMantleTx(tx: MantleTx(ops: largeOps), opProofs: largeProofs)
-    check validateMantleTxStateless(tx).error == StatelessLedgerError.TooManyOps
+    check validateMantleTxStateless(unhashedTx(largeOps)).error == StatelessLedgerError.TooManyOps
+
+  test "validateMantleTxStateless rejects an inscription over MaxOperationDataSize":
+    let op = createChannelInscribeOp(ChannelInscribePayload(
+      channelId: mkChannelId(1),
+      inscription: newSeq[byte](MaxOperationDataSize + 1),
+      parent: default(Hash32),
+      signer: testKp.pubkey,
+    ))
+    # A second op that fails a later phase-1 check pins the order: the
+    # bound rejects op 0 before the empty inputs of op 1 are seen.
+    check validateMantleTxStateless(unhashedTx([op, createTransferOp(TransferPayload())])).error ==
+      StatelessLedgerError.OperationDataExceeded
+
+  test "validateMantleTxStateless rejects CHANNEL_DEPOSIT metadata over MaxOperationDataSize":
+    let op = createChannelDepositOp(ChannelDepositPayload(
+      channel: mkChannelId(1),
+      inputs: Inputs(noteIds: @[mkUtxo(100, 1).id]),
+      metadata: newSeq[byte](MaxOperationDataSize + 1),
+    ))
+    check validateMantleTxStateless(unhashedTx(op)).error == StatelessLedgerError.OperationDataExceeded
+
+  test "validateMantleTxStateless accepts CHANNEL_DEPOSIT metadata of exactly MaxOperationDataSize":
+    let op = createChannelDepositOp(ChannelDepositPayload(
+      channel: mkChannelId(1),
+      inputs: Inputs(noteIds: @[mkUtxo(100, 1).id]),
+      metadata: newSeq[byte](MaxOperationDataSize),
+    ))
+    check validateMantleTxStateless(unhashedTx(op)).isOk
 
 {.pop.}

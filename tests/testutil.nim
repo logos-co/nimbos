@@ -17,14 +17,17 @@ import
   unittest2,
   ../logos_chain/conf,
   ../logos_chain/networking/network,
-  ../logos_chain/core/mantle/[tx_validation, utxo],
-  ../logos_chain/ledger/pol_verifier,
+  ../logos_chain/core/types,
+  ../logos_chain/core/mantle/[operations, tx_types, tx_hashing, tx_validation],
+  ../logos_chain/chain/block_processor,
   ./core/mantle/test_helpers
 
-from std/algorithm import SortOrder, sort
+from ../logos_chain/core/crypto/types import encodeFieldElement
+from ../logos_chain/core/mantle/primitives import SlotNumber
+from std/algorithm import SortOrder, sort, fill
 from std/strformat import `&`
 
-export unittest2
+export unittest2, test_helpers, tx_hashing, createGenesisBlock, ValidBlock, AdmittedBlock
 
 ## Record ``msg`` and mark the current test as failed (unittest2 ``fail()`` is no-arg).
 template fail*(msg: string) =
@@ -188,6 +191,26 @@ func minimalSignedTx*(): SignedMantleTx =
     opProofs: @[],
   )
 
+var defaultMinimalHashedSignedTxCache: HashedSignedMantleTx
+var hasDefaultMinimalHashedSignedTxCache = false
+
+proc minimalHashedSignedTx*(): HashedSignedMantleTx =
+  {.gcsafe.}:
+    if not hasDefaultMinimalHashedSignedTxCache:
+      defaultMinimalHashedSignedTxCache = mkHashedSignedTx(minimalSignedTx())
+      hasDefaultMinimalHashedSignedTxCache = true
+    defaultMinimalHashedSignedTxCache
+
+var defaultMinimalValidSignedTxCache: ValidSignedMantleTx
+var hasDefaultMinimalValidSignedTxCache = false
+
+proc minimalValidSignedTx*(): ValidSignedMantleTx =
+  {.gcsafe.}:
+    if not hasDefaultMinimalValidSignedTxCache:
+      defaultMinimalValidSignedTxCache = createValidTxForTest(minimalHashedSignedTx())
+      hasDefaultMinimalValidSignedTxCache = true
+    defaultMinimalValidSignedTxCache
+
 func testZkPk*(): ZkPublicKey = mkZkPubKey(1)
 
 func txWithPlaceholderProofs*(ops: openArray[Op]): SignedMantleTx =
@@ -196,18 +219,14 @@ func txWithPlaceholderProofs*(ops: openArray[Op]): SignedMantleTx =
     tx: MantleTx(ops: @ops),
     opProofs: ops.mapIt(defaultOpProofForOpcode(it.opcode).get))
 
-func testGenesisTx*(
+func testGenesisSignedTx*(
     outputs: openArray[Note] = [Note(value: 1000, zkPublicKey: testZkPk())],
     declarations: openArray[DeclarationMessage] = [],
     chainId = "test",
     genesisTime = 0'u32,
     epochNonce = default(FieldElement),
-): ValidGenesisMantleTx =
-  ## Spec-shaped genesis transaction: Transfer of `outputs`, the parameter
-  ## inscription, then one SdpDeclare per entry; placeholder proofs.
-  # Hand-encoded: no production encoder exists. `decodeCryptarchiaParameter`
-  # is the production counterpart; `test_genesis_validation.nim` asserts the
-  # round trip.
+): SignedMantleTx =
+  ## Spec-shaped genesis SignedMantleTx (no hash computed).
   let
     inscription =
       @[byte chainId.len] & chainId.toBytes & @(toBytesLE(genesisTime)) &
@@ -219,7 +238,50 @@ func testGenesisTx*(
         channelId: default(ChannelId), inscription: inscription,
         parent: default(Parent), signer: DefaultEd25519PublicKey))] &
       declarations.mapIt(createSdpDeclareOp(it))
-  validateGenesisTxStateless(txWithPlaceholderProofs(ops)).expect("spec-shaped genesis")
+  txWithPlaceholderProofs(ops)
+
+func testGenesisHtx*(
+    outputs: openArray[Note] = [Note(value: 1000, zkPublicKey: testZkPk())],
+    declarations: openArray[DeclarationMessage] = [],
+    chainId = "test",
+    genesisTime = 0'u32,
+    epochNonce = default(FieldElement),
+): HashedSignedMantleTx =
+  ## Spec-shaped genesis transaction with precomputed hash: Transfer of `outputs`,
+  ## the parameter inscription, then one SdpDeclare per entry; placeholder proofs.
+  createGenesisHtx(
+    testGenesisSignedTx(outputs, declarations, chainId, genesisTime, epochNonce)
+  ).expect("valid genesis tx hash")
+
+template isDefaultGenesisArgs(outputs, declarations, chainId, genesisTime, epochNonce): bool =
+  declarations.len == 0 and
+  chainId == "test" and
+  genesisTime == 0'u32 and
+  epochNonce == default(FieldElement) and
+  outputs.len == 1 and
+  outputs[0].value == 1000 and
+  outputs[0].zkPublicKey == testZkPk()
+
+var defaultValidGenesisTxCache: ValidGenesisMantleTx
+var hasDefaultValidGenesisTxCache = false
+
+proc testValidGenesisTx*(
+    outputs: openArray[Note] = [Note(value: 1000, zkPublicKey: testZkPk())],
+    declarations: openArray[DeclarationMessage] = [],
+    chainId = "test",
+    genesisTime = 0'u32,
+    epochNonce = default(FieldElement),
+): ValidGenesisMantleTx =
+  if isDefaultGenesisArgs(outputs, declarations, chainId, genesisTime, epochNonce):
+    {.gcsafe.}:
+      if not hasDefaultValidGenesisTxCache:
+        defaultValidGenesisTxCache = createValidGenesisTxForTest(testGenesisHtx())
+        hasDefaultValidGenesisTxCache = true
+      return defaultValidGenesisTxCache
+
+  createValidGenesisTxForTest(
+    testGenesisHtx(outputs, declarations, chainId, genesisTime, epochNonce)
+  )
 
 func genesisNoteId*(tx: ValidGenesisMantleTx, index: int): NoteId =
   ## NoteId of output `index` of the genesis Transfer.
@@ -233,10 +295,8 @@ let testTxKeyPair* = block:
   rngRef[] = HmacDrbgContext.init([8'u8])
   EdKeyPair.random(newBearSslRng(rngRef))
 
-proc signedTxWithOps*(opsCount: int, txIndex: int): SignedMantleTx =
-  var
-    ops: seq[Op]
-    proofs: seq[OpProof]
+func mkChannelInscribeOps(opsCount: int, txIndex: int, signer: Ed25519PublicKey): seq[Op] =
+  var ops = newSeqOfCap[Op](opsCount)
   for i in 0 ..< opsCount:
     var cid: ChannelId
     cid[0] = byte(txIndex mod 256)
@@ -247,33 +307,68 @@ proc signedTxWithOps*(opsCount: int, txIndex: int): SignedMantleTx =
       channelId: cid,
       inscription: @[byte 0x68, 0x69],
       parent: default(Hash32),
-      signer: testTxKeyPair.pubkey,
+      signer: signer,
     )
     ops.add(createChannelInscribeOp(payload))
+  ops
 
+proc hashedSignedTxWithOps*(opsCount: int, txIndex: int): HashedSignedMantleTx =
+  let mtx = MantleTx(ops: mkChannelInscribeOps(opsCount, txIndex, testTxKeyPair.pubkey))
   let
-    mtx = MantleTx(ops: ops)
     txHash = mantleTxHash(mtx).get
     sig = sign(testTxKeyPair.seckey, txHash)
+  var proofs = newSeqOfCap[OpProof](opsCount)
   for _ in 0 ..< opsCount:
     proofs.add(OpProof(kind: opfChannelInscribe, ed25519SigProof: sig))
 
-  SignedMantleTx(tx: mtx, opProofs: proofs)
+  createHashedSignedMantleTxForTest(SignedMantleTx(tx: mtx, opProofs: proofs), txHash)
 
-let testBlockKeyPair* = block:
+proc validSignedTxWithOps*(opsCount: int, txIndex: int): ValidSignedMantleTx =
+  createValidTxForTest(hashedSignedTxWithOps(opsCount, txIndex))
+
+proc mkValidTxWithOps*(opsCount: int, txIndex: int): ValidSignedMantleTx =
+  ## Sibling of `validSignedTxWithOps` with placeholder proofs (no Ed25519 signing).
+  ## For mempool, proposal, and unit tests that do not verify inscribe signatures.
+  let mtx = MantleTx(ops: mkChannelInscribeOps(opsCount, txIndex, testTxKeyPair.pubkey))
+  let txHash = mantleTxHash(mtx).get
+  var proofs = newSeq[OpProof](opsCount)
+  for i in 0 ..< opsCount:
+    proofs[i] = OpProof(kind: opfChannelInscribe, ed25519SigProof: DefaultEd25519Signature)
+
+  mkValidTx(createHashedSignedMantleTxForTest(SignedMantleTx(tx: mtx, opProofs: proofs), txHash))
+
+let testBlockKeyPair = block:
   var rngRef = new(HmacDrbgContext)
   rngRef[] = HmacDrbgContext.init([9'u8])
   EdKeyPair.random(newBearSslRng(rngRef))
 
-proc childBlock*(
+func initBlock*(
+    header: Header,
+    signature: Ed25519Signature = DefaultEd25519Signature,
+    uncleHeaders: openArray[SignedHeader],
+    txs: openArray[HashedSignedMantleTx],
+): Block =
+  doAssert uncleHeaders.len <= MaxUncles,
+    "uncle count exceeds MaxUncles (" & $MaxUncles & "): " & $uncleHeaders.len
+  doAssert txs.len <= MaxBlockTxs,
+    "block tx count exceeds MaxBlockTxs (" & $MaxBlockTxs & "): " & $txs.len
+  Block(
+    header: header,
+    signature: signature,
+    uncleHeaders: UncleHeaders(@uncleHeaders),
+    txs: BlockTxs(@txs),
+  )
+
+func childBlock*(
     parentHdr: Header,
     parentId: BlockId,
     slot: SlotNumber,
-    txs: openArray[SignedMantleTx],
+    txs: openArray[HashedSignedMantleTx],
     uncleHeaders: openArray[SignedHeader] = [],
+    keyPair: EdKeyPair = testBlockKeyPair,
 ): Block =
   var proofOfLeadership = parentHdr.proofOfLeadership
-  proofOfLeadership.leaderKey = testBlockKeyPair.pubkey
+  proofOfLeadership.leaderKey = keyPair.pubkey
 
   let
     h = initHeader(
@@ -283,11 +378,120 @@ proc childBlock*(
       uncleHeaders = uncleHeaders,
       txs = txs,
       proofOfLeadership = proofOfLeadership,
-    ).get
-    sig = signHeader(testBlockKeyPair.seckey, h)
+    )
+    sig = signHeader(keyPair.seckey, h)
   initBlock(h, signature = sig, uncleHeaders = uncleHeaders, txs = txs)
 
-type BootstrapPeers = object
+func childValidBlock*(
+    parentHdr: Header,
+    parentId: BlockId,
+    slot: SlotNumber,
+    txs: openArray[ValidSignedMantleTx],
+    uncleHeaders: openArray[SignedHeader] = [],
+    keyPair: EdKeyPair = testBlockKeyPair,
+): ValidBlock =
+  var proofOfLeadership = parentHdr.proofOfLeadership
+  proofOfLeadership.leaderKey = keyPair.pubkey
+
+  let
+    h = initHeader(
+      bedrockVersion = parentHdr.bedrockVersion,
+      parentBlock = parentId,
+      slot = slot,
+      uncleHeaders = uncleHeaders,
+      txs = txs,
+      proofOfLeadership = proofOfLeadership,
+    )
+    sig = signHeader(keyPair.seckey, h)
+  createValidBlockForTest(
+    header = h,
+    signature = sig,
+    uncleHeaders = UncleHeaders(@uncleHeaders),
+    txs = txs,
+  )
+
+func mkChildValidBlock*(
+    parentHdr: Header,
+    parentId: BlockId,
+    slot: SlotNumber,
+    txs: openArray[ValidSignedMantleTx] = [],
+    uncleHeaders: openArray[SignedHeader] = [],
+    keyPair: EdKeyPair = testBlockKeyPair,
+): ValidBlock =
+  ## Sibling of `childValidBlock` with DefaultEd25519Signature (no Ed25519 signing).
+  ## For LocalTree, LCA, and LIB tests where the ValidBlock signature is not verified.
+  var proofOfLeadership = parentHdr.proofOfLeadership
+  proofOfLeadership.leaderKey = keyPair.pubkey
+
+  let
+    h = initHeader(
+      bedrockVersion = parentHdr.bedrockVersion,
+      parentBlock = parentId,
+      slot = slot,
+      uncleHeaders = uncleHeaders,
+      txs = txs,
+      proofOfLeadership = proofOfLeadership,
+    )
+  createValidBlockForTest(
+    header = h,
+    signature = DefaultEd25519Signature,
+    uncleHeaders = UncleHeaders(@uncleHeaders),
+    txs = txs,
+  )
+
+func exampleBlockId*(fill: byte): BlockId =
+  var blkId: BlockId
+  blkId.fill(fill)
+  blkId
+
+func mkAdmittedBlock*(slot: uint64, parentBlock: BlockId): AdmittedBlock =
+  createAdmittedBlockForTest(Block(header: Header(slot: slot, parentBlock: parentBlock)))
+
+func childProposal*(
+    parentHdr: Header,
+    parentId: BlockId,
+    slot: SlotNumber,
+    txs: openArray[ValidSignedMantleTx],
+    keyPair: EdKeyPair = testBlockKeyPair,
+): Proposal =
+  var proofOfLeadership = parentHdr.proofOfLeadership
+  proofOfLeadership.leaderKey = keyPair.pubkey
+
+  let
+    h = initHeader(
+      bedrockVersion = parentHdr.bedrockVersion,
+      parentBlock = parentId,
+      slot = slot,
+      uncleHeaders = [],
+      txs = txs,
+      proofOfLeadership = proofOfLeadership,
+    )
+    sig = signHeader(keyPair.seckey, h)
+  var refs: References
+  for i, tx in txs:
+    refs[i] = tx.hash
+  initProposal(h, [], refs, sig)
+
+func initGenesisBlock*(validGenesisTx: ValidGenesisMantleTx): Block =
+  initBlock(
+    createGenesisHeader(validGenesisTx),
+    signature = DefaultEd25519Signature,
+    uncleHeaders = [],
+    txs = [validGenesisTx.hashed],
+  )
+
+var
+  defaultGenesisBlockCache: ValidBlock
+  hasDefaultGenesisBlockCache = false
+
+proc testGenesisBlock*(): ValidBlock =
+  {.gcsafe.}:
+    if not hasDefaultGenesisBlockCache:
+      defaultGenesisBlockCache = createGenesisBlock(testValidGenesisTx())
+      hasDefaultGenesisBlockCache = true
+    defaultGenesisBlockCache
+
+type BootstrapPeers* = object
   listener*, dialer*: LBP2PNode
   listenerPeerId*: PeerId
 
@@ -303,10 +507,15 @@ proc createBootstrapPeers*(): Future[BootstrapPeers] {.async.} =
     listenerPeerId: listenerPeerId,
   )
 
-func mockVerifyLeaderProof*(
+func mkVerifyLeaderProof(
     proof: ProofOfLeadership, public: LeaderPublic
 ): Result[bool, PolLoadError] =
   ok(true)
+
+func mockVerifyLeaderProof*(
+    proof: ProofOfLeadership, public: LeaderPublic
+): Result[bool, PolLoadError] =
+  mkVerifyLeaderProof(proof, public)
 
 addOutputFormatter(new TimingCollector)
 
