@@ -270,10 +270,12 @@ func validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
     uint64(ds.cryptarchia.securityParam) <= uint64.high div ds.cryptarchia.slotActivationCoeff.den,
     "cryptarchia: security_param * slot_activation_coeff denominator overflows uint64"
   )
-  need(ds.cryptarchia.densitySlotWindow > 0,
-    "cryptarchia: density_slot_window (s_gen = ⌊k / (4f)⌋) must be > 0")
   need(isSupportedLotteryF(ds.cryptarchia.slotActivationCoeff),
     "cryptarchia.slot_activation_coeff must have pinned lottery constants")
+  # Invariant: valid securityParam and supported lottery f mathematically guarantee s_gen >= 2.
+  # A zero window indicates an internal software bug or uninitialized state.
+  doAssert ds.cryptarchia.densitySlotWindow > 0,
+    "internal invariant violated: densitySlotWindow must be > 0 for valid cryptarchia params"
   need(ds.cryptarchia.learningRate.num > 0, "cryptarchia.learning_rate must be > 0")
   need(ds.cryptarchia.learningRate.den > 0,
     "cryptarchia.learning_rate denominator must be > 0")

@@ -41,12 +41,18 @@ template fail*(msg: string) =
 
 template withTempDir*(dirVar: untyped, prefix: string, body: untyped): untyped =
   let dirVar = os.getTempDir() / (prefix & "_" & $os.getCurrentProcessId())
-  discard io2.removeDir(dirVar)
+  try:
+    os.removeDir(dirVar)
+  except CatchableError:
+    discard
   check io2.createPath(dirVar, 0o700).isOk
   try:
     body
   finally:
-    discard io2.removeDir(dirVar)
+    try:
+      os.removeDir(dirVar)
+    except CatchableError:
+      discard
 
 type TestDuration = tuple[duration: float, label: string]
 

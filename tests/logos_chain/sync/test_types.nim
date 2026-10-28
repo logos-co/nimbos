@@ -15,7 +15,6 @@ import
   results,
   bincode,
   ../../../logos_chain/core/types,
-  ../../../logos_chain/chain/genesis,
   ../../../logos_chain/deployment/deployment_settings,
   ../../../logos_chain/sync/[types, ibd_client],
   ./helpers

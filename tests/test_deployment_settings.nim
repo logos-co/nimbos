@@ -603,15 +603,13 @@ suite "deployment/deployment_settings (densitySlotWindow)":
       ds.cryptarchia.densitySlotWindow == 5'u64
       dsDefault.cryptarchia.densitySlotWindow == 16200'u64
 
-  test "validateDeploymentSettings: zero densitySlotWindow rejected":
+  test "validateDeploymentSettings: zero densitySlotWindow triggers internal invariant assert":
     var ds = parseDeploymentSettings(minimalValidYaml).valueOr:
       check false
       return
     ds.cryptarchia.densitySlotWindow = 0'u64
-    let v = validateDeploymentSettings(ds)
-    check:
-      v.isErr
-      "density_slot_window" in v.error
+    expect(AssertionDefect):
+      discard validateDeploymentSettings(ds)
 
   test "parseDeploymentSettings: extreme f numerator does not overflow":
     let
@@ -623,6 +621,6 @@ suite "deployment/deployment_settings (densitySlotWindow)":
     let v = validateDeploymentSettings(p.get)
     check:
       v.isErr
-      "density_slot_window" in v.error
+      "pinned lottery constants" in v.error
 
 {.pop.}

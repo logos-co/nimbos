@@ -19,7 +19,6 @@ import
   ../logos_chain/sync/helpers,
   ../../logos_chain/conf,
   ../../logos_chain/core/types,
-  ../../logos_chain/chain/local_tree,
   ../../logos_chain/core/mantle/[operations, tx_types, tx_hashing],
   ../../logos_chain/networking/[network, protocols],
   ../../logos_chain/sync/[syncer, ibd_server],

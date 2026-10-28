@@ -56,7 +56,7 @@ func blockHeight*(localTree: LocalTree, blockId: BlockId): Opt[BlockNumber] =
   Opt.none(BlockNumber)
 
 proc pruneForks*(localTree: LocalTree, newImmId: BlockId,
-    oldImmHeight: BlockNumber, tipHeight: BlockNumber): seq[BlockId] =
+    oldImmHeight: BlockNumber): seq[BlockId] =
   var pruned: seq[BlockId]
   let fromNode = localTree.blocksById.getOrDefault(newImmId, nil)
   if fromNode == nil:
@@ -82,27 +82,31 @@ proc pruneForks*(localTree: LocalTree, newImmId: BlockId,
   if pruned.len == 0:
     return pruned
 
-  # Pass 2: upward cascade — remove orphans whose parent was pruned
-  var anyPrunedAtLevel = true
-  for h in (fromNode.height + 1) .. tipHeight:
-    if not anyPrunedAtLevel:
-      break # Cascade stopped: all parents at previous height were valid
-
-    anyPrunedAtLevel = false
+  # Pass 2: upward cascade — remove orphans whose parent was pruned.
+  # Heights are strictly contiguous: every block at height h+1 has its parent at h.
+  # If at any level h no block was pruned, no block at h+1 can be an orphan, so we stop.
+  var h = fromNode.height + 1
+  while true:
+    var anyPrunedAtLevel = false
     localTree.idsByHeight.withValue(h, ids):
-      if ids[].len > 1:
-        var kept: seq[BlockId]
-        for id in ids[]:
-          localTree.blocksById.withValue(id, node):
-            if localTree.blocksById.hasKey(node.parent.id):
-              kept.add(id)
-            else:
-              localTree.blocksById.del(id)
-              pruned.add(id)
-              anyPrunedAtLevel = true
+      var kept: seq[BlockId]
+      for id in ids[]:
+        localTree.blocksById.withValue(id, node):
+          if localTree.blocksById.hasKey(node.parent.id):
+            kept.add(id)
+          else:
+            localTree.blocksById.del(id)
+            pruned.add(id)
+            anyPrunedAtLevel = true
 
-        if anyPrunedAtLevel:
-          ids[] = kept
+      if anyPrunedAtLevel:
+        ids[] = kept
+        if ids[].len == 0:
+          localTree.idsByHeight.del(h)
+
+    if not anyPrunedAtLevel:
+      break # Cascade stopped: all parents at previous height were valid (or level h had no blocks)
+    inc h
 
   pruned
 

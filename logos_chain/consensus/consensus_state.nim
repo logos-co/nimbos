@@ -16,7 +16,7 @@ import
 
 from ../core/crypto/types as crypto_types import isZero
 from ../core/mantle/primitives import SlotNumber
-from ../core/types import BlockId, Header, Block, Tip, blockId, BlockNumber
+from ../core/types import BlockId, Header, Tip, blockId, BlockNumber
 from ../chain/block_validation import ValidBlock, header
 from ../chain/local_tree import
   LocalTree, init, fetchHeader, blockHeight, lcaBlockIdAndHeight,
@@ -38,8 +38,7 @@ type
     tipId: BlockId
     lcaSlot: SlotNumber
 
-  ForkChoiceDensityCache = ref object
-    lru: LruCache[DensityCacheKey, uint64]
+  DensityCache = LruCache[DensityCacheKey, uint64]
 
   ConsensusState* = ref object
     localTree: LocalTree
@@ -48,7 +47,7 @@ type
     forkChoiceRule: ForkChoiceRule
     securityParam: uint64
     densitySlotWindow: uint64
-    cache: ForkChoiceDensityCache
+    densityCache: DensityCache
 
 when defined(unittest) or defined(test):
   func securityParam*(cs: ConsensusState): uint64
@@ -60,9 +59,6 @@ else:
   func latestImmutableHeight(cs: ConsensusState): uint64
   proc preferCandidate(cs: ConsensusState, currentTipId, candidateId: BlockId): bool
   proc tryUpdateTip(cs: ConsensusState, candidateId: BlockId)
-
-func init(T: type ForkChoiceDensityCache): T =
-  T(lru: LruCache[DensityCacheKey, uint64].init(DensityCacheCapacity))
 
 func hasBlock*(cs: ConsensusState, id: BlockId): bool =
   cs.localTree.hasBlock(id)
@@ -132,13 +128,14 @@ func init*(
     densitySlotWindow: uint64,
     forkChoiceRule: ForkChoiceRule,
 ): ConsensusState =
+  doAssert densitySlotWindow > 0, "ConsensusState invariant violated: densitySlotWindow must be > 0"
   let gid = blockId(genesisBlock.header)
   ConsensusState(
     localTree: LocalTree.init(genesisBlock),
     forkChoiceRule: forkChoiceRule,
     securityParam: securityParam,
     densitySlotWindow: densitySlotWindow,
-    cache: ForkChoiceDensityCache.init(),
+    densityCache: DensityCache.init(DensityCacheCapacity),
     canonicalTip: Tip(
       tip: gid,
       slot: genesisBlock.header.slot,
@@ -161,7 +158,7 @@ proc tryUpdateLib*(cs: ConsensusState): seq[BlockId] =
       let newImmId = cs.localTree.ancestorAtHeight(cs.canonicalTip.tip, immHeight).valueOr:
         raiseAssert "ConsensusState invariant violated: ancestor at immHeight not found on canonical tip branch"
       cs.latestImmutableId = newImmId
-      return cs.localTree.pruneForks(newImmId, oldImmHeight, tipHeight)
+      return cs.localTree.pruneForks(newImmId, oldImmHeight)
   @[]
 
 proc densityOf(
@@ -171,9 +168,9 @@ proc densityOf(
     lcaHeight: uint64,
 ): uint64 =
   let key = DensityCacheKey(tipId: tipId, lcaSlot: lcaSlot)
-  cs.cache.lru.get(key).valueOr:
+  cs.densityCache.get(key).valueOr:
     let d = cs.localTree.countChainDensity(tipId, lcaSlot, lcaHeight, cs.densitySlotWindow)
-    cs.cache.lru.put(key, d)
+    cs.densityCache.put(key, d)
     d
 
 proc preferCandidate(
@@ -201,9 +198,6 @@ proc preferCandidate(
   let candHeight = cs.localTree.blockHeight(candidateId).valueOr:
     return false
 
-  let lcaHeader = cs.localTree.fetchHeader(lcaId).valueOr:
-    return false
-
   let divergenceDepth = curTipHeight - lcaHeight
 
   if divergenceDepth <= cs.securityParam:
@@ -216,6 +210,8 @@ proc preferCandidate(
     # Online rule forbids reorganizations beyond finality depth k
     return false
   of ForkChoiceRule.Bootstrap:
+    let lcaHeader = cs.localTree.fetchHeader(lcaId).valueOr:
+      return false
     # Bootstrap rule compares chain densities in the slot window s_gen immediately following LCA
     let candDensity = cs.densityOf(candidateId, lcaHeader.slot, lcaHeight)
     # Early shortcut: if candidate has zero density in the window, it cannot beat incumbent (avoids looking up curDensity)
@@ -252,5 +248,9 @@ proc addBlockAndTryUpdateTip*(cs: ConsensusState, blk: ValidBlock): bool =
 when defined(unittest) or defined(test):
   func localTree*(cs: ConsensusState): LocalTree =
     cs.localTree
+  func densityCacheLen*(cs: ConsensusState): int =
+    cs.densityCache.len
+  func densityCacheContains*(cs: ConsensusState, tipId: BlockId, lcaSlot: SlotNumber): bool =
+    DensityCacheKey(tipId: tipId, lcaSlot: lcaSlot) in cs.densityCache
 
 {.pop.}

@@ -293,12 +293,19 @@ suite "consensus/consensus_state (ForkChoiceDensityCache)":
       fc.localTree.addBlockToTree(c1)
       fc.localTree.addBlockToTree(c2)
       fc.localTree.addBlockToTree(c3)
+      # Cache is initially empty
+      fc.densityCacheLen == 0
       # idC3 density in (0, 5] = 2 (c1 at slot 3, c2 at slot 5; c3 at slot 7 is > 5)
       # id2 density in (0, 5] = 2 (b1 at slot 2, b2 at slot 4)
       # Equal density tie -> preserves current tip id2 (returns false)
       not fc.preferCandidate(currentTipId = id2, candidateId = idC3)
-      # Repeated call uses cached density and returns identical result
+      # Both tips have their window density memoized in the cache
+      fc.densityCacheLen == 2
+      fc.densityCacheContains(tipId = idC3, lcaSlot = 0'u64)
+      fc.densityCacheContains(tipId = id2, lcaSlot = 0'u64)
+      # Repeated call hits the cache without recomputation: cache size remains 2
       not fc.preferCandidate(currentTipId = id2, candidateId = idC3)
+      fc.densityCacheLen == 2
 
 suite "consensus/consensus_state (rule initialization and transition)":
   test "ConsensusState switchToOnline transitions rule":
