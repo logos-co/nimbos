@@ -5,11 +5,14 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to these terms.
 
+## Spec: [Cryptarchia Bootstrapping & Synchronization](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/cryptarchia-v1-bootstr-sync.md)
+
 {.push raises: [], gcsafe.}
 
 import
   chronicles,
   chronos,
+  results,
   libp2p/[switch, peerid, errors],
   ../chain/block_processor,
   ./[syncer_types, ibd_server, ibd_client, types]
@@ -59,10 +62,9 @@ proc start*(
   syncer.ibdFut = syncer.runAtStartup(onIbdComplete, peerProvider, onIbdFailure)
 
 proc stop*(syncer: Syncer) {.async: (raises: []).} =
-  ## Cancel the initial block download if it still runs.
-  if syncer.ibdFut == nil:
-    return
-  await syncer.ibdFut.cancelAndWait()
-  syncer.ibdFut = nil
+  ## Cancel the initial block download if running.
+  if syncer.ibdFut != nil:
+    await syncer.ibdFut.cancelAndWait()
+    syncer.ibdFut = nil
 
 {.pop.}

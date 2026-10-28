@@ -8,10 +8,9 @@
 {.push raises: [], gcsafe.}
 
 import
-  ../chain/local_tree,
   ../core/types,
   bincode
-export local_tree.Tip, types
+export types
 
 const MaxRequestBlocks* = 128
   ## Maximum blocks served per ``DownloadBlocksRequest`` (DoS limit).

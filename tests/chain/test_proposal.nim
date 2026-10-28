@@ -380,7 +380,7 @@ suite "chain/proposal":
     let
       genesis = testGenesisBlock()
       gid = blockId(genesis.header)
-      tree = newLocalTree(genesis, 1'u64)
+      cs = ConsensusState.init(genesis, securityParam = 1'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Bootstrap)
       ledger = Ledger[BlockId].init(gid, state, testLedgerConfig, mockVerifyLeaderProof)
 
     var pol = default(ProofOfLeadership)
@@ -404,7 +404,7 @@ suite "chain/proposal":
     check admissionRes.isOk
     let
       admittedBlk = admissionRes.get()
-      isOrphanRes = checkTopology(proposal.header, tree, ledger)
+      isOrphanRes = checkTopology(proposal.header, cs, ledger)
     check isOrphanRes.isOk
     check isOrphanRes.get() == TopologyStatus.ParentPresent
     check admittedBlk.header == proposal.header

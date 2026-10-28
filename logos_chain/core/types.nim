@@ -76,6 +76,11 @@ type
     references*: References
     signature*: Ed25519Signature
 
+  Tip* = object
+    tip*: BlockId
+    slot*: SlotNumber
+    height*: BlockNumber
+
 const
   ExpectedBedrockVersion* = 1'u8
   GenesisBedrockVersion* = 1'u8
@@ -88,6 +93,7 @@ deriveBincode(Header)
 deriveBincode(SignedHeader)
 deriveBincode(Block)
 deriveBincode(Proposal)
+deriveBincode(Tip)
 
 template header*(blk: Block): Header = blk.header
 

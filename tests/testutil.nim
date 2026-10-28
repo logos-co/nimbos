@@ -8,13 +8,13 @@
 {.push raises: [].}
 
 import
-  std/[net, sequtils, times],
+  std/[net, os, sequtils, times],
   bearssl/rand,
   chronos,
   libp2p/[switch, builders, peerid, multiaddress],
   libp2p/crypto/rng,
   libp2p/crypto/ed25519/ed25519,
-  stew/[byteutils, endians2],
+  stew/[byteutils, endians2, io2],
   testutils/markdown_reports,
   unittest2,
   ../logos_chain/conf,
@@ -30,7 +30,7 @@ from std/algorithm import SortOrder, sort, fill
 from std/strformat import `&`
 from std/tables import OrderedTable, `[]=`, initOrderedTable, mgetOrPut
 
-export unittest2, test_helpers, tx_hashing, createGenesisBlock, ValidBlock, AdmittedBlock
+export unittest2, test_helpers, tx_hashing, createGenesisBlock, ValidBlock, AdmittedBlock, header
 
 ## Record ``msg`` and mark the current test as failed (unittest2 ``fail()`` is no-arg).
 template fail*(msg: string) =
@@ -38,6 +38,21 @@ template fail*(msg: string) =
   fail()
   # ``unittest2.fail()`` may return when ``abortOnError`` is off; do not fall through.
   raiseAssert msg
+
+template withTempDir*(dirVar: untyped, prefix: string, body: untyped): untyped =
+  let dirVar = os.getTempDir() / (prefix & "_" & $os.getCurrentProcessId())
+  try:
+    os.removeDir(dirVar)
+  except CatchableError:
+    discard
+  check io2.createPath(dirVar, 0o700).isOk
+  try:
+    body
+  finally:
+    try:
+      os.removeDir(dirVar)
+    except CatchableError:
+      discard
 
 type TestDuration = tuple[duration: float, label: string]
 
@@ -49,7 +64,7 @@ type TimingCollector = ref object of OutputFormatter
 func toFloatSeconds(duration: times.Duration): float =
   duration.inNanoseconds().float / 1_000_000_000.0
 
-method testEnded*(formatter: TimingCollector, testResult: TestResult) =
+method testEnded(formatter: TimingCollector, testResult: TestResult) =
   {.gcsafe.}: # Lie!
     status.mgetOrPut(testResult.suiteName, initOrderedTable[string, Status]())[
       testResult.testName

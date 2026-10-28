@@ -553,6 +553,13 @@ mempool:
       return
     check yamlGetPathNode(root, ["x"]).isNone
 
+  test "validateDeploymentSettings: valid genesis transaction and matching header pass":
+    let ds = parseDeploymentSettings(minimalValidYaml).valueOr:
+      check false
+      return
+    let v = validateDeploymentSettings(ds)
+    check v.isOk
+
   test "validateDeploymentSettings: mismatched genesis header body_root":
     var ds = parseDeploymentSettings(minimalValidYaml).valueOr:
       check false
@@ -577,5 +584,43 @@ mempool:
     let p = parseDeploymentSettings(badYaml)
     check p.isErr
     check "unsupported opcode" in p.error
+
+suite "deployment/deployment_settings (densitySlotWindow)":
+  test "computes and stores s_gen = ⌊k / (4f)⌋ in DeploymentSettings":
+    let
+      # minimalValidYaml has k = 1, f = 1/20 -> ⌊(1 * 20) / (4 * 1)⌋ = 5
+      ds = parseDeploymentSettings(minimalValidYaml).valueOr:
+        check false
+        return
+      # Default parameters: k = 2160, f = 1/30 -> (2160 * 30) / 4 = 16200 slots (4h 30m)
+      defaultYaml = minimalValidYaml
+        .replace("security_param: 1", "security_param: 2160")
+        .replace("denominator: 20", "denominator: 30")
+      dsDefault = parseDeploymentSettings(defaultYaml).valueOr:
+        check false
+        return
+    check:
+      ds.cryptarchia.densitySlotWindow == 5'u64
+      dsDefault.cryptarchia.densitySlotWindow == 16200'u64
+
+  test "validateDeploymentSettings: zero densitySlotWindow triggers internal invariant assert":
+    var ds = parseDeploymentSettings(minimalValidYaml).valueOr:
+      check false
+      return
+    ds.cryptarchia.densitySlotWindow = 0'u64
+    expect(AssertionDefect):
+      discard validateDeploymentSettings(ds)
+
+  test "parseDeploymentSettings: extreme f numerator does not overflow":
+    let
+      hugeNumYaml = minimalValidYaml.replace("numerator: 1", "numerator: 18446744073709551615")
+      p = parseDeploymentSettings(hugeNumYaml)
+    check:
+      p.isOk
+      p.get.cryptarchia.densitySlotWindow == 0'u64
+    let v = validateDeploymentSettings(p.get)
+    check:
+      v.isErr
+      "pinned lottery constants" in v.error
 
 {.pop.}

@@ -11,7 +11,8 @@
 import
   ../testutil,
   ../../logos_chain/core/types,
-  ../../logos_chain/chain/[local_tree, orphan_pool]
+  ../../logos_chain/consensus/consensus_state,
+  ../../logos_chain/chain/orphan_pool
 
 suite "chain/orphan_pool":
   test "empty pool properties":
@@ -218,19 +219,21 @@ suite "chain/orphan_pool":
     let
       pool = OrphanPool()
       genesis = testGenesisBlock()
-      tree = newLocalTree(genesis, securityParam = 1'u64)
+      cs = ConsensusState.init(
+        genesis, securityParam = 1'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Bootstrap
+      )
       gid = blockId(genesis.header)
 
     let
       b1 = mkChildValidBlock(genesis.header, gid, SlotNumber(1))
       id1 = blockId(b1.header)
-    check tree.addBlockToTree(b1)
+    check cs.addBlockAndTryUpdateTip(b1)
 
     let b2 = mkChildValidBlock(b1.header, id1, SlotNumber(2))
-    check tree.addBlockToTree(b2)
+    check cs.addBlockAndTryUpdateTip(b2)
     # LIB advances to b1 (height 2 - 1 = 1, slot 1)
-    discard tree.tryUpdateLib()
-    check tree.latestImmutableBlockId == id1
+    discard cs.tryUpdateLib()
+    check cs.latestImmutableId == id1
 
     # Orphan o1 has slot 1 <= LIB slot 1 (incompatible)
     let
@@ -244,7 +247,7 @@ suite "chain/orphan_pool":
     check pool.addOrphan(o2)
     check pool.len == 2
 
-    pool.pruneIncompatibleWithImmutable(tree)
+    pool.pruneIncompatibleWithImmutable(cs)
     check pool.len == 1
     check not pool.hasOrphan(o1Id)
     check pool.hasOrphan(o2Id)

@@ -14,7 +14,10 @@ import
   libp2p/crypto/ed25519/ed25519,
   unittest2,
   ../../logos_chain/chain/chain,
-  ../../logos_chain/core/mantle/[opcodes, operations, proofs, tx_types],
+  ../../logos_chain/core/types,
+  ../../logos_chain/core/mantle/[opcodes, operations, proofs, tx_hashing, tx_types],
+  ../../logos_chain/ledger/ledger,
+  ../../logos_chain/mempool,
   ../../logos_chain/zk/poc,
   ./mantle/test_helpers,
   ../testutil
@@ -51,22 +54,22 @@ proc mkSizedTx(bytes: int): HashedSignedMantleTx =
 
 func admitWithTopology(
     blk: Block,
-    tree: LocalTree,
+    cs: ConsensusState,
     ledger: Ledger[BlockId],
 ): Result[tuple[admittedBlk: AdmittedBlock, isOrphan: bool], BlockApplyError] =
   let
-    status = ?checkTopology(blk.header, tree, ledger)
+    status = ?checkTopology(blk.header, cs, ledger)
     admittedBlk = admitBlock(blk).valueOr:
       return err(toBlockApplyError(error))
   ok((admittedBlk: admittedBlk, isOrphan: status == TopologyStatus.Orphan))
 
 proc validate(genesis: ValidBlock, blk: Block): Result[ValidBlock, BlockValidationError] =
-  let tree = newLocalTree(genesis, 1'u64)
+  let cs = ConsensusState.init(genesis, securityParam = 1'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Online)
   let state = testGenesisLedgerState()
   let ledger = Ledger[BlockId].init(
     blockId(genesis.header), state, testLedgerConfig, mockVerifyLeaderProof
   )
-  let (admittedBlk, isOrphan) = admitWithTopology(blk, tree, ledger).valueOr:
+  let (admittedBlk, isOrphan) = admitWithTopology(blk, cs, ledger).valueOr:
     case error.kind
     of BlockApplyErrorKind.UnviableFork:
       return err(BlockValidationError(kind: BlockValidationErrorKind.UnviableFork))
@@ -77,18 +80,18 @@ proc validate(genesis: ValidBlock, blk: Block): Result[ValidBlock, BlockValidati
   let (validBlk, _) = ?validatePolAndStatelessTransactions(admittedBlk, ledger, nil)
   ok(validBlk)
 
-proc treeWithLib(genesis: ValidBlock): tuple[tree: LocalTree, b1, b2: ValidBlock] =
-  ## Tree with security parameter 1 holding genesis, b1, b2, b3; the LIB is b2.
+proc treeWithLib(genesis: ValidBlock): tuple[cs: ConsensusState, b1, b2: ValidBlock] =
+  ## ConsensusState with security parameter 1 holding genesis, b1, b2, b3; the LIB is b2.
   let
-    tree = newLocalTree(genesis, 1'u64)
+    cs = ConsensusState.init(genesis, securityParam = 1'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Online)
     b1 = mkChildValidBlock(genesis.header, blockId(genesis.header), SlotNumber(1))
     b2 = mkChildValidBlock(b1.header, blockId(b1.header), SlotNumber(2))
     b3 = mkChildValidBlock(b2.header, blockId(b2.header), SlotNumber(3))
   for blk in [b1, b2, b3]:
-    check tree.addBlockToTree(blk)
-    tree.tryUpdateLib()
-  check tree.latestImmutableBlockId == blockId(b2.header)
-  (tree, b1, b2)
+    check cs.addBlockAndTryUpdateTip(blk)
+    discard cs.tryUpdateLib()
+  check cs.latestImmutableId == blockId(b2.header)
+  (cs, b1, b2)
 
 
 func sampleUncle(value: byte): SignedHeader =
@@ -295,41 +298,41 @@ suite "core/block_validation — multi-tier evaluation order":
   test "Tier 1: rejects a block extending an ancestor below the LIB":
     let
       genesis = testGenesisBlock()
-      (tree, b1, _) = treeWithLib(genesis)
+      (cs, b1, _) = treeWithLib(genesis)
       ledger = Ledger[BlockId].init(
         blockId(genesis.header), default(LedgerState), default(LedgerConfig))
       # b1 is below the LIB with no ledger state, but the tree still holds it.
       sm = minimalHashedSignedTx()
       blk = childBlock(b1.header, blockId(b1.header), SlotNumber(4), [sm])
-      res = admitWithTopology(blk, tree, ledger)
+      res = admitWithTopology(blk, cs, ledger)
     check res.isErr
     check res.error.kind == BlockApplyErrorKind.UnviableFork
 
   test "Tier 1: unviable fork is rejected with UnviableFork before signature verification":
     let
       genesis = testGenesisBlock()
-      (tree, b1, _) = treeWithLib(genesis)
+      (cs, b1, _) = treeWithLib(genesis)
       ledger = Ledger[BlockId].init(
         blockId(genesis.header), default(LedgerState), default(LedgerConfig))
       sm = minimalHashedSignedTx()
       blk = childBlock(b1.header, blockId(b1.header), SlotNumber(4), [sm])
     var corruptBlk = blk
     corruptBlk.signature = testTxKeyPair.seckey.sign(default(Hash32))
-    let res = admitWithTopology(corruptBlk, tree, ledger)
+    let res = admitWithTopology(corruptBlk, cs, ledger)
     check res.isErr
     check res.error.kind == BlockApplyErrorKind.UnviableFork
 
   test "Tier 1: accepts a child of the LIB":
     let
       genesis = testGenesisBlock()
-      (tree, _, b2) = treeWithLib(genesis)
+      (cs, _, b2) = treeWithLib(genesis)
       sm = minimalHashedSignedTx()
       blk = childBlock(b2.header, blockId(b2.header), SlotNumber(4), [sm])
       state = testGenesisLedgerState()
     var ledger = Ledger[BlockId].init(
       blockId(genesis.header), state, testLedgerConfig, mockVerifyLeaderProof)
     ledger.commitUpdate(blockId(b2.header), state)
-    check admitWithTopology(blk, tree, ledger).isOk
+    check admitWithTopology(blk, cs, ledger).isOk
 
   test "Tier 0: rejects block with empty leader key":
     let
@@ -381,12 +384,12 @@ suite "core/block_validation — multi-tier evaluation order":
       badTx = mkTransferTx(@[note.id, note.id], @[mkNote(100, pkSeed = 2)])
       genesis = testGenesisBlock()
       gid = blockId(genesis.header)
-      tree = newLocalTree(genesis, 1'u64)
+      cs = ConsensusState.init(genesis, securityParam = 1'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Online)
       state = testGenesisLedgerState()
       ledger = Ledger[BlockId].init(gid, state, testLedgerConfig, failingPolVerifier)
       blk = childBlock(genesis.header, gid, SlotNumber(1), [badTx])
 
-    let (admittedBlk, isOrphan) = admitWithTopology(blk, tree, ledger).expect("header valid")
+    let (admittedBlk, isOrphan) = admitWithTopology(blk, cs, ledger).expect("header valid")
     check not isOrphan
     let res = validatePolAndStatelessTransactions(admittedBlk, ledger, nil)
     check res.isErr
@@ -399,7 +402,7 @@ suite "core/block_validation — multi-tier evaluation order":
       validLightTx = minimalValidSignedTx()
       genesis = testGenesisBlock()
       gid = blockId(genesis.header)
-      tree = newLocalTree(genesis, 1'u64)
+      cs = ConsensusState.init(genesis, securityParam = 1'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Online)
       state = testGenesisLedgerState()
       ledger = Ledger[BlockId].init(gid, state, testLedgerConfig, mockVerifyLeaderProof)
     var mempool = Mempool.init()
@@ -415,7 +418,7 @@ suite "core/block_validation — multi-tier evaluation order":
     # Construct block with tampered tx
     let
       blk = childBlock(genesis.header, gid, SlotNumber(1), [tamperedHtx])
-      (admittedBlk, isOrphan) = admitWithTopology(blk, tree, ledger).expect("header valid")
+      (admittedBlk, isOrphan) = admitWithTopology(blk, cs, ledger).expect("header valid")
     check not isOrphan
     let res = validatePolAndStatelessTransactions(admittedBlk, ledger, mempool)
     check res.isErr
@@ -452,11 +455,11 @@ suite "core/block_validation — multi-tier evaluation order":
     # 4. If Tier 3 runs stateless validation, it calls verifyProofOfClaim -> fails with VerifierNotInitialised.
     #    Because it hits the mempool pointer fast-path, it bypasses stateless validation and succeeds!
     let
-      tree = newLocalTree(genesis, 1'u64)
+      cs = ConsensusState.init(genesis, securityParam = 1'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Online)
       state = testGenesisLedgerState()
       ledger = Ledger[BlockId].init(gid, state, testLedgerConfig, mockVerifyLeaderProof)
 
-    let (admittedBlk, isOrphan) = admitWithTopology(child, tree, ledger).expect("header valid")
+    let (admittedBlk, isOrphan) = admitWithTopology(child, cs, ledger).expect("header valid")
     check not isOrphan
     let res = validatePolAndStatelessTransactions(admittedBlk, ledger, mempool)
     check res.isOk
@@ -474,14 +477,14 @@ suite "core/block_validation — multi-tier evaluation order":
       sm = minimalHashedSignedTx()
       genesis = testGenesisBlock()
       gid = blockId(genesis.header)
-      tree = newLocalTree(genesis, 1'u64)
+      cs = ConsensusState.init(genesis, securityParam = 1'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Online)
       blk = childBlock(genesis.header, gid, SlotNumber(1), [sm])
     var state = testGenesisLedgerState()
     # Non-zero base fee causes minimalValidSignedTx with 0 transfer balance to fail fee coverage
     state.feeMarket.executionBaseFee = 1000
     state.feeMarket.storageGasPrice = 1000
     let ledger = Ledger[BlockId].init(gid, state, testLedgerConfig, mockVerifyLeaderProof)
-    let (admittedBlk3, isOrphan3) = admitWithTopology(blk, tree, ledger).expect("header valid")
+    let (admittedBlk3, isOrphan3) = admitWithTopology(blk, cs, ledger).expect("header valid")
     check not isOrphan3
     let (validBlk, headerState) = validatePolAndStatelessTransactions(admittedBlk3, ledger, nil).expect("header state")
     let res = prepareBlockUpdate(validBlk, ledger, headerState)
@@ -493,14 +496,14 @@ suite "core/block_validation — multi-tier evaluation order":
       note = mkUtxo(value = 100, pkSeed = 1)
       badTx = mkTransferTx(@[note.id, note.id], @[mkNote(100, pkSeed = 2)])
       genesis = testGenesisBlock()
-      tree = newLocalTree(genesis, 1'u64)
+      cs = ConsensusState.init(genesis, securityParam = 1'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Online)
       state = testGenesisLedgerState()
       ledger = Ledger[BlockId].init(blockId(genesis.header), state, testLedgerConfig, mockVerifyLeaderProof)
       orphanParent = Hash32([1'u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
       blk = childBlock(genesis.header, orphanParent, SlotNumber(1), [badTx])
 
     # Ingestion skips Tier 3 PoL & tx checks for orphans
-    let res = admitWithTopology(blk, tree, ledger)
+    let res = admitWithTopology(blk, cs, ledger)
     check res.isOk
     check res.get.isOrphan == true
 

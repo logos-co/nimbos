@@ -41,7 +41,7 @@ suite "chain/genesis":
       ds = devnetDeploymentSettings
       gstate = ds.cryptarchia.genesisState
       genesisTx = gstate.validGenesisTx
-      testChain = Chain.init(ds).valueOr:
+      testChain = Chain.init(ds, forkChoiceRule = ForkChoiceRule.Online).valueOr:
         fail "Chain.init: " & $error
       gb = testChain.genesisBlock
 

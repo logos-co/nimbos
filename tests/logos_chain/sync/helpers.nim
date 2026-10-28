@@ -27,7 +27,9 @@ const testChainSyncProtocol* = "/logos-blockchain-testnet-v0.1.2/chainsync/1.0.0
 proc initTestChain*(
     genesis: ValidBlock,
     securityParam: uint64 = DefaultSecurityParam,
+    densitySlotWindow: uint64 = 100'u64,
     genesisTime: uint64 = uint64(max(getTime().toUnix() - 500, 0'i64)),
+    forkChoiceRule: ForkChoiceRule = ForkChoiceRule.Bootstrap,
 ): Chain =
   ## Chain over the genesis block's ledger state (epochs seeded under
   ## `testLedgerConfig`).
@@ -45,7 +47,9 @@ proc initTestChain*(
     genesis,
     Ledger[BlockId].init(gid, state, testLedgerConfig, mockVerifyLeaderProof),
     SlotConfig(genesisTime: genesisTime, slotDurationSeconds: 1),
-    securityParam = securityParam)
+    densitySlotWindow = densitySlotWindow,
+    securityParam = securityParam,
+    forkChoiceRule = forkChoiceRule)
 
 proc startTestProcessor(chain: Chain): BlockProcessor =
   let bp = BlockProcessor.new(chain)
@@ -175,14 +179,14 @@ func downloadBlocksResponseEqual*(a, b: DownloadBlocksResponse): bool =
       ra.message == rb.message
 
 proc downloadBlocksResponsesForRequest*(
-    tree: LocalTree, req: DownloadBlocksRequest
+    consensus: ConsensusState, req: DownloadBlocksRequest
 ): seq[DownloadBlocksResponse] =
-  let sendIds = cappedDownloadPathBlockIds(tree, req)
+  let sendIds = cappedDownloadPathBlockIds(consensus, req)
   if sendIds.len == 0:
     return @[DownloadBlocksResponse(kind: dbrNoMoreBlocks)]
   var responses = newSeqOfCap[DownloadBlocksResponse](sendIds.len + 1)
   for i in countdown(sendIds.high, 0):
-    let blk = tree.getBlock(sendIds[i]).valueOr:
+    let blk = consensus.getBlock(sendIds[i]).valueOr:
       fail "block not in tree"
     let innerWire = try:
       encode(blk, cryptarchiaSyncBincodeConfig)
