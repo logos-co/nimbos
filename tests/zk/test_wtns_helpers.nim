@@ -13,7 +13,7 @@
 
 import
   std/algorithm,
-  unittest2,
+  ../testsuite,
   stew/endians2,
   ./wtns_helpers
 

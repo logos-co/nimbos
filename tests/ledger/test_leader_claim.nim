@@ -10,7 +10,7 @@
 
 import
   std/[os, strutils],
-  unittest2,
+  ../testsuite,
   stew/io2,
   ../../logos_chain/core/mantle/[operations, proofs, tx_hashing, poc_verifier],
   ../../logos_chain/ledger/

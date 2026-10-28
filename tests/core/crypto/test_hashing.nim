@@ -10,7 +10,7 @@
 
 import
   stew/[assign2, byteutils],
-  unittest2,
+  ../../testsuite,
   ../../../logos_chain/core/crypto/hashing
 
 suite "core/crypto/hashing":

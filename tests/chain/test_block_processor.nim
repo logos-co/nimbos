@@ -11,8 +11,6 @@
 import
   std/sequtils,
   chronos,
-  chronos/unittest2/asynctests,
-  unittest2,
   results,
   libp2p/protocols/pubsub/pubsub,
   ../testutil,

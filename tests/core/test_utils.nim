@@ -9,7 +9,7 @@
 {.used.}
 
 import
-  unittest2,
+  ../testsuite,
   stew/byteutils,
   ../../logos_chain/core/utils
 

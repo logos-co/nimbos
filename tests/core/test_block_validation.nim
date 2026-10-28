@@ -12,7 +12,6 @@ import
   std/[algorithm, sequtils],
   results,
   libp2p/crypto/ed25519/ed25519,
-  unittest2,
   ../../logos_chain/chain/chain,
   ../../logos_chain/core/mantle/[opcodes, operations, proofs, tx_types],
   ../../logos_chain/zk/poc,

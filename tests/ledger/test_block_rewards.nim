@@ -9,7 +9,7 @@
 {.used.}
 
 import
-  unittest2,
+  ../testsuite,
   results,
   stint,
   ../../logos_chain/core/mantle/[gas, primitives],

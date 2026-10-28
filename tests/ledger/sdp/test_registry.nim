@@ -11,7 +11,7 @@
 import
   results,
   std/tables,
-  unittest2,
+  ../../testsuite,
   ../../../logos_chain/ledger/sdp/registry,
   ./test_helpers
 

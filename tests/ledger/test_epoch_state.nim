@@ -9,7 +9,7 @@
 {.used.}
 
 import
-  unittest2,
+  ../testsuite,
   ../../logos_chain/ledger/epoch_state,
   ./test_helpers
 

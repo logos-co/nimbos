@@ -10,7 +10,7 @@
 
 import
   stint,
-  unittest2,
+  ../testsuite,
   ../../logos_chain/zk/pol_lottery,
   ../../logos_chain/zk/poseidon2/hasher
 

@@ -9,7 +9,7 @@
 {.used.}
 
 import
-  unittest2,
+  ../testsuite,
   ../../logos_chain/ledger/block_density,
   ./test_helpers
 

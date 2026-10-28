@@ -11,7 +11,6 @@
 import
   std/[sequtils, strutils],
   chronos,
-  chronos/unittest2/asynctests,
   libp2p/[switch, multiaddress, peerid, peerstore],
   libp2p/protocols/connectivity/autonatv2/[types, client],
   libp2p/protocols/pubsub/gossipsub,

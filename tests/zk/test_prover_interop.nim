@@ -14,7 +14,7 @@
 
 import
   std/[json, os, osproc],
-  unittest2,
+  ../testsuite,
   chronos,
   stew/io2,
   ../../logos_chain/zk/groth16/rapidsnark,

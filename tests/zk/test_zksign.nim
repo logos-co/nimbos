@@ -10,7 +10,7 @@
 
 import
   std/[os, sequtils, strutils],
-  unittest2,
+  ../testsuite,
   stew/io2,
   poseidon2/types,
   ../../logos_chain/core/crypto/types as crypto_types,

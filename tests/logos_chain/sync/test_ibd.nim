@@ -10,8 +10,6 @@
 
 import
   chronos,
-  chronos/unittest2/asynctests,
-  unittest2,
   bincode,
   libp2p/[switch, peerid],
   ../../../logos_chain/networking/network,

@@ -9,7 +9,7 @@
 {.used.}
 
 import
-  unittest2,
+  ../testsuite,
   ../../logos_chain/ledger/channel_state,
   ../../logos_chain/core/mantle/primitives
 

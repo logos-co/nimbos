@@ -11,7 +11,6 @@
 import
   std/sets,
   chronos,
-  chronos/unittest2/asynctests,
   ../testutil
 
 import

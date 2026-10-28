@@ -10,7 +10,7 @@
 
 import
   std/strutils,
-  unittest2,
+  ../../testsuite,
   bearssl/rand,
   libp2p/crypto/ed25519/ed25519,
   libp2p/multiaddress,

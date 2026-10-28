@@ -13,7 +13,7 @@
 
 import
   std/[os, strutils],
-  unittest2,
+  ../testsuite,
   results,
   stew/[byteutils, io2],
   yaml/dom,

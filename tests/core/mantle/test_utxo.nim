@@ -10,7 +10,7 @@
 
 import
   std/options,
-  unittest2,
+  ../../testsuite,
   results,
   constantine/math/[arithmetic, io/io_bigints],
   poseidon2/types,

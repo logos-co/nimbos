@@ -13,7 +13,6 @@
 
 import
   std/[sequtils, strutils],
-  unittest2,
   results,
   stew/[byteutils, endians2],
   libp2p/crypto/ed25519/ed25519,

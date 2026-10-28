@@ -9,7 +9,7 @@
 {.used.}
 
 import
-  unittest2,
+  ../testsuite,
   results,
   poseidon2/types,
   ../../logos_chain/utils/dynamic_merkle_tree,

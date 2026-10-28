@@ -10,7 +10,7 @@
 
 import
   std/[os, sets, strutils],
-  unittest2,
+  ../testsuite,
   results,
   poseidon2/types,          # `==` for F
   ../../logos_chain/ledger/

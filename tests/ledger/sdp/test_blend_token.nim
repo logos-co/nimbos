@@ -9,7 +9,7 @@
 {.used.}
 
 import
-  unittest2,
+  ../../testsuite,
   results,
   libp2p/crypto/ed25519/ed25519,
   ./test_helpers,

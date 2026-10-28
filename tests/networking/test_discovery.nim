@@ -10,7 +10,6 @@
 
 import
   chronos,
-  chronos/unittest2/asynctests,
   ../testutil
 
 import

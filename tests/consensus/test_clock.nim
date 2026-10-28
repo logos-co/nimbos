@@ -9,7 +9,7 @@
 {.used.}
 
 import
-  unittest2,
+  ../testsuite,
   ../../logos_chain/consensus/clock,
   ../ledger/test_helpers
 

@@ -10,7 +10,7 @@
 
 import
   std/[algorithm, json, os, strutils],
-  unittest2,
+  ../testsuite,
   stew/[endians2, io2],
   libp2p/crypto/ed25519/ed25519,
   ../../logos_chain/ledger/sdp/blend_rewards,

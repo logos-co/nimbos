@@ -14,7 +14,7 @@
 
 import
   std/strutils,
-  unittest2,
+  ../testsuite,
   ../../logos_chain/zk/witness_gen,
   ./prover_helpers
 

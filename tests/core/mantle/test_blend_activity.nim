@@ -9,7 +9,7 @@
 {.used.}
 
 import
-  unittest2,
+  ../../testsuite,
   results,
   ./test_helpers,
   ../../../logos_chain/core/crypto/types,

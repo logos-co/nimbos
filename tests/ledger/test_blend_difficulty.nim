@@ -9,7 +9,7 @@
 {.used.}
 
 import
-  unittest2,
+  ../testsuite,
   stint,
   ../../logos_chain/ledger/epoch_state,
   ../../logos_chain/zk/groth16/utils,

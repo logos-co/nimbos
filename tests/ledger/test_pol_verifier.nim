@@ -10,7 +10,7 @@
 
 import
   std/[os, strutils],
-  unittest2,
+  ../testsuite,
   stew/io2,
   libp2p/crypto/ed25519/ed25519,
   ../../logos_chain/core/types,

@@ -15,7 +15,7 @@ import
   std/[algorithm, sequtils],
   bincode,
   stew/byteutils,
-  unittest2,
+  ../testsuite,
   ../../logos_chain/core/types,
   ../../logos_chain/sync/types as sync_types
 

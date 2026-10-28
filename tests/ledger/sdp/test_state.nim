@@ -10,7 +10,7 @@
 
 import
   std/sets,
-  unittest2,
+  ../../testsuite,
   results,
   libp2p/multiaddress,
   ./[test_helpers, test_utxo_helpers],

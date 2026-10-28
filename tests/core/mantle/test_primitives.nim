@@ -10,7 +10,7 @@
 
 import
   std/strutils,
-  unittest2,
+  ../../testsuite,
   libp2p/multiaddress,
   ../../../logos_chain/core/mantle/primitives
 

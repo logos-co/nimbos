@@ -9,7 +9,7 @@
 {.used.}
 
 import
-  unittest2,
+  ../../testsuite,
   stew/byteutils,
   libp2p/multiaddress,
   libp2p/crypto/ed25519/ed25519,

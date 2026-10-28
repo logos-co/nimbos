@@ -13,7 +13,7 @@
 
 import
   std/strutils,
-  unittest2,
+  ../testsuite,
   ../../logos_chain/zk/witness_gen,
   ../../logos_chain/zk/groth16/rapidsnark,
   ./prover_helpers

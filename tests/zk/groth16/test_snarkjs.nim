@@ -9,7 +9,7 @@
 {.used.}
 
 import
-  unittest2,
+  ../../testsuite,
   constantine/math/arithmetic,
   ../../../logos_chain/zk/groth16/snarkjs
 

@@ -10,7 +10,7 @@
 
 import
   std/[os, strutils],
-  unittest2,
+  ../../testsuite,
   stew/io2,
   ../../../logos_chain/core/crypto/types,
   ../../../logos_chain/core/mantle/proofs,

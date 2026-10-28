@@ -9,7 +9,7 @@
 {.used.}
 
 import
-  unittest2,
+  ./testsuite,
   constantine/math/[arithmetic, io/io_bigints],
   poseidon2/types,
   ../logos_chain/zk/poseidon2/hasher

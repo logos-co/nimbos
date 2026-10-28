@@ -16,7 +16,7 @@ import
   libp2p/crypto/ed25519/ed25519,
   stew/[byteutils, endians2],
   testutils/markdown_reports,
-  unittest2,
+  ./testsuite,
   ../logos_chain/conf,
   ../logos_chain/networking/network,
   ../logos_chain/core/types,
@@ -30,7 +30,7 @@ from std/algorithm import SortOrder, sort, fill
 from std/strformat import `&`
 from std/tables import OrderedTable, `[]=`, initOrderedTable, mgetOrPut
 
-export unittest2, test_helpers, tx_hashing, createGenesisBlock, ValidBlock, AdmittedBlock
+export testsuite, test_helpers, tx_hashing, createGenesisBlock, ValidBlock, AdmittedBlock
 
 ## Record ``msg`` and mark the current test as failed (unittest2 ``fail()`` is no-arg).
 template fail*(msg: string) =

@@ -10,7 +10,7 @@
 
 import
   std/[hashes, random, sets, strutils, tables],
-  unittest2,
+  ../testsuite,
   results,
   ../../logos_chain/utils/hash_trie_map
 

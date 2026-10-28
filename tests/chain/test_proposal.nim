@@ -12,7 +12,6 @@ import
   std/[os, strutils, tables],
   results,
   libp2p/crypto/ed25519/ed25519,
-  unittest2,
   ../../logos_chain/chain/chain,
   ../../logos_chain/core/types,
   ../../logos_chain/core/crypto/types,

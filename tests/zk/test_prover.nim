@@ -13,7 +13,7 @@
 
 import
   std/times,
-  unittest2,
+  ../testsuite,
   chronos,
   taskpools,
   ../../logos_chain/core/crypto/types,

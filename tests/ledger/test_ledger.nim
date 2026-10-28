@@ -10,7 +10,6 @@
 
 import
   std/[os, strutils],
-  unittest2,
   results,
   stew/io2,
   bearssl/rand,

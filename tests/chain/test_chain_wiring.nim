@@ -18,7 +18,6 @@
 import
   std/[os, strutils, tables, times],
   results,
-  unittest2,
   stew/[byteutils, io2],
   libp2p/crypto/ed25519/ed25519,
   ../testutil,

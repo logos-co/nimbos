@@ -9,7 +9,7 @@
 {.used.}
 
 import
-  unittest2,
+  ../../testsuite,
   stew/byteutils,
   libp2p/[crypto/ed25519/ed25519, multiaddress],
   ../../../logos_chain/core/crypto/hashing,

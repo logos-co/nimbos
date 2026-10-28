@@ -10,7 +10,6 @@
 
 import
   std/times,
-  unittest2,
   results,
   ../testutil,
   ../logos_chain/sync/helpers,

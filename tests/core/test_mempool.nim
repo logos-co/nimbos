@@ -10,7 +10,6 @@
 
 import
   std/tables,
-  unittest2,
   minilru,
   ../../logos_chain/core/crypto/types,
   ../../logos_chain/core/mantle/primitives,

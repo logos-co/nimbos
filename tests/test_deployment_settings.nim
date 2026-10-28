@@ -11,7 +11,7 @@
 import
   std/[os, strutils],
   chronos,
-  unittest2,
+  ./testsuite,
   stew/io2,
   ../logos_chain/conf,
   ../logos_chain/core/types,

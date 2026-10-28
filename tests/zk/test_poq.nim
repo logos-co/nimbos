@@ -10,7 +10,7 @@
 
 import
   std/[os, strutils],
-  unittest2,
+  ../testsuite,
   stew/[assign2, io2],
   ../../logos_chain/zk/poq,
   ../../logos_chain/zk/poseidon2/hasher,

@@ -10,7 +10,7 @@
 
 import
   stew/byteutils,
-  unittest2,
+  ../../testsuite,
   ../../../logos_chain/core/crypto/types,
   ../../../logos_chain/core/mantle/[proofs, operations]
 

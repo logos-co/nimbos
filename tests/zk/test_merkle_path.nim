@@ -11,7 +11,7 @@
 {.used.}
 
 import
-  unittest2,
+  ../testsuite,
   ../../logos_chain/zk/poseidon2/hasher,
   ../../logos_chain/zk/merkle_path
 

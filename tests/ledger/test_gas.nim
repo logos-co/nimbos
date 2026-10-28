@@ -10,7 +10,7 @@
 
 import
   std/[os, strutils],
-  unittest2,
+  ../testsuite,
   results,
   bearssl/rand,
   libp2p/crypto/ed25519/ed25519,

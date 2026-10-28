@@ -10,7 +10,7 @@
 
 import
   std/[os, strutils],
-  unittest2,
+  ../../testsuite,
   stew/io2,
   ../../../logos_chain/zk/groth16/vk_json,
   ../snarkjs_helpers

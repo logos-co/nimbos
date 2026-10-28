@@ -12,7 +12,6 @@ import
   std/sequtils,
   results,
   stew/[byteutils, endians2],
-  unittest2,
   ../testutil,
   bincode,
   ../../logos_chain/core/types,

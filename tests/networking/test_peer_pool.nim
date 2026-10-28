@@ -9,7 +9,7 @@
 {.used.}
 
 import std/[random, heapqueue, tables, sequtils, strutils]
-import chronos, chronos/unittest2/asynctests
+import chronos
 import ../../logos_chain/networking/peer_pool
 import ../testutil
 

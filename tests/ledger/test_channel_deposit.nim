@@ -10,7 +10,7 @@
 
 import
   std/[os, sets, strutils],
-  unittest2,
+  ../testsuite,
   results,
   ../../logos_chain/ledger/
     [channel_state, cryptarchia_state, leader_state, mantle_state, types],
