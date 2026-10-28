@@ -5,7 +5,7 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-## Spec: [Service Declaration Protocol v1.3.0](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/bedrock-service-declaration-protocol.md)
+## Spec: [Service Declaration Protocol v1.6.0](https://github.com/logos-co/logos-lips/blob/7c2ec59fadcdc2ba0ae74ff7600a14b55d90efcd/docs/blockchain/raw/bedrock-service-declaration-protocol.md)
 
 {.push raises: [], gcsafe.}
 
@@ -113,7 +113,7 @@ func onEpochStarted*(
     # Spec citation: "At the start of epoch n, each node takes a snapshot of the SDP registry
     # at the last block from the finalized epoch. ... Changes to the declaration registry
     # take effect with up to a two-epoch delay: messages sent during epoch n are included in
-    # the next snapshot (for epoch n+2)." (https://github.com/logos-co/logos-lips/blob/d064449307d28a76b3555dc7b5064d15ee19d7f5/docs/blockchain/raw/bedrock-service-declaration-protocol.md#snapshots)
+    # the next snapshot (for epoch n+2)." (https://github.com/logos-co/logos-lips/blob/7c2ec59fadcdc2ba0ae74ff7600a14b55d90efcd/docs/blockchain/raw/bedrock-service-declaration-protocol.md#snapshots)
     #
     # No state changes (like finalizeWithdrawals) should occur before the snapshot is taken.
     # Since onEpochStarted is called at the start of epoch `epoch`, registry.state represents

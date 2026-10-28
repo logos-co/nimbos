@@ -8,11 +8,12 @@
 {.push raises: [], gcsafe.}
 
 import
+  std/algorithm,
   bearssl/rand,
   libp2p/crypto/ed25519/ed25519,
   ../../../logos_chain/core/types,
   ../../../logos_chain/core/mantle/
-    [primitives, operations, proofs, utxo],
+    [blend_activity, primitives, operations, proofs, utxo],
   ../../../logos_chain/zk/poseidon2/hasher
 
 from libp2p/crypto/rng import newBearSslRng
@@ -28,18 +29,6 @@ proc mkRealZkPubKey*(sk: byte): ZkPublicKey =
   ## e.g. when verifying against committed fixture proofs.
   zkPublicKeyFromSecret(frFromBytesLE([sk]).get)
 
-func mkUtxo*(
-    value: Value = 100, pkSeed: byte = 1, opIdSeed: byte = 0,
-    outputIndex: uint64 = 0,
-): Utxo =
-  var opId: Hash32
-  opId[0] = opIdSeed
-  Utxo(
-    opId: opId,
-    outputIndex: outputIndex,
-    note: Note(value: value, zkPublicKey: mkZkPubKey(pkSeed)),
-  )
-
 func mkUtxoWithPk*(
     pk: ZkPublicKey, value: Value = 100, opIdSeed: byte = 0,
     outputIndex: uint64 = 0,
@@ -54,32 +43,99 @@ func mkUtxoWithPk*(
     note: Note(value: value, zkPublicKey: pk),
   )
 
+func mkUtxo*(
+    value: Value = 100, pkSeed: byte = 1, opIdSeed: byte = 0,
+    outputIndex: uint64 = 0,
+): Utxo =
+  mkUtxoWithPk(mkZkPubKey(pkSeed), value, opIdSeed, outputIndex)
+
 func mkNote*(value: Value, pkSeed: byte): Note =
   Note(value: value, zkPublicKey: mkZkPubKey(pkSeed))
-
-func mkTxHash*(seed: byte = 0x42): ZkHash =
-  var h: ZkHash
-  h[0] = seed
-  h
 
 func mkId*(seed: byte): TestId =
   var id: TestId
   id[0] = seed
   id
 
-func mkTransferTx*(
-    inputs: openArray[NoteId], outputs: openArray[Note]
+func mkTxHash*(seed: byte = 0x42): ZkHash =
+  mkId(seed)
+
+func mkSignedTransferTx*(
+    inputs: openArray[NoteId],
+    outputs: openArray[Note],
+    opProofs: seq[OpProof] = @[OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))],
 ): SignedMantleTx =
   let op = createTransferOp(
     TransferPayload(inputs: Inputs(noteIds: @inputs), outputs: Outputs(notes: @outputs))
   )
   SignedMantleTx(
     tx: MantleTx(ops: @[op]),
-    opProofs: @[OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))],
+    opProofs: opProofs,
   )
+
+func createHashedSignedMantleTx*(
+    signedTx: sink SignedMantleTx,
+): Result[HashedSignedMantleTx, EncodingError] {.inline.} =
+  let h = ?mantleTxHash(signedTx.tx)
+  ok(createHashedSignedMantleTxForTest(signedTx, h))
+
+func mkHashedSignedTx*(stx: sink SignedMantleTx): HashedSignedMantleTx =
+  let h = mantleTxHash(stx.tx).expect("valid tx for mkHashedSignedTx")
+  createHashedSignedMantleTxForTest(stx, h)
+
+func mkHashedSignedTx*(stx: sink SignedMantleTx, hash: Hash32): HashedSignedMantleTx =
+  createHashedSignedMantleTxForTest(stx, hash)
+
+func mkTransferTx*(
+    inputs: openArray[NoteId],
+    outputs: openArray[Note],
+    opProofs: seq[OpProof] = @[OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))],
+): HashedSignedMantleTx =
+  mkHashedSignedTx(mkSignedTransferTx(inputs, outputs, opProofs))
+
+func mkHashedTx*(
+    ops: seq[Op],
+    opProofs: seq[OpProof],
+): HashedSignedMantleTx =
+  mkHashedSignedTx(SignedMantleTx(tx: MantleTx(ops: ops), opProofs: opProofs))
+
+func mkValidTransferTx*(
+    inputs: openArray[NoteId], outputs: openArray[Note]
+): ValidSignedMantleTx =
+  createValidTxForTest(mkTransferTx(inputs, outputs))
 
 func mkProof*(): ProofOfLeadership =
   default(ProofOfLeadership)
+
+func unhashed*(tx: sink SignedMantleTx): HashedSignedMantleTx =
+  ## Wraps `tx` in a HashedSignedMantleTx with default(Hash32).
+  ## Only for tests where the code under test does not read `htx.hash` (e.g. stage-1 genesis validation,
+  ## non-cryptographic stateless validation).
+  createHashedSignedMantleTxForTest(tx, default(Hash32))
+
+func unhashedTx*(ops: openArray[Op]): HashedSignedMantleTx =
+  ## Creates an unhashed HashedSignedMantleTx with default proofs for multiple ops.
+  var proofs = newSeqOfCap[OpProof](ops.len)
+  for op in ops:
+    proofs.add defaultOpProofForOpcode(op.opcode).expect("supported opcode")
+  createHashedSignedMantleTxForTest(
+    SignedMantleTx(tx: MantleTx(ops: @ops), opProofs: proofs),
+    default(Hash32),
+  )
+
+func unhashedTx*(op: Op): HashedSignedMantleTx =
+  ## Creates an unhashed HashedSignedMantleTx with default proof for a single op.
+  ## For tests that only validate stateless logic where hash is not verified.
+  unhashedTx([op])
+
+func mkValidTx*(htx: HashedSignedMantleTx): ValidSignedMantleTx =
+  createValidTxForTest(htx)
+
+func mkValidTx*(stx: sink SignedMantleTx): ValidSignedMantleTx =
+  mkValidTx(mkHashedSignedTx(stx))
+
+func mkValidGenesisTx*(htx: HashedSignedMantleTx): ValidGenesisMantleTx =
+  createValidGenesisTxForTest(htx)
 
 proc mkEdKeyPair*(rng: ref HmacDrbgContext): EdKeyPair =
   ## Random Ed25519 keypair. Caller provides the rng so all keypairs minted
@@ -90,5 +146,42 @@ func mkChannelId*(seed: byte): ChannelId =
   var c: ChannelId
   c[0] = seed
   c
+
+func mkActivityProof*(seed: byte = 1): ActivityProof =
+  var
+    proof = ActivityProof(
+      epoch: EpochNumber(7),
+      proofOfQuota: ProofOfQuota(
+        keyNullifier: frFromBytesLE([seed]).get),
+      proofOfSelection: frFromBytesLE([seed, 2'u8]).get)
+    keyBytes: array[32, byte]
+  keyBytes[0] = seed
+  doAssert proof.signingKey.init(keyBytes)
+  for i in 0 ..< proof.proofOfQuota.proof.len:
+    proof.proofOfQuota.proof[i] = byte((i + int(seed)) mod 256)
+  proof
+
+func mkSpecActiveMessage*(): ActiveMessage =
+  ## The SDP_ACTIVE message of the spec's op_id vector.
+  var
+    declarationId: DeclarationId
+    nullifier: array[32, byte]
+    quotaProof: CompressedGroth16Proof
+    selection: array[32, byte]
+  declarationId.fill(0x1e)
+  nullifier.fill(0x02)
+  quotaProof.fill(0x02)
+  selection.fill(0x03)
+  ActiveMessage(
+    declarationId: declarationId,
+    nonce: 31,
+    metadata: ActivityProof(
+      epoch: 10,
+      signingKey: Ed25519PublicKey.init(
+        "8a88e3dd7409f195fd52db2d3cba5d72ca6709bf1d94121bf3748801b40f6f5c").get,
+      proofOfQuota: ProofOfQuota(
+        keyNullifier: frFromBytesLE(nullifier).get,
+        proof: quotaProof),
+      proofOfSelection: frFromBytesLE(selection).get))
 
 {.pop.}

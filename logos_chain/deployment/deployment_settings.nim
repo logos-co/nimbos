@@ -20,15 +20,14 @@ import
   results,
   stew/io2,
   yaml/dom,
-  ../chain/genesis,
   ./deployment_settings_helpers
 
 from ../core/mantle/primitives import EpochNumber, NumberOfEpochs
+from ../core/types import createGenesisHeader
 from ../zk/pol_lottery import isSupportedLotteryF
 
 export
   dom,
-  genesis,
   deployment_settings_helpers,
   EpochNumber,
   NumberOfEpochs
@@ -303,8 +302,7 @@ func validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
   need(ds.cryptarchia.gossipsubProtocol.startsWith("/"), "cryptarchia.gossipsub_protocol must start with '/'")
 
   let expectedHeader = createGenesisHeader(
-      ds.cryptarchia.genesisState.signedMantleTx).valueOr:
-    return err("cryptarchia: genesis header creation failed: " & $error)
+      ds.cryptarchia.genesisState.validGenesisTx)
   need(
     ds.cryptarchia.genesisState.header == expectedHeader,
     "cryptarchia: genesis_block.header does not match header derived from genesis mantle_tx"

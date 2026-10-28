@@ -6,7 +6,7 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## Stateless and cryptographic transaction validation for Mantle transactions.
-## Spec: [Bedrock v1.1 — Mantle Specification v1.10.0](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md)
+## Spec: [Bedrock v1.1 — Mantle Specification v1.17.0](https://github.com/logos-co/logos-lips/blob/949faa9563027de366514247a2a62b0de2f8c45f/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md)
 
 {.push raises: [], gcsafe.}
 
@@ -14,31 +14,67 @@ import
   std/[sets, sequtils],
   libp2p/crypto/ed25519/ed25519,
   ./poc_verifier,
-  ./tx_hashing,
-  ./tx_types,
-  ./tx_structural_validation
+  ./primitives,
+  ./operations,
+  ./proofs,
+  ./[tx_types, tx_hashing, tx_structural_validation]
 
 export tx_structural_validation
+
+type
+  ValidSignedMantleTx* = object
+    htx: HashedSignedMantleTx
+    ## A ``SignedMantleTx`` that has successfully passed all stateless structural
+    ## and cryptographic verifications via ``validateMantleTxStateless``.
+
+  ValidGenesisMantleTx* = distinct ValidSignedMantleTx
+    ## A ``ValidSignedMantleTx`` that passed every stateless genesis check in
+    ## ``validateGenesisTxStateless``; only state checks remain.
+
+  AnyHashedSignedMantleTx* =
+    HashedSignedMantleTx | ValidSignedMantleTx | ValidGenesisMantleTx
+
+export results
+
+func hashed*(vtx: ValidSignedMantleTx): HashedSignedMantleTx {.inline.} =
+  vtx.htx
+
+template hashed*(gtx: ValidGenesisMantleTx): HashedSignedMantleTx =
+  ValidSignedMantleTx(gtx).htx
+
+template hash*(t: ValidSignedMantleTx | ValidGenesisMantleTx): Hash32 =
+  hashed(t).hash
+
+template tx*(t: ValidSignedMantleTx | ValidGenesisMantleTx): untyped = hashed(t).tx
+template opProofs*(t: ValidSignedMantleTx | ValidGenesisMantleTx): untyped = hashed(t).opProofs
+
+template byteLen*(t: ValidSignedMantleTx | ValidGenesisMantleTx): int =
+  byteLen(hashed(t))
+
 
 func hasHeavyZkProof*(tx: SignedMantleTx): bool {.inline.} =
   tx.opProofs.anyIt(it.kind == opfLeaderClaim)
 
 proc validateMantleTxStateless*(
-    tx: SignedMantleTx,
+    htx: HashedSignedMantleTx,
     verifyProof: ProofOfClaimVerifier = verifyProofOfClaim,
-): Result[void, StatelessLedgerError] =
+): Result[ValidSignedMantleTx, StatelessLedgerError] =
   ## Stateless transaction validation staged strictly by ascending cost:
   ## Phase 1: Structural, bounds, and payload shape checks (~10 ns)
-  ## Phase 2: Lazy txHash calculation & Ed25519 signature checks (~0.7 ms)
+  ## Phase 2: Ed25519 signature checks (~0.7 ms)
   ## Phase 3: Groth16 zk-SNARK proof verification (~1.13 ms)
-  if tx.tx.ops.len > MantleMaxOps:
+  template stx: untyped = htx.signedTx
+  template txHash: untyped = htx.hash
+
+  if stx.tx.ops.len > MantleMaxOps:
     return err(StatelessLedgerError.TooManyOps)
-  if tx.tx.ops.len != tx.opProofs.len:
+  if stx.tx.ops.len != stx.opProofs.len:
     return err(StatelessLedgerError.InvalidProof)
 
-  var allInputs: HashSet[NoteId]
-  var hasSigCrypto = false
-  var hasHeavyZk = false
+  var
+    allInputs: HashSet[NoteId]
+    hasSigCrypto = false
+    hasHeavyZk = false
 
   template checkInputs(inputs: Inputs): untyped =
     if inputs.noteIds.len == 0:
@@ -47,9 +83,9 @@ proc validateMantleTxStateless*(
       return err(StatelessLedgerError.DoubleSpend)
 
   # Phase 1: Structural, bounds, and payload shape checks
-  for i in 0 ..< tx.tx.ops.len:
-    template op: untyped = tx.tx.ops[i]
-    template proof: untyped = tx.opProofs[i]
+  for i in 0 ..< stx.tx.ops.len:
+    template op: untyped = stx.tx.ops[i]
+    template proof: untyped = stx.opProofs[i]
 
     ?checkOpShape(op, proof)
 
@@ -60,7 +96,12 @@ proc validateMantleTxStateless*(
       ?assert_valid_output(t.outputs.notes)
 
     of ChannelDeposit:
-      checkInputs(op.payload.channelDeposit.inputs)
+      # Mantle 1.17.0 bounds the deposit metadata in "Validate", before any
+      # proof check. A deposit has no proof branch here, so an oversized
+      # deposit would otherwise pass this function.
+      template cd: untyped = op.payload.channelDeposit
+      ?checkOperationData(cd.metadata)
+      checkInputs(cd.inputs)
 
     of ChannelWithdraw:
       checkInputs(op.payload.channelWithdraw.inputs)
@@ -79,6 +120,7 @@ proc validateMantleTxStateless*(
         return err(StatelessLedgerError.InvalidChannelConfig)
 
     of ChannelInscribe:
+      ?checkOperationData(op.payload.channelInscribe.inscription)
       hasSigCrypto = true
 
     of SdpDeclare:
@@ -91,50 +133,53 @@ proc validateMantleTxStateless*(
     of LeaderClaim:
       hasHeavyZk = true
 
-  if not hasSigCrypto and not hasHeavyZk:
-    return ok()
-
-  # Phase 2: Fast symmetric hashing & Ed25519 signatures
-  var txHash: Opt[ZkHash]
-  template getTxHash(): ZkHash =
-    txHash.valueOr:
-      let h = mantleTxHash(tx.tx).valueOr:
-        return err(error.toStatelessLedgerError)
-      txHash = Opt.some(h)
-      h
-
+  # Phase 2: Ed25519 signatures
   if hasSigCrypto:
-    for i in 0 ..< tx.tx.ops.len:
-      template op: untyped = tx.tx.ops[i]
-      template proof: untyped = tx.opProofs[i]
+    for i in 0 ..< stx.tx.ops.len:
+      template op: untyped = stx.tx.ops[i]
+      template proof: untyped = stx.opProofs[i]
       case op.payload.kind
       of ChannelInscribe:
-        if not verify(proof.ed25519SigProof, getTxHash(), op.payload.channelInscribe.signer):
+        if not verify(proof.ed25519SigProof, txHash, op.payload.channelInscribe.signer):
           return err(StatelessLedgerError.InvalidProof)
       of SdpDeclare:
-        if not verify(proof.declarationProof.ed25519Sig, getTxHash(), op.payload.sdpDeclare.providerId):
+        if not verify(proof.declarationProof.ed25519Sig, txHash, op.payload.sdpDeclare.providerId):
           return err(StatelessLedgerError.InvalidProof)
       else:
         discard
 
-  if not hasHeavyZk:
-    return ok()
-
   # Phase 3: Heavy Groth16 ZK proof verifications
-  if verifyProof == nil:
-    return err(StatelessLedgerError.VerifierNotInitialised)
+  if hasHeavyZk:
+    if verifyProof == nil:
+      return err(StatelessLedgerError.VerifierNotInitialised)
 
-  for i in 0 ..< tx.tx.ops.len:
-    template op: untyped = tx.tx.ops[i]
-    template proof: untyped = tx.opProofs[i]
-    if op.payload.kind == LeaderClaim:
-      template claim: untyped = op.payload.leaderClaim
-      let public = proofOfClaimPublic(claim, claim.rewardsRoot, getTxHash())
-      let verified = verifyProof(proof.proofOfClaimProof, public).valueOr:
-        return err(StatelessLedgerError.VerifierNotInitialised)
-      if not verified:
-        return err(StatelessLedgerError.InvalidProof)
+    for i in 0 ..< stx.tx.ops.len:
+      template op: untyped = stx.tx.ops[i]
+      template proof: untyped = stx.opProofs[i]
+      if op.payload.kind == LeaderClaim:
+        template claim: untyped = op.payload.leaderClaim
+        let public = proofOfClaimPublic(claim, claim.rewardsRoot, txHash)
+        let verified = verifyProof(proof.proofOfClaimProof, public).valueOr:
+          return err(StatelessLedgerError.VerifierNotInitialised)
+        if not verified:
+          return err(StatelessLedgerError.InvalidProof)
 
-  ok()
+  ok(ValidSignedMantleTx(htx: htx))
+
+func validateGenesisTxStateless*(
+    tx: SignedMantleTx
+): Result[ValidGenesisMantleTx, StatelessLedgerError] =
+  ## Stateless genesis checks; no proof is verified.
+  ?validateGenesisTxStructural(tx)
+  let htx = createGenesisHtx(tx).valueOr:
+    return err(error.toStatelessLedgerError)
+  ok(ValidGenesisMantleTx(ValidSignedMantleTx(htx: htx)))
+
+when defined(unittest) or defined(test):
+  func createValidTxForTest*(htx: HashedSignedMantleTx): ValidSignedMantleTx =
+    ValidSignedMantleTx(htx: htx)
+
+  func createValidGenesisTxForTest*(htx: HashedSignedMantleTx): ValidGenesisMantleTx =
+    ValidGenesisMantleTx(ValidSignedMantleTx(htx: htx))
 
 {.pop.}

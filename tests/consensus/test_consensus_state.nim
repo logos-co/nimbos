@@ -12,9 +12,9 @@ import
   unittest2,
   ../testutil,
   ../logos_chain/sync/helpers,
-  ../../logos_chain/core/[types, local_tree],
-  ../../logos_chain/consensus/consensus_state,
-  ../../logos_chain/chain/genesis
+  ../../logos_chain/core/types,
+  ../../logos_chain/chain/local_tree,
+  ../../logos_chain/consensus/consensus_state
 
 suite "consensus/consensus_state (preferCandidate - Online Rule)":
   test "Online: shallow fork (<= k) selects strictly longer chain":
@@ -22,21 +22,20 @@ suite "consensus/consensus_state (preferCandidate - Online Rule)":
       k = 5'u64
       sGen = 12'u64 # f = 1/10: ⌊(k * f.den) / (4 * f.num)⌋ = ⌊(5 * 10) / 4⌋ = 12 slots
     let
-      sm = minimalSignedTx()
-      genesis = createGenesisBlock(testGenesisTx()).get
+      genesis = testGenesisBlock()
       gid = blockId(genesis.header)
       fc = ConsensusState.init(genesis, securityParam = k, densitySlotWindow = sGen, forkChoiceRule = ForkChoiceRule.Online)
 
       # Canonical branch: height 1 (b1), height 2 (b2)
-      b1 = childBlock(genesis.header, gid, slot = 1'u64, [sm])
+      b1 = mkChildValidBlock(genesis.header, gid, slot = 1'u64)
       id1 = blockId(b1.header)
-      b2 = childBlock(b1.header, id1, slot = 2'u64, [sm])
+      b2 = mkChildValidBlock(b1.header, id1, slot = 2'u64)
       id2 = blockId(b2.header)
 
       # Competing fork off b1: f2 (height 2), f3 (height 3)
-      f2 = childBlock(b1.header, id1, slot = 3'u64, [sm])
+      f2 = mkChildValidBlock(b1.header, id1, slot = 3'u64)
       idF2 = blockId(f2.header)
-      f3 = childBlock(f2.header, idF2, slot = 4'u64, [sm])
+      f3 = mkChildValidBlock(f2.header, idF2, slot = 4'u64)
       idF3 = blockId(f3.header)
 
     check:
@@ -57,32 +56,31 @@ suite "consensus/consensus_state (preferCandidate - Online Rule)":
       k = 2'u64 # securityParam k = 2
       sGen = 5'u64 # f = 1/10: ⌊(k * f.den) / (4 * f.num)⌋ = ⌊(2 * 10) / 4⌋ = 5 slots
     let
-      sm = minimalSignedTx()
-      genesis = createGenesisBlock(testGenesisTx()).get
+      genesis = testGenesisBlock()
       gid = blockId(genesis.header)
       fc = ConsensusState.init(genesis, securityParam = k, densitySlotWindow = sGen, forkChoiceRule = ForkChoiceRule.Online)
 
       # Build canonical chain: genesis -> b1 -> b2 -> b3 -> b4 (height 4)
-      b1 = childBlock(genesis.header, gid, slot = 1'u64, [sm])
+      b1 = mkChildValidBlock(genesis.header, gid, slot = 1'u64)
       id1 = blockId(b1.header)
-      b2 = childBlock(b1.header, id1, slot = 2'u64, [sm])
+      b2 = mkChildValidBlock(b1.header, id1, slot = 2'u64)
       id2 = blockId(b2.header)
-      b3 = childBlock(b2.header, id2, slot = 3'u64, [sm])
+      b3 = mkChildValidBlock(b2.header, id2, slot = 3'u64)
       id3 = blockId(b3.header)
-      b4 = childBlock(b3.header, id3, slot = 4'u64, [sm])
+      b4 = mkChildValidBlock(b3.header, id3, slot = 4'u64)
       id4 = blockId(b4.header)
 
       # Build long alternative fork branching from genesis (height 0)
       # Divergence depth from current tip b4 is 4 - 0 = 4 > k (2)
-      f1 = childBlock(genesis.header, gid, slot = 10'u64, [sm])
+      f1 = mkChildValidBlock(genesis.header, gid, slot = 10'u64)
       idF1 = blockId(f1.header)
-      f2 = childBlock(f1.header, idF1, slot = 11'u64, [sm])
+      f2 = mkChildValidBlock(f1.header, idF1, slot = 11'u64)
       idF2 = blockId(f2.header)
-      f3 = childBlock(f2.header, idF2, slot = 12'u64, [sm])
+      f3 = mkChildValidBlock(f2.header, idF2, slot = 12'u64)
       idF3 = blockId(f3.header)
-      f4 = childBlock(f3.header, idF3, slot = 13'u64, [sm])
+      f4 = mkChildValidBlock(f3.header, idF3, slot = 13'u64)
       idF4 = blockId(f4.header)
-      f5 = childBlock(f4.header, idF4, slot = 14'u64, [sm])
+      f5 = mkChildValidBlock(f4.header, idF4, slot = 14'u64)
       idF5 = blockId(f5.header)
 
     check:
@@ -106,19 +104,18 @@ suite "consensus/consensus_state (preferCandidate - Bootstrap Rule)":
       k = 5'u64
       sGen = 12'u64 # f = 1/10: ⌊(k * f.den) / (4 * f.num)⌋ = ⌊(5 * 10) / 4⌋ = 12 slots
     let
-      sm = minimalSignedTx()
-      genesis = createGenesisBlock(testGenesisTx()).get
+      genesis = testGenesisBlock()
       gid = blockId(genesis.header)
       fc = ConsensusState.init(genesis, securityParam = k, densitySlotWindow = sGen, forkChoiceRule = ForkChoiceRule.Bootstrap)
 
-      b1 = childBlock(genesis.header, gid, slot = 1'u64, [sm])
+      b1 = mkChildValidBlock(genesis.header, gid, slot = 1'u64)
       id1 = blockId(b1.header)
-      b2 = childBlock(b1.header, id1, slot = 2'u64, [sm])
+      b2 = mkChildValidBlock(b1.header, id1, slot = 2'u64)
       id2 = blockId(b2.header)
 
-      f2 = childBlock(b1.header, id1, slot = 3'u64, [sm])
+      f2 = mkChildValidBlock(b1.header, id1, slot = 3'u64)
       idF2 = blockId(f2.header)
-      f3 = childBlock(f2.header, idF2, slot = 4'u64, [sm])
+      f3 = mkChildValidBlock(f2.header, idF2, slot = 4'u64)
       idF3 = blockId(f3.header)
 
     check:
@@ -136,28 +133,27 @@ suite "consensus/consensus_state (preferCandidate - Bootstrap Rule)":
       k = 2'u64
       sGen = 10'u64 # f = 1/20: ⌊(k * f.den) / (4 * f.num)⌋ = ⌊(2 * 20) / 4⌋ = 10 slots
     let
-      sm = minimalSignedTx()
-      genesis = createGenesisBlock(testGenesisTx()).get
+      genesis = testGenesisBlock()
       gid = blockId(genesis.header)
       fc = ConsensusState.init(genesis, securityParam = k, densitySlotWindow = sGen, forkChoiceRule = ForkChoiceRule.Bootstrap)
 
       # Local chain: sparse branch after genesis (LCA slot 0)
       # Produces 1 block in (0, 10] (at slot 8), then extends slowly to height 4 (slot 50, 60, 70)
-      b1 = childBlock(genesis.header, gid, slot = 8'u64, [sm])
+      b1 = mkChildValidBlock(genesis.header, gid, slot = 8'u64)
       id1 = blockId(b1.header)
-      b2 = childBlock(b1.header, id1, slot = 50'u64, [sm])
+      b2 = mkChildValidBlock(b1.header, id1, slot = 50'u64)
       id2 = blockId(b2.header)
-      b3 = childBlock(b2.header, id2, slot = 60'u64, [sm])
+      b3 = mkChildValidBlock(b2.header, id2, slot = 60'u64)
       id3 = blockId(b3.header)
-      b4 = childBlock(b3.header, id3, slot = 70'u64, [sm])
+      b4 = mkChildValidBlock(b3.header, id3, slot = 70'u64)
       id4 = blockId(b4.header)
 
       # Candidate chain (honest dense chain): produces 3 blocks in (0, 10] (slots 2, 4, 6)
-      c1 = childBlock(genesis.header, gid, slot = 2'u64, [sm])
+      c1 = mkChildValidBlock(genesis.header, gid, slot = 2'u64)
       idC1 = blockId(c1.header)
-      c2 = childBlock(c1.header, idC1, slot = 4'u64, [sm])
+      c2 = mkChildValidBlock(c1.header, idC1, slot = 4'u64)
       idC2 = blockId(c2.header)
-      c3 = childBlock(c2.header, idC2, slot = 6'u64, [sm])
+      c3 = mkChildValidBlock(c2.header, idC2, slot = 6'u64)
       idC3 = blockId(c3.header)
 
     check:
@@ -182,30 +178,29 @@ suite "consensus/consensus_state (preferCandidate - Bootstrap Rule)":
       k = 2'u64
       sGen = 10'u64 # f = 1/20: ⌊(k * f.den) / (4 * f.num)⌋ = ⌊(2 * 20) / 4⌋ = 10 slots
     let
-      sm = minimalSignedTx()
-      genesis = createGenesisBlock(testGenesisTx()).get
+      genesis = testGenesisBlock()
       gid = blockId(genesis.header)
       fc = ConsensusState.init(genesis, securityParam = k, densitySlotWindow = sGen, forkChoiceRule = ForkChoiceRule.Bootstrap)
 
       # Local chain (dense in s_gen window): slots 2, 4, 6 -> density 3
-      b1 = childBlock(genesis.header, gid, slot = 2'u64, [sm])
+      b1 = mkChildValidBlock(genesis.header, gid, slot = 2'u64)
       id1 = blockId(b1.header)
-      b2 = childBlock(b1.header, id1, slot = 4'u64, [sm])
+      b2 = mkChildValidBlock(b1.header, id1, slot = 4'u64)
       id2 = blockId(b2.header)
-      b3 = childBlock(b2.header, id2, slot = 6'u64, [sm])
+      b3 = mkChildValidBlock(b2.header, id2, slot = 6'u64)
       id3 = blockId(b3.header)
 
       # Candidate attacker chain (sparse in s_gen window, long afterwards):
       # slot 8 in window (density 1), then slots 100, 101, 102, 103 (total height 5)
-      a1 = childBlock(genesis.header, gid, slot = 8'u64, [sm])
+      a1 = mkChildValidBlock(genesis.header, gid, slot = 8'u64)
       idA1 = blockId(a1.header)
-      a2 = childBlock(a1.header, idA1, slot = 100'u64, [sm])
+      a2 = mkChildValidBlock(a1.header, idA1, slot = 100'u64)
       idA2 = blockId(a2.header)
-      a3 = childBlock(a2.header, idA2, slot = 101'u64, [sm])
+      a3 = mkChildValidBlock(a2.header, idA2, slot = 101'u64)
       idA3 = blockId(a3.header)
-      a4 = childBlock(a3.header, idA3, slot = 102'u64, [sm])
+      a4 = mkChildValidBlock(a3.header, idA3, slot = 102'u64)
       idA4 = blockId(a4.header)
-      a5 = childBlock(a4.header, idA4, slot = 103'u64, [sm])
+      a5 = mkChildValidBlock(a4.header, idA4, slot = 103'u64)
       idA5 = blockId(a5.header)
 
     check:
@@ -227,31 +222,30 @@ suite "consensus/consensus_state (preferCandidate - Bootstrap Rule)":
       k = 2'u64
       sGen = 10'u64 # f = 1/20: ⌊(k * f.den) / (4 * f.num)⌋ = ⌊(2 * 20) / 4⌋ = 10 slots
     let
-      sm = minimalSignedTx()
-      genesis = createGenesisBlock(testGenesisTx()).get
+      genesis = testGenesisBlock()
       gid = blockId(genesis.header)
       fc = ConsensusState.init(genesis, securityParam = k, densitySlotWindow = sGen, forkChoiceRule = ForkChoiceRule.Bootstrap)
 
       # Branch 1: slots 2, 4 (density = 2), slot 50, slot 60 (height 4)
-      b1 = childBlock(genesis.header, gid, slot = 2'u64, [sm])
+      b1 = mkChildValidBlock(genesis.header, gid, slot = 2'u64)
       id1 = blockId(b1.header)
-      b2 = childBlock(b1.header, id1, slot = 4'u64, [sm])
+      b2 = mkChildValidBlock(b1.header, id1, slot = 4'u64)
       id2 = blockId(b2.header)
-      b3 = childBlock(b2.header, id2, slot = 50'u64, [sm])
+      b3 = mkChildValidBlock(b2.header, id2, slot = 50'u64)
       id3 = blockId(b3.header)
-      b4 = childBlock(b3.header, id3, slot = 60'u64, [sm])
+      b4 = mkChildValidBlock(b3.header, id3, slot = 60'u64)
       id4 = blockId(b4.header)
 
       # Branch 2: slots 3, 5 (density = 2), slot 55, slot 65, slot 75 (height 5)
-      c1 = childBlock(genesis.header, gid, slot = 3'u64, [sm])
+      c1 = mkChildValidBlock(genesis.header, gid, slot = 3'u64)
       idC1 = blockId(c1.header)
-      c2 = childBlock(c1.header, idC1, slot = 5'u64, [sm])
+      c2 = mkChildValidBlock(c1.header, idC1, slot = 5'u64)
       idC2 = blockId(c2.header)
-      c3 = childBlock(c2.header, idC2, slot = 55'u64, [sm])
+      c3 = mkChildValidBlock(c2.header, idC2, slot = 55'u64)
       idC3 = blockId(c3.header)
-      c4 = childBlock(c3.header, idC3, slot = 65'u64, [sm])
+      c4 = mkChildValidBlock(c3.header, idC3, slot = 65'u64)
       idC4 = blockId(c4.header)
-      c5 = childBlock(c4.header, idC4, slot = 75'u64, [sm])
+      c5 = mkChildValidBlock(c4.header, idC4, slot = 75'u64)
       idC5 = blockId(c5.header)
 
     check:
@@ -275,23 +269,22 @@ suite "consensus/consensus_state (ForkChoiceDensityCache)":
       k = 1'u64
       sGen = 5'u64 # f = 1/20: ⌊(k * f.den) / (4 * f.num)⌋ = ⌊(1 * 20) / 4⌋ = 5 slots
     let
-      sm = minimalSignedTx()
-      genesis = createGenesisBlock(testGenesisTx()).get
+      genesis = testGenesisBlock()
       gid = blockId(genesis.header)
       fc = ConsensusState.init(genesis, securityParam = k, densitySlotWindow = sGen, forkChoiceRule = ForkChoiceRule.Bootstrap)
 
       # Branch B from genesis: b1 (slot 2, height 1), b2 (slot 4, height 2)
-      b1 = childBlock(genesis.header, gid, slot = 2'u64, [sm])
+      b1 = mkChildValidBlock(genesis.header, gid, slot = 2'u64)
       id1 = blockId(b1.header)
-      b2 = childBlock(b1.header, id1, slot = 4'u64, [sm])
+      b2 = mkChildValidBlock(b1.header, id1, slot = 4'u64)
       id2 = blockId(b2.header)
 
       # Competing branch C from genesis: c1 (slot 3), c2 (slot 5), c3 (slot 7, height 3)
-      c1 = childBlock(genesis.header, gid, slot = 3'u64, [sm])
+      c1 = mkChildValidBlock(genesis.header, gid, slot = 3'u64)
       idC1 = blockId(c1.header)
-      c2 = childBlock(c1.header, idC1, slot = 5'u64, [sm])
+      c2 = mkChildValidBlock(c1.header, idC1, slot = 5'u64)
       idC2 = blockId(c2.header)
-      c3 = childBlock(c2.header, idC2, slot = 7'u64, [sm])
+      c3 = mkChildValidBlock(c2.header, idC2, slot = 7'u64)
       idC3 = blockId(c3.header)
 
     check:
@@ -310,7 +303,7 @@ suite "consensus/consensus_state (ForkChoiceDensityCache)":
 suite "consensus/consensus_state (rule initialization and transition)":
   test "ConsensusState switchToOnline transitions rule":
     let
-      genesis = createGenesisBlock(testGenesisTx()).get
+      genesis = testGenesisBlock()
       cs = ConsensusState.init(genesis, securityParam = 5'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Bootstrap)
 
     check cs.forkChoiceRule == ForkChoiceRule.Bootstrap
@@ -319,12 +312,11 @@ suite "consensus/consensus_state (rule initialization and transition)":
 
   test "Chain initializes ConsensusState and performs tryUpdateTip":
     let
-      sm = SignedMantleTx(testGenesisTx())
-      genesis = createGenesisBlock(testGenesisTx()).get
+      genesis = testGenesisBlock()
       gid = blockId(genesis.header)
-      b1 = childBlock(genesis.header, gid, slot = 1'u64, [sm])
+      b1 = mkChildValidBlock(genesis.header, gid, slot = 1'u64)
       id1 = blockId(b1.header)
-      b2 = childBlock(b1.header, id1, slot = 2'u64, [sm])
+      b2 = mkChildValidBlock(b1.header, id1, slot = 2'u64)
       id2 = blockId(b2.header)
       chain = initTestChain(genesis, securityParam = 5'u64)
 
@@ -357,10 +349,9 @@ suite "consensus/consensus_state (rule initialization and transition)":
 
   test "ConsensusState standalone initialization and tip tracking":
     let
-      sm = minimalSignedTx()
-      genesis = createGenesisBlock(testGenesisTx()).get
+      genesis = testGenesisBlock()
       gid = blockId(genesis.header)
-      b1 = childBlock(genesis.header, gid, slot = 1'u64, [sm])
+      b1 = mkChildValidBlock(genesis.header, gid, slot = 1'u64)
       id1 = blockId(b1.header)
       cs = ConsensusState.init(genesis, securityParam = 5'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Bootstrap)
 
@@ -380,15 +371,14 @@ suite "consensus/consensus_state (rule initialization and transition)":
 
   test "ConsensusState tryUpdateLib updates latestImmutableId and prunes forks":
     let
-      sm = minimalSignedTx()
-      genesis = createGenesisBlock(testGenesisTx()).get
+      genesis = testGenesisBlock()
       gid = blockId(genesis.header)
       cs = ConsensusState.init(genesis, securityParam = 1'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Bootstrap)
-      b1 = childBlock(genesis.header, gid, slot = 1'u64, [sm])
+      b1 = mkChildValidBlock(genesis.header, gid, slot = 1'u64)
       id1 = blockId(b1.header)
-      f1 = childBlock(genesis.header, gid, slot = 2'u64, [sm])
+      f1 = mkChildValidBlock(genesis.header, gid, slot = 2'u64)
       idF1 = blockId(f1.header)
-      b2 = childBlock(b1.header, id1, slot = 3'u64, [sm])
+      b2 = mkChildValidBlock(b1.header, id1, slot = 3'u64)
       id2 = blockId(b2.header)
 
     check:
@@ -415,15 +405,14 @@ suite "consensus/consensus_state (rule initialization and transition)":
 
   test "ConsensusState canDescendFromImmutable validates ancestry and slot feasibility":
     let
-      sm = minimalSignedTx()
-      genesis = createGenesisBlock(testGenesisTx()).get
+      genesis = testGenesisBlock()
       gid = blockId(genesis.header)
       cs = ConsensusState.init(genesis, securityParam = 1'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Bootstrap)
-      b1 = childBlock(genesis.header, gid, slot = 1'u64, [sm])
+      b1 = mkChildValidBlock(genesis.header, gid, slot = 1'u64)
       id1 = blockId(b1.header)
-      b2 = childBlock(b1.header, id1, slot = 3'u64, [sm])
+      b2 = mkChildValidBlock(b1.header, id1, slot = 3'u64)
       id2 = blockId(b2.header)
-      other1 = childBlock(genesis.header, gid, slot = 2'u64, [sm])
+      other1 = mkChildValidBlock(genesis.header, gid, slot = 2'u64)
       idOther1 = blockId(other1.header)
 
     check:
@@ -468,34 +457,33 @@ suite "consensus/consensus_state (rule initialization and transition)":
       k = 2'u64
       sGen = 10'u64 # f = 1/20: ⌊(k * f.den) / (4 * f.num)⌋ = ⌊(2 * 20) / 4⌋ = 10 slots
     let
-      sm = minimalSignedTx()
-      genesis = createGenesisBlock(testGenesisTx()).get
+      genesis = testGenesisBlock()
       gid = blockId(genesis.header)
 
       # Branch A (Incumbent): sparse in window (slot 8 -> density 1), height 4
-      a1 = childBlock(genesis.header, gid, slot = 8'u64, [sm])
+      a1 = mkChildValidBlock(genesis.header, gid, slot = 8'u64)
       idA1 = blockId(a1.header)
-      a2 = childBlock(a1.header, idA1, slot = 50'u64, [sm])
+      a2 = mkChildValidBlock(a1.header, idA1, slot = 50'u64)
       idA2 = blockId(a2.header)
-      a3 = childBlock(a2.header, idA2, slot = 60'u64, [sm])
+      a3 = mkChildValidBlock(a2.header, idA2, slot = 60'u64)
       idA3 = blockId(a3.header)
-      a4 = childBlock(a3.header, idA3, slot = 70'u64, [sm])
+      a4 = mkChildValidBlock(a3.header, idA3, slot = 70'u64)
       idA4 = blockId(a4.header)
 
       # Branch B (Moderate): 2 blocks in window (slots 3, 5 -> density 2), height 3
-      b1 = childBlock(genesis.header, gid, slot = 3'u64, [sm])
+      b1 = mkChildValidBlock(genesis.header, gid, slot = 3'u64)
       idB1 = blockId(b1.header)
-      b2 = childBlock(b1.header, idB1, slot = 5'u64, [sm])
+      b2 = mkChildValidBlock(b1.header, idB1, slot = 5'u64)
       idB2 = blockId(b2.header)
-      b3 = childBlock(b2.header, idB2, slot = 55'u64, [sm])
+      b3 = mkChildValidBlock(b2.header, idB2, slot = 55'u64)
       idB3 = blockId(b3.header)
 
       # Branch C (Dense): 3 blocks in window (slots 2, 4, 6 -> density 3), height 3
-      c1 = childBlock(genesis.header, gid, slot = 2'u64, [sm])
+      c1 = mkChildValidBlock(genesis.header, gid, slot = 2'u64)
       idC1 = blockId(c1.header)
-      c2 = childBlock(c1.header, idC1, slot = 4'u64, [sm])
+      c2 = mkChildValidBlock(c1.header, idC1, slot = 4'u64)
       idC2 = blockId(c2.header)
-      c3 = childBlock(c2.header, idC2, slot = 6'u64, [sm])
+      c3 = mkChildValidBlock(c2.header, idC2, slot = 6'u64)
       idC3 = blockId(c3.header)
 
     # Sequence 1: Incumbent A, then candidate B arrives, then candidate C arrives

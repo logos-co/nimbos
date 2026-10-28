@@ -11,15 +11,22 @@
 {.push raises: [], gcsafe.}
 
 import
+  std/sequtils,
   results,
   stew/[assign2, bitops2],
   bincode,
   bincode/types as bincodeTypes,
   libp2p/crypto/ed25519/ed25519,
   ./crypto/hashing,
-  ./mantle/[tx_types, tx_hashing]
+  ./mantle/[tx_types, tx_hashing, tx_validation]
 
-export hashing, tx_types, tx_hashing, results, bincodeTypes
+export
+  hashing,
+  tx_types,
+  tx_hashing,
+  results,
+  bincodeTypes
+export tx_validation except StatelessLedgerError
 
 const
   MaxUncles* = 4
@@ -52,21 +59,13 @@ type
     signature*: Ed25519Signature
 
   UncleHeaders* = BoundedSeq[SignedHeader, MaxUncles]
-  BlockTxs* = BoundedSeq[SignedMantleTx, MaxBlockTxs]
+  BlockTxs* = BoundedSeq[HashedSignedMantleTx, MaxBlockTxs]
 
   Block* = object
     header*: Header
     signature*: Ed25519Signature
     uncleHeaders*: UncleHeaders
     txs*: BlockTxs
-
-  AdmittedBlock* = distinct Block
-    ## A ``Block`` that has successfully passed structural, topology,
-    ## body root, and header signature verifications (Tiers 0–2).
-
-  ValidBlock* = distinct Block
-    ## A ``Block`` that has successfully passed structural and admission checks
-    ## (Tiers 0–2) and PoL/stateless transaction verifications (Tier 3).
 
   # Fields are in the canonical order of Block Construction 1.3.0, but the
   # wire is still bincode (u64 counts, fixed full-hash references). The
@@ -84,6 +83,7 @@ type
 
 const
   ExpectedBedrockVersion* = 1'u8
+  GenesisBedrockVersion* = 1'u8
   MaxBlockSize* = 2_097_152
   DefaultHash32 = default(Hash32)
   DefaultBlockId* = default(BlockId)
@@ -95,11 +95,7 @@ deriveBincode(Block)
 deriveBincode(Proposal)
 deriveBincode(Tip)
 
-template header*(blk: Block): auto = blk.header
-template header*(blk: AdmittedBlock): auto = Block(blk).header
-template header*(blk: ValidBlock): auto = Block(blk).header
-template txs*(blk: AdmittedBlock): auto = Block(blk).txs
-template txs*(blk: ValidBlock): auto = Block(blk).txs
+template header*(blk: Block): Header = blk.header
 
 func hashPair*(left, right: Hash32): Hash32 =
   var pairBytes: array[64, byte]
@@ -166,23 +162,11 @@ func merkle_root*(hashes: openArray[Hash32]): Hash32 =
 
   level[0]
 
-func merkle_root*(txs: openArray[SignedMantleTx]): Result[Hash32, EncodingError] =
-  ## Merkle root over the hashes of `txs`.
-  if txs.len == 0:
-    return ok(DefaultHash32)
-  if txs.len == 1:
-    return mantleTxHash(txs[0].tx)
-  var hashes = newSeqOfCap[Hash32](txs.len)
-  for tx in txs:
-    let h = ?mantleTxHash(tx.tx)
-    hashes.add(h)
-  ok(merkle_root(hashes))
-
 func body_root*(uncles: openArray[SignedHeader], txRoot: Hash32): Hash32 =
   ## blake2b256("BODY_ROOT_V1" ‖ u8 uncle count ‖ 361-byte entries ‖ merkle root).
   ## Spec: [Cryptarchia Protocol v1.2.4, Block Header Validation](https://github.com/logos-co/logos-lips/blob/4deef612ce1ae1776167daf8779d4abae953201b/docs/blockchain/raw/cryptarchia-v1-protocol.md#block-header-validation)
   # Every input path bounds the count first (`validateBlockStructure`,
-  # `initBlock`, `initProposal`, the `BoundedSeq` decoder). A longer list
+  # `initHeader`, `initProposal`, the `BoundedSeq` decoder). A longer list
   # here is a programming error, not input.
   doAssert uncles.len <= MaxUncles,
     "uncle count exceeds MaxUncles (" & $MaxUncles & "): " & $uncles.len
@@ -194,16 +178,30 @@ func body_root*(uncles: openArray[SignedHeader], txRoot: Hash32): Hash32 =
   preimage.add(txRoot)
   blake2b256Hash("BODY_ROOT_V1", preimage)
 
-func body_root(uncles: openArray[SignedHeader], txHashes: openArray[Hash32]): Hash32 =
+func body_root*(uncles: openArray[SignedHeader], txHashes: openArray[Hash32]): Hash32 =
   ## Body root over the uncle list and the transaction hashes.
   body_root(uncles, merkle_root(txHashes))
 
-func body_root*(
+func body_root*[T: AnyHashedSignedMantleTx](
     uncles: openArray[SignedHeader],
-    txs: openArray[SignedMantleTx],
-): Result[Hash32, EncodingError] =
-  ## Body root over the uncle list and the transactions.
-  ok(body_root(uncles, ? merkle_root(txs)))
+    txs: openArray[T],
+): Hash32 =
+  ## Body root over the uncle list and precalculated hashes of transactions.
+  body_root(uncles, merkle_root(txs.mapIt(it.hash)))
+
+iterator activeReferences*(refs: References): Hash32 =
+  for r in refs:
+    if r.isZero():
+      break
+    yield r
+
+func activeLen*(refs: References): int =
+  var count = 0
+  for r in refs:
+    if r.isZero():
+      break
+    inc count
+  count
 
 func blockId*(header: Header): Hash32 =
   ## block_id(header) = hash(
@@ -244,21 +242,6 @@ func blockId*(header: Header): Hash32 =
 
   blake2b256Hash(preimage)
 
-func initBlock*(
-    header: Header,
-    signature: Ed25519Signature = DefaultEd25519Signature,
-    uncleHeaders: openArray[SignedHeader],
-    txs: openArray[SignedMantleTx],
-): Block =
-  ## Canonical constructor; bounds the uncle and transaction counts.
-  doAssert uncleHeaders.len <= MaxUncles,
-    "uncle count exceeds MaxUncles (" & $MaxUncles & "): " & $uncleHeaders.len
-  doAssert txs.len <= MaxBlockTxs,
-    "block tx count exceeds MaxBlockTxs (" & $MaxBlockTxs & "): " & $txs.len
-  Block(
-    header: header, signature: signature,
-    uncleHeaders: UncleHeaders(@uncleHeaders), txs: BlockTxs(@txs))
-
 func initHeader*(
     bedrockVersion: uint8,
     parentBlock: BlockId,
@@ -267,7 +250,11 @@ func initHeader*(
     txHashes: openArray[Hash32],
     proofOfLeadership: ProofOfLeadership,
 ): Header =
-  ## Header over transaction hashes; used for proposal construction.
+  ## Canonical constructor over transaction hashes; used for proposal construction.
+  doAssert uncleHeaders.len <= MaxUncles,
+    "uncle count exceeds MaxUncles (" & $MaxUncles & "): " & $uncleHeaders.len
+  doAssert txHashes.len <= MaxBlockTxs,
+    "block tx count exceeds MaxBlockTxs (" & $MaxBlockTxs & "): " & $txHashes.len
   Header(
     bedrockVersion: bedrockVersion,
     parentBlock: parentBlock,
@@ -276,23 +263,43 @@ func initHeader*(
     proofOfLeadership: proofOfLeadership,
   )
 
-func initHeader*(
+func initHeader*[T: AnyHashedSignedMantleTx](
     bedrockVersion: uint8,
     parentBlock: BlockId,
     slot: SlotNumber,
     uncleHeaders: openArray[SignedHeader],
-    txs: openArray[SignedMantleTx],
+    txs: openArray[T],
     proofOfLeadership: ProofOfLeadership,
-): Result[Header, EncodingError] =
-  ## Header over full transactions; used for block import and genesis.
-  let root = ? body_root(uncleHeaders, txs)
-  ok(Header(
+): Header =
+  ## Canonical constructor over verified transactions.
+  doAssert uncleHeaders.len <= MaxUncles,
+    "uncle count exceeds MaxUncles (" & $MaxUncles & "): " & $uncleHeaders.len
+  doAssert txs.len <= MaxBlockTxs,
+    "block tx count exceeds MaxBlockTxs (" & $MaxBlockTxs & "): " & $txs.len
+  Header(
     bedrockVersion: bedrockVersion,
     parentBlock: parentBlock,
     slot: slot,
-    bodyRoot: root,
+    bodyRoot: body_root(uncleHeaders, txs),
     proofOfLeadership: proofOfLeadership,
-  ))
+  )
+
+func createGenesisHeader*(validGenesisTx: ValidGenesisMantleTx): Header =
+  ## Genesis header: zero parent, slot 0, no uncles, default proof of leadership.
+  initHeader(
+    bedrockVersion = GenesisBedrockVersion,
+    parentBlock = DefaultBlockId,
+    slot = 0'u64,
+    uncleHeaders = [],
+    txs = [validGenesisTx],
+    proofOfLeadership = ProofOfLeadership(
+      leaderVoucher: default(RewardVoucher),
+      entropyContribution: default(ZkHash),
+      proof: DefaultCompressedGroth16Proof,
+      leaderKey: DefaultEd25519PublicKey,
+    ),
+  )
+
 
 func initProposal*(
     header: Header,

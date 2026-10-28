@@ -9,17 +9,14 @@
 {.used.}
 
 import
-  unittest2,
-  results,
   ../testutil,
-  ../../logos_chain/core/[types, local_tree],
-  ../../logos_chain/chain/genesis
+  ../../logos_chain/core/types,
+  ../../logos_chain/chain/local_tree
 
-suite "core/local_tree":
+suite "chain/local_tree":
   test "LocalTree.init stores genesis at height 0":
     let
-      gtx = testGenesisTx()
-      genesis = createGenesisBlock(gtx).get
+      genesis = testGenesisBlock()
       gid = blockId(genesis.header)
       tree = LocalTree.init(genesis)
     check tree.hasBlock(gid)
@@ -28,12 +25,10 @@ suite "core/local_tree":
 
   test "addBlockToTree extends chain and updates heights and ancestry":
     let
-      gtx = testGenesisTx()
-      genesis = createGenesisBlock(gtx).get
+      genesis = testGenesisBlock()
       gid = blockId(genesis.header)
       tree = LocalTree.init(genesis)
-      sm = minimalSignedTx()
-      b1 = childBlock(genesis.header, gid, 1'u64, [sm])
+      b1 = mkChildValidBlock(genesis.header, gid, 1'u64)
       id1 = blockId(b1.header)
     check tree.addBlockToTree(b1)
     check tree.hasBlock(id1)
@@ -44,50 +39,36 @@ suite "core/local_tree":
 
   test "addBlockToTree rejects duplicate id":
     let
-      gtx = testGenesisTx()
-      genesis = createGenesisBlock(gtx).get
+      genesis = testGenesisBlock()
       tree = LocalTree.init(genesis)
     check not tree.addBlockToTree(genesis)
 
   test "addBlockToTree rejects zero parent and unknown parent":
     let
-      gtx = testGenesisTx()
-      genesis = createGenesisBlock(gtx).get
+      genesis = testGenesisBlock()
       tree = LocalTree.init(genesis)
-      sm = minimalSignedTx()
     var fakeParent: BlockId
     for i in 0 ..< fakeParent.len:
       fakeParent[i] = byte(i)
-    let orphan = childBlock(genesis.header, fakeParent, 1'u64, [sm])
+    let orphan = mkChildValidBlock(genesis.header, fakeParent, 1'u64)
     check not tree.addBlockToTree(orphan)
-    let
-      zeroParentHdr = initHeader(
-        GenesisBedrockVersion,
-        default(BlockId),
-        99'u64,
-        [],
-        [sm],
-        genesis.header.proofOfLeadership,
-      ).get
-      bad = initBlock(zeroParentHdr, uncleHeaders = [], txs = [sm])
+    let bad = mkChildValidBlock(genesis.header, default(BlockId), 99'u64)
     check not tree.addBlockToTree(bad)
 
   test "blockHeight returns none for unknown id":
-    let tree = LocalTree.init(createGenesisBlock(testGenesisTx()).get)
+    let tree = LocalTree.init(testGenesisBlock())
     var unknown: BlockId
     unknown[0] = 1'u8
     check tree.blockHeight(unknown).isNone
 
   test "ancestorAtHeight walks back on tip branch":
     let
-      gtx = testGenesisTx()
-      genesis = createGenesisBlock(gtx).get
+      genesis = testGenesisBlock()
       gid = blockId(genesis.header)
       tree = LocalTree.init(genesis)
-      sm = minimalSignedTx()
-      b1 = childBlock(genesis.header, gid, 1'u64, [sm])
+      b1 = mkChildValidBlock(genesis.header, gid, 1'u64)
       id1 = blockId(b1.header)
-      b2 = childBlock(b1.header, id1, 2'u64, [sm])
+      b2 = mkChildValidBlock(b1.header, id1, 2'u64)
       id2 = blockId(b2.header)
     check tree.addBlockToTree(b1)
     check tree.ancestorAtHeight(id1, 0'u64) == Opt.some(gid)
@@ -95,11 +76,10 @@ suite "core/local_tree":
     check tree.ancestorAtHeight(id2, 1'u64) == Opt.some(id1)
     check tree.ancestorAtHeight(id2, 0'u64) == Opt.some(gid)
 
-suite "core/local_tree (lcaBlockIdAndHeight)":
+suite "chain/local_tree (lcaBlockIdAndHeight)":
   test "lcaBlockIdAndHeight of genesis with itself is genesis":
     let
-      gtx = testGenesisTx()
-      genesis = createGenesisBlock(gtx).get
+      genesis = testGenesisBlock()
       gid = blockId(genesis.header)
       tree = LocalTree.init(genesis)
     let (lcaId, lcaHeight) = lcaBlockIdAndHeight(tree, gid, gid).get()
@@ -108,14 +88,12 @@ suite "core/local_tree (lcaBlockIdAndHeight)":
 
   test "lcaBlockIdAndHeight on a linear chain (depth and symmetry)":
     let
-      gtx = testGenesisTx()
-      genesis = createGenesisBlock(gtx).get
+      genesis = testGenesisBlock()
       gid = blockId(genesis.header)
       tree = LocalTree.init(genesis)
-      sm = minimalSignedTx()
-      b1 = childBlock(genesis.header, gid, 1'u64, [sm])
+      b1 = mkChildValidBlock(genesis.header, gid, 1'u64)
       id1 = blockId(b1.header)
-      b2 = childBlock(b1.header, id1, 2'u64, [sm])
+      b2 = mkChildValidBlock(b1.header, id1, 2'u64)
       id2 = blockId(b2.header)
     check tree.addBlockToTree(b1)
     check tree.addBlockToTree(b2)
@@ -134,16 +112,14 @@ suite "core/local_tree (lcaBlockIdAndHeight)":
 
   test "lcaBlockIdAndHeight across two children of genesis is genesis":
     let
-      gtx = testGenesisTx()
-      genesis = createGenesisBlock(gtx).get
+      genesis = testGenesisBlock()
       gid = blockId(genesis.header)
       tree = LocalTree.init(genesis)
-      sm = minimalSignedTx()
-      left1 = childBlock(genesis.header, gid, 1'u64, [sm])
+      left1 = mkChildValidBlock(genesis.header, gid, 1'u64)
       left1Id = blockId(left1.header)
-      left2 = childBlock(left1.header, left1Id, 2'u64, [sm])
+      left2 = mkChildValidBlock(left1.header, left1Id, 2'u64)
       left2Id = blockId(left2.header)
-      right = childBlock(genesis.header, gid, 3'u64, [sm])
+      right = mkChildValidBlock(genesis.header, gid, 3'u64)
       rightId = blockId(right.header)
     check tree.addBlockToTree(left1)
     check tree.addBlockToTree(left2)
@@ -154,8 +130,7 @@ suite "core/local_tree (lcaBlockIdAndHeight)":
 
   test "lcaBlockIdAndHeight returns none if either id is unknown":
     let
-      gtx = testGenesisTx()
-      genesis = createGenesisBlock(gtx).get
+      genesis = testGenesisBlock()
       gid = blockId(genesis.header)
       tree = LocalTree.init(genesis)
     var unknown: BlockId
@@ -165,23 +140,21 @@ suite "core/local_tree (lcaBlockIdAndHeight)":
     
   test "pruneForks prunes side-branch nodes below finality height":
     let
-      gtx = testGenesisTx()
-      genesis = createGenesisBlock(gtx).get
+      genesis = testGenesisBlock()
       gid = blockId(genesis.header)
       tree = LocalTree.init(genesis)
-      sm = minimalSignedTx()
-      b1 = childBlock(genesis.header, gid, 1'u64, [sm])
+      b1 = mkChildValidBlock(genesis.header, gid, 1'u64)
       id1 = blockId(b1.header)
     check tree.addBlockToTree(b1)
     let
-      sideB = childBlock(genesis.header, gid, 2'u64, [sm])
+      sideB = mkChildValidBlock(genesis.header, gid, 2'u64)
       idSide = blockId(sideB.header)
     check tree.addBlockToTree(sideB)
 
     check tree.blocksIdsAtHeight(1'u64).len == 2
 
     # Advance immutable block to b1 by adding b2 (height 2)
-    let b2 = childBlock(b1.header, id1, 3'u64, [sm])
+    let b2 = mkChildValidBlock(b1.header, id1, 3'u64)
     check tree.addBlockToTree(b2)
     let pruned = tree.pruneForks(id1, oldImmHeight = 0'u64, tipHeight = 2'u64)
     check idSide in pruned
@@ -197,18 +170,16 @@ suite "core/local_tree (lcaBlockIdAndHeight)":
 
   test "pruneForks handles linear fast-path, cascades upward orphan pruning, and terminates early":
     let
-      gtx = testGenesisTx()
-      genesis = createGenesisBlock(gtx).get
+      genesis = testGenesisBlock()
       gid = blockId(genesis.header)
       tree = LocalTree.init(genesis)
-      sm = minimalSignedTx()
 
       # 1. Build canonical chain up to height 3, verifying fast-path on linear chain
-      b1 = childBlock(genesis.header, gid, 1'u64, [sm])
+      b1 = mkChildValidBlock(genesis.header, gid, 1'u64)
       id1 = blockId(b1.header)
-      b2 = childBlock(b1.header, id1, 2'u64, [sm])
+      b2 = mkChildValidBlock(b1.header, id1, 2'u64)
       id2 = blockId(b2.header)
-      b3 = childBlock(b2.header, id2, 3'u64, [sm])
+      b3 = mkChildValidBlock(b2.header, id2, 3'u64)
       id3 = blockId(b3.header)
 
     check tree.addBlockToTree(b1)
@@ -221,9 +192,9 @@ suite "core/local_tree (lcaBlockIdAndHeight)":
     # 2. Build competing fork branching off b1 (height 1):
     #    f2 at height 2, f3 at height 3
     let
-      f2 = childBlock(b1.header, id1, 10'u64, [sm])
+      f2 = mkChildValidBlock(b1.header, id1, 10'u64)
       idF2 = blockId(f2.header)
-      f3 = childBlock(f2.header, idF2, 11'u64, [sm])
+      f3 = mkChildValidBlock(f2.header, idF2, 11'u64)
       idF3 = blockId(f3.header)
 
     check tree.addBlockToTree(f2)
@@ -236,9 +207,9 @@ suite "core/local_tree (lcaBlockIdAndHeight)":
 
     # 3. Add canonical b4, b5 (tip is now height 5)
     let
-      b4 = childBlock(b3.header, id3, 4'u64, [sm])
+      b4 = mkChildValidBlock(b3.header, id3, 4'u64)
       id4 = blockId(b4.header)
-      b5 = childBlock(b4.header, id4, 5'u64, [sm])
+      b5 = mkChildValidBlock(b4.header, id4, 5'u64)
       id5 = blockId(b5.header)
     check tree.addBlockToTree(b4)
     check tree.addBlockToTree(b5)
@@ -261,25 +232,24 @@ suite "core/local_tree (lcaBlockIdAndHeight)":
       check tree.hasBlock(id)
     check tree.blocksIdsAtHeight(3'u64) == @[id3]
 
-suite "core/local_tree (countChainDensity)":
+suite "chain/local_tree (countChainDensity)":
   test "counts only blocks within the half-open window (lcaSlot, lcaSlot + densitySlotWindow]":
     let
-      sm = minimalSignedTx()
-      genesis = createGenesisBlock(testGenesisTx()).get
+      genesis = testGenesisBlock()
       gid = blockId(genesis.header)
       tree = LocalTree.init(genesis)
 
       # Genesis is at slot 0
       # LCA block at slot 10
-      b1 = childBlock(genesis.header, gid, slot = 10'u64, [sm])
+      b1 = mkChildValidBlock(genesis.header, gid, slot = 10'u64)
       id1 = blockId(b1.header)
 
       # Chain A: slots 15, 25, 45
-      b2 = childBlock(b1.header, id1, slot = 15'u64, [sm])
+      b2 = mkChildValidBlock(b1.header, id1, slot = 15'u64)
       id2 = blockId(b2.header)
-      b3 = childBlock(b2.header, id2, slot = 25'u64, [sm])
+      b3 = mkChildValidBlock(b2.header, id2, slot = 25'u64)
       id3 = blockId(b3.header)
-      b4 = childBlock(b3.header, id3, slot = 45'u64, [sm])
+      b4 = mkChildValidBlock(b3.header, id3, slot = 45'u64)
       id4 = blockId(b4.header)
 
     check:

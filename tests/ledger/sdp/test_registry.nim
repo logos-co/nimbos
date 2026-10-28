@@ -60,26 +60,16 @@ suite "ledger/sdp/registry":
       lockedNoteId: seeded.declaration.lockedNoteId,
       nonce: 1,
     )
-    installTestWithdraw(seeded.registry, withdraw, 5)
+    installTestWithdraw(seeded.registry, withdraw, withdrawAt = 5)
+    seeded.registry = onEpochStarted(seeded.registry, 5)
     check getDeclaration(seeded.registry.state, seeded.declId).isSome
-    seeded.registry = onEpochStarted(seeded.registry, 7)
+    seeded.registry = onEpochStarted(seeded.registry, 6)
     check getDeclaration(seeded.registry.state, seeded.declId).isNone
 
   test "onEpochStarted asserts when the epoch does not advance":
-    var seeded = seedDeclaration(pkSeed = 31, declareEpoch = 1)
-    let withdraw = WithdrawMessage(
-      declarationId: seeded.declId,
-      lockedNoteId: seeded.declaration.lockedNoteId,
-      nonce: 1,
-    )
-    installTestWithdraw(seeded.registry, withdraw, 5)
-    for epoch in EpochNumber(1) .. EpochNumber(6):
-      seeded.registry = onEpochStarted(seeded.registry, epoch)
-    check getDeclaration(seeded.registry.state, seeded.declId).isSome
-    seeded.registry = onEpochStarted(seeded.registry, 7)
-    check getDeclaration(seeded.registry.state, seeded.declId).isNone
+    let registry = onEpochStarted(testSdpRegistry(), 6)
     expect AssertionDefect:
-      discard onEpochStarted(seeded.registry, 7)
+      discard onEpochStarted(registry, 6)
 
 suite "ledger/sdp/registry — epoch snapshots":
   test "epochs 0 and 1 use genesis snapshot":
@@ -196,23 +186,36 @@ suite "ledger/sdp/registry — active blend providers":
   test "a provider drops out once the inactivity period lapses":
     var seeded = seedDeclaration(pkSeed = 41, declareEpoch = 1)
     installTestActive(seeded.registry, ActiveMessage(
-      declarationId: seeded.declId, nonce: 1, metadata: @[]), 1)
+      declarationId: seeded.declId, nonce: 1), 1)
     seeded.registry = onEpochStarted(seeded.registry, 2)
     seeded.registry = onEpochStarted(seeded.registry, 3)
     # Last activity in epoch 1 plus an inactivity period of 2 reaches epoch 3.
     check activeBlendProviders(seeded.registry, 3).len == 1
     check activeBlendProviders(seeded.registry, 4).len == 0
 
-  test "a pending withdrawal excludes the provider once it takes effect":
+  test "a withdrawal follows the message timing table":
     var seeded = seedDeclaration(pkSeed = 42, declareEpoch = 1)
-    installTestWithdraw(seeded.registry, WithdrawMessage(
-      declarationId: seeded.declId,
-      lockedNoteId: seeded.declaration.lockedNoteId,
-      nonce: 1), 3)
+    let
+      withdraw = WithdrawMessage(
+        declarationId: seeded.declId,
+        lockedNoteId: seeded.declaration.lockedNoteId,
+        nonce: 1,
+      )
+      declaration = getDeclaration(seeded.registry.state, seeded.declId).get()
+    seeded.registry = applySdpWithdraw(seeded.registry, withdraw, declaration, 1)
+    check getDeclaration(seeded.registry.state, seeded.declId).get().withdrawAt ==
+      Opt.some(3'u32)
     seeded.registry = onEpochStarted(seeded.registry, 1)
     seeded.registry = onEpochStarted(seeded.registry, 2)
     check activeBlendProviders(seeded.registry, 2).len == 1
     check activeBlendProviders(seeded.registry, 3).len == 0
+
+    seeded.registry = onEpochStarted(seeded.registry, 3)
+    check activeBlendProviders(seeded.registry, 4).len == 0
+    check getDeclaration(seeded.registry.state, seeded.declId).isSome
+
+    seeded.registry = onEpochStarted(seeded.registry, 4)
+    check getDeclaration(seeded.registry.state, seeded.declId).isNone
 
   test "a missing epoch snapshot yields no providers":
     check activeBlendProviders(testSdpRegistry(), 5).len == 0

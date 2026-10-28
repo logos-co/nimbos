@@ -11,15 +11,18 @@ import
   std/tables,
   results,
   intops,
-  ./types
-from ./mantle/primitives import SlotNumber, BlockNumber
+  bincode,
+  ../core/types
+from ../core/crypto/types as crypto_types import isZero
+from ../core/mantle/primitives import SlotNumber, BlockNumber
+from ./block_validation import ValidBlock, encode, header
 
-export types.Block, types.Header, types.BlockId, types.ValidBlock
+export Block, Header, BlockId, ValidBlock, encode, header
 
 type
   BlockNode = ref object
     id: BlockId
-    blk: Block
+    blk: ValidBlock
     parent: BlockNode
     height: BlockNumber
 
@@ -38,9 +41,10 @@ func ancestorAtHeight*(localTree: LocalTree, id: BlockId, targetHeight: BlockNum
       n = n.parent
   Opt.none(BlockId)
 
-func init*(T: type LocalTree, genesisBlock: Block): LocalTree =
-  let gid = blockId(genesisBlock.header)
-  let gn = BlockNode(id: gid, blk: genesisBlock, parent: nil, height: 0'u64)
+func init*(T: type LocalTree, genesisBlock: ValidBlock): LocalTree =
+  let
+    gid = blockId(genesisBlock.header)
+    gn = BlockNode(id: gid, blk: genesisBlock, parent: nil, height: 0'u64)
   LocalTree(
     blocksById: [(gid, gn)].toTable,
     idsByHeight: [(0'u64, @[gid])].toTable,
@@ -110,16 +114,10 @@ func fetchHeader*(localTree: LocalTree, blockId: BlockId): Opt[Header] =
 func hasBlock*(localTree: LocalTree, blockId: BlockId): bool =
   localTree.blocksById.hasKey(blockId)
 
-func getBlock*(localTree: LocalTree, id: BlockId): Opt[Block] =
+func getBlock*(localTree: LocalTree, id: BlockId): Opt[ValidBlock] =
   localTree.blocksById.withValue(id, node):
     return Opt.some(node.blk)
-  Opt.none(Block)
-
-func blocksIdsAtHeight*(localTree: LocalTree, height: BlockNumber): seq[BlockId] =
-  ## Returns a sequence of block IDs admitted at the specified height.
-  localTree.idsByHeight.withValue(height, ids):
-    return ids[]
-  @[]
+  Opt.none(ValidBlock)
 
 func isAncestor*(localTree: LocalTree, ancestor: BlockId,
     descendant: BlockId): bool =
@@ -136,8 +134,9 @@ func isAncestor*(localTree: LocalTree, ancestor: BlockId,
 func lcaBlockIdAndHeight*(
     localTree: LocalTree, idA, idB: BlockId,
 ): Opt[(BlockId, BlockNumber)] =
-  var na = localTree.blocksById.getOrDefault(idA, nil)
-  var nb = localTree.blocksById.getOrDefault(idB, nil)
+  var
+    na = localTree.blocksById.getOrDefault(idA, nil)
+    nb = localTree.blocksById.getOrDefault(idB, nil)
   if na == nil or nb == nil:
     return Opt.none((BlockId, BlockNumber))
   if na.id == nb.id:
@@ -204,7 +203,7 @@ func countChainDensity*(
   else:
     upperHeight - lcaHeight
 
-proc addBlockToTree*(localTree: LocalTree, blk: Block): bool =
+proc addBlockToTree*(localTree: LocalTree, blk: ValidBlock): bool =
   ## Inserts a header-validated block; only duplicate ids and unknown parents
   ## are guarded here.
   let id = blockId(blk.header)
@@ -216,5 +215,12 @@ proc addBlockToTree*(localTree: LocalTree, blk: Block): bool =
     localTree.idsByHeight.mgetOrPut(node.height, @[]).add(id)
     return true
   false
+
+when defined(unittest) or defined(test):
+  func blocksIdsAtHeight*(localTree: LocalTree, height: BlockNumber): seq[BlockId] =
+    ## Returns a sequence of block IDs admitted at the specified height.
+    localTree.idsByHeight.withValue(height, ids):
+      return ids[]
+    @[]
 
 {.pop.}

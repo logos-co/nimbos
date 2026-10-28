@@ -12,7 +12,7 @@ import
   std/[os, strutils],
   results,
   stew/io2,
-  ../../logos_chain/core/mantle/[tx_types, tx_hashing, proofs],
+  ../../logos_chain/core/mantle/tx_hashing,
   ../../logos_chain/chain/chain,
   ../../logos_chain/deployment/deployment_settings,
   ../testutil
@@ -20,40 +20,27 @@ import
 const testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
 const deploymentSettingsPath = testsDir / "../../config/deployment-settings.yaml"
 
+let devnetDeploymentSettings = block:
+  let text = readAllChars(deploymentSettingsPath).expect("could not read deployment settings")
+  parseDeploymentSettings(text).expect("could not parse deployment settings")
+
 suite "chain/genesis":
   test "createGenesisBlock wraps a valid genesis mantle tx":
     let
-      sm = testGenesisTx()
-      h = createGenesisBlock(sm).get.header
-      b = createGenesisBlock(sm).get
-    check h.bodyRoot == body_root([], [SignedMantleTx(sm)]).get
+      validGenesisTx = testValidGenesisTx()
+      b = createGenesisBlock(validGenesisTx)
+      h = b.header
+    check h.bodyRoot == body_root([], [validGenesisTx])
     check b.txs.len == 1
     check b.header.bedrockVersion == GenesisBedrockVersion
-    check b.txs[0].tx.ops.len == sm.tx.ops.len
+    check b.txs[0].tx.ops.len == validGenesisTx.tx.ops.len
     check b.signature == DefaultEd25519Signature
 
-  test "createGenesisBlock returns error on malformed tx":
-    var invalidInputs: seq[NoteId]
-    for i in 0 .. 255:
-      invalidInputs.add(default(NoteId))
-    let malformedTx = SignedMantleTx(
-      tx: MantleTx(ops: @[createTransferOp(TransferPayload(
-        inputs: Inputs(noteIds: invalidInputs), outputs: Outputs(notes: @[])
-      ))]),
-      opProofs: @[OpProof(kind: opfTransfer, transferProof: default(ZkSigProof))]
-    )
-    check createGenesisBlock(ValidGenesisMantleTx(malformedTx)).error == EncodingError.InputsCountExceeded
-
   test "createGenesisBlock builds expected header/envelope from deployment settings":
-    let text = readAllChars(deploymentSettingsPath).valueOr:
-      fail "could not read deployment settings"
-    let ds = parseDeploymentSettings(text).valueOr:
-      fail "could not parse deployment settings"
-    require validateDeploymentSettings(ds).isOk
-
     let
+      ds = devnetDeploymentSettings
       gstate = ds.cryptarchia.genesisState
-      genesisTx = gstate.signedMantleTx
+      genesisTx = gstate.validGenesisTx
       testChain = Chain.init(ds, forkChoiceRule = ForkChoiceRule.Online).valueOr:
         fail "Chain.init: " & $error
       gb = testChain.genesisBlock
@@ -67,28 +54,23 @@ suite "chain/genesis":
     check gb.header.bedrockVersion == GenesisBedrockVersion
     check gb.header.parentBlock == default(BlockId)
     check gb.header.slot == 0'u64
-    check gb.header.bodyRoot == body_root([], [SignedMantleTx(genesisTx)]).get
+    check gb.header.bodyRoot == body_root([], gb.txs)
     check gb.header == gstate.header
     check gb.signature == gstate.blockSignature
 
-  test "createGenesisBlock from signedMantleTx matches deployment genesisState envelope":
-    let text = readAllChars(deploymentSettingsPath).valueOr:
-      fail "could not read deployment settings"
-    let ds = parseDeploymentSettings(text).valueOr:
-      fail "could not parse deployment settings"
-    require validateDeploymentSettings(ds).isOk
-
+  test "createGenesisBlock from validGenesisTx matches deployment genesisState envelope":
     let
-      gstate = ds.cryptarchia.genesisState
-      fromTx = createGenesisBlock(gstate.signedMantleTx).get
-      fromState = initBlock(gstate.header, gstate.blockSignature, [], [SignedMantleTx(gstate.signedMantleTx)])
+      gstate = devnetDeploymentSettings.cryptarchia.genesisState
+      validGenesisTx = gstate.validGenesisTx
+      fromTx = createGenesisBlock(validGenesisTx)
+      fromState = initBlock(gstate.header, gstate.blockSignature, [], [validGenesisTx.hashed])
 
     check fromTx.header == fromState.header
     check blockId(fromTx.header) == blockId(fromState.header)
     check fromTx.signature == fromState.signature
     check fromTx.txs.len == fromState.txs.len
     check fromTx.txs.len == 1
-    check mantleTxHash(fromTx.txs[0].tx).get == mantleTxHash(fromState.txs[0].tx).get
+    check fromTx.txs[0].hash == validGenesisTx.hash
     check fromTx.txs[0].opProofs.len == fromState.txs[0].opProofs.len
     for i in 0 ..< fromTx.txs[0].opProofs.len:
       check fromTx.txs[0].opProofs[i].kind == fromState.txs[0].opProofs[i].kind

@@ -18,6 +18,7 @@ suite "core/mantle/primitives":
   test "primitive constants match expected values":
     check MaxBlockTxs == 1024
     check MantleMaxOps == 255
+    check MaxOperationDataSize == 1_835_008
 
   test "References is MaxBlockTxs of Hash32":
     check default(References).len == MaxBlockTxs
@@ -36,6 +37,22 @@ suite "core/mantle/primitives":
     var outPos = 0
     check readOutputs(outWire, outPos).get == outputs
     check outPos == outWire.len
+
+  test "decodeFieldElement and decodeFieldElementAt roundtrip encodeFieldElement":
+    let
+      fe = slotToFr(987654321'u64)
+      wire = encodeFieldElement(fe)
+    check wire.len == 32
+    var pos = 0
+    let atFe = decodeFieldElementAt(wire, pos).get
+    check pos == 32
+    check atFe == fe
+    let fullFe = decodeFieldElement(wire).get
+    check fullFe == fe
+    # Trailing bytes rejection
+    var withTrailing = @wire
+    withTrailing.add(1'u8)
+    check decodeFieldElement(withTrailing).error == DecodingError.TrailingBytes
 
   test "encodeServiceType maps BN to wire byte 0":
     check encodeServiceType(ServiceType.bn) == 0'u8
@@ -115,18 +132,39 @@ suite "core/mantle/primitives":
     let fr42 = slotToFr(42'u64)
     check fr42 != default(FieldElement)
 
-  test "encodeMetadata and encodeInscription roundtrip correctly":
-    let meta: Metadata = @[1'u8, 2, 3, 4]
-    let encMeta = encodeMetadata(meta).get
+  test "encodeDepositMetadata and encodeInscription roundtrip correctly":
+    let meta: DepositMetadata = @[1'u8, 2, 3, 4]
+    let encMeta = encodeDepositMetadata(meta).get
     check encMeta.len == 4 + 4 # 4-byte u32 length prefix + 4 payload bytes
     var pos = 0
-    check readU32LeLenPrefixed(encMeta, pos).get == meta
+    check readDepositMetadata(encMeta, pos).get == meta
 
     let inscript: Inscription = @[9'u8, 8, 7]
     let encInscript = encodeInscription(inscript).get
     check encInscript.len == 4 + 3
     pos = 0
-    check readU32LeLenPrefixed(encInscript, pos).get == inscript
+    check readInscription(encInscript, pos).get == inscript
+
+  test "encodeInscription and encodeDepositMetadata reject more than MaxOperationDataSize bytes":
+    let oversized = newSeq[byte](MaxOperationDataSize + 1)
+    check encodeInscription(oversized).error == EncodingError.InscriptionLengthExceeded
+    check encodeDepositMetadata(oversized).error == EncodingError.MetadataLengthExceeded
+
+  test "readInscription accepts exactly MaxOperationDataSize bytes":
+    let
+      inscript = newSeq[byte](MaxOperationDataSize)
+      wire = encodeInscription(inscript).get
+    var pos = 0
+    check readInscription(wire, pos).get.len == MaxOperationDataSize
+    check pos == wire.len
+
+  test "readDepositMetadata accepts exactly MaxOperationDataSize bytes":
+    let
+      meta = newSeq[byte](MaxOperationDataSize)
+      wire = encodeDepositMetadata(meta).get
+    var pos = 0
+    check readDepositMetadata(wire, pos).get.len == MaxOperationDataSize
+    check pos == wire.len
 
   test "primitive scalar encoders produce exact little-endian byte representations":
     check encodeValue(100'u64) == [100'u8, 0, 0, 0, 0, 0, 0, 0]

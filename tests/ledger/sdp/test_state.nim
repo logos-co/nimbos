@@ -9,11 +9,11 @@
 {.used.}
 
 import
-  results,
   std/sets,
   unittest2,
+  results,
   libp2p/multiaddress,
-  ./test_helpers,
+  ./[test_helpers, test_utxo_helpers],
   ../../../logos_chain/core/mantle/primitives,
   ../../../logos_chain/ledger/sdp/state,
   ../../../logos_chain/zk/poseidon2/hasher
@@ -100,13 +100,48 @@ suite "ledger/sdp/state":
     state = insertDeclaration(state, declId, info)
     state = addDeclarationToLockedNote(state, noteId, declId)
 
-    state = finalizeWithdrawals(state, 6)
+    state = finalizeWithdrawals(state, 5)
     check declId in state.declarations
     check noteId in state.lockedNotes
 
-    state = finalizeWithdrawals(state, 7)
+    state = finalizeWithdrawals(state, 6)
     check declId notin state.declarations
     check noteId notin state.lockedNotes
+
+  test "finalizeWithdrawals removes a declaration when epochs are skipped":
+    # Breaks if finalizeWithdrawals compares with ==.
+    var
+      state = SdpState.init()
+      info: DeclarationInfo
+    let
+      declId = seedDeclId(13)
+      noteId = seedNoteId(14)
+    info.lockedNoteId = noteId
+    info.withdrawAt = Opt.some(EpochNumber(5))
+    state = insertDeclaration(state, declId, info)
+    state = addDeclarationToLockedNote(state, noteId, declId)
+
+    state = finalizeWithdrawals(state, 8)
+    check declId notin state.declarations
+    check noteId notin state.lockedNotes
+
+  test "finalizeWithdrawals keeps a declaration withdrawn at the epoch limit":
+    # Breaks if the compare becomes `withdrawAt + 1 <= currentEpoch`, which
+    # wraps at the limit.
+    var
+      state = SdpState.init()
+      info: DeclarationInfo
+    let
+      declId = seedDeclId(15)
+      noteId = seedNoteId(16)
+    info.lockedNoteId = noteId
+    info.withdrawAt = Opt.some(high(EpochNumber))
+    state = insertDeclaration(state, declId, info)
+    state = addDeclarationToLockedNote(state, noteId, declId)
+
+    state = finalizeWithdrawals(state, high(EpochNumber))
+    check declId in state.declarations
+    check noteId in state.lockedNotes
 
   test "hasProviderOrZkIdConflict uses secondary index maps":
     var state = SdpState.init()
@@ -154,14 +189,44 @@ suite "ledger/sdp/state":
     seeded1.registry = applySdpWithdraw(seeded1.registry, withdrawMsg1, decl1Active, 5)
     checkInvariants(seeded1.registry.state)
 
-    # Epoch hook at epoch 6 (snapshot/finalization) — does not prune epoch 5 withdrawal yet
+    # The withdrawal at epoch 5 sets withdraw_at to 7. Epochs 6 and 7 keep
+    # the declaration.
     seeded1.registry = onEpochStarted(seeded1.registry, 6)
     checkInvariants(seeded1.registry.state)
     check seeded1.declId in seeded1.registry.state.declarations
-
-    # Epoch hook at epoch 7 — prunes epoch 5 withdrawal
     seeded1.registry = onEpochStarted(seeded1.registry, 7)
     checkInvariants(seeded1.registry.state)
+    check seeded1.declId in seeded1.registry.state.declarations
+
+    # Epoch 8 removes the declaration.
+    seeded1.registry = onEpochStarted(seeded1.registry, 8)
+    checkInvariants(seeded1.registry.state)
     check seeded1.declId notin seeded1.registry.state.declarations
+
+  test "a withdrawing declaration still blocks its ids":
+    var seeded = seedDeclaration(pkSeed = 4, declareEpoch = 1)
+    let
+      withdraw = WithdrawMessage(
+        declarationId: seeded.declId,
+        lockedNoteId: seeded.declaration.lockedNoteId,
+        nonce: 1,
+      )
+      declaration = getDeclaration(seeded.registry.state, seeded.declId).get()
+    seeded.registry = applySdpWithdraw(seeded.registry, withdraw, declaration, 1)
+    # The withdrawal at epoch 1 removes the declaration at epoch 4.
+    seeded.registry = onEpochStarted(seeded.registry, 3)
+    check seeded.declId in seeded.registry.state.declarations
+    let
+      utxo = mkUtxo(value = 200, pkSeed = 5)
+      store = seeded.store.insert(utxo.id, utxo).store
+      redeclaration = DeclarationMessage(
+        serviceType: ServiceType.bn,
+        locators: @[mkLocator(30305)],
+        providerId: seeded.declaration.providerId,
+        lockedNoteId: utxo.id,
+        zkId: utxo.note.zkPublicKey,
+      )
+    check execDeclare(seeded.registry, redeclaration, store, 3).error ==
+      DuplicateProviderOrZkId
 
 {.pop.}

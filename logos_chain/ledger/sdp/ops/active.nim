@@ -6,7 +6,7 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## SDP Active validation and application.
-## Spec: [Service Declaration Protocol v1.3.0](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/bedrock-service-declaration-protocol.md)
+## Spec: [Service Declaration Protocol v1.6.0](https://github.com/logos-co/logos-lips/blob/7c2ec59fadcdc2ba0ae74ff7600a14b55d90efcd/docs/blockchain/raw/bedrock-service-declaration-protocol.md)
 
 {.push raises: [], gcsafe.}
 
@@ -14,7 +14,7 @@ import
   results,
   ./util,
   ../[registry, state],
-  ../../../core/mantle/[blend_activity, operations, proofs]
+  ../../../core/mantle/[operations, proofs]
 
 export util, registry, state
 
@@ -23,8 +23,10 @@ proc validateSdpActive(
     proof: ZkSigProof,
     txHash: Hash32,
     state: SdpState,
+    epoch: EpochNumber,
 ): Result[DeclarationInfo, LedgerError] =
   let declaration = ?loadDeclaration(state, active.declarationId)
+  ?checkWithinWithdrawal(declaration, epoch)
   ?checkNonceMonotonic(declaration, active.nonce)
   ?verifyZkSig(proof, txHash, @[declaration.zkId])
   ok(declaration)
@@ -50,20 +52,14 @@ proc tryApplySdpActive*(
     epoch: EpochNumber,
     verifyPoq: ProofOfQuotaVerifier,
 ): Result[SdpRegistry, LedgerError] =
-  let declaration = ?validateSdpActive(active, proof, txHash, registry.state)
+  let declaration = ?validateSdpActive(
+    active, proof, txHash, registry.state, epoch)
   if getParametersAt(registry, declaration.service, epoch).isNone:
     return err(MissingServiceParameters)
   case declaration.service
   of ServiceType.bn:
-    let activityProof = decodeActivityMetadata(active.metadata).valueOr:
-      return err(MalformedActivityMetadata)
     registry.blendRewards = ?recordActivity(
-      registry.blendRewards, activityProof, declaration.providerId, verifyPoq)
-
-  var updated = declaration
-  updated.nonce = active.nonce
-  updated.active = Opt.some(epoch)
-  registry.state = insertDeclaration(registry.state, active.declarationId, updated)
-  ok(registry)
+      registry.blendRewards, active.metadata, declaration.providerId, verifyPoq)
+  ok(applySdpActive(registry, active, declaration, epoch))
 
 {.pop.}

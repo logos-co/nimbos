@@ -16,9 +16,10 @@ import
 
 from ../core/crypto/types as crypto_types import isZero
 from ../core/mantle/primitives import SlotNumber
-from ../core/types import BlockId, Header, Block, Tip, blockId, BlockNumber, ValidBlock
-from ../core/local_tree import
-  LocalTree, fetchHeader, blockHeight, lcaBlockIdAndHeight,
+from ../core/types import BlockId, Header, Block, Tip, blockId, BlockNumber
+from ../chain/block_validation import ValidBlock, header
+from ../chain/local_tree import
+  LocalTree, init, fetchHeader, blockHeight, lcaBlockIdAndHeight,
   ancestorAtHeight, pruneForks, countChainDensity, isAncestor, hasBlock,
   addBlockToTree, getBlock
 
@@ -66,7 +67,7 @@ func init(T: type ForkChoiceDensityCache): T =
 func hasBlock*(cs: ConsensusState, id: BlockId): bool =
   cs.localTree.hasBlock(id)
 
-func getBlock*(cs: ConsensusState, id: BlockId): Opt[Block] =
+func getBlock*(cs: ConsensusState, id: BlockId): Opt[ValidBlock] =
   cs.localTree.getBlock(id)
 
 func fetchHeader*(cs: ConsensusState, id: BlockId): Opt[Header] =
@@ -126,7 +127,7 @@ func canDescendFromImmutable*(cs: ConsensusState, header: Header): bool =
 
 func init*(
     T: type ConsensusState,
-    genesisBlock: Block,
+    genesisBlock: ValidBlock,
     securityParam: uint64,
     densitySlotWindow: uint64,
     forkChoiceRule: ForkChoiceRule,
@@ -240,16 +241,13 @@ proc tryUpdateTip(
       height: height,
     )
 
-proc addBlockAndTryUpdateTip*(cs: ConsensusState, blk: Block): bool =
+proc addBlockAndTryUpdateTip*(cs: ConsensusState, blk: ValidBlock): bool =
   ## Inserts a block into the local tree and attempts to update the canonical tip.
   let id = blockId(blk.header)
   if not cs.localTree.addBlockToTree(blk):
     return false
   cs.tryUpdateTip(id)
   true
-
-template addBlockAndTryUpdateTip*(cs: ConsensusState, blk: ValidBlock): bool =
-  cs.addBlockAndTryUpdateTip(Block(blk))
 
 when defined(unittest) or defined(test):
   func localTree*(cs: ConsensusState): LocalTree =

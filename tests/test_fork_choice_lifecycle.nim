@@ -90,7 +90,7 @@ suite "fork_choice_lifecycle":
 
   asyncTest "onSyncComplete with ZeroDuration switches immediately to Online and persists":
     let
-      genesisBlk = createGenesisBlock(testGenesisTx()).get
+      genesisBlk = testGenesisBlock()
       chain = initTestChain(genesisBlk, forkChoiceRule = ForkChoiceRule.Bootstrap)
     withTempDir(tmpDir, "test_lifecycle_zero"):
       let
@@ -109,7 +109,7 @@ suite "fork_choice_lifecycle":
 
   asyncTest "onSyncComplete with non-zero duration transitions after timer expires":
     let
-      genesisBlk = createGenesisBlock(testGenesisTx()).get
+      genesisBlk = testGenesisBlock()
       chain = initTestChain(genesisBlk, forkChoiceRule = ForkChoiceRule.Bootstrap)
     withTempDir(tmpDir, "test_lifecycle_timer"):
       let
@@ -133,7 +133,7 @@ suite "fork_choice_lifecycle":
         saved.libBlockId == bp.consensus.latestImmutableId
 
   asyncTest "persist writes node state only in Online mode":
-    let genesisBlk = createGenesisBlock(testGenesisTx()).get
+    let genesisBlk = testGenesisBlock()
     withTempDir(tmpDir, "test_lifecycle_persist"):
       block:
         let
@@ -158,7 +158,7 @@ suite "fork_choice_lifecycle":
 
   asyncTest "start and stop manages heartbeat and prolonged bootstrap timers safely in Bootstrap mode":
     let
-      genesisBlk = createGenesisBlock(testGenesisTx()).get
+      genesisBlk = testGenesisBlock()
       chain = initTestChain(genesisBlk, forkChoiceRule = ForkChoiceRule.Bootstrap)
     withTempDir(tmpDir, "test_lifecycle_stop"):
       let
@@ -180,7 +180,7 @@ suite "fork_choice_lifecycle":
 
   asyncTest "start and stop in Online mode runs heartbeat and persists on stop":
     let
-      genesisBlk = createGenesisBlock(testGenesisTx()).get
+      genesisBlk = testGenesisBlock()
       chain = initTestChain(genesisBlk, forkChoiceRule = ForkChoiceRule.Online)
     withTempDir(tmpDir, "test_lifecycle_stop_online"):
       let

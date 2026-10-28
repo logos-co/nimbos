@@ -21,6 +21,7 @@ import
   ./[framing, syncer_types, types]
 
 from ../core/types import BlockId
+from ../chain/block_validation import encode, header
 
 logScope:
   topics = "cryptarchia_ibd"
