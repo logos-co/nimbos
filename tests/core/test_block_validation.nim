@@ -514,32 +514,15 @@ suite "core/block_validation — multi-tier evaluation order":
       validBlk.txs.len == 1
       admitted.validTxs.len == 0
 
-  test "bodyMatchesHeader unit tests for Proposal and Block":
+  test "bodyMatchesHeader rejects a block whose transactions or uncles do not match":
     let
       validTx = minimalValidSignedTx()
       genesis = testGenesisBlock()
       gid = blockId(genesis.header)
-      proposal = childProposal(genesis.header, gid, SlotNumber(1), [validTx])
       blk = childBlock(genesis.header, gid, SlotNumber(1), [validTx.hashed])
 
-    # Genuine proposal & block match
-    check proposal.bodyMatchesHeader == true
+    # Genuine block matches
     check blk.bodyMatchesHeader == true
-
-    # Proposal with modified reference fails
-    var badRefProp = proposal
-    badRefProp.references[0][0] = badRefProp.references[0][0] xor 0xff'u8
-    check badRefProp.bodyMatchesHeader == false
-
-    # Proposal with dropped reference (early zero) fails
-    var droppedRefProp = proposal
-    droppedRefProp.references[0] = default(Hash32)
-    check droppedRefProp.bodyMatchesHeader == false
-
-    # Proposal with modified uncle fails
-    var badUncleProp = proposal
-    badUncleProp.uncleHeaders = UncleHeaders(@[sampleUncle(0x11'u8)])
-    check badUncleProp.bodyMatchesHeader == false
 
     # Block with modified transaction hash fails
     var badTxBlk = blk

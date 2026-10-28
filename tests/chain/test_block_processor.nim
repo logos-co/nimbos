@@ -414,9 +414,11 @@ suite "chain/block_processor":
         p = Proposal(header: b.header, references: default(References), signature: b.signature)
         id = blockId(p.header)
         peer = getRandomPeerId()
+        sm = minimalValidSignedTx()
 
+      check bp.mempool.add(sm, SlotNumber(0))
       var pBad = p
-      pBad.references[0][0] = 0xAA'u8 # non-zero reference disagrees with bodyRoot
+      pBad.references = References(@[txReference(sm.hash)])
 
       # 1. pBad is rejected immediately at gossip gate
       check bp.processProposal(pBad, peer) == ValidationResult.Reject
@@ -469,23 +471,16 @@ suite "chain/block_processor":
       check (await goodFut).isOk
       check bp.localTree.localTipId == id
 
-  asyncTest "processProposal rejects a tampered copy and accepts the genuine one after it":
+  asyncTest "processProposal rejects an unsigned copy before resolving references":
+    # Guard: the signature check runs before the mempool step.
     withProcessor(chain):
       let
-        b = childValidBlock(genesisBlk.header, gid, SlotNumber(1), [])
-        p = Proposal(header: b.header, references: default(References), signature: b.signature)
-        peer = getRandomPeerId()
+        tx = minimalValidSignedTx()
+        b = childValidBlock(genesisBlk.header, gid, SlotNumber(1), [tx])
+        p = Proposal(
+          header: b.header, references: References(@[txReference(tx.hash)]),
+          signature: DefaultEd25519Signature)
 
-      var pBad = p
-      pBad.references[0][0] = 0xAA'u8
-
-      # Gossip rejects tampered copy
-      check bp.processProposal(pBad, peer) == ValidationResult.Reject
-
-      # Dedup check is still ok
-      check bp.checkDeduplication(blockId(p.header), p.signature).isOk
-
-      # Gossip accepts genuine copy
-      check bp.processProposal(p, peer) == ValidationResult.Accept
+      check bp.processProposal(p, getRandomPeerId()) == ValidationResult.Reject
 
 {.pop.}

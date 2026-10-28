@@ -10,6 +10,7 @@
 {.push raises: [], gcsafe.}
 
 import
+  stew/assign2,
   ../crypto/[hashing, types],
   libp2p/multiaddress,
   poseidon2/[types, io]
@@ -30,12 +31,13 @@ const
   # MAX_OPERATION_DATA_SIZE, Mantle Transaction Encoding v1.10.0:
   # https://github.com/logos-co/logos-lips/blob/949faa9563027de366514247a2a62b0de2f8c45f/docs/blockchain/raw/mantle-transaction-encoding.md
   MaxOperationDataSize* = 1_835_008
+  ReferencePrefixLength* = 16
 
 type
   ChannelId* = Hash32
   DeclarationId* = Hash32
   Parent* = Hash32
-  References* = array[MaxBlockTxs, Hash32]
+  TxReference* = array[ReferencePrefixLength, byte]
 
   Inscription* = seq[byte]
   DepositMetadata* = seq[byte]
@@ -83,6 +85,12 @@ type
   SignatureCount* = uint16
   ChannelKeyIndex* = uint16
   KeyCount* = uint16
+
+func txReference*(hash: Hash32): TxReference =
+  ## The leading `ReferencePrefixLength` bytes of a transaction hash.
+  var res: TxReference
+  assign(res, hash.toOpenArray(0, ReferencePrefixLength - 1))
+  res
 
 const NoteWireBytes = sizeof(Value) + sizeof(ZkPublicKey)
 

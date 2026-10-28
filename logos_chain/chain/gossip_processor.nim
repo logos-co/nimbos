@@ -26,7 +26,6 @@ proc processProposal*(
     id = blockId(proposal.header)
     idHex = toHex(id)
 
-  # 1. Scalar slot checks (~2-20 ns)
   if proposal.header.slot <= bp.localTree.latestImmutableSlot():
     debug "GossipSub ignored proposal at or behind immutable slot",
       blockId = idHex, src
@@ -38,21 +37,33 @@ proc processProposal*(
       blockId = idHex, blockSlot = proposal.header.slot, wallclockSlot = nowSlot, src
     return ValidationResult.Ignore
 
-  # 2. Ingestion deduplication (in-flight, localTree, orphanPool) (~20-40 ns)
+  # Only accepted copies are in flight, applied or buffered.
   if bp.checkDeduplication(id, proposal.signature).isErr:
     trace "GossipSub ignored duplicate proposal", blockId = idHex, src
     return ValidationResult.Ignore
 
-  # 3. Binding of the reference list (~µs, mempool-free)
-  if not proposal.bodyMatchesHeader:
-    debug "GossipSub rejected proposal: references do not match body root",
+  # Header rules that need no mempool access run before any reference lookup.
+  if proposal.header.bedrockVersion != ExpectedBedrockVersion:
+    debug "GossipSub rejected proposal with unsupported bedrock version",
+      blockId = idHex, version = proposal.header.bedrockVersion, src
+    return ValidationResult.Reject
+  if not verify_signature(proposal.header, proposal.signature):
+    debug "GossipSub rejected proposal with invalid header signature",
       blockId = idHex, src
     return ValidationResult.Reject
 
-  if proposal.hasMissingReference(bp.mempool):
-    debug "GossipSub cannot accept proposal: missing tx in mempool",
-      blockId = idHex, src
-    return ValidationResult.Ignore
+  # The body root is checked inside, so a tampered copy is never queued.
+  discard reconstructProposalTxs(proposal, bp.mempool).valueOr:
+    case error
+    of ProposalValidationError.BodyRootMismatch:
+      debug "GossipSub rejected proposal: references do not match body root",
+        blockId = idHex, src
+      return ValidationResult.Reject
+    of ProposalValidationError.MissingReference,
+        ProposalValidationError.CollidingReference:
+      debug "GossipSub cannot accept proposal: unresolved reference",
+        blockId = idHex, error = $error, src
+      return ValidationResult.Ignore
 
   discard bp.addProposal(proposal, id)
 
