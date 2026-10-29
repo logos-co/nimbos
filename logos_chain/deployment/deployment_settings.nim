@@ -243,8 +243,6 @@ func validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
   need(ds.cryptarchia.epochConfig.epochPeriodNonceStabilization > 0,
     "cryptarchia.epoch_config.epoch_period_nonce_stabilization must be > 0")
   need(ds.cryptarchia.securityParam > 0, "cryptarchia.security_param must be > 0")
-  need(ds.cryptarchia.uncleReferenceWindowInBlock > 0,
-    "cryptarchia.uncle_reference_window_in_block must be > 0")
   need(ds.cryptarchia.slotActivationCoeff.num > 0,
     "cryptarchia.slot_activation_coeff.numerator must be > 0")
   need(ds.cryptarchia.slotActivationCoeff.den > 0,
