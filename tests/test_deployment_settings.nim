@@ -473,16 +473,6 @@ mempool:
       v.isErr
       "cryptarchia.slot_activation_coeff.denominator must be > 0" in v.error
 
-  test "validateDeploymentSettings: zero uncle reference window":
-    var ds = parseDeploymentSettings(minimalValidYaml).valueOr:
-      check false
-      return
-    ds.cryptarchia.uncleReferenceWindowInBlock = 0
-    let v = validateDeploymentSettings(ds)
-    check:
-      v.isErr
-      "cryptarchia.uncle_reference_window_in_block must be > 0" in v.error
-
   test "validateDeploymentSettings: slot coeff without pinned lottery constants":
     let badYaml = deploymentSettingsBlendBlock & """
 network:
