@@ -19,8 +19,7 @@
 import
   results,
   stint,
-  ../core/crypto/types,
-  ../zk/poseidon2/hasher
+  ../core/crypto/types
 
 export results
 

@@ -10,7 +10,6 @@
 {.push raises: [], gcsafe.}
 
 import
-  results,
   ../state,
   ../../../core/crypto/types,
   ../../[types, zksig_verify]

@@ -62,19 +62,18 @@ proc selectProposalReferences*(
         continue
 
       # Lazily compute and cache byteSize and execGas on first evaluation
-      let txBytes = item.byteSize.valueOr:
-        let sz = byteLen(item.tx)
-        item.byteSize = Opt.some(sz)
-        sz
-
-      let execGas = item.execGas.valueOr:
-        let eg = txExecutionGas(item.tx).valueOr:
+      let
+        txBytes = item.byteSize.valueOr:
+          let sz = byteLen(item.tx)
+          item.byteSize = Opt.some(sz)
+          sz
+        execGas = item.execGas.valueOr:
+          let eg = txExecutionGas(item.tx).valueOr:
+            continue
+          item.execGas = Opt.some(eg)
+          eg
+        nextExecutionGas = cumulativeExecutionGas.checkedAdd(execGas).valueOr:
           continue
-        item.execGas = Opt.some(eg)
-        eg
-
-      let nextExecutionGas = cumulativeExecutionGas.checkedAdd(execGas).valueOr:
-        continue
 
       if cumulativeBytes + txBytes > maxBytes or
           nextExecutionGas > MAX_EXECUTION_GAS_PER_BLOCK:

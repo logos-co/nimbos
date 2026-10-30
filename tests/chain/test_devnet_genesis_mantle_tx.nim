@@ -14,7 +14,6 @@
 import
   std/[os, strutils],
   unittest2,
-  results,
   stew/[byteutils, io2],
   yaml/dom,
   ../../logos_chain/deployment/[deployment_settings, deployment_settings_helpers],
@@ -76,28 +75,31 @@ suite "devnet genesis mantle_tx body root":
       smtDeploymentHash = mantleTxHash(smtFromDeployment.tx).get
       txRoot = merkle_root([smtHash])
       bodyRoot = body_root([], txRoot)
-    check smtHash == smtDeploymentHash
-    check txRoot == merkle_root([smtDeploymentHash])
-    check txRoot == smtHash
-    check toHex(txRoot) == expectedDevnetMantleTxHash
-    check toHex(bodyRoot) == expectedDevnetGenesisBodyRoot
-    check bodyRoot == gstate.header.bodyRoot
+    check:
+      smtHash == smtDeploymentHash
+      txRoot == merkle_root([smtDeploymentHash])
+      txRoot == smtHash
+      toHex(txRoot) == expectedDevnetMantleTxHash
+      toHex(bodyRoot) == expectedDevnetGenesisBodyRoot
+      bodyRoot == gstate.header.bodyRoot
 
   test "deployment genesis block id matches devnet header preimage":
     let
       ds = devnetDeploymentSettings
       validGenesisTx = ds.cryptarchia.genesisState.validGenesisTx
       gb = createGenesisBlock(validGenesisTx)
-    check toHex(gb.header.bodyRoot) == expectedDevnetGenesisBodyRoot
-    check toHex(blockId(gb.header)) == expectedDevnetGenesisBlockId
+    check:
+      toHex(gb.header.bodyRoot) == expectedDevnetGenesisBodyRoot
+      toHex(blockId(gb.header)) == expectedDevnetGenesisBlockId
 
   test "devnet genesis mantle tx encoding and hashes match fixed vectors":
     let
       smt = devnetFixtureSmt
       txBytes = encodeMantleTx(smt.tx).get
-    check toHex(txBytes) == fixedGenesisTxBytesHex
-    check txBytes == hexToSeqByte(fixedGenesisTxBytesHex)
-    check toHex(blake2b256Hash(txBytes)) == expectedDevnetBlake2bMantleDigest
-    check toHex(mantleTxHash(smt.tx).get) == expectedDevnetMantleTxHash
+    check:
+      toHex(txBytes) == fixedGenesisTxBytesHex
+      txBytes == hexToSeqByte(fixedGenesisTxBytesHex)
+      toHex(blake2b256Hash(txBytes)) == expectedDevnetBlake2bMantleDigest
+      toHex(mantleTxHash(smt.tx).get) == expectedDevnetMantleTxHash
 
 {.pop.}

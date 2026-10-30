@@ -68,7 +68,7 @@ template inFlightKey*(id: BlockId, sig: Ed25519Signature): InFlightKey =
     res[i] = id[i] xor sig.data[i] xor sig.data[32 + i]
   res
 
-proc new*(T: type BlockProcessor, chain: sink Chain): T =
+func new*(T: type BlockProcessor, chain: sink Chain): T =
   T(chain: chain, blockQueue: newAsyncQueue[BlockEntry]())
 
 func localTree*(bp: BlockProcessor): LocalTree =

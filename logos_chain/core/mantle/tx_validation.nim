@@ -51,7 +51,6 @@ template opProofs*(t: ValidSignedMantleTx | ValidGenesisMantleTx): untyped = has
 template byteLen*(t: ValidSignedMantleTx | ValidGenesisMantleTx): int =
   byteLen(hashed(t))
 
-
 func hasHeavyZkProof*(tx: SignedMantleTx): bool {.inline.} =
   tx.opProofs.anyIt(it.kind == opfLeaderClaim)
 
@@ -158,9 +157,10 @@ proc validateMantleTxStateless*(
       template proof: untyped = stx.opProofs[i]
       if op.payload.kind == LeaderClaim:
         template claim: untyped = op.payload.leaderClaim
-        let public = proofOfClaimPublic(claim, claim.rewardsRoot, txHash)
-        let verified = verifyProof(proof.proofOfClaimProof, public).valueOr:
-          return err(StatelessLedgerError.VerifierNotInitialised)
+        let
+          public = proofOfClaimPublic(claim, claim.rewardsRoot, txHash)
+          verified = verifyProof(proof.proofOfClaimProof, public).valueOr:
+            return err(StatelessLedgerError.VerifierNotInitialised)
         if not verified:
           return err(StatelessLedgerError.InvalidProof)
 

@@ -42,9 +42,10 @@ suite "chain/block_processor":
       let
         b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
         r = await bp.addBlock(b1)
-      check r.isOk
-      check bp.localTree.localTipId == blockId(b1.header)
-      check bp.ledger.state(blockId(b1.header)).isSome
+      check:
+        r.isOk
+        bp.localTree.localTipId == blockId(b1.header)
+        bp.ledger.state(blockId(b1.header)).isSome
 
   asyncTest "addBlock on an applied block completes with AlreadyApplied":
     withProcessor(chain):
@@ -59,21 +60,25 @@ suite "chain/block_processor":
         b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
         b2 = childBlock(b1.header, blockId(b1.header), SlotNumber(2), [])
       # Buffer b2 as orphan
-      check (await bp.addBlock(b2)).error.kind == BlockApplyErrorKind.OrphanBuffered
-      check chain.orphanPool.hasOrphan(blockId(b2.header))
+      check:
+        (await bp.addBlock(b2)).error.kind == BlockApplyErrorKind.OrphanBuffered
+        chain.orphanPool.hasOrphan(blockId(b2.header))
       # Ingesting duplicate b2 while in orphanPool returns OrphanAlreadyBuffered immediately
       let fDup = bp.addBlock(b2)
-      check fDup.finished
-      check (await fDup).error.kind == BlockApplyErrorKind.OrphanAlreadyBuffered
+      check:
+        fDup.finished
+        (await fDup).error.kind == BlockApplyErrorKind.OrphanAlreadyBuffered
 
   asyncTest "addBlock deduplicates in-flight blocks immediately":
     withProcessor(chain):
-      let b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
-      let f1 = bp.addBlock(b1)
-      let f2 = bp.addBlock(b1)
-      check f2.finished
-      check (await f2).error.kind == BlockApplyErrorKind.InFlight
-      check (await f1).isOk
+      let
+        b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
+        f1 = bp.addBlock(b1)
+        f2 = bp.addBlock(b1)
+      check:
+        f2.finished
+        (await f2).error.kind == BlockApplyErrorKind.InFlight
+        (await f1).isOk
 
   test "inFlightKey distinguishes variations in R, S, and BlockId":
     let

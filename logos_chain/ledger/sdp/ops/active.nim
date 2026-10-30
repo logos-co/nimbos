@@ -11,7 +11,6 @@
 {.push raises: [], gcsafe.}
 
 import
-  results,
   ./util,
   ../[registry, state],
   ../../../core/mantle/[operations, proofs]

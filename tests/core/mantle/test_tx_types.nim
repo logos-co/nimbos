@@ -21,10 +21,11 @@ suite "core/mantle/tx_types":
       signed = SignedMantleTx(tx: MantleTx(ops: @[]), opProofs: @[])
       wire = encodeSignedMantleTx(signed).get
       back = bincodeDecodeHashedSignedMantleTx(wire)
-    check back.tx.ops.len == 0
-    check back.opProofs.len == 0
-    check wire.len == 1
-    check wire[0] == byte(0)
+    check:
+      back.tx.ops.len == 0
+      back.opProofs.len == 0
+      wire.len == 1
+      wire[0] == byte(0)
 
   test "bincodeDecodeHashedSignedMantleTx roundtrips encodeSignedMantleTx":
     let
@@ -43,9 +44,10 @@ suite "core/mantle/tx_types":
       )
       wire = encodeSignedMantleTx(signed).get
       back = bincodeDecodeHashedSignedMantleTx(wire)
-    check back.tx.ops.len == signed.tx.ops.len
-    check back.opProofs.len == signed.opProofs.len
-    check back.opProofs[0].kind == signed.opProofs[0].kind
+    check:
+      back.tx.ops.len == signed.tx.ops.len
+      back.opProofs.len == signed.opProofs.len
+      back.opProofs[0].kind == signed.opProofs[0].kind
 
   test "signed inscribe tx at MaxOperationDataSize round-trips and matches byteLen":
     let
@@ -191,21 +193,23 @@ suite "core/mantle/tx_types":
       let enc = encodeSignedMantleTx(tx).get
       check byteLen(tx) == enc.len
       let htx = createHashedSignedMantleTx(tx).get
-      check byteLen(htx) == enc.len
-      check encodeSignedMantleTx(htx).get == enc
-      check htx.tx.ops.len == tx.tx.ops.len
-      check htx.opProofs.len == tx.opProofs.len
+      check:
+        byteLen(htx) == enc.len
+        encodeSignedMantleTx(htx).get == enc
+        htx.tx.ops.len == tx.tx.ops.len
+        htx.opProofs.len == tx.opProofs.len
     let
       gtx = testValidGenesisTx()
       vtx = ValidSignedMantleTx(gtx)
-    check byteLen(vtx) == encodeSignedMantleTx(vtx.hashed).get.len
-    check encodeSignedMantleTx(vtx.hashed).get == encodeSignedMantleTx(vtx.hashed.signedTx).get
-    check vtx.tx.ops.len == vtx.hashed.tx.ops.len
-    check vtx.opProofs.len == vtx.hashed.opProofs.len
-    check byteLen(gtx) == encodeSignedMantleTx(gtx.hashed).get.len
-    check encodeSignedMantleTx(gtx.hashed).get == encodeSignedMantleTx(gtx.hashed.signedTx).get
-    check gtx.tx.ops.len == vtx.tx.ops.len
-    check gtx.opProofs.len == vtx.opProofs.len
+    check:
+      byteLen(vtx) == encodeSignedMantleTx(vtx.hashed).get.len
+      encodeSignedMantleTx(vtx.hashed).get == encodeSignedMantleTx(vtx.hashed.signedTx).get
+      vtx.tx.ops.len == vtx.hashed.tx.ops.len
+      vtx.opProofs.len == vtx.hashed.opProofs.len
+      byteLen(gtx) == encodeSignedMantleTx(gtx.hashed).get.len
+      encodeSignedMantleTx(gtx.hashed).get == encodeSignedMantleTx(gtx.hashed.signedTx).get
+      gtx.tx.ops.len == vtx.tx.ops.len
+      gtx.opProofs.len == vtx.opProofs.len
 
   test "encodeSignedMantleTx returns error on proof count mismatch":
     let tx = SignedMantleTx(

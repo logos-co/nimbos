@@ -396,20 +396,21 @@ suite "core/mantle/tx_validation — stateless invariants":
     check r.error == StatelessLedgerError.DoubleSpend
 
   test "toStatelessLedgerError: maps EncodingError variants correctly":
-    check toStatelessLedgerError(EncodingError.UnsupportedOpcode) == StatelessLedgerError.UnsupportedOp
-    check toStatelessLedgerError(EncodingError.LocatorsCountExceeded) == StatelessLedgerError.TooManyLocators
-    check toStatelessLedgerError(EncodingError.LocatorLengthExceeded) == StatelessLedgerError.InvalidLocator
-    check toStatelessLedgerError(EncodingError.KeysCountExceeded) == StatelessLedgerError.InvalidChannelConfig
-    check toStatelessLedgerError(EncodingError.ProofCountMismatch) == StatelessLedgerError.InvalidProof
-    check toStatelessLedgerError(EncodingError.ProofKindMismatch) == StatelessLedgerError.InvalidProof
-    check toStatelessLedgerError(EncodingError.MultiSigCountExceeded) == StatelessLedgerError.InvalidProof
-    check toStatelessLedgerError(EncodingError.MultiSigSignaturesMismatch) == StatelessLedgerError.InvalidProof
-    check toStatelessLedgerError(EncodingError.MultiSigIndicesNonIncreasing) == StatelessLedgerError.InvalidProof
-    check toStatelessLedgerError(EncodingError.LengthExceeded) == StatelessLedgerError.InvalidProof
-    check toStatelessLedgerError(EncodingError.MetadataLengthExceeded) == StatelessLedgerError.OperationDataExceeded
-    check toStatelessLedgerError(EncodingError.InscriptionLengthExceeded) == StatelessLedgerError.OperationDataExceeded
-    check toStatelessLedgerError(EncodingError.InputsCountExceeded) == StatelessLedgerError.InvalidProof
-    check toStatelessLedgerError(EncodingError.OpsCountExceeded) == StatelessLedgerError.TooManyOps
+    check:
+      toStatelessLedgerError(EncodingError.UnsupportedOpcode) == StatelessLedgerError.UnsupportedOp
+      toStatelessLedgerError(EncodingError.LocatorsCountExceeded) == StatelessLedgerError.TooManyLocators
+      toStatelessLedgerError(EncodingError.LocatorLengthExceeded) == StatelessLedgerError.InvalidLocator
+      toStatelessLedgerError(EncodingError.KeysCountExceeded) == StatelessLedgerError.InvalidChannelConfig
+      toStatelessLedgerError(EncodingError.ProofCountMismatch) == StatelessLedgerError.InvalidProof
+      toStatelessLedgerError(EncodingError.ProofKindMismatch) == StatelessLedgerError.InvalidProof
+      toStatelessLedgerError(EncodingError.MultiSigCountExceeded) == StatelessLedgerError.InvalidProof
+      toStatelessLedgerError(EncodingError.MultiSigSignaturesMismatch) == StatelessLedgerError.InvalidProof
+      toStatelessLedgerError(EncodingError.MultiSigIndicesNonIncreasing) == StatelessLedgerError.InvalidProof
+      toStatelessLedgerError(EncodingError.LengthExceeded) == StatelessLedgerError.InvalidProof
+      toStatelessLedgerError(EncodingError.MetadataLengthExceeded) == StatelessLedgerError.OperationDataExceeded
+      toStatelessLedgerError(EncodingError.InscriptionLengthExceeded) == StatelessLedgerError.OperationDataExceeded
+      toStatelessLedgerError(EncodingError.InputsCountExceeded) == StatelessLedgerError.InvalidProof
+      toStatelessLedgerError(EncodingError.OpsCountExceeded) == StatelessLedgerError.TooManyOps
 
   test "validateMantleTxStateless rejects tx exceeding MantleMaxOps with TooManyOps":
     var largeOps: seq[Op]

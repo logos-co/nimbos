@@ -11,18 +11,15 @@
 import
   std/[os, strutils],
   unittest2,
-  results,
   bearssl/rand,
   libp2p/crypto/ed25519/ed25519,
-  ../../logos_chain/ledger/[balance, ledger],
-  ../../logos_chain/core/mantle/[tx_types, tx_hashing],
+  ../../logos_chain/ledger/ledger,
   ../../logos_chain/core/types,
   ../../logos_chain/core/crypto/hashing,
   ../zk/zksign_helpers,
   ./sdp/test_helpers,
+  ./test_helpers,
   ../core/mantle/test_helpers
-
-import ./test_helpers
 
 const
   testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
@@ -48,7 +45,7 @@ proc mkFixtureTransferTx(input: Utxo): ValidSignedMantleTx =
   stx.opProofs[0].transferProof = loadProof(transferProofPath)
   mkValidTx(stx)
 
-proc mkInscribeTx(
+func mkInscribeTx(
     rng: ref HmacDrbgContext, channel: ChannelId
 ): ValidSignedMantleTx =
   ## A single ChannelInscribe op that JIT-creates `channel`; signed with a
@@ -240,8 +237,9 @@ suite "gas: tx execution gas and block limit":
         vtx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
     check r.isOk
     let mf = s.mandatory_fees(vtx)
-    check mf.isOk
-    check mf.get.executionGas == Gas(118)
+    check:
+      mf.isOk
+      mf.get.executionGas == Gas(118)
 
   test "a JIT config then a 2-of-2 config on the same channel costs 118":
     let
@@ -281,11 +279,12 @@ suite "gas: tx execution gas and block limit":
     # The TooMuchExecutionGas branch fires when the block's summed execution
     # gas exceeds MAX_EXECUTION_GAS_PER_BLOCK; tripping it end-to-end needs
     # ~57k verified ops, so the arithmetic path is exercised directly here.
-    check MAX_EXECUTION_GAS_PER_BLOCK == Gas(3_193_460)
-    check checkedAdd(MAX_EXECUTION_GAS_PER_BLOCK, 1'u64).isSome
-    check checkedAdd(uint64.high, 1'u64).isNone
-    check checkedMul(1000'u64, 1000'u64).isSome
-    check checkedMul(uint64.high, 2'u64).isNone
+    check:
+      MAX_EXECUTION_GAS_PER_BLOCK == Gas(3_193_460)
+      checkedAdd(MAX_EXECUTION_GAS_PER_BLOCK, 1'u64).isSome
+      checkedAdd(uint64.high, 1'u64).isNone
+      checkedMul(1000'u64, 1000'u64).isSome
+      checkedMul(uint64.high, 2'u64).isNone
 
 suite "gas: fee enforcement via committed transfer fixture":
   setup:
@@ -366,15 +365,17 @@ suite "gas: storage accumulation and epoch rotation":
       s.feeMarket.storageGasConsumedInEpoch == Gas(0)
 
   test "mandatory_fees for ValidSignedMantleTx combines execution gas and storage gas":
-    let rng = HmacDrbgContext.new()
-    let tx = mkInscribeTx(rng, mkChannelId(1))
+    let
+      rng = HmacDrbgContext.new()
+      tx = mkInscribeTx(rng, mkChannelId(1))
     var s = mkState(@[])
     s.feeMarket.executionBaseFee = 2
     s.feeMarket.storageGasPrice = 3
-    let mf = s.mandatory_fees(tx).expect(
-      "mandatory_fees should return fee breakdown (totalCost, executionGas, storageGas) for signed mantle tx"
-    )
-    let expectedCost = (mf.executionGas * 2) + (mf.storageGas * 3)
+    let
+      mf = s.mandatory_fees(tx).expect(
+        "mandatory_fees should return fee breakdown (totalCost, executionGas, storageGas) for signed mantle tx"
+      )
+      expectedCost = (mf.executionGas * 2) + (mf.storageGas * 3)
     check mf.totalCost == expectedCost
 
   test "advanceEpochAndMarket rotates storage market and advances epoch without proof":

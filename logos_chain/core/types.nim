@@ -294,7 +294,6 @@ func createGenesisHeader*(validGenesisTx: ValidGenesisMantleTx): Header =
     ),
   )
 
-
 func initProposal*(
     header: Header,
     uncleHeaders: openArray[SignedHeader],

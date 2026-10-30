@@ -12,9 +12,7 @@ import
   bincode,
   chronicles,
   chronos,
-  results,
-  libp2p/[switch, peerid],
-  libp2p/stream/connection,
+  libp2p/switch,
   stew/byteutils as sbyteutils,
   ../chain/block_processor,
   ./[framing, syncer_types, types]
@@ -225,7 +223,7 @@ proc onBlock(
 proc downloadBlocks(
     syncer: Syncer,
     peer: PeerId,
-    targetBlock: Opt[BlockId] = Opt.none(BlockId),
+    targetBlock: Opt[BlockId],
 ): Future[bool] {.async: (raises: [CancelledError]).} =
   var latestDownloadedId = Opt.none(BlockId)
   debug "IBD download loop start", peer,
@@ -317,8 +315,9 @@ proc initialBlockDownload*(
     return
 
   info "Starting initial block download", protocol = syncer.chainSyncProtocol
-  var attemptedPeers: seq[PeerId]
-  var numSuccess = 0
+  var
+    attemptedPeers: seq[PeerId]
+    numSuccess = 0
 
   while true:
     let currentPeers = provider()

@@ -34,7 +34,7 @@ let devnetDeploymentSettings = block:
   let dsText = readAllChars(deploymentSettingsPath).expect("valid deployment settings file")
   parseDeploymentSettings(dsText).expect("valid deployment settings")
 
-proc parseGenesis(ds: DeploymentSettings):
+func parseGenesis(ds: DeploymentSettings):
     tuple[validTx: ValidGenesisMantleTx, param: CryptarchiaParameter] =
   ## Genesis tx and the cryptarchia parameter it inscribes.
   let
@@ -163,21 +163,23 @@ suite "chain/epoch wiring (devnet deployment settings)":
     var chain = initZeroFeeChain(ds)
 
     # 1. Add tx to mempool
-    let dummyTx = validSignedTxWithOps(1, 1)
-    let txHash = dummyTx.hash
-    check chain.mempool.add(dummyTx, SlotNumber(0)) == true
-    check txHash in chain.mempool
+    let
+      dummyTx = validSignedTxWithOps(1, 1)
+      txHash = dummyTx.hash
+    check:
+      chain.mempool.add(dummyTx, SlotNumber(0)) == true
+      txHash in chain.mempool
 
     # 2. Ingest block b1 containing dummyTx
-    let gid = blockId(chain.genesisBlock.header)
-    let b1 = childBlock(chain.genesisBlock.header, gid, SlotNumber(1), [dummyTx.hashed])
-    let id1 = blockId(b1.header)
-    check chain.tryApplyBlock(b1).isOk
-    check chain.localTree.localTipId == id1
-
-    # Immediate removal from active mempool upon block addition
-    check txHash notin chain.mempool.txs
-    check chain.mempool.get(txHash).isOk # Retained in graceCache for fork proposals
+    let
+      gid = blockId(chain.genesisBlock.header)
+      b1 = childBlock(chain.genesisBlock.header, gid, SlotNumber(1), [dummyTx.hashed])
+      id1 = blockId(b1.header)
+    check:
+      chain.tryApplyBlock(b1).isOk
+      chain.localTree.localTipId == id1
+      txHash notin chain.mempool.txs
+      chain.mempool.get(txHash).isOk # Retained in graceCache for fork proposals
 
     # 3. Build a longer fork (b2_fork at slot 2 from genesis, b3_fork at slot 3 from b2_fork)
     let b2_fork = childBlock(chain.genesisBlock.header, gid, SlotNumber(2), [])
@@ -303,8 +305,9 @@ suite "chain/epoch wiring (devnet deployment settings)":
     # Set genesis in the past so slot 6500 is within current wallclock
     chain.slotConfig.genesisTime = uint64(getTime().toUnix() - 7000)
 
-    let gid = blockId(chain.genesisBlock.header)
-    let tx = validSignedTxWithOps(1, 101)
+    let
+      gid = blockId(chain.genesisBlock.header)
+      tx = validSignedTxWithOps(1, 101)
     check chain.mempool.add(tx, SlotNumber(0))
 
     let tipState = chain.ledger.state(gid).get()
@@ -314,20 +317,24 @@ suite "chain/epoch wiring (devnet deployment settings)":
     let (refs, count) = chain.mempool.selectProposalReferences(
       tipState, ledgerConfig(ds), SlotNumber(6500), verifyPoq = verifyProofOfQuota
     )
-    check count == 1
-    check refs[0] == tx.hash
+    check:
+      count == 1
+      refs[0] == tx.hash
 
     # Verify that a block constructed from this proposal is valid and admitted to localTree & ledger
-    let blk = childBlock(chain.genesisBlock.header, gid, SlotNumber(6500), [tx.hashed])
-    let blkId = blockId(blk.header)
-    check chain.tryApplyBlock(blk).isOk
-    check chain.localTree.hasBlock(blkId)
-    check chain.localTree.localTipId == blkId
+    let
+      blk = childBlock(chain.genesisBlock.header, gid, SlotNumber(6500), [tx.hashed])
+      blkId = blockId(blk.header)
+    check:
+      chain.tryApplyBlock(blk).isOk
+      chain.localTree.hasBlock(blkId)
+      chain.localTree.localTipId == blkId
 
     # Verify that the post-application ledger state has officially transitioned to Epoch 1
     let appliedState = chain.ledger.state(blkId).get()
-    check appliedState.epochs.activeEpoch.epoch == 1
-    check appliedState.epochs.nextEpoch.epoch == 2
+    check:
+      appliedState.epochs.activeEpoch.epoch == 1
+      appliedState.epochs.nextEpoch.epoch == 2
 
   test "tryApplyBlock rejects statelessly invalid transaction with detailed error":
     var chain = Chain.init(ds, mockVerifyLeaderProof).valueOr:

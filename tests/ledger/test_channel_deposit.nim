@@ -11,10 +11,8 @@
 import
   std/[os, sets, strutils],
   unittest2,
-  results,
-  ../../logos_chain/ledger/
-    [channel_state, cryptarchia_state, leader_state, mantle_state, types],
-  ../../logos_chain/core/mantle/[primitives, operations, proofs, tx_hashing, utxo],
+  ../../logos_chain/ledger/[cryptarchia_state, mantle_state],
+  ../../logos_chain/core/mantle/[operations, proofs, tx_hashing],
   ../../logos_chain/zk/zksign,
   ../zk/zksign_helpers,
   ../core/mantle/test_helpers
@@ -119,16 +117,17 @@ suite "applyChannelDeposit — consume and re-create (no verify)":
       (notes, newCs) = r.get
       recreated0 = Utxo(opId: opId(op).get, outputIndex: 0, note: in0.note)
       recreated1 = Utxo(opId: opId(op).get, outputIndex: 1, note: in1.note)
-    check newCs.len == 2
-    check not newCs.utxos.contains(in0.id)
-    check not newCs.utxos.contains(in1.id)
-    # Value and ZkPublicKey survive; only the NoteId is new, which restarts
-    # ageing and stops the signed deposit from being replayed.
-    check newCs.utxos.get(recreated0.id) == Opt.some(recreated0)
-    check newCs.utxos.get(recreated1.id) == Opt.some(recreated1)
-    check notes.isChannelNoteOf(recreated0.id, cid)
-    check notes.isChannelNoteOf(recreated1.id, cid)
-    check notes.len == 2
+    check:
+      newCs.len == 2
+      not newCs.utxos.contains(in0.id)
+      not newCs.utxos.contains(in1.id)
+      # Value and ZkPublicKey survive; only the NoteId is new, which restarts
+      # ageing and stops the signed deposit from being replayed.
+      newCs.utxos.get(recreated0.id) == Opt.some(recreated0)
+      newCs.utxos.get(recreated1.id) == Opt.some(recreated1)
+      notes.isChannelNoteOf(recreated0.id, cid)
+      notes.isChannelNoteOf(recreated1.id, cid)
+      notes.len == 2
 
   test "deposit → withdraw → replaying the deposit fails on the spent input":
     let
@@ -164,8 +163,9 @@ suite "applyChannelDeposit — consume and re-create (no verify)":
         channel: cid, inputs: Inputs(noteIds: @[input.id]), metadata: @[],
       )
       r = applyChannelDeposit(ChannelNotes.init(), cs, op)
-    check r.isOk
-    check r.get.cs.leader == leader
+    check:
+      r.isOk
+      r.get.cs.leader == leader
 
 suite "MantleState.tryApplyChannelDeposit — verify wrapper (fixture-driven)":
   test "verify before VK install → VerifierNotInitialised":
@@ -215,9 +215,10 @@ suite "MantleState.tryApplyChannelDeposit — verify wrapper (fixture-driven)":
     let
       (newMs, newCs) = r.get
       recreated = Utxo(opId: opId(op).get, outputIndex: 0, note: input.note)
-    check newCs.len == 1
-    check not newCs.utxos.contains(input.id)
-    check newCs.utxos.get(recreated.id) == Opt.some(recreated)
-    check newMs.channelNotes.isChannelNoteOf(recreated.id, cid)
+    check:
+      newCs.len == 1
+      not newCs.utxos.contains(input.id)
+      newCs.utxos.get(recreated.id) == Opt.some(recreated)
+      newMs.channelNotes.isChannelNoteOf(recreated.id, cid)
 
 {.pop.}

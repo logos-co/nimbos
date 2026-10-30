@@ -40,10 +40,11 @@ func sampleHeader(
   )
 
 proc checkBlockEqual(a, b: Block) =
-  check a.header == b.header
-  check a.signature == b.signature
-  check a.uncleHeaders == b.uncleHeaders
-  check a.txs.len == b.txs.len
+  check:
+    a.header == b.header
+    a.signature == b.signature
+    a.uncleHeaders == b.uncleHeaders
+    a.txs.len == b.txs.len
   for i in 0 ..< a.txs.len:
     check a.txs[i].hash == b.txs[i].hash
     check encodeSignedMantleTx(a.txs[i]) == encodeSignedMantleTx(b.txs[i])
@@ -69,8 +70,9 @@ suite "core/block bincode (cryptarchia sync)":
     try:
       let back = roundtrip(blk)
       checkBlockEqual(back, blk)
-      check back.signature.data[0] == 0'u8
-      check back.signature.data[EdSignatureSize - 1] == byte(EdSignatureSize - 1)
+      check:
+        back.signature.data[0] == 0'u8
+        back.signature.data[EdSignatureSize - 1] == byte(EdSignatureSize - 1)
     except BincodeError:
       fail getCurrentExceptionMsg()
 
@@ -108,14 +110,16 @@ suite "core/block bincode (cryptarchia sync)":
       let
         hdrWire = encode(h, cfg)
         blkWire = encode(blk, cfg)
-      check blkWire.len > hdrWire.len + EdSignatureSize
-      check blkWire[hdrWire.len] == 0xAA'u8
-      check blkWire[hdrWire.len + 1] == 0xBB'u8
+      check:
+        blkWire.len > hdrWire.len + EdSignatureSize
+        blkWire[hdrWire.len] == 0xAA'u8
+        blkWire[hdrWire.len + 1] == 0xBB'u8
       let uncleLenOff = hdrWire.len + EdSignatureSize
       check blkWire[uncleLenOff] == 0'u8
       let txsLenOff = uncleLenOff + 8
-      check blkWire[txsLenOff] == 1'u8
-      check blkWire[txsLenOff + 1] == 0'u8
+      check:
+        blkWire[txsLenOff] == 1'u8
+        blkWire[txsLenOff + 1] == 0'u8
     except BincodeError:
       fail getCurrentExceptionMsg()
 
@@ -128,9 +132,10 @@ suite "core/block bincode (cryptarchia sync)":
       var sig: Ed25519Signature
       sig.data[0] = 0x55'u8
       let withMarkedSig = encode(initBlock(h, signature = sig, uncleHeaders = [], txs = [sm]), cfg)
-      check withDefaultSig.len == withMarkedSig.len
-      check withDefaultSig != withMarkedSig
-      check withMarkedSig.len > EdSignatureSize
+      check:
+        withDefaultSig.len == withMarkedSig.len
+        withDefaultSig != withMarkedSig
+        withMarkedSig.len > EdSignatureSize
     except BincodeError:
       fail getCurrentExceptionMsg()
 
@@ -144,14 +149,16 @@ suite "core/block bincode (cryptarchia sync)":
     proposal.signature = DefaultEd25519Signature
     try:
       let serialized = encode(proposal[], cfg)
-      check sizeof(proposal.references) == 32768
-      check serialized.len == 33137
+      check:
+        sizeof(proposal.references) == 32768
+        serialized.len == 33137
       var deserialized = new(Proposal)
       deserialized[] = decode(serialized, Proposal, cfg)
-      check deserialized.header == proposal.header
-      check deserialized.uncleHeaders.len == 0
-      check deserialized.references == proposal.references
-      check deserialized.signature == proposal.signature
+      check:
+        deserialized.header == proposal.header
+        deserialized.uncleHeaders.len == 0
+        deserialized.references == proposal.references
+        deserialized.signature == proposal.signature
     except BincodeError:
       fail getCurrentExceptionMsg()
 

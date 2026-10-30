@@ -61,11 +61,12 @@ func admitWithTopology(
   ok((admittedBlk: admittedBlk, isOrphan: status == TopologyStatus.Orphan))
 
 proc validate(genesis: ValidBlock, blk: Block): Result[ValidBlock, BlockValidationError] =
-  let tree = newLocalTree(genesis, 1'u64)
-  let state = testGenesisLedgerState()
-  let ledger = Ledger[BlockId].init(
-    blockId(genesis.header), state, testLedgerConfig, mockVerifyLeaderProof
-  )
+  let
+    tree = newLocalTree(genesis, 1'u64)
+    state = testGenesisLedgerState()
+    ledger = Ledger[BlockId].init(
+      blockId(genesis.header), state, testLedgerConfig, mockVerifyLeaderProof
+    )
   let (admittedBlk, isOrphan) = admitWithTopology(blk, tree, ledger).valueOr:
     case error.kind
     of BlockApplyErrorKind.UnviableFork:
@@ -89,7 +90,6 @@ proc treeWithLib(genesis: ValidBlock): tuple[tree: LocalTree, b1, b2: ValidBlock
     tree.tryUpdateLib()
   check tree.latestImmutableBlockId == blockId(b2.header)
   (tree, b1, b2)
-
 
 func sampleUncle(value: byte): SignedHeader =
   # Arbitrary bytes: only the commitment to an entry is checked, not the entry.

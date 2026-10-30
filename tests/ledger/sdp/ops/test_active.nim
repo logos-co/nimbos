@@ -11,8 +11,6 @@
 import
   std/[os, strutils],
   unittest2,
-  results,
-  libp2p/crypto/ed25519/ed25519,
   ../test_helpers,
   ../../../zk/zksign_helpers
 
@@ -106,10 +104,11 @@ suite "ledger/sdp/ops/active — blend activity":
     let applied = tryApplySdpActive(
       target.registry, mkTargetActivity(target), fixtureProof,
       fixtureTxHash, 1, acceptAllPoq).expect("valid blend activity")
-    check applied.blendRewards.target.get.tracker.submitted.len == 1
     let info = getDeclaration(applied.state, target.declId).get()
-    check info.active == Opt.some(1'u32)
-    check info.nonce == 1'u64
+    check:
+      applied.blendRewards.target.get.tracker.submitted.len == 1
+      info.active == Opt.some(1'u32)
+      info.nonce == 1'u64
 
   test "a rejected proof of quota invalidates the op":
     check tryApplySdpActive(

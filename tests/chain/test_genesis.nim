@@ -30,11 +30,12 @@ suite "chain/genesis":
       validGenesisTx = testValidGenesisTx()
       b = createGenesisBlock(validGenesisTx)
       h = b.header
-    check h.bodyRoot == body_root([], [validGenesisTx])
-    check b.txs.len == 1
-    check b.header.bedrockVersion == GenesisBedrockVersion
-    check b.txs[0].tx.ops.len == validGenesisTx.tx.ops.len
-    check b.signature == DefaultEd25519Signature
+    check:
+      h.bodyRoot == body_root([], [validGenesisTx])
+      b.txs.len == 1
+      b.header.bedrockVersion == GenesisBedrockVersion
+      b.txs[0].tx.ops.len == validGenesisTx.tx.ops.len
+      b.signature == DefaultEd25519Signature
 
   test "createGenesisBlock builds expected header/envelope from deployment settings":
     let
@@ -45,18 +46,19 @@ suite "chain/genesis":
         fail "Chain.init: " & $error
       gb = testChain.genesisBlock
 
-    check gb.txs.len == 1
-    check gb.txs[0].opProofs.len == genesisTx.opProofs.len
+    check:
+      gb.txs.len == 1
+      gb.txs[0].opProofs.len == genesisTx.opProofs.len
     for i in 0 ..< genesisTx.opProofs.len:
       check gb.txs[0].opProofs[i].kind == genesisTx.opProofs[i].kind
-    check gb.txs[0].tx.ops.len == genesisTx.tx.ops.len
-
-    check gb.header.bedrockVersion == GenesisBedrockVersion
-    check gb.header.parentBlock == default(BlockId)
-    check gb.header.slot == 0'u64
-    check gb.header.bodyRoot == body_root([], gb.txs)
-    check gb.header == gstate.header
-    check gb.signature == gstate.blockSignature
+    check:
+      gb.txs[0].tx.ops.len == genesisTx.tx.ops.len
+      gb.header.bedrockVersion == GenesisBedrockVersion
+      gb.header.parentBlock == default(BlockId)
+      gb.header.slot == 0'u64
+      gb.header.bodyRoot == body_root([], gb.txs)
+      gb.header == gstate.header
+      gb.signature == gstate.blockSignature
 
   test "createGenesisBlock from validGenesisTx matches deployment genesisState envelope":
     let
@@ -65,13 +67,14 @@ suite "chain/genesis":
       fromTx = createGenesisBlock(validGenesisTx)
       fromState = initBlock(gstate.header, gstate.blockSignature, [], [validGenesisTx.hashed])
 
-    check fromTx.header == fromState.header
-    check blockId(fromTx.header) == blockId(fromState.header)
-    check fromTx.signature == fromState.signature
-    check fromTx.txs.len == fromState.txs.len
-    check fromTx.txs.len == 1
-    check fromTx.txs[0].hash == validGenesisTx.hash
-    check fromTx.txs[0].opProofs.len == fromState.txs[0].opProofs.len
+    check:
+      fromTx.header == fromState.header
+      blockId(fromTx.header) == blockId(fromState.header)
+      fromTx.signature == fromState.signature
+      fromTx.txs.len == fromState.txs.len
+      fromTx.txs.len == 1
+      fromTx.txs[0].hash == validGenesisTx.hash
+      fromTx.txs[0].opProofs.len == fromState.txs[0].opProofs.len
     for i in 0 ..< fromTx.txs[0].opProofs.len:
       check fromTx.txs[0].opProofs[i].kind == fromState.txs[0].opProofs[i].kind
 

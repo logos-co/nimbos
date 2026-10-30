@@ -10,7 +10,7 @@
 import
   std/algorithm,
   bearssl/rand,
-  libp2p/crypto/ed25519/ed25519,
+  libp2p/[crypto/ed25519/ed25519, multiaddress],
   ../../../logos_chain/core/types,
   ../../../logos_chain/core/mantle/
     [blend_activity, primitives, operations, proofs, utxo],
@@ -30,7 +30,7 @@ proc mkRealZkPubKey*(sk: byte): ZkPublicKey =
   zkPublicKeyFromSecret(frFromBytesLE([sk]).get)
 
 func mkUtxoWithPk*(
-    pk: ZkPublicKey, value: Value = 100, opIdSeed: byte = 0,
+    pk: ZkPublicKey, value: Value, opIdSeed: byte = 0,
     outputIndex: uint64 = 0,
 ): Utxo =
   ## Sibling of `mkUtxo` that takes a raw pk instead of deriving one from a
@@ -146,6 +146,9 @@ func mkChannelId*(seed: byte): ChannelId =
   var c: ChannelId
   c[0] = seed
   c
+
+func mkLocator*(port: int): Locator =
+  MultiAddress.init("/ip4/127.0.0.1/tcp/" & $port).get()
 
 func mkActivityProof*(seed: byte = 1): ActivityProof =
   var

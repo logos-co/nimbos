@@ -9,7 +9,7 @@
 
 import
   results,
-  libp2p/[crypto/ed25519/ed25519, multiaddress],
+  libp2p/crypto/ed25519/ed25519,
   ../../../logos_chain/ledger/sdp/[registry, ops],
   ../../../logos_chain/core/crypto/types,
   ../../../logos_chain/core/mantle/[operations, proofs, utxo],
@@ -18,7 +18,9 @@ import
   ../../../logos_chain/deployment/deployment_settings as deploy,
   ./test_utxo_helpers
 
-export ops, utxo, utxo_store, operations, channel_notes
+from ../../core/mantle/test_helpers import mkLocator
+
+export ops, utxo, utxo_store, operations, channel_notes, mkLocator
 
 # Devnet-shaped reward parameters; two providers is the smallest network
 # that can freeze a target epoch.
@@ -80,7 +82,7 @@ func rejectAllPoq*(
   ## Rejecting stub for tests that assert the quota check gates the path.
   ok(false)
 
-proc findRho*(index, membership: uint64): FieldElement =
+func findRho*(index, membership: uint64): FieldElement =
   ## Smallest fe(k) whose selection index is `index`. One in `membership`
   ## candidates matches, so the bound is never reached in practice.
   for k in 1'u64 .. 10_000'u64:
@@ -104,15 +106,12 @@ proc mkActivity*(
   doAssert proof.signingKey.init(keyBytes)
   proof
 
-proc mkProvider*(seed: byte): ProviderId =
+func mkProvider*(seed: byte): ProviderId =
   var bytes: array[EdPublicKeySize, byte]
   bytes[0] = seed
   var key: ProviderId
   doAssert key.init(bytes)
   key
-
-proc mkLocator*(port: int): Locator =
-  MultiAddress.init("/ip4/127.0.0.1/tcp/" & $port).get()
 
 proc installTestDeclaration*(
     registry: var SdpRegistry,

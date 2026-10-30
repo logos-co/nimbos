@@ -237,9 +237,10 @@ suite "chain/proposal":
     # txInvalid spends note 'u.id' which exists in state, but carries default (all-zero) ZkSigProof,
     # causing LedgerError.PermanentInvalidTxProof during tryApplyTx
     let txInvalid = mkValidTransferTx([u.id], [Note(value: 50, zkPublicKey: pk)])
-    check m.add(txInvalid, SlotNumber(1)) == true
-    check txInvalid.hash in m
-    check m.len == 1
+    check:
+      m.add(txInvalid, SlotNumber(1)) == true
+      txInvalid.hash in m
+      m.len == 1
 
     let (_, count) = m.selectProposalReferences(
       state, testLedgerConfig, SlotNumber(10), verifyPoq = acceptAllPoq,
@@ -248,9 +249,10 @@ suite "chain/proposal":
     check count == 0
 
     # Cryptographically invalid transaction is permanently evicted from mempool
-    check txInvalid.hash notin m.txs
-    check txInvalid.hash notin m
-    check m.len == 0
+    check:
+      txInvalid.hash notin m.txs
+      txInvalid.hash notin m
+      m.len == 0
 
   test "constructProposal selects from mempool, creates header, and signs with leader key":
     var m = Mempool.init()

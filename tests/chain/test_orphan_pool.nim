@@ -16,41 +16,45 @@ import
 suite "chain/orphan_pool":
   test "empty pool properties":
     let pool = OrphanPool()
-    check pool.len == 0
-    check not pool.hasOrphan(default(BlockId))
-    check pool.takeChildren(default(BlockId)).len == 0
+    check:
+      pool.len == 0
+      not pool.hasOrphan(default(BlockId))
+      pool.takeChildren(default(BlockId)).len == 0
 
   test "addOrphan buffers block":
-    let pool = OrphanPool()
-    let parentId = exampleBlockId(1)
-    let blk = mkAdmittedBlock(1, parentId)
-    let bId = blockId(blk.header)
-    let dupBlk = blk
-    check pool.addOrphan(blk)
-    check pool.len == 1
-    check pool.hasOrphan(bId)
-
-    # duplicate add returns false and does not change pool len
-    check not pool.addOrphan(dupBlk)
-    check pool.len == 1
+    let
+      pool = OrphanPool()
+      parentId = exampleBlockId(1)
+      blk = mkAdmittedBlock(1, parentId)
+      bId = blockId(blk.header)
+      dupBlk = blk
+    check:
+      pool.addOrphan(blk)
+      pool.len == 1
+      pool.hasOrphan(bId)
+      not pool.addOrphan(dupBlk)
+      pool.len == 1
 
   test "takeChildren removes and returns waiting children":
-    let pool = OrphanPool()
-    let parentId = exampleBlockId(1)
-    let child1 = mkAdmittedBlock(1, parentId)
-    let child2 = mkAdmittedBlock(2, parentId)
-    let c1Id = blockId(child1.header)
-    let c2Id = blockId(child2.header)
+    let
+      pool = OrphanPool()
+      parentId = exampleBlockId(1)
+      child1 = mkAdmittedBlock(1, parentId)
+      child2 = mkAdmittedBlock(2, parentId)
+      c1Id = blockId(child1.header)
+      c2Id = blockId(child2.header)
 
-    check pool.addOrphan(child1)
-    check pool.addOrphan(child2)
-    check pool.len == 2
+    check:
+      pool.addOrphan(child1)
+      pool.addOrphan(child2)
+      pool.len == 2
 
     let children = pool.takeChildren(parentId)
-    check children.len == 2
-    check pool.len == 0
-    check not pool.hasOrphan(c1Id)
-    check not pool.hasOrphan(c2Id)
+    check:
+      children.len == 2
+      pool.len == 0
+      not pool.hasOrphan(c1Id)
+      not pool.hasOrphan(c2Id)
 
     # Taking again returns empty sequence
     check pool.takeChildren(parentId).len == 0

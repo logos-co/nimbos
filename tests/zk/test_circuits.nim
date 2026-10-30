@@ -24,14 +24,15 @@ suite "zk/circuits — path derivations":
     check circuitsVersionPath("/foo") == "/foo" / "VERSION"
 
   test "per-circuit artefact paths use the bundle directory names":
-    check $Circuit.Pol == "pol"
-    check $Circuit.Poq == "poq"
-    check $Circuit.Poc == "poc"
-    check $Circuit.Signature == "signature"
-    check verificationKeyPath("/foo", Circuit.Signature) ==
-      "/foo" / "signature" / "verification_key.json"
-    check provingKeyPath("/foo", Circuit.Pol) == "/foo" / "pol" / "proving_key.zkey"
-    check witnessDatPath("/foo", Circuit.Poq) == "/foo" / "poq" / "witness_generator.dat"
+    check:
+      $Circuit.Pol == "pol"
+      $Circuit.Poq == "poq"
+      $Circuit.Poc == "poc"
+      $Circuit.Signature == "signature"
+      verificationKeyPath("/foo", Circuit.Signature) ==
+        "/foo" / "signature" / "verification_key.json"
+      provingKeyPath("/foo", Circuit.Pol) == "/foo" / "pol" / "proving_key.zkey"
+      witnessDatPath("/foo", Circuit.Poq) == "/foo" / "poq" / "witness_generator.dat"
 
 suite "zk/circuits — release bundle layout":
   test "verification key paths exist in logos-blockchain-circuits bundle":
@@ -42,8 +43,9 @@ suite "zk/circuits — release bundle layout":
 
   test "prover artefacts exist in the bundle":
     for c in Circuit:
-      check fileExists(provingKeyPath(testCircuitsDir, c))
-      check fileExists(witnessDatPath(testCircuitsDir, c))
+      check:
+        fileExists(provingKeyPath(testCircuitsDir, c))
+        fileExists(witnessDatPath(testCircuitsDir, c))
 
 suite "zk/circuits — verifyCircuitsVersion":
   test "rejects missing dir":
@@ -52,26 +54,30 @@ suite "zk/circuits — verifyCircuitsVersion":
 
   test "rejects dir without VERSION":
     let dir = uniqueTmpDir("no-version")
-    check createPath(dir).isOk
-    check verifyCircuitsVersion(dir).error == VersionFileMissing
+    check:
+      createPath(dir).isOk
+      verifyCircuitsVersion(dir).error == VersionFileMissing
 
   test "rejects mismatched VERSION":
     let dir = uniqueTmpDir("bad-version")
-    check createPath(dir).isOk
-    check io2.writeFile(dir / "VERSION", "v9.9.9").isOk
-    check verifyCircuitsVersion(dir).error == VersionMismatch
+    check:
+      createPath(dir).isOk
+      io2.writeFile(dir / "VERSION", "v9.9.9").isOk
+      verifyCircuitsVersion(dir).error == VersionMismatch
 
   test "accepts matching VERSION":
     let dir = uniqueTmpDir("good-version")
-    check createPath(dir).isOk
-    check io2.writeFile(dir / "VERSION", ExpectedCircuitsVersion).isOk
-    check verifyCircuitsVersion(dir).isOk
+    check:
+      createPath(dir).isOk
+      io2.writeFile(dir / "VERSION", ExpectedCircuitsVersion).isOk
+      verifyCircuitsVersion(dir).isOk
 
   test "accepts VERSION with trailing newline":
     # Real bundles ship `echo "v0.4.2" > VERSION` style — has a trailing \n.
     let dir = uniqueTmpDir("nl-version")
-    check createPath(dir).isOk
-    check io2.writeFile(dir / "VERSION", ExpectedCircuitsVersion & "\n").isOk
-    check verifyCircuitsVersion(dir).isOk
+    check:
+      createPath(dir).isOk
+      io2.writeFile(dir / "VERSION", ExpectedCircuitsVersion & "\n").isOk
+      verifyCircuitsVersion(dir).isOk
 
 {.pop.}
