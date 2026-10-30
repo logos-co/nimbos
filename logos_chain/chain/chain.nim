@@ -267,12 +267,6 @@ proc applyAdmittedBlock(
     id: BlockId,
     curSlot: SlotNumber,
 ): Result[void, BlockApplyError] =
-  # Step 10 runs before the PoL of the block. The order does not change
-  # the verdict. A block with a bad PoL and `MaxUncles` valid uncles costs
-  # at most five proof checks. The uncle checks reject cheap failures first.
-  validateUncles(admittedBlk, chain.localTree, chain.ledger).isOkOr:
-    chain.orphanPool.pruneDescendants(id)
-    return err(BlockApplyError(kind: UncleRejected, uncleError: error))
   # Tier 3: PoL against parent state and stateless transaction validation (mempool fast path)
   let
     (validBlk, headerState) = validatePolAndStatelessTransactions(
@@ -280,6 +274,12 @@ proc applyAdmittedBlock(
     ).valueOr:
       chain.orphanPool.pruneDescendants(id)
       return err(toBlockApplyError(error))
+  # Step 10 runs after the PoL of the block. The order does not change the
+  # verdict. A sender without stake fails the PoL at one proof check, before
+  # the node pays up to `MaxUncles` signature and proof checks for its uncles.
+  validateUncles(admittedBlk, chain.localTree, chain.ledger).isOkOr:
+    chain.orphanPool.pruneDescendants(id)
+    return err(BlockApplyError(kind: UncleRejected, uncleError: error))
   chain.applyValidBlock(validBlk, headerState, id, curSlot)
 
 type
