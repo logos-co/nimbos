@@ -8,7 +8,9 @@
 {.push raises: [], gcsafe.}
 
 import
+  std/tables,
   chronos,
+  minilru,
   libp2p/[switch, peerid],
   ../chain/block_processor
 
@@ -17,11 +19,18 @@ type
   OnIbdComplete* = proc() {.gcsafe, raises: [].}
   OnIbdFailure* = proc(reason: string) {.gcsafe, raises: [].}
 
+  OrphanSync* = object
+    maxConcurrent*: int
+    active*: Table[BlockId, Future[void]]
+    recentFailures*: LruCache[BlockId, Moment]
+
   Syncer* = ref object
     sw*: Switch
     processor*: BlockProcessor
     chainSyncProtocol*: string
     ibdFut*: Future[void].Raising([CancelledError])
+    peerProvider*: PeerProvider
+    orphans*: OrphanSync
 
 template localTree*(syncer: Syncer): LocalTree = syncer.processor.localTree
 

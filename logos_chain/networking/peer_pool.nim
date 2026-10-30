@@ -67,6 +67,10 @@ iterator pairs*[A, B](pool: PeerPool[A, B]): (B, A) =
   for peerId, pindex in pool.registry:
     yield (peerId, pool.storage[distinctBase(pindex)].data)
 
+iterator keys*[A, B](pool: PeerPool[A, B]): B =
+  for peerId in pool.registry.keys:
+    yield peerId
+
 proc resort[A, B](
     pool: PeerPool[A, B],
     unsorted: var openArray[PeerIndex],

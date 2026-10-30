@@ -22,7 +22,7 @@ import
   ../../logos_chain/chain/local_tree,
   ../../logos_chain/core/mantle/[operations, tx_types, tx_hashing],
   ../../logos_chain/networking/[network, protocols],
-  ../../logos_chain/sync/[syncer, ibd_server],
+  ../../logos_chain/sync/[syncer, sync_server],
   ../../logos_chain/node,
   ../../logos_chain/deployment/deployment_settings,
   ../core/mantle/test_helpers
@@ -238,7 +238,7 @@ proc initTestLBNode(
   if proposalTopic.len > 0:
     ds.cryptarchia.gossipsubProtocol = proposalTopic
   let bp = BlockProcessor.new(initTestChain(genesis))
-  bp.start()
+  bp.start(nil)
   LBNode(
     network: network,
     config: LBNodeConf(),
@@ -401,7 +401,7 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
     pendingProto.started = true
     peers.listener.switch.mount(pendingProto)
 
-    dialerNode.syncer = Syncer.init(peers.dialer.switch, dialerNode.processor, testChainSyncProtocol)
+    dialerNode.syncer = Syncer.init(peers.dialer.switch, dialerNode.processor, testChainSyncProtocol, nil)
 
     try:
       await listenerNode.initializeNetworking()
@@ -448,9 +448,9 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
       b1 = childBlock(genesis.header, gid, SlotNumber(1), [])
       id1 = blockId(b1.header)
     check (await listenerNode.processor.addBlock(b1, id1)).isOk
-    mountCryptarchiaSyncHandler(Syncer.init(peers.listener.switch, listenerNode.processor, testChainSyncProtocol))
+    mountCryptarchiaSyncHandler(Syncer.init(peers.listener.switch, listenerNode.processor, testChainSyncProtocol, nil))
 
-    dialerNode.syncer = Syncer.init(peers.dialer.switch, dialerNode.processor, testChainSyncProtocol)
+    dialerNode.syncer = Syncer.init(peers.dialer.switch, dialerNode.processor, testChainSyncProtocol, nil)
 
     try:
       await listenerNode.initializeNetworking()

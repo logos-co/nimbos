@@ -35,6 +35,10 @@ type
     GossipIncoming
     PromotedOrphan
 
+  OnOrphanBuffered = proc(
+    orphanId: BlockId, parentId: BlockId, slot: SlotNumber
+  ) {.closure, gcsafe, raises: [].}
+
   BlockEntry = ref object
     queueTick: Moment
     resfut: Opt[BlockApplyFuture]
@@ -51,6 +55,7 @@ type
     blockQueue: AsyncQueue[BlockEntry]
     inFlight: Table[InFlightKey, BlockEntry]
     loopFut: Future[void].Raising([CancelledError])
+    onOrphanBuffered: OnOrphanBuffered
 
 template inFlightKey*(id: BlockId, sig: Ed25519Signature): InFlightKey =
   ## Fast 32-byte in-flight key folding BlockId with both 32-byte halves of the
@@ -220,8 +225,14 @@ proc processBlock(bp: BlockProcessor, entry: BlockEntry) =
       debug "Promoted orphan rejected",
         id = toHex(id), slot = header(entry.admittedBlk).slot,
         queueDur, applyDur, err = error.kind
-    if entry.resfut.isSome:
-      entry.resfut.get().complete(BlockApplyResult.err(error))
+    if error.kind == BlockApplyErrorKind.OrphanBuffered and
+        entry.kind == BlockEntryKind.GossipIncoming:
+      if bp.onOrphanBuffered != nil:
+        let h = entry.proposal.header
+        bp.onOrphanBuffered(id, h.parentBlock, h.slot)
+    let fut = entry.resfut.valueOr:
+      return
+    fut.complete(BlockApplyResult.err(error))
     return
 
   for child in bp.chain.orphanPool.takeChildren(id):
@@ -240,8 +251,9 @@ proc processBlock(bp: BlockProcessor, entry: BlockEntry) =
     debug "Promoted orphan applied",
       id = toHex(id), slot = header(entry.admittedBlk).slot,
       queueDur, applyDur
-  if entry.resfut.isSome:
-    entry.resfut.get().complete(BlockApplyResult.ok())
+  let fut = entry.resfut.valueOr:
+    return
+  fut.complete(BlockApplyResult.ok())
 
 proc runQueueProcessingLoop(bp: BlockProcessor) {.async: (raises: [CancelledError]).} =
   while true:
@@ -253,16 +265,18 @@ proc runQueueProcessingLoop(bp: BlockProcessor) {.async: (raises: [CancelledErro
     debug "Idle wait before block", idleDur = Moment.now() - idleTick
     bp.processBlock(await bp.blockQueue.popFirst())
 
-proc start*(bp: BlockProcessor) =
+proc start*(bp: BlockProcessor, onOrphanBuffered: OnOrphanBuffered) =
   doAssert bp.loopFut == nil, "block processor already started"
+  bp.onOrphanBuffered = onOrphanBuffered
   bp.loopFut = bp.runQueueProcessingLoop()
 
 proc stop*(bp: BlockProcessor) {.async: (raises: []).} =
-  ## Cancel the loop and cancel every result future still queued.
+  ## Cancel the loop, clear the orphan callback, and cancel queued futures.
   if bp.loopFut == nil:
     return
   await bp.loopFut.cancelAndWait()
   bp.loopFut = nil
+  bp.onOrphanBuffered = nil
   for entry in bp.blockQueue.items:
     if entry.resfut.isSome:
       entry.resfut.get().cancelSoon()
