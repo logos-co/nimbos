@@ -65,6 +65,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
       cfg.epochSchedule.nonceContributionPeriod == 3600
       cfg.slotActivationCoeff == NonNegativeRatio(num: 1, den: 20)
       cfg.learningRateFixed == 500 # fixedPoint(0.5)
+      cfg.uncleWindowSlots == 240 # W = 12 blocks at f = 1/20
 
   test "cryptarchiaParameter decodes the devnet ceremony values":
     let

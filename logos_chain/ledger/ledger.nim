@@ -173,17 +173,17 @@ proc advanceEpochAndMarket*(
     s.cryptarchiaLedger = s.cryptarchiaLedger.insertMintedUtxos(minted)
   ok(s)
 
-proc tryApplyHeader*(
+proc advanceAndVerifyLeader*(
     state: sink LedgerState,
     slot: SlotNumber,
     proof: ProofOfLeadership,
     cfg: LedgerConfig,
-    verifyProof: LeaderProofVerifier = verifyLeaderProof,
+    verifyProof: LeaderProofVerifier,
 ): Result[LedgerState, LedgerError] =
-  ## Epoch pipeline for `slot`, leader-proof verification against the active
-  ## epoch state, then entropy/density bookkeeping.
-  var s = ?state.advanceEpochAndMarket(slot, cfg)
+  ## Advances the epoch pipeline to `slot`, then verifies the leader proof
+  ## against the advanced state. Returns that state. Does no block bookkeeping.
   let
+    s = ?state.advanceEpochAndMarket(slot, cfg)
     active = s.epochs.activeEpoch
     public = LeaderPublic(
       slot: slot,
@@ -196,13 +196,24 @@ proc tryApplyHeader*(
       return err(VerifierNotInitialised)
   if not verified:
     return err(InvalidProofOfLeadership)
+  ok(s)
 
+proc tryApplyHeader*(
+    state: sink LedgerState,
+    slot: SlotNumber,
+    proof: ProofOfLeadership,
+    uncleSlots: openArray[SlotNumber],
+    cfg: LedgerConfig,
+    verifyProof: LeaderProofVerifier = verifyLeaderProof,
+): Result[LedgerState, LedgerError] =
+  ## `advanceAndVerifyLeader`, then leader, entropy and occupied-slot bookkeeping.
+  var s = ?state.advanceAndVerifyLeader(slot, proof, cfg, verifyProof)
   s.cryptarchiaLedger.leader =
     s.cryptarchiaLedger.leader.recordBlockLeader(proof.leaderVoucher)
 
   let entropy = frFromBytesLE(proof.entropyContribution).valueOr:
     return err(InvalidProofOfLeadership)
-  s.epochs = s.epochs.recordBlock(slot, entropy)
+  s.epochs = s.epochs.recordBlock(slot, entropy, uncleSlots)
   ok(s)
 
 func opGasMultiplier(op: Op, proof: OpProof): Result[uint16, LedgerError] =

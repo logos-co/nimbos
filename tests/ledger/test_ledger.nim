@@ -44,7 +44,8 @@ proc prepareUpdateWithHeader[Id](
 ): Result[LedgerState, LedgerError] =
   let parent = l.state(parentId).valueOr:
     return err(ParentNotFound)
-  let afterHeader = ?parent.tryApplyHeader(slot, proof, l.config, l.leaderProofVerifier)
+  let afterHeader =
+    ?parent.tryApplyHeader(slot, proof, [], l.config, l.leaderProofVerifier)
   l.prepareUpdate(slot, afterHeader, txs)
 
 from ./test_helpers import testLedgerConfig
@@ -97,7 +98,8 @@ suite "tryApplyHeader":
     let
       u = mkUtxo()
       s0 = mkState([u])
-      r = s0.tryApplyHeader(slot = 1'u64, proof = mkProof(), cfg = testLedgerConfig)
+      r = s0.tryApplyHeader(
+        slot = 1'u64, proof = mkProof(), uncleSlots = [], cfg = testLedgerConfig)
     check r.isOk
     check r.get.latestUtxos == s0.latestUtxos
 
@@ -106,7 +108,8 @@ suite "tryApplyHeader":
     let s0 = mkState([mkUtxo()])
     var bad = mkProof()
     bad.proof[0] = 0x01  # break the genesis sentinel so verify is invoked
-    let r = s0.tryApplyHeader(slot = 1'u64, proof = bad, cfg = testLedgerConfig)
+    let r = s0.tryApplyHeader(
+      slot = 1'u64, proof = bad, uncleSlots = [], cfg = testLedgerConfig)
     check r.error == VerifierNotInitialised
 
   test "returns InvalidProofOfLeadership when verifier rejects":
@@ -122,7 +125,8 @@ suite "tryApplyHeader":
     let s0 = mkState([mkUtxo()])
     var bad = mkProof()
     bad.proof[0] = 0x01  # bit-pattern can't be a valid compressed G1 point
-    let r = s0.tryApplyHeader(slot = 1'u64, proof = bad, cfg = testLedgerConfig)
+    let r = s0.tryApplyHeader(
+      slot = 1'u64, proof = bad, uncleSlots = [], cfg = testLedgerConfig)
     check r.error == InvalidProofOfLeadership
 
 suite "tryApplyTx — channel ops":
@@ -614,19 +618,19 @@ suite "ledger — sdp withdrawal through the epoch boundary":
     s.sdp = onEpochStarted(s.sdp, 0)
 
     # Epoch 1: A withdraws. So withdraw_at is 3.
-    s = s.tryApplyHeader(100'u64, mkProof(), testLedgerConfig).expect("epoch 1")
+    s = s.tryApplyHeader(100'u64, mkProof(), [], testLedgerConfig).expect("epoch 1")
     let infoA = getDeclaration(s.sdp.state, declIdA).get()
     s.sdp = applySdpWithdraw(s.sdp, WithdrawMessage(
       declarationId: declIdA, lockedNoteId: noteA.id, nonce: 1), infoA, 1)
 
     # Epoch 2 is the last epoch A serves. Its income is 1000.
-    s = s.tryApplyHeader(200'u64, mkProof(), testLedgerConfig).expect("epoch 2")
+    s = s.tryApplyHeader(200'u64, mkProof(), [], testLedgerConfig).expect("epoch 2")
     check s.sdp.activeBlendProviders(2).len == 2
     s.sdp.blendRewards = s.sdp.blendRewards.addIncome(1000).expect("income")
 
     # Epoch 3: the boundary freezes epoch 2 as the reward target. A
     # reports its epoch-2 activity at withdraw_at.
-    s = s.tryApplyHeader(300'u64, mkProof(), testLedgerConfig).expect("epoch 3")
+    s = s.tryApplyHeader(300'u64, mkProof(), [], testLedgerConfig).expect("epoch 3")
     check s.sdp.activeBlendProviders(3).len == 1
     let
       indexA = s.sdp.blendRewards.target.get.state.providers.get(
@@ -644,7 +648,7 @@ suite "ledger — sdp withdrawal through the epoch boundary":
     # unlocks the note of A. The reward note enters the live UTXO set.
     # The base is 1000 div 2 = 500. The only submitter is premium, so it
     # gets two times the base.
-    s = s.tryApplyHeader(400'u64, mkProof(), testLedgerConfig).expect("epoch 4")
+    s = s.tryApplyHeader(400'u64, mkProof(), [], testLedgerConfig).expect("epoch 4")
     let reward = Utxo(
       opId: rewardOpId(ServiceType.bn, 2),
       outputIndex: 0,
@@ -686,11 +690,11 @@ suite "block rewards — per-block leader crediting":
     # `pending` is private; it surfaces in `leadersRewards` once the next
     # epoch rotation rolls it in.
     var s = mkState([mkUtxo()])
-    s = s.tryApplyHeader(1'u64, mkProof(), testLedgerConfig).expect("header")
+    s = s.tryApplyHeader(1'u64, mkProof(), [], testLedgerConfig).expect("header")
     s = s.tryApplyTxns(
       [], slot = 1'u64, verifyPoq = acceptAllPoq).expect("txns")
     check s.cryptarchiaLedger.leader.leadersRewards == 0
-    s = s.tryApplyHeader(100'u64, mkProof(), testLedgerConfig).expect("rotation")
+    s = s.tryApplyHeader(100'u64, mkProof(), [], testLedgerConfig).expect("rotation")
     check s.cryptarchiaLedger.leader.leadersRewards == emission
 
   test "each applied block advances the block number":
@@ -716,22 +720,22 @@ suite "block rewards — per-block leader crediting":
       s1.blockNumber == 1'u64
       s1.feeWindow.summedFees == u128(700)
       s1.cryptarchiaLedger.leader.leadersRewards == 0
-    let rolled = s1.tryApplyHeader(100'u64, mkProof(), testLedgerConfig)
+    let rolled = s1.tryApplyHeader(100'u64, mkProof(), [], testLedgerConfig)
       .expect("rotation")
     check rolled.cryptarchiaLedger.leader.leadersRewards == emission + 250
 
   test "a rotating block credits the epoch it opens, not the one it closes":
     var s = mkState([mkUtxo()])
-    s = s.tryApplyHeader(1'u64, mkProof(), testLedgerConfig).expect("header")
+    s = s.tryApplyHeader(1'u64, mkProof(), [], testLedgerConfig).expect("header")
     s = s.tryApplyTxns(
       [], slot = 1'u64, verifyPoq = acceptAllPoq).expect("txns")
     # The rotation rolls epoch 0's pending pool; the rotating block's own
     # reward is credited afterwards, so it belongs to epoch 1.
-    s = s.tryApplyHeader(100'u64, mkProof(), testLedgerConfig).expect("rotation")
+    s = s.tryApplyHeader(100'u64, mkProof(), [], testLedgerConfig).expect("rotation")
     s = s.tryApplyTxns(
       [], slot = 100'u64, verifyPoq = acceptAllPoq).expect("txns")
     check s.cryptarchiaLedger.leader.leadersRewards == emission
-    s = s.tryApplyHeader(200'u64, mkProof(), testLedgerConfig).expect("rotation")
+    s = s.tryApplyHeader(200'u64, mkProof(), [], testLedgerConfig).expect("rotation")
     check s.cryptarchiaLedger.leader.leadersRewards == 2 * emission
 
   test "each block accrues the blend share as epoch income":
@@ -746,7 +750,7 @@ suite "block rewards — per-block leader crediting":
     var s = mkState([mkUtxo()])
     s = s.creditBlockRewards(GasCost(0), GasCost(0)).expect("credited")
     let utxosBefore = s.latestUtxos.len
-    s = s.tryApplyHeader(100'u64, mkProof(), testLedgerConfig).expect("rotation")
+    s = s.tryApplyHeader(100'u64, mkProof(), [], testLedgerConfig).expect("rotation")
     check s.latestUtxos.len == utxosBefore
     check s.sdp.blendRewards.target.isNone
     check s.sdp.blendRewards.epochIncome == 0

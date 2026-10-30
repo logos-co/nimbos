@@ -7,28 +7,43 @@
 
 {.push raises: [], gcsafe.}
 
-import ../consensus/clock
+import
+  ../consensus/clock,
+  ../utils/hash_trie_map
 
 export clock
 
 type BlockDensity* = object
-  ## Block counter over the total-stake-inference observation window.
+  ## Occupied-slot set over the total-stake-inference observation window.
   periodStart*: SlotNumber ## inclusive
   periodEnd*: SlotNumber ## inclusive
-  density*: uint64
+  occupied: HashTrieMap[SlotNumber, tuple[]] ## distinct slots counted so far
 
 func init*(T: type BlockDensity, epoch: EpochNumber, s: EpochSchedule): T =
   ## Measurement window for `epoch`: the `6⌊k/f⌋` slots ending just before
   ## `nonceSnapshot(epoch + 1)`, i.e. the epoch's first two phases.
   T(periodStart: epochStartSlot(epoch, s),
-    periodEnd: nonceSnapshot(epoch + 1, s) - 1,
-    density: 0)
+    periodEnd: nonceSnapshot(epoch + 1, s) - 1)
 
-func increment*(bd: BlockDensity, slot: SlotNumber): BlockDensity =
-  ## Counts `slot` only if it falls inside the measurement window.
+func inWindow(bd: BlockDensity, slot: SlotNumber): bool =
+  slot >= bd.periodStart and slot <= bd.periodEnd
+
+func markOccupied*(
+    bd: BlockDensity, blockSlot: SlotNumber, uncleSlots: openArray[SlotNumber],
+): BlockDensity =
+  ## Counts `blockSlot` and each in-window uncle slot. A slot counts once.
+  # A block outside the window adds nothing, not even its in-window uncles.
+  if not bd.inWindow(blockSlot):
+    return bd
   var next = bd
-  if slot >= bd.periodStart and slot <= bd.periodEnd:
-    inc next.density
+  next.occupied = next.occupied.insert(blockSlot, ())
+  for slot in uncleSlots:
+    if bd.inWindow(slot):
+      next.occupied = next.occupied.insert(slot, ())
   next
+
+func density*(bd: BlockDensity): uint64 =
+  ## Number of distinct occupied slots counted so far.
+  uint64(bd.occupied.len)
 
 {.pop.}

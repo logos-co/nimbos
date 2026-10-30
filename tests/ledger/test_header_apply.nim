@@ -35,7 +35,7 @@ suite "ledger/header apply (epoch pipeline)":
   test "applying a header advances the tracker":
     let
       genesis = genesisLedgerState()
-      s = genesis.tryApplyHeader(5, sentinelProof(), testLedgerConfig).expect(
+      s = genesis.tryApplyHeader(5, sentinelProof(), [], testLedgerConfig).expect(
         "valid header")
     check:
       s.epochs.lastAppliedSlot == 5
@@ -45,19 +45,19 @@ suite "ledger/header apply (epoch pipeline)":
 
   test "non-monotonic slot is rejected":
     let s = genesisLedgerState().tryApplyHeader(
-      5, sentinelProof(), testLedgerConfig).expect("valid header")
+      5, sentinelProof(), [], testLedgerConfig).expect("valid header")
     check:
-      s.tryApplyHeader(5, sentinelProof(), testLedgerConfig).error == InvalidSlot
-      s.tryApplyHeader(3, sentinelProof(), testLedgerConfig).error == InvalidSlot
+      s.tryApplyHeader(5, sentinelProof(), [], testLedgerConfig).error == InvalidSlot
+      s.tryApplyHeader(3, sentinelProof(), [], testLedgerConfig).error == InvalidSlot
 
   test "epoch rotation applies TSI to the observed density":
     # Three blocks inside the [0, 59] window; expected density is 6, so at
     # beta = 1 the estimate halves: 1000 → 500.
     var s = genesisLedgerState()
     for slot in [5'u64, 10, 20]:
-      s = s.tryApplyHeader(slot, sentinelProof(), testLedgerConfig).expect("valid")
+      s = s.tryApplyHeader(slot, sentinelProof(), [], testLedgerConfig).expect("valid")
     check s.sdp.lastEpochStarted.isNone # no boundary crossed yet
-    s = s.tryApplyHeader(100, sentinelProof(), testLedgerConfig).expect("rotation")
+    s = s.tryApplyHeader(100, sentinelProof(), [], testLedgerConfig).expect("rotation")
     check:
       s.epochs.activeEpoch.epoch == 1
       s.epochs.nextEpoch.epoch == 2
@@ -67,16 +67,30 @@ suite "ledger/header apply (epoch pipeline)":
       # The rotating block also runs the SDP epoch boundary.
       s.sdp.lastEpochStarted == Opt.some(EpochNumber(1))
 
+  test "TSI counts an uncle slot across an epoch rotation":
+    # Three blocks inside the [0, 59] window plus one uncle at slot 7 give
+    # an observed density of 4 against the expected 6. At beta = 1 the
+    # estimate is 1000 - ⌊1000 · 2/6⌋ = 666, not the three-block value 500.
+    var s = genesisLedgerState()
+    s = s.tryApplyHeader(5, sentinelProof(), [], testLedgerConfig).expect("valid")
+    s = s.tryApplyHeader(10, sentinelProof(), [7'u64], testLedgerConfig).expect("valid")
+    s = s.tryApplyHeader(20, sentinelProof(), [], testLedgerConfig).expect("valid")
+    check s.epochs.blockDensity.density == 4
+    s = s.tryApplyHeader(100, sentinelProof(), [], testLedgerConfig).expect("rotation")
+    check:
+      s.epochs.activeEpoch.epoch == 1
+      s.epochs.activeEpoch.totalStake == 666
+
   test "nonce freezes at the snapshot slot, aged root at the epoch start":
     var s = genesisLedgerState()
-    s = s.tryApplyHeader(50, sentinelProof(), testLedgerConfig).expect("valid")
+    s = s.tryApplyHeader(50, sentinelProof(), [], testLedgerConfig).expect("valid")
     let nonceAfter50 = s.epochs.nonce
     # 65 ≥ 60 would freeze, but the chase runs with the PRE-block slot (50),
     # so the block at 65 still copies the running nonce...
-    s = s.tryApplyHeader(65, sentinelProof(), testLedgerConfig).expect("valid")
+    s = s.tryApplyHeader(65, sentinelProof(), [], testLedgerConfig).expect("valid")
     # ...and the block at 70 sees lastAppliedSlot = 65 ≥ 60: frozen.
-    s = s.tryApplyHeader(70, sentinelProof(), testLedgerConfig).expect("valid")
-    s = s.tryApplyHeader(100, sentinelProof(), testLedgerConfig).expect("rotation")
+    s = s.tryApplyHeader(70, sentinelProof(), [], testLedgerConfig).expect("valid")
+    s = s.tryApplyHeader(100, sentinelProof(), [], testLedgerConfig).expect("rotation")
     check:
       s.epochs.activeEpoch.nonce == nonceAfter50 # η¹ = running nonce at last block < 60
       s.epochs.activeEpoch.agedUtxoRoot ==
@@ -86,24 +100,24 @@ suite "ledger/header apply (epoch pipeline)":
     var s = genesisLedgerState()
     # Epoch 0: three blocks inside the [0, 59] window.
     for slot in [1'u64, 2, 3]:
-      s = s.tryApplyHeader(slot, sentinelProof(), testLedgerConfig).expect("valid")
+      s = s.tryApplyHeader(slot, sentinelProof(), [], testLedgerConfig).expect("valid")
     check s.epochs.blockDensity.density == 3
     # A block outside the window is applied but not counted.
-    s = s.tryApplyHeader(60, sentinelProof(), testLedgerConfig).expect("valid")
+    s = s.tryApplyHeader(60, sentinelProof(), [], testLedgerConfig).expect("valid")
     check s.epochs.blockDensity.density == 3
     # Epoch 0 → 1: expected density 6, observed 3 → estimate halves at
     # beta = 1; the rotating block itself opens epoch 1's window.
-    s = s.tryApplyHeader(100, sentinelProof(), testLedgerConfig).expect("rotation")
+    s = s.tryApplyHeader(100, sentinelProof(), [], testLedgerConfig).expect("rotation")
     check:
       s.epochs.activeEpoch.epoch == 1
       s.epochs.activeEpoch.totalStake == 500
       s.epochs.blockDensity.density == 1
     # Epoch 1: one more block inside [100, 159].
-    s = s.tryApplyHeader(101, sentinelProof(), testLedgerConfig).expect("valid")
+    s = s.tryApplyHeader(101, sentinelProof(), [], testLedgerConfig).expect("valid")
     check s.epochs.blockDensity.density == 2
     # Epoch 1 → 2: the estimate feeds forward from the inferred 500, not
     # from genesis: ⌊(500000 − ⌊500000·4000/6000⌋)/1000⌋ = 166.
-    s = s.tryApplyHeader(200, sentinelProof(), testLedgerConfig).expect("rotation")
+    s = s.tryApplyHeader(200, sentinelProof(), [], testLedgerConfig).expect("rotation")
     check:
       s.epochs.activeEpoch.epoch == 2
       s.epochs.activeEpoch.totalStake == 166
@@ -113,11 +127,11 @@ suite "ledger/header apply (epoch pipeline)":
     # in different epochs without affecting each other or the parent.
     let
       parent = genesisLedgerState().tryApplyHeader(
-        5, sentinelProof(), testLedgerConfig).expect("valid")
+        5, sentinelProof(), [], testLedgerConfig).expect("valid")
       stay = parent.tryApplyHeader(
-        50, sentinelProof(), testLedgerConfig).expect("valid")
+        50, sentinelProof(), [], testLedgerConfig).expect("valid")
       jump = parent.tryApplyHeader(
-        250, sentinelProof(), testLedgerConfig).expect("rotation")
+        250, sentinelProof(), [], testLedgerConfig).expect("rotation")
     check:
       stay.epochs.activeEpoch.epoch == 0
       stay.sdp.lastEpochStarted.isNone
@@ -132,25 +146,25 @@ suite "ledger/header apply (epoch pipeline)":
     # present in epoch 2's.
     var s = genesisLedgerState()
     let genesisRoot = s.cryptarchiaLedger.latestUtxos.root
-    s = s.tryApplyHeader(5, sentinelProof(), testLedgerConfig).expect("valid")
+    s = s.tryApplyHeader(5, sentinelProof(), [], testLedgerConfig).expect("valid")
     s.cryptarchiaLedger = CryptarchiaState.init(
       [mkUtxo(value = 1000), mkUtxo(value = 50, pkSeed = 9)])
     let mintedRoot = s.cryptarchiaLedger.latestUtxos.root
     check mintedRoot != genesisRoot
-    s = s.tryApplyHeader(100, sentinelProof(), testLedgerConfig).expect("rotation")
+    s = s.tryApplyHeader(100, sentinelProof(), [], testLedgerConfig).expect("rotation")
     check s.epochs.activeEpoch.agedUtxoRoot == genesisRoot
-    s = s.tryApplyHeader(200, sentinelProof(), testLedgerConfig).expect("rotation")
+    s = s.tryApplyHeader(200, sentinelProof(), [], testLedgerConfig).expect("rotation")
     check s.epochs.activeEpoch.agedUtxoRoot == mintedRoot
 
   test "skipped epochs collapse the estimate with zero-density corrections":
     var s = genesisLedgerState()
-    s = s.tryApplyHeader(5, sentinelProof(), testLedgerConfig).expect("valid")
+    s = s.tryApplyHeader(5, sentinelProof(), [], testLedgerConfig).expect("valid")
     # Jump from epoch 0 straight to epoch 3 (slots 300–399): one inference
     # with the observed density, then two zero-density corrections. The
     # promoted state is seeded from the running nonce as of rotation time,
     # i.e. before the rotating block's own entropy is recorded.
     let nonceBeforeJump = s.epochs.nonce
-    s = s.tryApplyHeader(350, sentinelProof(), testLedgerConfig).expect("rotation")
+    s = s.tryApplyHeader(350, sentinelProof(), [], testLedgerConfig).expect("rotation")
     check:
       s.epochs.activeEpoch.epoch == 3
       s.epochs.nextEpoch.epoch == 4
@@ -180,9 +194,9 @@ suite "ledger/header apply (epoch pipeline)":
     ).expect("genesis state")
     # A block before the nonce snapshot makes epoch 1's nonce diverge from
     # epoch 0's, so the capture is observable.
-    s = s.tryApplyHeader(5, sentinelProof(), testLedgerConfig).expect("valid")
+    s = s.tryApplyHeader(5, sentinelProof(), [], testLedgerConfig).expect("valid")
     let outgoingNonce = s.epochs.activeEpoch.nonce
-    s = s.tryApplyHeader(100, sentinelProof(), testLedgerConfig).expect(
+    s = s.tryApplyHeader(100, sentinelProof(), [], testLedgerConfig).expect(
       "rotation")
     check s.epochs.activeEpoch.nonce != outgoingNonce
     let target = s.sdp.blendRewards.target

@@ -28,6 +28,7 @@ proc initTestChain*(
     genesis: ValidBlock,
     securityParam: uint64 = DefaultSecurityParam,
     genesisTime: uint64 = uint64(max(getTime().toUnix() - 500, 0'i64)),
+    verifier: LeaderProofVerifier = mockVerifyLeaderProof,
 ): Chain =
   ## Chain over the genesis block's ledger state (epochs seeded under
   ## `testLedgerConfig`).
@@ -43,7 +44,7 @@ proc initTestChain*(
         raiseAssert "initTestChain: genesis state: " & $error
   Chain.init(
     genesis,
-    Ledger[BlockId].init(gid, state, testLedgerConfig, mockVerifyLeaderProof),
+    Ledger[BlockId].init(gid, state, testLedgerConfig, verifier),
     SlotConfig(genesisTime: genesisTime, slotDurationSeconds: 1),
     securityParam = securityParam)
 
