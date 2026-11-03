@@ -238,7 +238,7 @@ proc initTestLBNode(
   if proposalTopic.len > 0:
     ds.cryptarchia.gossipsubProtocol = proposalTopic
   let bp = BlockProcessor.new(initTestChain(genesis))
-  bp.start(nil)
+  bp.start()
   LBNode(
     network: network,
     config: LBNodeConf(),

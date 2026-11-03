@@ -8,7 +8,6 @@
 {.push raises: [], gcsafe.}
 
 import
-  std/[sequtils],
   bincode,
   chronicles,
   chronos,
@@ -94,7 +93,7 @@ func buildKnownBlocks*(
   KnownBlocks(
     localTip: localTipId(localTree),
     latestImmutableBlock: latestImmutableBlockId(localTree),
-    additionalBlocks: (0 ..< takeCount).mapIt(additionalBlocks[it]),
+    additionalBlocks: @(additionalBlocks.toOpenArray(0, takeCount - 1)),
   )
 
 func decodeSyncBlock*(wire: openArray[byte]): Result[Block, string] =

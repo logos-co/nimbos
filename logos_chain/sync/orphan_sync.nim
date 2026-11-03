@@ -13,71 +13,55 @@ import
   std/[sequtils, tables],
   chronicles,
   chronos,
-  minilru,
   results,
   stew/byteutils,
   libp2p/[peerid, crypto/rng],
+  ../chain/orphan_pool,
   ./[syncer_types, sync_client]
 
 logScope:
   topics = "orphan_sync"
 
 const
-  DefaultMaxConcurrentOrphanSync = 2
-  DefaultMaxOrphanRetries = 2
-  OrphanFailureCooldownDuration = 30.seconds
-  DefaultFailureCacheSize = 256
+  MaxConcurrentOrphanSync = 2
+  MaxOrphanRetries = 3
+  BaseBackoff = 1.seconds
+  WatchdogTimeout = 60.seconds
 
-type
-  OrphanError* {.pure.} = enum
-    BehindImmutable
-    ParentKnown
-    InFlight
-    CoolingDown
-    AtCapacity
+func backoffDelay(attempts: int): Duration =
+  ## BaseBackoff * 2^(attempts - 1). Bounded by MaxOrphanRetries.
+  BaseBackoff * (1 shl clamp(attempts - 1, 0, MaxOrphanRetries))
 
-func init*(
-    T: type OrphanSync,
-    maxConcurrent: int = DefaultMaxConcurrentOrphanSync,
-    failureCacheCap: int = DefaultFailureCacheSize,
-): T =
-  T(
-    maxConcurrent: max(maxConcurrent, 1),
-    active: initTable[BlockId, Future[void]](),
-    recentFailures: LruCache[BlockId, Moment].init(max(failureCacheCap, 1)),
-  )
+func isCoolingDown*(syncer: Syncer, parentId: BlockId, now: Moment): bool =
+  syncer.orphans.retries.withValue(parentId, entry):
+    return now - entry[].lastAttempt < backoffDelay(entry[].attempts)
+  false
 
-func activeDownloadCount*(s: OrphanSync): int =
-  s.active.len
+func nextBackoffDuration*(syncer: Syncer, now: Moment): Opt[Duration] =
+  var minWait = Duration.high
+  for id, entry in syncer.orphans.retries:
+    if id in syncer.orphans.active or not syncer.orphanPool.isMissingParent(id):
+      continue
+    let
+      elapsed = now - entry.lastAttempt
+      delay = backoffDelay(entry.attempts)
+      remaining = if elapsed < delay: delay - elapsed else: ZeroDuration
+    if remaining < minWait:
+      minWait = remaining
+      if minWait == ZeroDuration:
+        break
+  if minWait < Duration.high: Opt.some(minWait) else: Opt.none(Duration)
 
-func isCoolingDown*(s: OrphanSync, parentId: BlockId, now: Moment): bool =
-  let failureTime = s.recentFailures.peek(parentId).valueOr:
-    return false
-  now - failureTime < OrphanFailureCooldownDuration
-
-func checkFetch*(
-    s: OrphanSync,
-    tree: LocalTree,
-    parentId: BlockId,
-    slot: SlotNumber,
-    now: Moment,
-): Result[void, OrphanError] =
-  if tree != nil:
-    if slot <= tree.latestImmutableSlot():
-      return err(OrphanError.BehindImmutable)
-    if tree.hasBlock(parentId):
-      return err(OrphanError.ParentKnown)
-
-  if parentId in s.active:
-    return err(OrphanError.InFlight)
-
-  if s.isCoolingDown(parentId, now):
-    return err(OrphanError.CoolingDown)
-
-  if s.activeDownloadCount >= s.maxConcurrent:
-    return err(OrphanError.AtCapacity)
-
-  ok()
+proc recordFailure*(syncer: Syncer, parentId: BlockId, now: Moment) =
+  ## Records a failed fetch attempt for `parentId`. On the MaxOrphanRetries-th
+  ## failure, drops every orphan waiting on it.
+  let entry = addr syncer.orphans.retries.mgetOrPut(parentId, OrphanFetch())
+  inc entry[].attempts
+  entry[].lastAttempt = now
+  if entry[].attempts >= MaxOrphanRetries:
+    syncer.orphanPool.pruneDescendants(parentId)
+    syncer.orphans.retries.del(parentId)
+    syncer.orphans.triedPeers.del(parentId)
 
 proc pickPeer(syncer: Syncer, candidates: openArray[PeerId]): PeerId =
   if syncer.sw != nil and syncer.sw.rng != nil:
@@ -85,93 +69,112 @@ proc pickPeer(syncer: Syncer, candidates: openArray[PeerId]): PeerId =
   else:
     candidates[0]
 
-proc resolveOrphanParent(
-    syncer: Syncer,
-    orphanId: BlockId,
-    parentId: BlockId,
-) {.async: (raises: [CancelledError]).} =
+proc nextPeer*(syncer: Syncer, parentId: BlockId): Opt[PeerId] =
+  ## Picks a random untried peer for `parentId`. Once every peer was tried,
+  ## starts a new round instead of spending an attempt on nobody.
+  let peers = if syncer.peerProvider == nil: @[] else: syncer.peerProvider()
+  if peers.len == 0:
+    return Opt.none(PeerId)
+
+  let tried = addr syncer.orphans.triedPeers.mgetOrPut(parentId, @[])
+  var candidates =
+    if tried[].len > 0:
+      peers.filterIt(it notin tried[])
+    else:
+      peers
+  if candidates.len == 0:
+    # All peers were tried: start a new round
+    tried[].setLen(0)
+    candidates = peers
+
+  let peer = syncer.pickPeer(candidates)
+  tried[].add(peer)
+  Opt.some(peer)
+
+proc fetchParent*(syncer: Syncer, parentId: BlockId) {.async: (raises: [CancelledError]).} =
+  ## One download attempt for `parentId`. Resolution is read from the pool:
+  ## applying the parent makes the processor take its children, which clears
+  ## the missing entry.
+  let pool = syncer.orphanPool
   defer:
     syncer.orphans.active.del(parentId)
+    syncer.processor.orphanEvent.fire()
 
-  let parentHex = toHex(parentId)
-  let orphanHex = toHex(orphanId)
-
-  if syncer.peerProvider == nil:
-    warn "Orphan DBR: no peer provider configured, cooling down",
-      orphanId = orphanHex, parentId = parentHex
-    syncer.orphans.recentFailures.put(parentId, Moment.now())
+  let peer = syncer.nextPeer(parentId).valueOr:
+    debug "Orphan DBR: no peers", parentId = toHex(parentId)
+    if pool.isMissingParent(parentId):
+      syncer.recordFailure(parentId, Moment.now())
     return
 
-  var attempts = 0
-  var triedPeers: seq[PeerId]
+  if syncer.sw != nil:
+    debug "Orphan DBR: requesting missing ancestor",
+      parentId = toHex(parentId), peer
+    discard await syncer.downloadBlocks(peer, targetBlock = Opt.some(parentId))
 
-  while attempts < DefaultMaxOrphanRetries:
-    inc attempts
-    let candidateList = syncer.peerProvider().filterIt(it notin triedPeers)
-    if candidateList.len == 0:
-      debug "Orphan DBR: no untried candidate peers available",
-        orphanId = orphanHex, parentId = parentHex, attempt = attempts
-      break
+  if pool.isMissingParent(parentId):
+    debug "Orphan DBR: ancestor still missing", parentId = toHex(parentId)
+    syncer.recordFailure(parentId, Moment.now())
+  else:
+    syncer.orphans.retries.del(parentId)
+    syncer.orphans.triedPeers.del(parentId)
 
-    let peer = syncer.pickPeer(candidateList)
-    triedPeers.add(peer)
-
-    debug "Orphan DBR: requesting missing ancestor from peer",
-      orphanId = orphanHex, parentId = parentHex,
-      peer, attempt = attempts
-
-    let success = try:
-      await syncer.downloadBlocks(peer, targetBlock = Opt.some(parentId))
-    except CancelledError as exc:
-      raise exc
-    except CatchableError as exc:
-      debug "Orphan DBR: download failed with error",
-        orphanId = orphanHex, parentId = parentHex,
-        peer, err = exc.msg
-      false
-
-    if success:
-      debug "Orphan DBR: successfully resolved missing ancestor",
-        orphanId = orphanHex, parentId = parentHex,
-        peer, attempt = attempts
-      syncer.orphans.recentFailures.del(parentId)
-      return
-
-    debug "Orphan DBR: peer failed to provide ancestor",
-      orphanId = orphanHex, parentId = parentHex,
-      peer, attempt = attempts
-
-  warn "Orphan DBR: all retries failed for missing ancestor, cooling down",
-    orphanId = orphanHex, parentId = parentHex,
-    attempts = attempts
-  syncer.orphans.recentFailures.put(parentId, Moment.now())
-
-proc handleOrphan*(
-    syncer: Syncer,
-    orphanId: BlockId,
-    parentId: BlockId,
-    slot: SlotNumber,
-) =
-  let now = Moment.now()
-  syncer.orphans.checkFetch(syncer.localTree, parentId, slot, now).isOkOr:
-    trace "Orphan DBR ignored",
-      reason = $error,
-      orphanId = toHex(orphanId),
-      parentId = toHex(parentId)
-    return
-
-  let fut = syncer.resolveOrphanParent(orphanId, parentId)
+proc spawnOrphanFetch(syncer: Syncer, parentId: BlockId) =
+  let fut = syncer.fetchParent(parentId)
   if not fut.finished:
     syncer.orphans.active[parentId] = fut
     asyncSpawn fut
 
+proc dropStaleSyncState(syncer: Syncer) =
+  ## Parents resolved, pruned or evicted no longer need sync state.
+  if syncer.orphans.triedPeers.len == 0 and syncer.orphans.retries.len == 0:
+    return
+
+  template dropFoundParent(table: untyped) =
+    var stale: seq[BlockId]
+    for id in table.keys:
+      if not syncer.orphanPool.isMissingParent(id):
+        stale.add(id)
+    for id in stale:
+      table.del(id)
+
+  dropFoundParent(syncer.orphans.triedPeers)
+  dropFoundParent(syncer.orphans.retries)
+
+proc runOrphanSyncLoop(syncer: Syncer) {.async: (raises: [CancelledError]).} =
+  let pool = syncer.orphanPool
+  while true:
+    # Clear first: anything firing from here on re-arms the next wait.
+    syncer.processor.orphanEvent.clear()
+    syncer.dropStaleSyncState()
+
+    let now = Moment.now()
+    for parentId in pool.missingParentIds:
+      if syncer.orphans.active.len >= MaxConcurrentOrphanSync:
+        break
+      if parentId in syncer.orphans.active:
+        continue
+      if syncer.isCoolingDown(parentId, now):
+        continue
+      syncer.spawnOrphanFetch(parentId)
+
+    # Saturated: only a finished fetch (which fires the event) frees a slot.
+    # Otherwise wake when the next backoff expires.
+    let timeout =
+      if syncer.orphans.active.len >= MaxConcurrentOrphanSync:
+        WatchdogTimeout
+      else:
+        syncer.nextBackoffDuration(now).valueOr(WatchdogTimeout)
+    discard await syncer.processor.orphanEvent.wait().withTimeout(timeout)
+
+proc startOrphanSync*(syncer: Syncer) =
+  doAssert syncer.orphanLoopFut == nil, "orphan sync already started"
+  syncer.orphanLoopFut = syncer.runOrphanSyncLoop()
+
 proc stopOrphanSync*(syncer: Syncer) {.async: (raises: []).} =
-  var futs: seq[Future[void]]
-  for fut in syncer.orphans.active.values:
-    if fut != nil and not fut.finished:
-      futs.add(fut)
-  for fut in futs:
-    await fut.cancelAndWait()
-  syncer.orphans.active.clear()
+  if syncer.orphanLoopFut != nil:
+    await syncer.orphanLoopFut.cancelAndWait()
+    syncer.orphanLoopFut = nil
+
+  await cancelAndWait(toSeq(syncer.orphans.active.values))
 
 {.pop.}

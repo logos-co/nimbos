@@ -16,7 +16,7 @@ import
 
 export syncer_types, orphan_sync
 
-proc init*(
+func init*(
     T: type Syncer,
     sw: Switch,
     processor: BlockProcessor,
@@ -28,7 +28,6 @@ proc init*(
     processor: processor,
     chainSyncProtocol: protocol,
     peerProvider: peerProvider,
-    orphans: OrphanSync.init(),
   )
 
 proc runAtStartup(

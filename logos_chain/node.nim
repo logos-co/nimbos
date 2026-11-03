@@ -280,6 +280,7 @@ proc initializeNetworking*(node: LBNode) {.async: (raises: [CancelledError]).} =
   await node.network.start()
   if node.syncer != nil:
     let onIbdComplete: OnIbdComplete = proc() =
+      node.syncer.startOrphanSync()
       node.subscribeBlockTopic()
     let onIbdFailure: OnIbdFailure = proc(reason: string) =
       ProcessState.scheduleStop(cstring(reason))
@@ -307,13 +308,7 @@ type StopFuture = Future[void].Raising([CancelledError])
 proc run*(node: LBNode, stopper: StopFuture) {.raises: [CatchableError].} =
   ## Caller is responsible for installing REST handlers and starting the
   ## REST server before calling `run`.
-  node.processor.start(
-    if node.syncer != nil:
-      proc(orphanId: BlockId, parentId: BlockId, slot: SlotNumber) =
-        node.syncer.handleOrphan(orphanId, parentId, slot)
-    else:
-      nil
-  )
+  node.processor.start()
   waitFor node.initializeNetworking()
 
   ProcessState.notifyRunning()

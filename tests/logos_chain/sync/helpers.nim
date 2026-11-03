@@ -48,7 +48,7 @@ proc initTestChain*(
 
 proc startTestProcessor(chain: Chain): BlockProcessor =
   let bp = BlockProcessor.new(chain)
-  bp.start(nil)
+  bp.start()
   bp
 
 proc mountTestServer*(
@@ -71,9 +71,8 @@ template withClientSyncerOn*(sw: Switch, clientChain: Chain, body: untyped) =
   let bp = BlockProcessor.new(clientChain)
   let clientSyncer {.inject.} =
     Syncer.init(sw, bp, testChainSyncProtocol, nil)
-  bp.start(proc(orphanId: BlockId, parentId: BlockId, slot: SlotNumber) =
-    clientSyncer.handleOrphan(orphanId, parentId, slot)
-  )
+  bp.start()
+  clientSyncer.startOrphanSync()
   try:
     body
   finally:

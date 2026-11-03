@@ -35,10 +35,6 @@ type
     GossipIncoming
     PromotedOrphan
 
-  OnOrphanBuffered = proc(
-    orphanId: BlockId, parentId: BlockId, slot: SlotNumber
-  ) {.closure, gcsafe, raises: [].}
-
   BlockEntry = ref object
     queueTick: Moment
     resfut: Opt[BlockApplyFuture]
@@ -55,7 +51,7 @@ type
     blockQueue: AsyncQueue[BlockEntry]
     inFlight: Table[InFlightKey, BlockEntry]
     loopFut: Future[void].Raising([CancelledError])
-    onOrphanBuffered: OnOrphanBuffered
+    orphanEvent*: AsyncEvent
 
 template inFlightKey*(id: BlockId, sig: Ed25519Signature): InFlightKey =
   ## Fast 32-byte in-flight key folding BlockId with both 32-byte halves of the
@@ -74,10 +70,17 @@ template inFlightKey*(id: BlockId, sig: Ed25519Signature): InFlightKey =
   res
 
 func new*(T: type BlockProcessor, chain: sink Chain): T =
-  T(chain: chain, blockQueue: newAsyncQueue[BlockEntry]())
+  T(
+    chain: chain,
+    blockQueue: newAsyncQueue[BlockEntry](),
+    orphanEvent: newAsyncEvent(),
+  )
 
 func localTree*(bp: BlockProcessor): LocalTree =
   bp.chain.localTree
+
+func orphanPool*(bp: BlockProcessor): OrphanPool =
+  bp.chain.orphanPool
 
 func ledger*(bp: BlockProcessor): lent Ledger[BlockId] =
   bp.chain.ledger
@@ -225,11 +228,12 @@ proc processBlock(bp: BlockProcessor, entry: BlockEntry) =
       debug "Promoted orphan rejected",
         id = toHex(id), slot = header(entry.admittedBlk).slot,
         queueDur, applyDur, err = error.kind
+    # Spec: [Cryptarchia Bootstrapping & Synchronization § Listening for New Blocks]
+    # https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/cryptarchia-v1-bootstr-sync.md#L173-L201
+    # Only blocks received while listening for new blocks (gossip) trigger orphan sync.
     if error.kind == BlockApplyErrorKind.OrphanBuffered and
         entry.kind == BlockEntryKind.GossipIncoming:
-      if bp.onOrphanBuffered != nil:
-        let h = entry.proposal.header
-        bp.onOrphanBuffered(id, h.parentBlock, h.slot)
+      bp.orphanEvent.fire()
     let fut = entry.resfut.valueOr:
       return
     fut.complete(BlockApplyResult.err(error))
@@ -265,18 +269,16 @@ proc runQueueProcessingLoop(bp: BlockProcessor) {.async: (raises: [CancelledErro
     debug "Idle wait before block", idleDur = Moment.now() - idleTick
     bp.processBlock(await bp.blockQueue.popFirst())
 
-proc start*(bp: BlockProcessor, onOrphanBuffered: OnOrphanBuffered) =
+proc start*(bp: BlockProcessor) =
   doAssert bp.loopFut == nil, "block processor already started"
-  bp.onOrphanBuffered = onOrphanBuffered
   bp.loopFut = bp.runQueueProcessingLoop()
 
 proc stop*(bp: BlockProcessor) {.async: (raises: []).} =
-  ## Cancel the loop, clear the orphan callback, and cancel queued futures.
+  ## Cancel the loop and cancel queued futures.
   if bp.loopFut == nil:
     return
   await bp.loopFut.cancelAndWait()
   bp.loopFut = nil
-  bp.onOrphanBuffered = nil
   for entry in bp.blockQueue.items:
     if entry.resfut.isSome:
       entry.resfut.get().cancelSoon()

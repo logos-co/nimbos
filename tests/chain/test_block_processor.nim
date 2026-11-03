@@ -69,31 +69,22 @@ suite "chain/block_processor":
         fDup.finished
         (await fDup).error.kind == BlockApplyErrorKind.OrphanAlreadyBuffered
 
-  asyncTest "buffering an orphan triggers onOrphanBuffered callback only for gossip source":
-    let bp = BlockProcessor.new(chain)
-    var orphanTriggered: seq[(BlockId, BlockId, SlotNumber)]
-    bp.start(proc(orphanId: BlockId, parentId: BlockId, slot: SlotNumber) =
-      orphanTriggered.add((orphanId, parentId, slot))
-    )
-    try:
+  asyncTest "buffering an orphan triggers bp.orphanEvent only for gossip source":
+    withProcessor(chain):
       let
         b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
         b2 = childBlock(b1.header, blockId(b1.header), SlotNumber(2), [])
         b3 = childBlock(b2.header, blockId(b2.header), SlotNumber(3), [])
-      let b2Id = blockId(b2.header)
-      let b1Id = blockId(b1.header)
+        p2 = Proposal(header: b2.header, references: default(References), signature: b2.signature)
 
-      # Non-gossip source (Sync) buffers orphan without triggering callback
-      check (await bp.addBlock(b3)).error.kind == BlockApplyErrorKind.OrphanBuffered
-      check orphanTriggered.len == 0
-
-      # Gossip source buffers orphan and triggers callback
-      let p2 = Proposal(header: b2.header, references: default(References), signature: b2.signature)
-      check (await bp.addProposal(p2)).error.kind == BlockApplyErrorKind.OrphanBuffered
-      check orphanTriggered.len == 1
-      check orphanTriggered[0] == (b2Id, b1Id, SlotNumber(2))
-    finally:
-      await bp.stop()
+      check:
+        # Non-gossip source (Sync) buffers orphan without triggering orphanEvent
+        not bp.orphanEvent.isSet
+        (await bp.addBlock(b3)).error.kind == BlockApplyErrorKind.OrphanBuffered
+        not bp.orphanEvent.isSet
+        # Gossip source buffers orphan and triggers orphanEvent
+        (await bp.addProposal(p2)).error.kind == BlockApplyErrorKind.OrphanBuffered
+        bp.orphanEvent.isSet
 
   asyncTest "addBlock deduplicates in-flight blocks immediately":
     withProcessor(chain):

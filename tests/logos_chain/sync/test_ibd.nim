@@ -117,16 +117,17 @@ suite "sync/initial_block_download (download blocks)":
       tree = newLocalTree(genesis, 1'u64)
       b1 = childValidBlock(genesis.header, gid, SlotNumber(1), [sm])
     check tree.addBlockToTree(b1)
-    let req = DownloadBlocksRequest(
-      targetBlock: blockId(b1.header),
-      knownBlocks: buildKnownBlocks(newLocalTree(genesis, 1'u64), []),
-    )
-    let msgs = downloadBlocksResponsesForRequest(tree, req)
-    check msgs.len == 2
-    check msgs[0].kind == dbrBlock
-    let blk = decodeSyncBlock(msgs[0].downloadedBlock).get
-    check blockId(blk.header) == blockId(b1.header)
-    check msgs[1].kind == dbrNoMoreBlocks
+    let
+      req = DownloadBlocksRequest(
+        targetBlock: blockId(b1.header),
+        knownBlocks: buildKnownBlocks(newLocalTree(genesis, 1'u64), []),
+      )
+      msgs = downloadBlocksResponsesForRequest(tree, req)
+    check:
+      msgs.len == 2
+      msgs[0].kind == dbrBlock
+      blockId(decodeSyncBlock(msgs[0].downloadedBlock).get.header) == blockId(b1.header)
+      msgs[1].kind == dbrNoMoreBlocks
 
   asyncTest "sendDownloadBlocksRequest round-trips over mounted sync handler":
     let
