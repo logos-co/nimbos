@@ -76,8 +76,8 @@ template withClientSyncerOn*(sw: Switch, clientChain: Chain, body: untyped) =
   try:
     body
   finally:
-    await clientSyncer.stop()
     await bp.stop()
+    await clientSyncer.stop()
 
 template withClientSyncer*(clientChain: Chain, body: untyped) =
   ## One switch and a client syncer, stopped after `body`.

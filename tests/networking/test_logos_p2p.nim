@@ -434,10 +434,10 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
         bcastRes.error == "No peers on libp2p topic"
         not dialerNode.processor.localTree.hasBlock(id1)
     finally:
-      if dialerNode.syncer != nil:
-        await dialerNode.syncer.stop()
       pendingFut.cancelSoon()
       await dialerNode.processor.stop()
+      if dialerNode.syncer != nil:
+        await dialerNode.syncer.stop()
       await listenerNode.processor.stop()
       await peers.dialer.stop()
       await peers.listener.stop()
@@ -483,9 +483,9 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
         waitUntil(dialerNode.processor.localTree.hasBlock(id2))
         dialerNode.processor.localTree.localTipId == id2
     finally:
+      await dialerNode.processor.stop()
       if dialerNode.syncer != nil:
         await dialerNode.syncer.stop()
-      await dialerNode.processor.stop()
       await listenerNode.processor.stop()
       await peers.dialer.stop()
       await peers.listener.stop()

@@ -253,18 +253,16 @@ proc subscribeBlockTopic(node: LBNode) =
     node.network.subscribe(blockTopic, TopicParams.init())
     debug "Subscribed to block gossip topic", topic = blockTopic
 
-proc stop(node: LBNode) =
-  # The IBD task may be awaiting a queued result. Cancel it before the
-  # processor cancels that future, so the cancellation comes from its owner.
+proc stop(node: LBNode) {.async: (raises: []).} =
+  await node.processor.stop()
   if node.syncer != nil:
-    waitFor node.syncer.stop()
-  waitFor node.processor.stop()
+    await node.syncer.stop()
   try:
-    waitFor node.network.stop()
+    await node.network.stop()
   except CancelledError as exc:
     warn "Couldn't stop network", msg = exc.msg
 
-  waitFor node.metricsServer.stopMetricsServer()
+  await node.metricsServer.stopMetricsServer()
 
   # Drain in-flight tasks before the prover frees the buffers they read.
   node.taskpool.shutdown()
@@ -313,7 +311,7 @@ proc run*(node: LBNode, stopper: StopFuture) {.raises: [CatchableError].} =
 
   ProcessState.notifyRunning()
   if ProcessState.stopIt(notice("Shutting down during startup", reason = it)):
-    node.stop()
+    waitFor node.stop()
     return
 
   asyncSpawn runSlotLoop(node)
@@ -329,6 +327,6 @@ proc run*(node: LBNode, stopper: StopFuture) {.raises: [CatchableError].} =
     chronos.poll()
 
   # time to say goodbye
-  node.stop()
+  waitFor node.stop()
 
 {.pop.}

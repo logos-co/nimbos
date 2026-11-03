@@ -95,16 +95,17 @@ proc fetchParent*(syncer: Syncer, parentId: BlockId) {.async: (raises: [Cancelle
   ## One download attempt for `parentId`. Resolution is read from the pool:
   ## applying the parent makes the processor take its children, which clears
   ## the missing entry.
-  let pool = syncer.orphanPool
+  let
+    pool = syncer.orphanPool
+    peer = syncer.nextPeer(parentId).valueOr:
+      debug "Orphan DBR: no peers", parentId = toHex(parentId)
+      if pool.isMissingParent(parentId):
+        syncer.recordFailure(parentId, Moment.now())
+      return
+
   defer:
     syncer.orphans.active.del(parentId)
     syncer.processor.orphanEvent.fire()
-
-  let peer = syncer.nextPeer(parentId).valueOr:
-    debug "Orphan DBR: no peers", parentId = toHex(parentId)
-    if pool.isMissingParent(parentId):
-      syncer.recordFailure(parentId, Moment.now())
-    return
 
   if syncer.sw != nil:
     debug "Orphan DBR: requesting missing ancestor",
@@ -117,12 +118,6 @@ proc fetchParent*(syncer: Syncer, parentId: BlockId) {.async: (raises: [Cancelle
   else:
     syncer.orphans.retries.del(parentId)
     syncer.orphans.triedPeers.del(parentId)
-
-proc spawnOrphanFetch(syncer: Syncer, parentId: BlockId) =
-  let fut = syncer.fetchParent(parentId)
-  if not fut.finished:
-    syncer.orphans.active[parentId] = fut
-    asyncSpawn fut
 
 proc dropStaleSyncState(syncer: Syncer) =
   ## Parents resolved, pruned or evicted no longer need sync state.
@@ -148,14 +143,17 @@ proc runOrphanSyncLoop(syncer: Syncer) {.async: (raises: [CancelledError]).} =
     syncer.dropStaleSyncState()
 
     let now = Moment.now()
+    var toFetch: seq[BlockId]
     for parentId in pool.missingParentIds:
-      if syncer.orphans.active.len >= MaxConcurrentOrphanSync:
+      if syncer.orphans.active.len + toFetch.len >= MaxConcurrentOrphanSync:
         break
-      if parentId in syncer.orphans.active:
-        continue
-      if syncer.isCoolingDown(parentId, now):
-        continue
-      syncer.spawnOrphanFetch(parentId)
+      if parentId notin syncer.orphans.active and not syncer.isCoolingDown(parentId, now):
+        toFetch.add(parentId)
+
+    for parentId in toFetch:
+      let fut = syncer.fetchParent(parentId)
+      if not fut.finished:
+        syncer.orphans.active[parentId] = fut
 
     # Saturated: only a finished fetch (which fires the event) frees a slot.
     # Otherwise wake when the next backoff expires.

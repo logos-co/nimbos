@@ -24,7 +24,7 @@ from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
 export types, block_processor, syncer_types
 
 logScope:
-  topics = "cryptarchia_ibd"
+  topics = "cryptarchia_sync"
 
 proc sendGetTipRequest*(
     syncer: Syncer,
@@ -109,7 +109,7 @@ proc sendDownloadBlocksRequest*(
     request: DownloadBlocksRequest,
 ): Future[Opt[seq[Block]]] {.async: (raises: [CancelledError]).} =
   var wireReq: seq[byte]
-  debug "IBD download blocks request",
+  debug "Sync download blocks request",
     peer,
     targetBlock = sbyteutils.toHex(request.targetBlock),
     localTip = sbyteutils.toHex(request.knownBlocks.localTip),
@@ -120,65 +120,65 @@ proc sendDownloadBlocksRequest*(
       RequestMessage(kind: rmDownloadBlocksRequest, downloadBlocksRequest: request),
       cryptarchiaSyncBincodeConfig,
     )
-    debug "IBD download serialize ok", peer, requestBytes = wireReq.len
+    debug "Sync download serialize ok", peer, requestBytes = wireReq.len
   except BincodeError:
-    debug "IBD download serialize failed", peer, exc = getCurrentExceptionMsg()
+    debug "Sync download serialize failed", peer, exc = getCurrentExceptionMsg()
     return Opt.none(seq[Block])
   var conn: Connection
   try:
-    debug "IBD download dialing",
+    debug "Sync download dialing",
       peer,
       protocol = syncer.chainSyncProtocol,
       peerConnected = syncer.sw.isConnected(peer)
     conn = await syncer.sw.dial(peer, syncer.chainSyncProtocol)
-    debug "IBD download dial ok", peer, protocol = conn.protocol
+    debug "Sync download dial ok", peer, protocol = conn.protocol
   except DialFailedError as exc:
-    debug "IBD download dial failed", peer, exc = exc.msg, peerConnected = syncer.sw.isConnected(peer)
+    debug "Sync download dial failed", peer, exc = exc.msg, peerConnected = syncer.sw.isConnected(peer)
     return Opt.none(seq[Block])
   try:
     await writeCryptarchiaPrefixedInner(conn, wireReq)
-    debug "IBD download write ok", peer, requestBytes = wireReq.len
+    debug "Sync download write ok", peer, requestBytes = wireReq.len
     var blks = newSeqOfCap[Block](64)
     while true:
       let inner = (await readCryptarchiaPrefixedInner(conn)).valueOr:
-        debug "IBD download response read failed", peer, blocks = blks.len
+        debug "Sync download response read failed", peer, blocks = blks.len
         return Opt.none(seq[Block])
-      debug "IBD download read ok",
+      debug "Sync download read ok",
         peer,
         responseBytes = inner.len,
         blockIndex = blks.len
       let msgOpt = try:
         Opt.some(decode(inner, DownloadBlocksResponse, cryptarchiaSyncBincodeConfig))
       except BincodeError as exc:
-        debug "IBD download response deserialize failed", peer, exc = exc.msg
+        debug "Sync download response deserialize failed", peer, exc = exc.msg
         Opt.none(DownloadBlocksResponse)
       let msg = msgOpt.valueOr:
         return Opt.none(seq[Block])
       case msg.kind
       of dbrFailure:
-        debug "IBD download deserialize ok (failure)",
+        debug "Sync download deserialize ok (failure)",
           peer,
           blocksUnavailableReason = msg.blocksUnavailableReason,
           blockIndex = blks.len
         return Opt.none(seq[Block])
       of dbrNoMoreBlocks:
-        debug "IBD download deserialize ok (no more blocks)",
+        debug "Sync download deserialize ok (no more blocks)",
           peer, blocks = blks.len
         break
       of dbrBlock:
         let blk = decodeSyncBlock(msg.downloadedBlock).valueOr:
-          debug "IBD download block decode failed", peer, reason = error
+          debug "Sync download block decode failed", peer, reason = error
           return Opt.none(seq[Block])
         blks.add blk
-        debug "IBD download deserialize ok (block)",
+        debug "Sync download deserialize ok (block)",
           peer, blockBytes = msg.downloadedBlock.len, blockIndex = blks.high
-    debug "IBD download exchange complete", peer, blocks = blks.len
+    debug "Sync download exchange complete", peer, blocks = blks.len
     Opt.some(blks)
   except BincodeError as exc:
-    debug "IBD download exchange failed", peer, exc = exc.msg
+    debug "Sync download exchange failed", peer, exc = exc.msg
     return Opt.none(seq[Block])
   except LPStreamError as exc:
-    debug "IBD download exchange failed", peer, exc = exc.msg
+    debug "Sync download exchange failed", peer, exc = exc.msg
     return Opt.none(seq[Block])
   finally:
     await noCancel conn.close()
@@ -191,7 +191,7 @@ proc onBlock(
     return res
   var leaderKeyBytes: array[EdPublicKeySize, byte]
   doAssert toBytes(header(blk).proofOfLeadership.leaderKey, leaderKeyBytes) == EdPublicKeySize
-  info "IBD ingested block",
+  info "Sync ingested block",
     id = sbyteutils.toHex(id),
     bedrockVersion = header(blk).bedrockVersion,
     parent = sbyteutils.toHex(header(blk).parentBlock),
@@ -211,7 +211,7 @@ proc downloadBlocks*(
     targetBlock: Opt[BlockId],
 ): Future[bool] {.async: (raises: [CancelledError]).} =
   var latestDownloadedId = Opt.none(BlockId)
-  debug "IBD download loop start", peer,
+  debug "Sync download loop start", peer,
     targetBlock = targetBlock
       .map(proc (id: BlockId): string = sbyteutils.toHex(id))
       .valueOr("unset")
@@ -231,7 +231,7 @@ proc downloadBlocks*(
         tip
 
     if hasBlock(syncer.localTree, target):
-      debug "IBD: target already local", peer, targetBlock = sbyteutils.toHex(target)
+      debug "Sync: target already local", peer, targetBlock = sbyteutils.toHex(target)
       return true
 
     let additionalKnown = latestDownloadedId
@@ -246,43 +246,43 @@ proc downloadBlocks*(
       peer,
       downloadReq,
     )).valueOr:
-      debug "IBD: download request failed", peer, targetBlock = sbyteutils.toHex(target)
+      debug "Sync: download request failed", peer, targetBlock = sbyteutils.toHex(target)
       return false
 
-    debug "IBD: download response ok", peer, blocks = blocks.len, targetBlock = sbyteutils.toHex(downloadReq.targetBlock)
+    debug "Sync: download response ok", peer, blocks = blocks.len, targetBlock = sbyteutils.toHex(downloadReq.targetBlock)
     if blocks.len == 0:
-      debug "IBD: download returned no blocks", peer, targetBlock = sbyteutils.toHex(target)
+      debug "Sync: download returned no blocks", peer, targetBlock = sbyteutils.toHex(target)
       return false
-    info "IBD: applying downloaded blocks", peer, count = blocks.len, targetBlock = sbyteutils.toHex(target)
+    info "Sync: applying downloaded blocks", peer, count = blocks.len, targetBlock = sbyteutils.toHex(target)
 
     var targetReached = false
     for blk in blocks:
       let id = blockId(blk.header)
       latestDownloadedId = Opt.some(id)
       (await onBlock(syncer, blk, id)).isOkOr:
-        # IBD streams blocks in parent order, so even a recoverable error
+        # Sync streams blocks in parent order, so even a recoverable error
         # means this peer's stream is unusable (unless already applied or in flight).
         case error.kind
         of BlockApplyErrorKind.AlreadyApplied, BlockApplyErrorKind.InFlight:
-          debug "IBD: block already applied or in flight",
+          debug "Sync: block already applied or in flight",
             peer, blockId = sbyteutils.toHex(id), kind = error.kind
         elif error.kind.isRecoverable:
-          debug "IBD: block deferred, cancelling download",
+          debug "Sync: block deferred, cancelling download",
             peer, blockId = sbyteutils.toHex(id), err = error.kind
           return false
         else:
-          warn "IBD: invalid block from peer, cancelling download",
+          warn "Sync: invalid block from peer, cancelling download",
             peer, blockId = sbyteutils.toHex(id), err = $error
           return false
-      debug "IBD: block ingest ok", peer, blockId = sbyteutils.toHex(id)
+      debug "Sync: block ingest ok", peer, blockId = sbyteutils.toHex(id)
       if id == target:
         targetReached = true
         break
 
     if targetReached:
-      debug "IBD: target reached", peer, targetBlock = sbyteutils.toHex(target)
+      debug "Sync: target reached", peer, targetBlock = sbyteutils.toHex(target)
       return true
-    info "IBD: batch applied, continuing", peer, blocksApplied = blocks.len
+    info "Sync: batch applied, continuing", peer, blocksApplied = blocks.len
 
 proc initialBlockDownload*(
     syncer: Syncer,
