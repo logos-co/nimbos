@@ -196,12 +196,13 @@ func advanceEpochs*(
 
 proc recordBlock*(
     t: EpochTracker, slot: SlotNumber, entropyContribution: FieldElement,
+    uncleSlots: openArray[SlotNumber],
 ): EpochTracker =
   ## Post-verification bookkeeping: roll the block's entropy into the
-  ## running nonce, count density, advance the slot cursor.
+  ## running nonce, count the occupied slots, advance the slot cursor.
   var next = t
   next.nonce = accumulateNonce(t.nonce, entropyContribution, slot)
-  next.blockDensity = t.blockDensity.increment(slot)
+  next.blockDensity = t.blockDensity.markOccupied(slot, uncleSlots)
   next.lastAppliedSlot = slot
   next
 

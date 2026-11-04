@@ -78,6 +78,7 @@ type
     slotActivationCoeff*: NonNegativeRatio ## f — exact, keyed into the lottery table
     learningRateFixed*: uint64 ## fixedPoint(beta) — stake-inference input
     faucetPk*: Opt[ZkPublicKey] ## excluded from the genesis total-stake sum
+    uncleWindowSlots*: uint64 ## ⌊W / f⌋, the uncle reference window in slots
 
 func toLedgerError*(err: EncodingError): LedgerError =
   case err

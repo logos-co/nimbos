@@ -14,6 +14,7 @@
 {.push raises: [], gcsafe.}
 
 import
+  std/sequtils,
   bincode,
   libp2p/crypto/ed25519/ed25519,
   ../ledger/ledger,
@@ -75,6 +76,7 @@ type
 
 template header*(b: AdmittedBlock): Header = b.header
 template signature*(b: AdmittedBlock): Ed25519Signature = b.signature
+template uncleHeaders*(b: AdmittedBlock): UncleHeaders = b.uncleHeaders
 
 template header*(blk: ValidBlock): Header = blk.header
 template signature*(blk: ValidBlock): Ed25519Signature = blk.signature
@@ -112,9 +114,9 @@ func validateHeader[T: AnyHashedSignedMantleTx](
   if header.slot > 0 and header.parentBlock.isZero:
     return false
 
-  # Only the commitment to the carried uncle list is checked here; the uncle
-  # validity rules (Cryptarchia "Block Header Validation") are not
-  # implemented yet.
+  # Only the commitment to the carried uncle list is checked here. The uncle
+  # validity rules (Cryptarchia "Block Header Validation" step 10) live in
+  # `uncle_validation.nim` and run against the parent chain.
   # Body root computed directly from precomputed tx hashes in txs
   # TODO: remove this body-root check once a way to enforce at compile-time that
   # a caller checked bodyMatchesHeader is established without heavy wrapper types.
@@ -250,6 +252,7 @@ proc validatePolAndStatelessTransactions*(
   var afterHeader = parentState.tryApplyHeader(
     blk.header.slot,
     blk.header.proofOfLeadership,
+    blk.uncleHeaders.asSeq.mapIt(it.header.slot),
     ledger.config,
     ledger.leaderProofVerifier,
   ).valueOr:

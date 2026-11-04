@@ -21,6 +21,7 @@ cryptarchia:
     epoch_period_nonce_buffer: 1
     epoch_period_nonce_stabilization: 1
   security_param: 1
+  uncle_reference_window_in_block: 12
   slot_activation_coeff:
     numerator: 1
     denominator: 20

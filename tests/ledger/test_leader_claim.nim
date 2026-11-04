@@ -245,11 +245,13 @@ suite "ledger/leader_claim — tryApplyLeaderClaim":
 suite "ledger/leader_claim — tryApplyHeader epoch hooks":
   test "epoch advance rolls in staged vouchers and rewards":
     let s0 = LedgerState.fromUtxos(@[], default(FieldElement), testSdpRegistry(), testLedgerConfig).get
-    let s1 = s0.tryApplyHeader(slot = 1'u64, proof = mkProof(), cfg = testLedgerConfig).get
+    let s1 = s0.tryApplyHeader(
+      slot = 1'u64, proof = mkProof(), uncleSlots = [], cfg = testLedgerConfig).get
     var st = s1
     st.cryptarchiaLedger.leader = st.cryptarchiaLedger.leader
       .recordBlockLeader(voucherBytes(2'u8)).addPendingRewards(50'u64)
-    let s2 = st.tryApplyHeader(slot = 100'u64, proof = mkProof(), cfg = testLedgerConfig).get
+    let s2 = st.tryApplyHeader(
+      slot = 100'u64, proof = mkProof(), uncleSlots = [], cfg = testLedgerConfig).get
     let leader = s2.cryptarchiaLedger.leader
     check leader.leadersRewards == 50
     # Both the slot-1 header's voucher and the manually staged one roll in.
