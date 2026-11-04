@@ -43,6 +43,12 @@ proc processProposal*(
     trace "GossipSub ignored duplicate proposal", blockId = idHex, src
     return ValidationResult.Ignore
 
+  if bp.orphanPool.isRejected(id) or bp.orphanPool.isRejected(proposal.header.parentBlock):
+    bp.orphanPool.reject(id)
+    debug "GossipSub rejected proposal: block or parent is rejected",
+      blockId = idHex, src
+    return ValidationResult.Reject
+
   # 3. Binding of the reference list (~µs, mempool-free)
   if not proposal.bodyMatchesHeader:
     debug "GossipSub rejected proposal: references do not match body root",

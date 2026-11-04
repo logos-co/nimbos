@@ -59,7 +59,7 @@ proc recordFailure*(syncer: Syncer, parentId: BlockId, now: Moment) =
   inc entry[].attempts
   entry[].lastAttempt = now
   if entry[].attempts >= MaxOrphanRetries:
-    syncer.orphanPool.pruneDescendants(parentId)
+    syncer.orphanPool.reject(parentId, remember = false)
     syncer.orphans.retries.del(parentId)
     syncer.orphans.triedPeers.del(parentId)
 
