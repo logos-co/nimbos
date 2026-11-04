@@ -355,7 +355,7 @@ suite "HashTrieMap iteration":
     var
       rng = initRand(0xDEADBEEF_5678)
       m = HashTrieMap[int, int].init()
-      t = initTable[int, int]()
+      t: Table[int, int]
     for _ in 0 ..< 3_000:
       let k = rng.rand(0 .. 99)
       if rng.rand(1) == 0:
@@ -446,7 +446,7 @@ suite "HashTrieMap fuzz":
     var
       rng = initRand(0xC0FFEE_1234)
       m = HashTrieMap[int, int].init()
-      t = initTable[int, int]()
+      t: Table[int, int]
 
     for _ in 0 ..< 5_000:
       let

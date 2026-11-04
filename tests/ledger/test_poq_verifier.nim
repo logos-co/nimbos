@@ -150,7 +150,7 @@ suite "ledger/poq_verifier — coreZkIdRoot":
       meta =
         try:
           parseJson(metaText)
-        except CatchableError:
+        except IOError, OSError, ValueError:
           checkpoint "meta must parse"
           fail()
           return
@@ -183,7 +183,7 @@ suite "ledger/poq_verifier — end-to-end activity verification":
       meta =
         try:
           parseJson(metaText)
-        except CatchableError:
+        except IOError, OSError, ValueError:
           checkpoint "meta must parse"
           fail()
           return

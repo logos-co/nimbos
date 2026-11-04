@@ -40,7 +40,7 @@ type TestDuration = tuple[duration: float, label: string]
 
 var
   testTimes: seq[TestDuration]
-  status = initOrderedTable[string, OrderedTable[string, Status]]()
+  status: OrderedTable[string, OrderedTable[string, Status]]
 
 type TimingCollector = ref object of OutputFormatter
 
@@ -49,7 +49,7 @@ func toFloatSeconds(duration: times.Duration): float =
 
 method testEnded*(formatter: TimingCollector, testResult: TestResult) =
   {.gcsafe.}: # Lie!
-    status.mgetOrPut(testResult.suiteName, initOrderedTable[string, Status]())[
+    status.mgetOrPut(testResult.suiteName)[
       testResult.testName
     ] =
       case testResult.status

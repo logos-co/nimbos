@@ -148,7 +148,6 @@ proc newPeerPool*[A, B](
         maxOutgoingPeers
     res = PeerPool[A, B](
       changeEvent: newAsyncEvent(),
-      registry: initTable[B, PeerIndex](),
       scoreCheck: scoreCheckCb,
       peerCounter: peerCounterCb,
       onDeletePeer: onDeleteCb,

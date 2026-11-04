@@ -28,7 +28,7 @@ suite "ledger/sdp/rewards":
     let
       zkSmall = frFromBytesLE([byte 2]).get
       zkLarge = frFromBytesLE([byte 1, 1]).get
-    var rewards = initTable[ZkPublicKey, Value]()
+    var rewards: Table[ZkPublicKey, Value]
     rewards[zkLarge] = 40
     rewards[zkSmall] = 30
     let minted = distributeRewards(rewards, 3, ServiceType.bn)
@@ -43,7 +43,7 @@ suite "ledger/sdp/rewards":
       minted[0].opId == rewardOpId(ServiceType.bn, 3)
 
   test "distributeRewards filters zero rewards before indexing":
-    var rewards = initTable[ZkPublicKey, Value]()
+    var rewards: Table[ZkPublicKey, Value]
     rewards[frFromBytesLE([byte 1]).get] = 0
     rewards[frFromBytesLE([byte 2]).get] = 7
     let minted = distributeRewards(rewards, 1, ServiceType.bn)
