@@ -33,8 +33,9 @@ suite "zk/groth16/rapidsnark — prover object":
     check p.isNil
 
   test "create rejects a buffer that is not a zkey":
-    var garbage = newSeq[byte](100)
-    let r = RapidsnarkProver.create(garbage)
+    let
+      garbage = newSeq[byte](100)
+      r = RapidsnarkProver.create(garbage)
     check r.error.kind == RapidsnarkError.CreateFailed
 
   test "prove on a destroyed handle fails cleanly":
@@ -93,9 +94,10 @@ suite "zk/groth16/rapidsnark — prove and verify":
       wtns = witnessBytes(Circuit.Signature, toInputsJson(zksignFixtureInput()))
       a = p.prove(wtns).expect("prove")
       b = p.prove(wtns).expect("prove")
-    check a.proofJson != b.proofJson
-    check accepts(verifyJson(a.proofJson, a.publicJson, vkJson))
-    check accepts(verifyJson(b.proofJson, b.publicJson, vkJson))
+    check:
+      a.proofJson != b.proofJson
+      accepts(verifyJson(a.proofJson, a.publicJson, vkJson))
+      accepts(verifyJson(b.proofJson, b.publicJson, vkJson))
 
   p.destroy()
 

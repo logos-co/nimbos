@@ -10,10 +10,9 @@
 {.push raises: [], gcsafe.}
 
 import
-  results,
   ./types,
   ../core/[crypto/types, mantle/proofs],
-  ../zk/[poseidon2/hasher, zksign]
+  ../zk/zksign
 
 proc verifyZkSig*(
     proof: ZkSigProof,
@@ -22,11 +21,12 @@ proc verifyZkSig*(
 ): Result[void, LedgerError] =
   ## Verifies a ZkSig over ``publicKeys`` and ``txHash``. The hash is reduced
   ## mod the BN254 field order so prover and verifier agree on the signed Fr.
-  let msgFr = frFromBytesLEModOrder(txHash)
-  let input = zksignInput(publicKeys, msgFr).valueOr:
-    return err(PermanentInvalidTxProof)
-  let verified = zksign.verify(proof, input).valueOr:
-    return err(VerifierNotInitialised)
+  let
+    msgFr = frFromBytesLEModOrder(txHash)
+    input = zksignInput(publicKeys, msgFr).valueOr:
+      return err(PermanentInvalidTxProof)
+    verified = zksign.verify(proof, input).valueOr:
+      return err(VerifierNotInitialised)
   if not verified:
     return err(PermanentInvalidTxProof)
   ok()

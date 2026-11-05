@@ -12,8 +12,6 @@
 
 import
   ../core/types,
-  ../core/crypto/types,
-  ../core/mantle/primitives,
   ../zk/pol
 
 export pol
@@ -41,10 +39,9 @@ proc verifyLeaderProof*(
   if isGenesisLeaderProof(proof):
     return ok(true)
 
-  let entropyFr = frFromBytesLE(proof.entropyContribution).valueOr:
-    return ok(false)
-
   let
+    entropyFr = frFromBytesLE(proof.entropyContribution).valueOr:
+      return ok(false)
     (pk1, pk2) = ed25519PkToFrPair(proof.leaderKey)
     input = PolVerifierInput(
       entropyContribution: entropyFr,

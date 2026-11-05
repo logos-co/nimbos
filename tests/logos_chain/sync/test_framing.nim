@@ -10,7 +10,6 @@
 
 import
   stew/byteutils as byteutils,
-  results,
   bincode,
   ../../testutil,
   ../../../logos_chain/sync/[framing, types]
@@ -26,13 +25,14 @@ suite "sync/framing (u32 inner length prefix)":
       addPrefixLengthToPayload(inner)
     except BincodeError as exc:
       fail exc.msg
-    check byteutils.toHex(lpBody) == "0400000001000000"
-    check lpBody.len == 4 + inner.len
+    check:
+      byteutils.toHex(lpBody) == "0400000001000000"
+      lpBody.len == 4 + inner.len
     let m = try:
       Opt.some(decode(
         lpBody.toOpenArray(4, lpBody.high), RequestMessage, cryptarchiaSyncBincodeConfig))
     except BincodeError as exc:
       fail exc.msg
-    check m.isSome and m.get.kind == rmGetTip
+    check m.get.kind == rmGetTip
 
 {.pop.}

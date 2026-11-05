@@ -37,13 +37,14 @@ proc loadVkFromPath*(path: string): Result[VKey, VkLoadError] =
   ## Read + parse a snarkjs `verification_key.json` at `path`.
   if not fileExists(path):
     return err(VkFileMissing)
-  let text =
-    try:
-      readFile(path)
-    except IOError, OSError:
-      return err(VkReadFailed)
-  let vk = parseVk(text).valueOr:
-    return err(VkInvalid)
+  let
+    text =
+      try:
+        readFile(path)
+      except IOError, OSError:
+        return err(VkReadFailed)
+    vk = parseVk(text).valueOr:
+      return err(VkInvalid)
   ok(vk)
 
 proc installVk*(slot: var Opt[VKey], vk: VKey): Result[void, VkLoadError] =

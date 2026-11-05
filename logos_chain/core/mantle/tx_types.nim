@@ -50,5 +50,4 @@ func byteLen*(tx: SignedMantleTx): int =
   ## Exact wire byte length of a SignedMantleTx without allocating buffers.
   byteLen(tx.tx) + byteLen(tx.opProofs)
 
-
 {.pop.}

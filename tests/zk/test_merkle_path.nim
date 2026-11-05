@@ -27,9 +27,10 @@ suite "zk/merkle_path — circuit encoding":
     let c = toCircuitPath(path)
     for i in 0 ..< TreeDepth:
       check c.siblings[i] == toF(i)
-    check c.selectors[TreeDepth - 1] == true   # leaf level ← path[0]
-    check c.selectors[TreeDepth - 6] == true   # ← path[5]
-    check c.selectors[0] == false
-    check c.selectors[5] == false
+    check:
+      c.selectors[TreeDepth - 1] == true   # leaf level ← path[0]
+      c.selectors[TreeDepth - 6] == true   # ← path[5]
+      c.selectors[0] == false
+      c.selectors[5] == false
 
 {.pop.}

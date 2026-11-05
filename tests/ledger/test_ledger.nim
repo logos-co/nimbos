@@ -19,7 +19,7 @@ import
     balance, cryptarchia_state, ledger, types],
   ../../logos_chain/ledger/sdp/[ops, registry, rewards, state],
   ../../logos_chain/core/mantle/[
-    blend_activity, primitives, operations, proofs, tx_hashing, tx_types, utxo],
+    primitives, operations, proofs, tx_hashing, tx_types, utxo],
   ../../logos_chain/core/types,
   ../../logos_chain/zk/pol,
   ../zk/zksign_helpers,
@@ -211,11 +211,12 @@ suite "tryApplyTx — channel ops":
     let
       balance = r.get
       minted = Utxo(opId: opId(op).get, outputIndex: 0, note: reassigned)
-    check balance == Balance.zero
-    check s0.mandatory_fees(vtx).get.executionGas == Gas(59)
-    check not s0.latestUtxos.contains(note.id)
-    check s0.latestUtxos.contains(minted.id)
-    check s0.mantleLedger.channelNotes.isChannelNoteOf(minted.id, cid)
+    check:
+      balance == Balance.zero
+      s0.mandatory_fees(vtx).get.executionGas == Gas(59)
+      not s0.latestUtxos.contains(note.id)
+      s0.latestUtxos.contains(minted.id)
+      s0.mantleLedger.channelNotes.isChannelNoteOf(minted.id, cid)
 
   test "a regular Transfer cannot spend a channel note → ChannelNoteSpend":
     let
@@ -236,8 +237,9 @@ suite "Ledger[Id] map ops":
       seed = mkState(@[mkUtxo()])
       id = mkId(0x01)
       l = initLedger(id, seed, testLedgerConfig)
-    check l.hasState(id)
-    check not l.hasState(mkId(0x02))
+    check:
+      l.hasState(id)
+      not l.hasState(mkId(0x02))
 
   test "commitUpdate overwrites":
     var l = initLedger(mkId(0x01), mkState(@[]), testLedgerConfig)
@@ -245,8 +247,9 @@ suite "Ledger[Id] map ops":
       id2 = mkId(0x02)
       st2 = mkState(@[mkUtxo(value = 7, pkSeed = 7)])
     l.commitUpdate(id2, st2)
-    check l.state(id2).isSome
-    check l.state(id2).get.latestUtxos.len == 1
+    check:
+      l.state(id2).isSome
+      l.state(id2).get.latestUtxos.len == 1
 
   test "pruneStateAt removes existing state; missing key is a safe no-op":
     var l = initLedger(mkId(0x01), mkState(@[]), testLedgerConfig)

@@ -266,25 +266,29 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
       let sampleTx = validSignedTxWithOps(1, 1)
 
       # Wait until GossipSub exchanges topic subscriptions and broadcast reaches listener
-      check waitUntil((await peers.dialer.broadcast(topic, sampleTx.hashed)).isOk)
-      check waitUntil(listenerNode.processor.mempool.len > 0)
+      check:
+        waitUntil((await peers.dialer.broadcast(topic, sampleTx.hashed)).isOk)
+        waitUntil(listenerNode.processor.mempool.len > 0)
 
       let txItem = listenerNode.processor.mempool.get(sampleTx.hash)
-      check txItem.isOk
-      check txItem.get.tx.ops.len == 1
+      check:
+        txItem.isOk
+        txItem.get.tx.ops.len == 1
 
       # Duplicate tx sent to processTx should return Ignore and not duplicate in mempool
       let dupRes = listenerNode.processor.processTx(sampleTx.hashed, peers.dialer.switch.peerInfo.peerId)
-      check dupRes == ValidationResult.Ignore
-      check listenerNode.processor.mempool.len == 1
+      check:
+        dupRes == ValidationResult.Ignore
+        listenerNode.processor.mempool.len == 1
 
       # Malformed / Invalid: Corrupt cryptographic signature on new tx
       let validHtx = hashedSignedTxWithOps(1, 999)
       var corruptSigTx = validHtx.signedTx
       corruptSigTx.opProofs[0].ed25519SigProof.data[0] = 0xFF
       let corruptHtx = mkHashedSignedTx(corruptSigTx, validHtx.hash)
-      check listenerNode.processor.processTx(corruptHtx, peers.dialer.switch.peerInfo.peerId) == ValidationResult.Reject
-      check listenerNode.processor.mempool.len == 1
+      check:
+        listenerNode.processor.processTx(corruptHtx, peers.dialer.switch.peerInfo.peerId) == ValidationResult.Reject
+        listenerNode.processor.mempool.len == 1
 
       # Large tx (> 64 KiB) verifies GossipBincodeConfig handles messages exceeding default 64 KiB bincode limit
       var largeCid: ChannelId
@@ -305,9 +309,10 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
           opProofs: @[OpProof(kind: opfChannelInscribe, ed25519SigProof: largeSig)],
         )
         largeHtx = mkHashedSignedTx(largeTx, largeTxHash)
-      check largeTx.byteLen > 65536
-      check waitUntil((await peers.dialer.broadcast(topic, largeHtx)).isOk)
-      check waitUntil(listenerNode.processor.mempool.len == 2)
+      check:
+        largeTx.byteLen > 65536
+        waitUntil((await peers.dialer.broadcast(topic, largeHtx)).isOk)
+        waitUntil(listenerNode.processor.mempool.len == 2)
     finally:
       await dialerNode.processor.stop()
       await listenerNode.processor.stop()
@@ -327,22 +332,25 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
 
       check waitUntil(peers.dialer.switch.isConnected(peers.listenerPeerId))
 
-      let sampleBlock = childValidBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [])
-      let sampleProposal = Proposal(
-        header: sampleBlock.header,
-        references: default(References),
-        signature: sampleBlock.signature
-      )
+      let
+        sampleBlock = childValidBlock(genesis.header, blockId(genesis.header), SlotNumber(1), [])
+        sampleProposal = Proposal(
+          header: sampleBlock.header,
+          references: default(References),
+          signature: sampleBlock.signature
+        )
 
       # Wait until GossipSub exchanges topic subscriptions and broadcast reaches listener
-      check waitUntil((await peers.dialer.broadcast(topic, sampleProposal)).isOk)
-      check waitUntil(listenerNode.processor.localTree.hasBlock(blockId(sampleProposal.header)))
-      check listenerNode.processor.localTree.localTipId == blockId(sampleProposal.header)
+      check:
+        waitUntil((await peers.dialer.broadcast(topic, sampleProposal)).isOk)
+        waitUntil(listenerNode.processor.localTree.hasBlock(blockId(sampleProposal.header)))
+        listenerNode.processor.localTree.localTipId == blockId(sampleProposal.header)
 
       # Verify reconstructed block content matches proposal
       let reconstructedBlock = listenerNode.processor.localTree.getBlock(blockId(sampleProposal.header)).get()
-      check reconstructedBlock.header == sampleProposal.header
-      check reconstructedBlock.signature == sampleProposal.signature
+      check:
+        reconstructedBlock.header == sampleProposal.header
+        reconstructedBlock.signature == sampleProposal.signature
       check reconstructedBlock.txs.len == 0
 
       # Broadcast proposal referencing a missing transaction (not in listener's mempool)

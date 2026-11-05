@@ -11,12 +11,10 @@
 import
   std/sets,
   unittest2,
-  results,
   bearssl/rand,
   libp2p/crypto/ed25519/ed25519,
-  ../../logos_chain/ledger/
-    [channel_state, cryptarchia_state, leader_state, mantle_state, types],
-  ../../logos_chain/core/mantle/[primitives, operations, proofs],
+  ../../logos_chain/ledger/[cryptarchia_state, mantle_state],
+  ../../logos_chain/core/mantle/[operations, proofs],
   ../core/mantle/test_helpers
 
 from ./test_helpers import seedChannelNotes, seedMantle, twoOfTwo
@@ -37,12 +35,13 @@ suite "MantleState.tryApplyChannelWithdraw":
         cs, LockedNotes.init(), op, twoOfTwo(kp1, kp2, txHash), txHash)
     check r.isOk
     let released = r.get
-    check not released.channelNotes.isChannelNote(note.id)
-    check released.channelNotes.isEmpty
-    # The note keeps its identity: same NoteId, value and key, so its ageing
-    # never restarts.
-    check cs.utxos.len == 1
-    check cs.utxos.get(note.id) == Opt.some(note)
+    check:
+      not released.channelNotes.isChannelNote(note.id)
+      released.channelNotes.isEmpty
+      # The note keeps its identity: same NoteId, value and key, so its ageing
+      # never restarts.
+      cs.utxos.len == 1
+      cs.utxos.get(note.id) == Opt.some(note)
 
   test "channel doesn't exist → ChannelNotFound":
     let
@@ -193,8 +192,9 @@ suite "applyChannelWithdraw — released notes rejoin the regular note set":
       op = ChannelWithdrawPayload(channel: cid, inputs: Inputs(noteIds: @[note.id]))
       proof = ChannelMultiSigProof(
         signatures: @[sign(kp.seckey, txHash)], indexes: @[ChannelKeyIndex(0)])
-    check m.tryApplyChannelWithdraw(cs, LockedNotes.init(), op, proof, txHash).isOk
-    check cs.leader == leader
-    check cs.utxos.len == 1
+    check:
+      m.tryApplyChannelWithdraw(cs, LockedNotes.init(), op, proof, txHash).isOk
+      cs.leader == leader
+      cs.utxos.len == 1
 
 {.pop.}

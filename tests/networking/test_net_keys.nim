@@ -9,9 +9,8 @@
 {.used.}
 
 import
-  std/[options, os, strutils],
-  unittest2, results, stew/[byteutils, io2],
-  libp2p/[crypto/crypto, peerid],
+  std/[os, strutils],
+  stew/[byteutils, io2],
   ../testutil,
   ../../logos_chain/conf,
   ../../logos_chain/networking/network

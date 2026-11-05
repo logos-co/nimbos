@@ -28,21 +28,23 @@ suite "zk/pol — loadVk":
 
   test "rejects garbage JSON":
     let dir = uniqueTmpDir("bad-vk")
-    check createPath(dir / "pol").isOk
-    check io2.writeFile(dir / "pol" / "verification_key.json", "not json {").isOk
-    check loadVk(dir).error == VkInvalid
+    check:
+      createPath(dir / "pol").isOk
+      io2.writeFile(dir / "pol" / "verification_key.json", "not json {").isOk
+      loadVk(dir).error == VkInvalid
 
   test "rejects JSON with wrong protocol":
     let dir = uniqueTmpDir("wrong-proto-vk")
-    check createPath(dir / "pol").isOk
-    check io2.writeFile(
-      dir / "pol" / "verification_key.json",
-      """{"protocol":"plonk","curve":"bn128","vk_alpha_1":["0","0","1"],""" &
-      """"vk_beta_2":[["0","0"],["0","0"],["1","0"]],""" &
-      """"vk_gamma_2":[["0","0"],["0","0"],["1","0"]],""" &
-      """"vk_delta_2":[["0","0"],["0","0"],["1","0"]],"IC":[]}""",
-    ).isOk
-    check loadVk(dir).error == VkInvalid
+    check:
+      createPath(dir / "pol").isOk
+      io2.writeFile(
+        dir / "pol" / "verification_key.json",
+        """{"protocol":"plonk","curve":"bn128","vk_alpha_1":["0","0","1"],""" &
+        """"vk_beta_2":[["0","0"],["0","0"],["1","0"]],""" &
+        """"vk_gamma_2":[["0","0"],["0","0"],["1","0"]],""" &
+        """"vk_delta_2":[["0","0"],["0","0"],["1","0"]],"IC":[]}""",
+      ).isOk
+      loadVk(dir).error == VkInvalid
 
   test "accepts canonical fixture":
     # Build a synthetic bundle by copying the fixture VK into <tmp>/pol/.
@@ -51,11 +53,13 @@ suite "zk/pol — loadVk":
       vkBytes = readAllChars(fixtureVk).valueOr:
         check false
         return
-    check createPath(dir / "pol").isOk
-    check io2.writeFile(dir / "pol" / "verification_key.json", vkBytes).isOk
+    check:
+      createPath(dir / "pol").isOk
+      io2.writeFile(dir / "pol" / "verification_key.json", vkBytes).isOk
     let r = loadVk(dir)
-    check r.isOk
-    check r.get.curve == "bn128"
+    check:
+      r.isOk
+      r.get.curve == "bn128"
 
 suite "zk/pol — verify":
   var
@@ -64,18 +68,19 @@ suite "zk/pol — verify":
 
   setup:
     pol.resetVkForTesting()
-    let vkText = readAllChars(fixtureVk).valueOr:
-      check false
-      return
-    let proofText = readAllChars(fixtureProof).valueOr:
-      check false
-      return
-    let publicText = readAllChars(fixturePublic).valueOr:
-      check false
-      return
-    let vk = parseVk(vkText).valueOr:
-      check false
-      return
+    let
+      vkText = readAllChars(fixtureVk).valueOr:
+        check false
+        return
+      proofText = readAllChars(fixtureProof).valueOr:
+        check false
+        return
+      publicText = readAllChars(fixturePublic).valueOr:
+        check false
+        return
+      vk = parseVk(vkText).valueOr:
+        check false
+        return
     check pol.initVk(vk).isOk
     proofBytes = proofJsonToBytes(proofText).valueOr:
       check false
@@ -91,12 +96,13 @@ suite "zk/pol — verify":
     check r.error == VkNotLoaded
 
   test "double initVk returns VkAlreadyLoaded":
-    let vkText = readAllChars(fixtureVk).valueOr:
-      check false
-      return
-    let vk = parseVk(vkText).valueOr:
-      check false
-      return
+    let
+      vkText = readAllChars(fixtureVk).valueOr:
+        check false
+        return
+      vk = parseVk(vkText).valueOr:
+        check false
+        return
     check pol.initVk(vk).error == VkAlreadyLoaded
 
   test "accepts canonical PoL test vector":

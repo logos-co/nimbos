@@ -13,8 +13,6 @@
 
 import
   std/[sequtils, strutils],
-  unittest2,
-  results,
   stew/[byteutils, endians2],
   libp2p/crypto/ed25519/ed25519,
   libp2p/multiaddress,
@@ -35,7 +33,7 @@ const
   SpecInscription = hexToSeqByte(
     "186c6f676f732d626c6f636b636861696e2d6d61696e6e6574030f5c69" & SpecNonceHex)
 
-proc declareOn(
+func declareOn(
     noteId: NoteId, zkId: ZkPublicKey, providerSeed: byte = 1
 ): DeclarationMessage =
   DeclarationMessage(
@@ -157,9 +155,10 @@ suite "chain/genesis validation: stage 1 (stateless)":
       raw: array[32, byte]
       tx = testGenesisSignedTx()
     raw[0] = 1
-    check tx.tx.ops[1].payload.channelInscribe.signer.init(raw)
-    check validateGenesisTxStateless(tx).error ==
-      StatelessLedgerError.GenesisInscription
+    check:
+      tx.tx.ops[1].payload.channelInscribe.signer.init(raw)
+      validateGenesisTxStateless(tx).error ==
+        StatelessLedgerError.GenesisInscription
 
   test "rejects an opcode that disagrees with its payload":
     var tx = testGenesisSignedTx()

@@ -18,42 +18,48 @@ suite "core/crypto/types":
       le16 = encodeLe(0x0123'u16)
       le32 = encodeLe(0x0123_4567'u32)
       le64 = encodeLe(0x0123_4567_89AB_CDEF'u64)
-    check le16.len == 2
-    check le32.len == 4
-    check le64.len == 8
-    check le16 == [0x23'u8, 0x01'u8]
-    check le32 == [0x67'u8, 0x45'u8, 0x23'u8, 0x01'u8]
+    check:
+      le16.len == 2
+      le32.len == 4
+      le64.len == 8
+      le16 == [0x23'u8, 0x01'u8]
+      le32 == [0x67'u8, 0x45'u8, 0x23'u8, 0x01'u8]
 
   test "encodeLe explicit generic and inferred forms match":
-    let
+    const
       v16 = 0xBEEF'u16
       v32 = 0xDEAD_BEEF'u32
       v64 = 0x0123_4567_89AB_CDEF'u64
-    check encodeLe(v16) == encodeLe[uint16](v16)
-    check encodeLe(v32) == encodeLe[uint32](v32)
-    check encodeLe(v64) == encodeLe[uint64](v64)
+    check:
+      encodeLe(v16) == encodeLe[uint16](v16)
+      encodeLe(v32) == encodeLe[uint32](v32)
+      encodeLe(v64) == encodeLe[uint64](v64)
 
   test "encodeLe uint64 little-endian":
     let le = encodeLe(0x0102_0304_0506_0708'u64)
-    check le[0] == 8'u8
-    check le[7] == 1'u8
+    check:
+      le[0] == 8'u8
+      le[7] == 1'u8
 
   test "encodeU32LeLenPrefixed length then bytes":
     let s = encodeU32LeLenPrefixed([9'u8, 8'u8, 7'u8]).get
-    check s.len == 4 + 3
-    check s[0] == 3'u8
-    check s[4] == 9'u8
-    check s[5] == 8'u8
-    check s[6] == 7'u8
+    check:
+      s.len == 4 + 3
+      s[0] == 3'u8
+      s[4] == 9'u8
+      s[5] == 8'u8
+      s[6] == 7'u8
 
   test "encodeFieldElement round-trips canonical LE bytes":
     var bytes: array[32, byte]
     bytes[0] = 0x11'u8
-    check encodeFieldElement(decodeFieldElement(bytes).get) == bytes
-    check encodeHash32(bytes) == bytes
+    check:
+      encodeFieldElement(decodeFieldElement(bytes).get) == bytes
+      encodeHash32(bytes) == bytes
 
   test "decode helpers return DecodingError on malformed input":
-    check decodeFieldElement([1'u8, 2'u8]).error == DecodingError.UnexpectedEnd
-    check decodeU32LeLenPrefixed([10'u8, 0'u8, 0'u8, 0'u8, 1'u8]).error == DecodingError.BufferExceeded
+    check:
+      decodeFieldElement([1'u8, 2'u8]).error == DecodingError.UnexpectedEnd
+      decodeU32LeLenPrefixed([10'u8, 0'u8, 0'u8, 0'u8, 1'u8]).error == DecodingError.BufferExceeded
 
 {.pop.}

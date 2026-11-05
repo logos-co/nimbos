@@ -35,24 +35,28 @@ suite "zk/zksign — loadVk":
     check r.error == VkFileMissing
 
   test "rejects garbage JSON":
-    let dir = uniqueTmpDir("bad-vk")
-    let vkPath = verificationKeyPath(dir, Circuit.Signature)
-    check createPath(dir / "signature").isOk
-    check io2.writeFile(vkPath, "not json {").isOk
-    check loadVk(dir).error == VkInvalid
+    let
+      dir = uniqueTmpDir("bad-vk")
+      vkPath = verificationKeyPath(dir, Circuit.Signature)
+    check:
+      createPath(dir / "signature").isOk
+      io2.writeFile(vkPath, "not json {").isOk
+      loadVk(dir).error == VkInvalid
 
   test "rejects JSON with wrong protocol":
-    let dir = uniqueTmpDir("wrong-proto-vk")
-    let vkPath = verificationKeyPath(dir, Circuit.Signature)
-    check createPath(dir / "signature").isOk
-    check io2.writeFile(
-      vkPath,
-      """{"protocol":"plonk","curve":"bn128","vk_alpha_1":["0","0","1"],""" &
-      """"vk_beta_2":[["0","0"],["0","0"],["1","0"]],""" &
-      """"vk_gamma_2":[["0","0"],["0","0"],["1","0"]],""" &
-      """"vk_delta_2":[["0","0"],["0","0"],["1","0"]],"IC":[]}""",
-    ).isOk
-    check loadVk(dir).error == VkInvalid
+    let
+      dir = uniqueTmpDir("wrong-proto-vk")
+      vkPath = verificationKeyPath(dir, Circuit.Signature)
+    check:
+      createPath(dir / "signature").isOk
+      io2.writeFile(
+        vkPath,
+        """{"protocol":"plonk","curve":"bn128","vk_alpha_1":["0","0","1"],""" &
+        """"vk_beta_2":[["0","0"],["0","0"],["1","0"]],""" &
+        """"vk_gamma_2":[["0","0"],["0","0"],["1","0"]],""" &
+        """"vk_delta_2":[["0","0"],["0","0"],["1","0"]],"IC":[]}""",
+      ).isOk
+      loadVk(dir).error == VkInvalid
 
   test "accepts a canonical Groth16 VK":
     let
@@ -60,11 +64,13 @@ suite "zk/zksign — loadVk":
       vkPath = verificationKeyPath(dir, Circuit.Signature)
       vkBytes = readAllChars(fixtureVk).valueOr:
         raiseAssert "zksign fixture VK unreadable"
-    check createPath(dir / "signature").isOk
-    check io2.writeFile(vkPath, vkBytes).isOk
+    check:
+      createPath(dir / "signature").isOk
+      io2.writeFile(vkPath, vkBytes).isOk
     let r = loadVk(dir)
-    check r.isOk
-    check r.get.curve == "bn128"
+    check:
+      r.isOk
+      r.get.curve == "bn128"
 
 suite "zk/zksign — singleton lifecycle":
   setup:
@@ -75,12 +81,14 @@ suite "zk/zksign — singleton lifecycle":
     check r.error == VkNotLoaded
 
   test "double initVk returns VkAlreadyLoaded":
-    let vkText = readAllChars(fixtureVk).valueOr:
-      raiseAssert "zksign fixture VK unreadable"
-    let vk = parseVk(vkText).valueOr:
-      raiseAssert "zksign fixture VK unparseable"
-    check zksign.initVk(vk).isOk
-    check zksign.initVk(vk).error == VkAlreadyLoaded
+    let
+      vkText = readAllChars(fixtureVk).valueOr:
+        raiseAssert "zksign fixture VK unreadable"
+      vk = parseVk(vkText).valueOr:
+        raiseAssert "zksign fixture VK unparseable"
+    check:
+      zksign.initVk(vk).isOk
+      zksign.initVk(vk).error == VkAlreadyLoaded
 
   test "loadAndInitVk composes load + init":
     let
@@ -88,15 +96,17 @@ suite "zk/zksign — singleton lifecycle":
       vkPath = verificationKeyPath(dir, Circuit.Signature)
       vkBytes = readAllChars(fixtureVk).valueOr:
         raiseAssert "zksign fixture VK unreadable"
-    check createPath(dir / "signature").isOk
-    check io2.writeFile(vkPath, vkBytes).isOk
-    check zksign.loadAndInitVk(dir).isOk
+    check:
+      createPath(dir / "signature").isOk
+      io2.writeFile(vkPath, vkBytes).isOk
+      zksign.loadAndInitVk(dir).isOk
 
   test "resetVkForTesting clears prior install":
-    let vkText = readAllChars(fixtureVk).valueOr:
-      raiseAssert "zksign fixture VK unreadable"
-    let vk = parseVk(vkText).valueOr:
-      raiseAssert "zksign fixture VK unparseable"
+    let
+      vkText = readAllChars(fixtureVk).valueOr:
+        raiseAssert "zksign fixture VK unreadable"
+      vk = parseVk(vkText).valueOr:
+        raiseAssert "zksign fixture VK unparseable"
     check zksign.initVk(vk).isOk
     zksign.resetVkForTesting()
     check zksign.initVk(vk).isOk
@@ -105,10 +115,7 @@ suite "zk/zksign — zksignInput shape and padding":
   test "0 keys → all 32 slots padded, msg round-trips":
     let
       msg = seedFr(0xAB)
-      r = zksignInput([], msg)
-    check r.isOk
-
-    let input = r.get
+      input = zksignInput([], msg).get
     check input.msg == msg
     for i in 0 ..< ZkSignMaxKeys:
       check input.publicKeys[i] == ZeroSecretKeyPublicKey
@@ -117,12 +124,10 @@ suite "zk/zksign — zksignInput shape and padding":
     let
       k0 = seedFr(0x01)
       msg = seedFr(0xCD)
-      r = zksignInput([k0], msg)
-    check r.isOk
-
-    let input = r.get
-    check input.msg == msg
-    check input.publicKeys[0] == k0
+      input = zksignInput([k0], msg).get
+    check:
+      input.msg == msg
+      input.publicKeys[0] == k0
     for i in 1 ..< ZkSignMaxKeys:
       check input.publicKeys[i] == ZeroSecretKeyPublicKey
 
@@ -132,10 +137,7 @@ suite "zk/zksign — zksignInput shape and padding":
       keys[i] = seedFr(byte(i + 1))
     let
       msg = seedFr(0xEF)
-      r = zksignInput(keys, msg)
-    check r.isOk
-
-    let input = r.get
+      input = zksignInput(keys, msg).get
     check input.msg == msg
     for i in 0 ..< ZkSignMaxKeys:
       check input.publicKeys[i] == keys[i]
@@ -144,8 +146,9 @@ suite "zk/zksign — zksignInput shape and padding":
     let
       keys = (0 ..< ZkSignMaxKeys + 1).mapIt(seedFr(byte(it + 1)))
       r = zksignInput(keys, seedFr(0xFF))
-    check r.isErr
-    check $r.error == "zksign: too many keys (max 32)"
+    check:
+      r.isErr
+      $r.error == "zksign: too many keys (max 32)"
 
 proc loadFixtureProof(): array[ProofBytesLen, byte] =
   let proofText = readAllChars(fixtureProof).valueOr:
