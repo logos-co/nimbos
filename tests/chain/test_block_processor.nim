@@ -396,7 +396,7 @@ suite "chain/block_processor":
         b = childValidBlock(genesisBlk.header, gid, SlotNumber(1), [])
         p = Proposal(header: b.header, references: default(References), signature: b.signature)
         id = blockId(p.header)
-        peer = getRandomPeerId()
+        peer = Opt.some(getRandomPeerId())
 
       var pBad = p
       pBad.references[0][0] = 0xAA'u8 # non-zero reference disagrees with bodyRoot
@@ -418,7 +418,7 @@ suite "chain/block_processor":
         b = childValidBlock(genesisBlk.header, gid, SlotNumber(1), [])
         p = Proposal(header: b.header, references: default(References), signature: b.signature)
         id = blockId(p.header)
-        peer = getRandomPeerId()
+        peer = Opt.some(getRandomPeerId())
 
       var pBad = p
       var uHdr: Header
@@ -457,7 +457,7 @@ suite "chain/block_processor":
       let
         b = childValidBlock(genesisBlk.header, gid, SlotNumber(1), [])
         p = Proposal(header: b.header, references: default(References), signature: b.signature)
-        peer = getRandomPeerId()
+        peer = Opt.some(getRandomPeerId())
 
       var pBad = p
       pBad.references[0][0] = 0xAA'u8

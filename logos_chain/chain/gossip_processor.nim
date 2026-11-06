@@ -20,7 +20,7 @@ logScope:
   topics = "gossip_processor"
 
 proc processProposal*(
-    bp: BlockProcessor, proposal: Proposal, src: PeerId
+    bp: BlockProcessor, proposal: Proposal, src: Opt[PeerId]
 ): ValidationResult =
   let
     id = blockId(proposal.header)
@@ -61,7 +61,7 @@ proc processProposal*(
   ValidationResult.Accept
 
 proc processTx*(
-    bp: BlockProcessor, htx: HashedSignedMantleTx, src: PeerId
+    bp: BlockProcessor, htx: HashedSignedMantleTx, src: Opt[PeerId]
 ): ValidationResult =
   let txHashHex = toHex(htx.hash)
 
