@@ -22,7 +22,7 @@ import
   ../../logos_chain/chain/local_tree,
   ../../logos_chain/core/mantle/[operations, tx_types, tx_hashing],
   ../../logos_chain/networking/[network, protocols],
-  ../../logos_chain/sync/[syncer, ibd_server],
+  ../../logos_chain/sync/[syncer, sync_server],
   ../../logos_chain/node,
   ../../logos_chain/deployment/deployment_settings,
   ../core/mantle/test_helpers
@@ -409,7 +409,7 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
     pendingProto.started = true
     peers.listener.switch.mount(pendingProto)
 
-    dialerNode.syncer = Syncer.init(peers.dialer.switch, dialerNode.processor, testChainSyncProtocol)
+    dialerNode.syncer = Syncer.init(peers.dialer.switch, dialerNode.processor, testChainSyncProtocol, nil)
 
     try:
       await listenerNode.initializeNetworking()
@@ -434,10 +434,10 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
         bcastRes.error == "No peers on libp2p topic"
         not dialerNode.processor.localTree.hasBlock(id1)
     finally:
-      if dialerNode.syncer != nil:
-        await dialerNode.syncer.stop()
       pendingFut.cancelSoon()
       await dialerNode.processor.stop()
+      if dialerNode.syncer != nil:
+        await dialerNode.syncer.stop()
       await listenerNode.processor.stop()
       await peers.dialer.stop()
       await peers.listener.stop()
@@ -456,9 +456,9 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
       b1 = childBlock(genesis.header, gid, SlotNumber(1), [])
       id1 = blockId(b1.header)
     check (await listenerNode.processor.addBlock(b1, id1)).isOk
-    mountCryptarchiaSyncHandler(Syncer.init(peers.listener.switch, listenerNode.processor, testChainSyncProtocol))
+    mountCryptarchiaSyncHandler(Syncer.init(peers.listener.switch, listenerNode.processor, testChainSyncProtocol, nil))
 
-    dialerNode.syncer = Syncer.init(peers.dialer.switch, dialerNode.processor, testChainSyncProtocol)
+    dialerNode.syncer = Syncer.init(peers.dialer.switch, dialerNode.processor, testChainSyncProtocol, nil)
 
     try:
       await listenerNode.initializeNetworking()
@@ -483,9 +483,9 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
         waitUntil(dialerNode.processor.localTree.hasBlock(id2))
         dialerNode.processor.localTree.localTipId == id2
     finally:
+      await dialerNode.processor.stop()
       if dialerNode.syncer != nil:
         await dialerNode.syncer.stop()
-      await dialerNode.processor.stop()
       await listenerNode.processor.stop()
       await peers.dialer.stop()
       await peers.listener.stop()
