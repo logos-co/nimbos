@@ -52,10 +52,8 @@ jobs:
         include:
           - branch: upstream/version-2-2
             branch-short: version-2-2
-            nimflags-extra: --mm:refc
           - branch: upstream/version-2-4
             branch-short: version-2-4
-            nimflags-extra: --mm:refc
           - target:
               os: linux
             builder: ['ubuntu-22.04']
