@@ -13,8 +13,9 @@
 
 {.push raises: [], gcsafe.}
 
-import std/[bitops, hashes, sequtils]
-import results
+import
+  std/[bitops, hashes, sequtils],
+  results
 
 const
   BranchBits = 5
@@ -466,8 +467,9 @@ func `$`*[K, V](m: HashTrieMap[K, V]): string =
     var m = HashTrieMap[int, string].init()
     m = m.insert(1, "one")
     doAssert "1: one" in $m
-  var s = "{"
-  var first = true
+  var
+    s = "{"
+    first = true
   for (k, v) in m.pairs:
     if not first: s.add(", ")
     first = false

@@ -67,9 +67,10 @@ suite "ledger/sdp/ops/withdraw":
       declaration = getDeclaration(seeded.registry.state, seeded.declId).get()
     seeded.registry = applySdpWithdraw(seeded.registry, withdraw, declaration, 3)
     let info = getDeclaration(seeded.registry.state, seeded.declId).get()
-    check info.withdrawAt == Opt.some(5'u32)
-    check info.nonce == 1'u64
-    check getLockedNote(seeded.registry.state, seeded.declaration.lockedNoteId).isSome
+    check:
+      info.withdrawAt == Opt.some(5'u32)
+      info.nonce == 1'u64
+      getLockedNote(seeded.registry.state, seeded.declaration.lockedNoteId).isSome
 
   test "tryApplySdpWithdraw rejects an epoch too close to the limit":
     let

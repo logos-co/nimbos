@@ -64,17 +64,18 @@ func admitWithTopology(
   ok((admittedBlk: admittedBlk, isOrphan: status == TopologyStatus.Orphan))
 
 proc validate(genesis: ValidBlock, blk: Block): Result[ValidBlock, BlockValidationError] =
-  let cs = ConsensusState.init(genesis, securityParam = 1'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Online)
-  let state = testGenesisLedgerState()
-  let ledger = Ledger[BlockId].init(
-    blockId(genesis.header), state, testLedgerConfig, mockVerifyLeaderProof
-  )
-  let (admittedBlk, isOrphan) = admitWithTopology(blk, cs, ledger).valueOr:
-    case error.kind
-    of BlockApplyErrorKind.UnviableFork:
-      return err(BlockValidationError(kind: BlockValidationErrorKind.UnviableFork))
-    else:
-      return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))
+  let
+    cs = ConsensusState.init(genesis, securityParam = 1'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Online)
+    state = testGenesisLedgerState()
+    ledger = Ledger[BlockId].init(
+      blockId(genesis.header), state, testLedgerConfig, mockVerifyLeaderProof
+    )
+    (admittedBlk, isOrphan) = admitWithTopology(blk, cs, ledger).valueOr:
+      case error.kind
+      of BlockApplyErrorKind.UnviableFork:
+        return err(BlockValidationError(kind: BlockValidationErrorKind.UnviableFork))
+      else:
+        return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))
   if isOrphan:
     return err(BlockValidationError(kind: BlockValidationErrorKind.UnviableFork))
   let (validBlk, _) = ?validatePolAndStatelessTransactions(admittedBlk, ledger, nil)
@@ -92,7 +93,6 @@ proc treeWithLib(genesis: ValidBlock): tuple[cs: ConsensusState, b1, b2: ValidBl
     discard cs.tryUpdateLib()
   check cs.latestImmutableId == blockId(b2.header)
   (cs, b1, b2)
-
 
 func sampleUncle(value: byte): SignedHeader =
   # Arbitrary bytes: only the commitment to an entry is checked, not the entry.

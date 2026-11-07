@@ -10,8 +10,6 @@
 
 import
   unittest2,
-  results,
-  stint,
   ../../logos_chain/core/mantle/[gas, primitives],
   ../../logos_chain/ledger/[balance, block_rewards, types]
 

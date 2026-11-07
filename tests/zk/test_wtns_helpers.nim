@@ -51,7 +51,8 @@ suite "zk/wtns_helpers — wtns decoder":
     var bytes = header(1)
     bytes.setLen(76 + 32)
     let values = decodeWtns(bytes).expect("decodes")
-    check values.len == 1
-    check values[0] == zero
+    check:
+      values.len == 1
+      values[0] == zero
 
 {.pop.}

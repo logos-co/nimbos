@@ -26,9 +26,10 @@ suite "zk/groth16/snarkjs — frDecimal":
     check frDecimal(fr("0")) == "0"
 
   test "small values carry no leading zeros":
-    check frDecimal(fr("1")) == "1"
-    check frDecimal(fr("10")) == "10"
-    check frDecimal(fr("12345")) == "12345"
+    check:
+      frDecimal(fr("1")) == "1"
+      frDecimal(fr("10")) == "10"
+      frDecimal(fr("12345")) == "12345"
 
   test "the largest field element round-trips":
     check frDecimal(fr(FrMaxDecimal)) == FrMaxDecimal

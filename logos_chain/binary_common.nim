@@ -11,11 +11,11 @@
 
 import
   # Standard library
-  std/[exitprocs, os, tables, terminal, typetraits, strutils],
+  std/[exitprocs, os, terminal],
 
   # Nimble packages
-  chronos, confutils, presto, toml_serialization, metrics,
-  chronicles, chronicles/helpers as chroniclesHelpers, chronicles/topics_registry,
+  confutils, presto, toml_serialization, metrics,
+  chronicles/helpers as chroniclesHelpers, chronicles/topics_registry,
   stew/[io2, byteutils], metrics/chronos_httpserver,
 
   # Local modules
@@ -52,7 +52,7 @@ proc updateLogLevel(logLevel: string) {.raises: [ValueError].} =
       if not setTopicState(topicName, settings.state, settings.logLevel):
         warn "Unrecognized logging topic", topic = topicName
 
-proc detectTTY*(stdoutKind: StdoutLogKind): StdoutLogKind =
+proc detectTTY(stdoutKind: StdoutLogKind): StdoutLogKind =
   if stdoutKind == StdoutLogKind.Auto:
     if getEnv("NO_COLOR").len == 0 and isatty(stdout):
       # On a TTY, let's be fancy
@@ -87,7 +87,7 @@ proc writePanicLine*(v: varargs[string, `$`]) =
     discard # Nothing to do..
 
 proc setupLogging*(
-    logLevel: string, stdoutKind: StdoutLogKind, logFile = none(OutFile)) =
+    logLevel: string, stdoutKind: StdoutLogKind, logFile: Option[OutFile]) =
   # In the cfg file for nimbus, we create two formats: textlines and json.
   # Here, we either write those logs to an output, or not, depending on the
   # given configuration.
@@ -96,7 +96,7 @@ proc setupLogging*(
   when defaultChroniclesStream.outputs.type.arity != 2:
     warn "Logging configuration options not enabled in the current build"
   else:
-    proc noOutput(logLevel: LogLevel, msg: LogOutputStr) = discard
+    func noOutput(logLevel: LogLevel, msg: LogOutputStr) = discard
     proc writeAndFlush(f: File, msg: LogOutputStr) =
       try:
         f.write(msg)
@@ -232,20 +232,18 @@ proc init*(T: type RestServerRef,
     address = initTAddress(ip, port)
     serverFlags = {HttpServerFlags.QueryCommaSeparatedArray,
                    HttpServerFlags.NotifyDisconnect}
-  let
     headersTimeout = chronos.InfiniteDuration
     restMaxRequestHeadersSize = 128
     maxHeadersSize = restMaxRequestHeadersSize * 1024
     restMaxRequestBodySize = 16_384
     maxRequestBodySize = restMaxRequestBodySize * 1024
-
-  let res = RestServerRef.new(RestRouter.init(validateFn, allowedOrigin),
-                              address, serverFlags = serverFlags,
-                              serverIdent = ident,
-                              httpHeadersTimeout = headersTimeout,
-                              maxHeadersSize = maxHeadersSize,
-                              maxRequestBodySize = maxRequestBodySize,
-                              errorType = string)
+    res = RestServerRef.new(RestRouter.init(validateFn, allowedOrigin),
+                            address, serverFlags = serverFlags,
+                            serverIdent = ident,
+                            httpHeadersTimeout = headersTimeout,
+                            maxHeadersSize = maxHeadersSize,
+                            maxRequestBodySize = maxRequestBodySize,
+                            errorType = string)
   if res.isErr():
     notice "REST HTTP server could not be started", address = $address,
            reason = res.error()
@@ -256,7 +254,7 @@ proc init*(T: type RestServerRef,
     server
 
 # TODO this was removed from elsewhere and belongs in some REST utility module
-proc validateBeaconApiQueries*(key: string, value: string): int =
+func validateBeaconApiQueries*(key: string, value: string): int =
   ## This is rough validation procedure which should be simple and fast,
   ## because it will be used for query routing.
   ## NOTE: There is currently no Logos Chain REST or wallet spec that explicitly
@@ -330,19 +328,17 @@ proc defaultDataDir*(namespace, network: string): string =
   ## mainnet, but this amounts to reusing the same keys for both environments
   ## which seems dubious at best, security-wise.
 
-  let
-    base =
-      when defined(windows):
-        # Avoid roaming profile since DB is large
-        os.getEnv("LOCALAPPDATA", os.getEnv("APPDATA"))
-      elif defined(macos) or defined(macosx):
-        # Everything goes in here on mac
-        os.getHomeDir() / "Library/Application Support"
-      else:
-        # https://specifications.freedesktop.org/basedir-spec/0.8/#variables
-        os.getEnv("XDG_STATE_HOME", os.getEnv("HOME") / ".local/state")
-
-    nimbus = when defined(linux): "nimbus" else: "Nimbus"
+  const nimbus = when defined(linux): "nimbus" else: "Nimbus"
+  let base =
+    when defined(windows):
+      # Avoid roaming profile since DB is large
+      os.getEnv("LOCALAPPDATA", os.getEnv("APPDATA"))
+    elif defined(macos) or defined(macosx):
+      # Everything goes in here on mac
+      os.getHomeDir() / "Library/Application Support"
+    else:
+      # https://specifications.freedesktop.org/basedir-spec/0.8/#variables
+      os.getEnv("XDG_STATE_HOME", os.getEnv("HOME") / ".local/state")
 
   var dir = base / nimbus
 

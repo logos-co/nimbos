@@ -9,25 +9,20 @@
 {.used.}
 
 import
-  chronos,
   chronos/unittest2/asynctests,
-  unittest2,
-  bincode,
-  libp2p/[switch, peerid],
+  libp2p/switch,
   ../../../logos_chain/networking/network,
   ../../../logos_chain/core/types,
   ../../../logos_chain/chain/[chain, local_tree],
   ../../../logos_chain/sync/[types, ibd_client, ibd_server, syncer],
   ./helpers,
   ../../testutil
-from ../../../logos_chain/core/mantle/primitives import SlotNumber
 
 template peerProvider(peers: varargs[PeerId]): PeerProvider =
   (proc(): seq[PeerId] = @peers)
 
 proc runLbp2pIbdSyncTest(extraBlocks: int) {.async.} =
   let genesis = createGenesisBlock(testValidGenesisTx())
-
   var chainBootstrap = initTestChain(genesis)
   let tipId = extendChainAfterGenesis(chainBootstrap.consensus.localTree, genesis, extraBlocks)
   chainBootstrap.consensus.tryUpdateTip(tipId)
@@ -37,7 +32,7 @@ proc runLbp2pIbdSyncTest(extraBlocks: int) {.async.} =
     chainClient = initTestChain(genesis)
     peers = await createBootstrapPeers()
     waitAttempts = 150 + extraBlocks * 5
-  discard mountTestServer(peers.listener.switch, chainBootstrap)
+  mountTestServer(peers.listener.switch, chainBootstrap)
 
   try:
     withClientSyncerOn(peers.dialer.switch, chainClient):
@@ -50,9 +45,10 @@ proc runLbp2pIbdSyncTest(extraBlocks: int) {.async.} =
         Opt.some(proc(): seq[PeerId] = peers.dialer.connectedBootstrapPeerIds()),
       )
 
-      check waitUntil(peers.dialer.switch.isConnected(peers.listenerPeerId))
-      check waitUntil(chainClient.consensus.hasBlock(tipId), chronos.milliseconds(waitAttempts * 100))
-      check clientSyncer.processor.consensus.canonicalTip.tip == tipId
+      check:
+        waitUntil(peers.dialer.switch.isConnected(peers.listenerPeerId))
+        waitUntil(chainClient.consensus.hasBlock(tipId), chronos.milliseconds(waitAttempts * 100))
+        clientSyncer.processor.consensus.canonicalTip.tip == tipId
   finally:
     await peers.dialer.stop()
     await peers.listener.stop()
@@ -65,11 +61,12 @@ suite "sync/initial_block_download (download blocks)":
         encode(genesis, cryptarchiaSyncBincodeConfig)
       except BincodeError:
         fail getCurrentExceptionMsg()
-    let blks = decodeBlocksFromDownloadResponses(@[
-      DownloadBlocksResponse(kind: dbrBlock, downloadedBlock: genesisWire),
-    ]).get()
-    check blks.len == 1
-    check blockId(blks[0].header) == blockId(genesis.header)
+      blks = decodeBlocksFromDownloadResponses(@[
+        DownloadBlocksResponse(kind: dbrBlock, downloadedBlock: genesisWire),
+      ]).get()
+    check:
+      blks.len == 1
+      blockId(blks[0].header) == blockId(genesis.header)
 
   test "decodeBlocksFromDownloadResponses bounds the uncle count":
     let
@@ -102,9 +99,10 @@ suite "sync/initial_block_download (download blocks)":
           latestImmutableBlock: gid,
         ),
       )
-    let sendIds = cappedDownloadPathBlockIds(cs, req)
-    check sendIds.len == 1
-    check sendIds[0] == b1id
+      sendIds = cappedDownloadPathBlockIds(cs, req)
+    check:
+      sendIds.len == 1
+      sendIds[0] == b1id
 
   test "cappedDownloadPathBlockIds caps batch at MaxRequestBlocks":
     let
@@ -119,9 +117,10 @@ suite "sync/initial_block_download (download blocks)":
           latestImmutableBlock: gid,
         ),
       )
-    let sendIds = cappedDownloadPathBlockIds(cs, req)
-    check sendIds.len == MaxRequestBlocks
-    check sendIds[0] != tipId
+      sendIds = cappedDownloadPathBlockIds(cs, req)
+    check:
+      sendIds.len == MaxRequestBlocks
+      sendIds[0] != tipId
 
   test "decodeBlocksFromDownloadResponses recovers blocks from handler-shaped response":
     let
@@ -131,18 +130,19 @@ suite "sync/initial_block_download (download blocks)":
       cs = ConsensusState.init(genesis, securityParam = 1, densitySlotWindow = 100, forkChoiceRule = ForkChoiceRule.Bootstrap)
       b1 = childValidBlock(genesis.header, gid, SlotNumber(1), [sm])
     check cs.localTree.addBlockToTree(b1)
-    let req = DownloadBlocksRequest(
-      targetBlock: blockId(b1.header),
-      knownBlocks: KnownBlocks(
-        localTip: blockId(genesis.header),
-        latestImmutableBlock: blockId(genesis.header),
-      ),
-    )
     let
+      req = DownloadBlocksRequest(
+        targetBlock: blockId(b1.header),
+        knownBlocks: KnownBlocks(
+          localTip: blockId(genesis.header),
+          latestImmutableBlock: blockId(genesis.header),
+        ),
+      )
       msgs = downloadBlocksResponsesForRequest(cs, req)
       blks = decodeBlocksFromDownloadResponses(msgs).get()
-    check blks.len == 1
-    check blockId(blks[0].header) == blockId(b1.header)
+    check:
+      blks.len == 1
+      blockId(blks[0].header) == blockId(b1.header)
 
   asyncTest "sendDownloadBlocksRequest round-trips over mounted sync handler":
     let
@@ -176,8 +176,9 @@ suite "sync/initial_block_download (GetTip)":
       serverChain = initTestChain(genesis)
     withSyncPair(serverChain, initTestChain(genesis)):
       let tipResp = (await sendGetTipRequest(clientSyncer, server.peerInfo.peerId)).get()
-      check tipResp.kind == gtrTip
-      check tipResp.tipData == serverChain.consensus.canonicalTip
+      check:
+        tipResp.kind == gtrTip
+        tipResp.tipData == serverChain.consensus.canonicalTip
 
 suite "sync/initial_block_download (IBD requester loop)":
   asyncTest "initialBlockDownload with no configured peers completes without raising":
@@ -230,8 +231,9 @@ suite "sync/initial_block_download (IBD requester loop)":
       serverChain.consensus.canonicalTip.tip == b1id
     withSyncPair(serverChain, clientChain):
       await initialBlockDownload(clientSyncer, Opt.some(peerProvider(server.peerInfo.peerId)))
-      check clientChain.consensus.hasBlock(b1id)
-      check clientSyncer.processor.consensus.canonicalTip.tip == b1id
+      check:
+        clientChain.consensus.hasBlock(b1id)
+        clientSyncer.processor.consensus.canonicalTip.tip == b1id
 
   asyncTest "initialBlockDownload continues gracefully when downloaded block is in flight":
     let
@@ -253,10 +255,11 @@ suite "sync/initial_block_download (IBD requester loop)":
       # Queue b1 ahead of time so it is in-flight when IBD processes the downloaded batch
       let fGossip = clientSyncer.processor.addBlock(b1, b1id)
       await initialBlockDownload(clientSyncer, Opt.some(peerProvider(server.peerInfo.peerId)))
-      check (await fGossip).isOk
-      check clientChain.consensus.hasBlock(b1id)
-      check clientChain.consensus.hasBlock(b2id)
-      check clientSyncer.processor.consensus.canonicalTip.tip == b2id
+      check:
+        (await fGossip).isOk
+        clientChain.consensus.hasBlock(b1id)
+        clientChain.consensus.hasBlock(b2id)
+        clientSyncer.processor.consensus.canonicalTip.tip == b2id
 
   asyncTest "initialBlockDownload fails over to secondary peer when primary peer fails":
     let
@@ -274,7 +277,7 @@ suite "sync/initial_block_download (IBD requester loop)":
     let
       server1 = await startQuicTestSwitch()
       server2 = await startQuicTestSwitch()
-    discard mountTestServer(server2, serverChain2)
+    mountTestServer(server2, serverChain2)
     try:
       withClientSyncer(clientChain):
         await client.connect(server1.peerInfo.peerId, server1.peerInfo.addrs, forceDial = true)
@@ -283,8 +286,9 @@ suite "sync/initial_block_download (IBD requester loop)":
           clientSyncer,
           Opt.some(peerProvider(server1.peerInfo.peerId, server2.peerInfo.peerId)),
         )
-        check clientChain.consensus.hasBlock(b1id)
-        check clientSyncer.processor.consensus.canonicalTip.tip == b1id
+        check:
+          clientChain.consensus.hasBlock(b1id)
+          clientSyncer.processor.consensus.canonicalTip.tip == b1id
     finally:
       await server1.stop()
       await server2.stop()

@@ -16,7 +16,6 @@
 
 import
   std/math,
-  results,
   stew/bitops2,
   ../../core/crypto/hashing,
   ../../core/mantle/blend_activity

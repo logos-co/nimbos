@@ -15,8 +15,7 @@ import
   std/[json, os, strutils],
   stew/io2,
   taskpools,
-  ../../logos_chain/core/utils,
-  ../../logos_chain/zk/[circuits, pol_lottery, prover, witness_gen],
+  ../../logos_chain/zk/[pol_lottery, prover, witness_gen],
   ./[helpers, prover_fixture_inputs, snarkjs_helpers, wtns_helpers]
 
 export prover, helpers, prover_fixture_inputs, snarkjs_helpers, wtns_helpers
@@ -44,7 +43,7 @@ proc readBundleFile*(path: string): seq[byte] =
 proc readText*(path: string): string =
   readAllChars(path).expect("text file readable: " & path)
 
-proc fixtureDir*(c: Circuit): string =
+func fixtureDir*(c: Circuit): string =
   fixturesDir / (if c == Circuit.Signature: "zksign" else: $c)
 
 proc fixtureSignals*(c: Circuit): seq[FieldElement] =
@@ -52,12 +51,12 @@ proc fixtureSignals*(c: Circuit): seq[FieldElement] =
   let name = if c == Circuit.Poq: "public_core.json" else: "public.json"
   publicJsonToInputs(readText(fixtureDir(c) / name)).expect("fixture public parses")
 
-proc zksignFixtureInput*(): ZkSignWitnessInput =
+func zksignFixtureInput*(): ZkSignWitnessInput =
   var input = ZkSignWitnessInput(msg: fr(ZkSignFixtureMsg))
   input.secretKeys[0] = fr("1")
   input
 
-proc polFixtureInput*(): PolWitnessInput =
+func polFixtureInput*(): PolWitnessInput =
   let lottery = lottery_constants(
     NonNegativeRatio(num: 1, den: 10), PolFixtureTotalStake).expect("supported f")
   var input = PolWitnessInput(

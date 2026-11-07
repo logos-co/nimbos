@@ -10,9 +10,10 @@
 # Everything needed to run beacon node as Windows service.
 
 when defined(windows):
-  import results, chronicles
-  import chronos/[osdefs, osutils, oserrno]
-  import ./binary_common
+  import
+    results, chronicles,
+    chronos/[osdefs, osutils, oserrno],
+    ./binary_common
 
   type
     SERVICE_STATUS {.final, pure.} = object

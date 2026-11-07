@@ -13,7 +13,7 @@
 
 import
   std/[algorithm, json],
-  stew/[arrayops, assign2],
+  stew/arrayops,
   ./[circuits, util],
   ./groth16/snarkjs,
   ../core/crypto/types

@@ -8,11 +8,9 @@
 {.push raises: [].}
 
 import
-  std/[net, os, sequtils, times],
+  std/[os, sequtils, times],
   bearssl/rand,
-  chronos,
-  libp2p/[switch, builders, peerid, multiaddress],
-  libp2p/crypto/rng,
+  libp2p/builders,
   libp2p/crypto/ed25519/ed25519,
   stew/[byteutils, endians2, io2],
   testutils/markdown_reports,
@@ -20,7 +18,7 @@ import
   ../logos_chain/conf,
   ../logos_chain/networking/network,
   ../logos_chain/core/types,
-  ../logos_chain/core/mantle/[operations, tx_types, tx_hashing],
+  ../logos_chain/core/mantle/[operations, tx_types, tx_hashing, tx_validation],
   ../logos_chain/chain/block_processor,
   ./core/mantle/test_helpers
 
@@ -28,7 +26,6 @@ from ../logos_chain/core/crypto/types import encodeFieldElement
 from ../logos_chain/core/mantle/primitives import SlotNumber
 from std/algorithm import SortOrder, sort, fill
 from std/strformat import `&`
-from std/tables import OrderedTable, `[]=`, initOrderedTable, mgetOrPut
 
 export unittest2, test_helpers, tx_hashing, createGenesisBlock, ValidBlock, AdmittedBlock, header
 
@@ -56,8 +53,9 @@ template withTempDir*(dirVar: untyped, prefix: string, body: untyped): untyped =
 
 type TestDuration = tuple[duration: float, label: string]
 
-var testTimes: seq[TestDuration]
-var status = initOrderedTable[string, OrderedTable[string, Status]]()
+var
+  testTimes: seq[TestDuration]
+  status: OrderedTable[string, OrderedTable[string, Status]]
 
 type TimingCollector = ref object of OutputFormatter
 
@@ -66,7 +64,7 @@ func toFloatSeconds(duration: times.Duration): float =
 
 method testEnded(formatter: TimingCollector, testResult: TestResult) =
   {.gcsafe.}: # Lie!
-    status.mgetOrPut(testResult.suiteName, initOrderedTable[string, Status]())[
+    status.mgetOrPut(testResult.suiteName)[
       testResult.testName
     ] =
       case testResult.status
@@ -98,8 +96,9 @@ proc summarizeLongTests*(name: string) =
   except IOError, OSError, ValueError:
     raiseAssert getCurrentExceptionMsg()
 
-const TestLoopbackIp = parseIpAddress("127.0.0.1")
-const TestQuicAnyPort = Port(0)
+const
+  TestLoopbackIp = parseIpAddress("127.0.0.1")
+  TestQuicAnyPort = Port(0)
 
 template loopbackQuicMultiAddr(port: Port): string =
   "/ip4/" & $TestLoopbackIp & "/udp/" & $port & "/quic-v1"
@@ -114,8 +113,9 @@ template waitUntil*(cond: untyped, timeout: chronos.Duration = chronos.seconds(3
     await sleepAsync(chronos.milliseconds(10))
   res
 
-let testHmacRng = HmacDrbgContext.new()
-let testRng = newBearSslRng(testHmacRng)
+let
+  testHmacRng = HmacDrbgContext.new()
+  testRng = newBearSslRng(testHmacRng)
 
 proc getTestHmacRng*(): ref HmacDrbgContext =
   {.gcsafe.}:
@@ -173,7 +173,7 @@ func peerAddr*(node: LBP2PNode): PeerAddr =
     addrs: node.switch.peerInfo.addrs,
   )
 
-proc alwaysAllowPeer*(_: PeerAddr): bool {.gcsafe, raises: [].} = true
+func alwaysAllowPeer*(_: PeerAddr): bool {.gcsafe, raises: [].} = true
 
 proc startQuicTestSwitch*(
     keys: KeyPair = getRandomNetKeys(),
@@ -304,7 +304,6 @@ func genesisNoteId*(tx: ValidGenesisMantleTx, index: int): NoteId =
   Utxo(
     opId: opId(transfer).get, outputIndex: uint64(index),
     note: transfer.outputs.notes[index]).id
-
 
 let testTxKeyPair* = block:
   var rngRef = new(HmacDrbgContext)
@@ -496,8 +495,9 @@ func initGenesisBlock*(validGenesisTx: ValidGenesisMantleTx): Block =
     txs = [validGenesisTx.hashed],
   )
 
-var defaultGenesisBlockCache: ValidBlock
-var hasDefaultGenesisBlockCache = false
+var
+  defaultGenesisBlockCache: ValidBlock
+  hasDefaultGenesisBlockCache = false
 
 proc testGenesisBlock*(): ValidBlock =
   {.gcsafe.}:
@@ -533,3 +533,5 @@ func mockVerifyLeaderProof*(
   mkVerifyLeaderProof(proof, public)
 
 addOutputFormatter(new TimingCollector)
+
+{.pop.}

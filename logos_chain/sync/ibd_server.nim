@@ -11,10 +11,7 @@ import
   bincode,
   chronicles,
   chronos,
-  results,
-  libp2p/[switch, errors],
-  libp2p/protocols/protocol,
-  libp2p/stream/connection,
+  libp2p/switch,
   stew/byteutils as sbyteutils,
   ../consensus/consensus_state,
   ../chain/block_processor,
@@ -45,9 +42,10 @@ func distinctKnownBlockIds(known: KnownBlocks): seq[BlockId] =
 func deepestKnownAncestor(
     consensus: ConsensusState, target: BlockId, known: KnownBlocks,
 ): Opt[(BlockId, uint64)] =
-  var ancestorId: BlockId
-  var ancestorHeight: uint64
-  var haveAncestor: bool
+  var
+    ancestorId: BlockId
+    ancestorHeight: uint64
+    haveAncestor: bool
   for kid in distinctKnownBlockIds(known):
     if not consensus.hasBlock(kid):
       continue
@@ -69,21 +67,24 @@ func cappedDownloadPathBlockIds*(
   let target = req.targetBlock
   if not consensus.hasBlock(target):
     return @[]
-  let targetHeight = consensus.blockHeight(target).valueOr:
-    return @[]
-  let (ancestorId, ancestorHeight) = deepestKnownAncestor(
-    consensus, target, req.knownBlocks).valueOr:
-    return @[]
+  let
+    targetHeight = consensus.blockHeight(target).valueOr:
+      return @[]
+    (ancestorId, ancestorHeight) = deepestKnownAncestor(
+      consensus, target, req.knownBlocks).valueOr:
+      return @[]
   if ancestorId == target:
     return @[]
   let pathLen = int(targetHeight - ancestorHeight)
   if pathLen <= 0:
     return @[]
-  let skip = if pathLen > maxBlocks: pathLen - maxBlocks else: 0
-  let sendCap = min(pathLen, maxBlocks)
-  var sendIds = newSeqOfCap[BlockId](sendCap)
-  var skipped = 0
-  var curId = target
+  let
+    skip = if pathLen > maxBlocks: pathLen - maxBlocks else: 0
+    sendCap = min(pathLen, maxBlocks)
+  var
+    sendIds = newSeqOfCap[BlockId](sendCap)
+    skipped = 0
+    curId = target
   while curId != ancestorId and sendIds.len < sendCap:
     if skipped < skip:
       inc skipped
@@ -98,12 +99,13 @@ proc serveGetTipRequest(
     conn: Connection, consensus: ConsensusState,
 ) {.async: (raises: [BincodeError, LPStreamError, CancelledError]).} =
   debug "IBD handler: GetTip request"
-  let tipResp = getTipResponse(consensus)
-  let respInner = try:
-    encode(tipResp, cryptarchiaSyncBincodeConfig)
-  except BincodeError:
-    debug "IBD handler: GetTip serialize failed", exc = getCurrentExceptionMsg()
-    return
+  let
+    tipResp = getTipResponse(consensus)
+    respInner = try:
+      encode(tipResp, cryptarchiaSyncBincodeConfig)
+    except BincodeError:
+      debug "IBD handler: GetTip serialize failed", exc = getCurrentExceptionMsg()
+      return
   if respInner.len > 0:
     await writeCryptarchiaPrefixedInner(conn, respInner)
   debug "IBD handler: GetTip response ok",
@@ -145,19 +147,20 @@ proc serveDownloadBlocksRequest(
     targetBlock = sbyteutils.toHex(req.targetBlock), count = sendIds.len
   var blocksSent = 0
   for i in countdown(sendIds.high, 0):
-    let blk = consensus.getBlock(sendIds[i]).valueOr:
-      debug "IBD handler: block load failed", blockId = sbyteutils.toHex(sendIds[i])
-      await writeResp(DownloadBlocksResponse(
-        kind: dbrFailure,
-        blocksUnavailableReason: BlocksUnavailableReason(
-          kind: burUnknown, message: "block load failed")))
-      debug "IBD handler: download failure response ok",
-        targetBlock = sbyteutils.toHex(req.targetBlock)
-      return
-    let innerWire = try:
-      encode(blk, cryptarchiaSyncBincodeConfig)
-    except BincodeError:
-      @[]
+    let
+      blk = consensus.getBlock(sendIds[i]).valueOr:
+        debug "IBD handler: block load failed", blockId = sbyteutils.toHex(sendIds[i])
+        await writeResp(DownloadBlocksResponse(
+          kind: dbrFailure,
+          blocksUnavailableReason: BlocksUnavailableReason(
+            kind: burUnknown, message: "block load failed")))
+        debug "IBD handler: download failure response ok",
+          targetBlock = sbyteutils.toHex(req.targetBlock)
+        return
+      innerWire = try:
+        encode(blk, cryptarchiaSyncBincodeConfig)
+      except BincodeError:
+        @[]
     if innerWire.len == 0:
       debug "IBD handler: block encode failed", blockId = sbyteutils.toHex(sendIds[i])
       await writeResp(DownloadBlocksResponse(

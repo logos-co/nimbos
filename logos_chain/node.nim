@@ -9,7 +9,7 @@
 
 import
   std/cpuinfo,
-  chronos, chronicles, presto, presto/server,
+  chronos, presto, presto/server,
   bearssl/rand,
   metrics, metrics/chronos_httpserver,
   stew/byteutils,
@@ -20,10 +20,9 @@ import
   ./deployment/deployment_settings,
   ./networking/network,
   ./sync/syncer,
-  ./zk/[circuits, pol, poc, poq, prover, zksign]
+  ./zk/prover
 
 from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
-from libp2p/peerid import PeerId
 from libp2p/protocols/pubsub/pubsub import ValidationResult
 from libp2p/protocols/pubsub/gossipsub import
   TopicParams, init
@@ -50,9 +49,6 @@ type
     taskpool*: Taskpool
     prover*: Prover
       ## nil where the native prover libraries do not link (Windows).
-
-template rng*(node: LBNode): ref HmacDrbgContext =
-  node.network.rng
 
 proc init*(
     T: type LBNode,
@@ -129,13 +125,13 @@ proc init*(
     effectiveLibAtGenesis = effectiveLibAtGenesis,
     reason = $startupReason
 
-  let chain = Chain.init(
-    deploymentSettings, forkChoiceRule = initialForkChoiceRule
-  ).valueOr:
-    fatal "Failed to initialize chain", err = error
-    return Opt.none(LBNode)
-
-  let genesisBlock = chain.genesisBlock
+  let
+    chain = Chain.init(
+      deploymentSettings, forkChoiceRule = initialForkChoiceRule
+    ).valueOr:
+      fatal "Failed to initialize chain", err = error
+      return Opt.none(LBNode)
+    genesisBlock = chain.genesisBlock
   block:
     let genesisState = genesisBlock.txs[0]
     var leaderKeyBytes: array[EdPublicKeySize, byte]
@@ -260,11 +256,13 @@ proc runOnSecondLoop(node: LBNode): Future[void] {.async: (raises: [CancelledErr
   while true:
     let start = chronos.now(chronos.Moment)
     await chronos.sleepAsync(sleepTime)
-    let afterSleep = chronos.now(chronos.Moment)
-    let sleepTime = afterSleep - start
+    let
+      afterSleep = chronos.now(chronos.Moment)
+      sleepTime = afterSleep - start
     node.onSecond(start)
-    let finished = chronos.now(chronos.Moment)
-    let processingTime = finished - afterSleep
+    let
+      finished = chronos.now(chronos.Moment)
+      processingTime = finished - afterSleep
     trace "onSecond task completed", sleepTime, processingTime
 
 proc installMessageValidators(node: LBNode) =

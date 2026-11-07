@@ -68,8 +68,9 @@ func getNimGitHash(): string =
   ""
 
 func nimBanner*(): string =
-  let gitHash = getNimGitHash()
-  let tmp = splitLines(nimFullBanner)
+  let
+    gitHash = getNimGitHash()
+    tmp = splitLines(nimFullBanner)
   if gitHash.len > 0:
     tmp[0] & " (" & gitHash & ")"
   else:

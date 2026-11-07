@@ -24,9 +24,9 @@ from ./core/mantle/primitives import MaxBlockTxs, SlotNumber
 
 const
   DefaultMempoolCapacity = 10_240
-  MempoolMaxAgeSlots* = 100'u64
+  MempoolMaxAgeSlots = 100'u64
 
-func maxMempoolCapacity*(securityParam: uint64 = 1): uint64 {.inline.} =
+func maxMempoolCapacity*(securityParam: uint64): uint64 {.inline.} =
   ## Returns mempool capacity as 10x the maximum unfinalized branch transactions.
   uint64(10 * max(securityParam, 1'u64) * MaxBlockTxs)
 
@@ -58,7 +58,7 @@ func init*(_: typedesc[Mempool],
     capacity: cap
   )
 
-proc remove*(m: Mempool, hash: Hash32, moveToGrace: bool = false) =
+proc remove*(m: Mempool, hash: Hash32, moveToGrace: bool) =
   m.txs.withValue(hash, item):
     if moveToGrace:
       m.graceCache.put(hash, item[])
@@ -77,9 +77,9 @@ proc add*(
     currentSlot: SlotNumber,
 ): bool =
   # Clamp to lastAddedSlot to preserve monotonic insertion order against minor clock skew/NTP slewing
-  let effectiveSlot = max(currentSlot, m.lastAddedSlot)
-
-  let hash = tx.hash
+  let
+    effectiveSlot = max(currentSlot, m.lastAddedSlot)
+    hash = tx.hash
   if hash in m.txs:
     return false
 

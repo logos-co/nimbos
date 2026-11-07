@@ -139,27 +139,28 @@ proc proveTask(
     discard signal.fireSync()
 
   block work:
-    let json =
-      case input[].circuit
-      of Circuit.Pol: toInputsJson(input[].polInput)
-      of Circuit.Poq: toInputsJson(input[].poqInput)
-      of Circuit.Poc: toInputsJson(input[].pocInput)
-      of Circuit.Signature: toInputsJson(input[].zksignInput)
-    let wtns = generateWitness(input[].circuit, json).valueOr:
-      failure =
-        if error.kind == WitnessGenError.Unsupported: ProveError.Unsupported
-        else: ProveError.WitnessGen
-      message = error.message
-      break work
-    let jsons = rs.prove(wtns).valueOr:
-      message = error.message
-      break work
-    let points = proofJsonToPoints(jsons.proofJson).valueOr:
-      failure = ProveError.ProofDecode
-      break work
-    let signals = publicJsonToInputs(jsons.publicJson).valueOr:
-      failure = ProveError.PublicDecode
-      break work
+    let
+      json =
+        case input[].circuit
+        of Circuit.Pol: toInputsJson(input[].polInput)
+        of Circuit.Poq: toInputsJson(input[].poqInput)
+        of Circuit.Poc: toInputsJson(input[].pocInput)
+        of Circuit.Signature: toInputsJson(input[].zksignInput)
+      wtns = generateWitness(input[].circuit, json).valueOr:
+        failure =
+          if error.kind == WitnessGenError.Unsupported: ProveError.Unsupported
+          else: ProveError.WitnessGen
+        message = error.message
+        break work
+      jsons = rs.prove(wtns).valueOr:
+        message = error.message
+        break work
+      points = proofJsonToPoints(jsons.proofJson).valueOr:
+        failure = ProveError.ProofDecode
+        break work
+      signals = publicJsonToInputs(jsons.publicJson).valueOr:
+        failure = ProveError.PublicDecode
+        break work
     if signals.len > MaxPublicSignals:
       failure = ProveError.PublicDecode
       break work
@@ -216,9 +217,10 @@ proc new*(
   else:
     if pool.numThreads < 2:
       return err(ProverInitError.PoolTooSmall)
-    let signal = ThreadSignalPtr.new().valueOr:
-      return err(ProverInitError.SignalCreateFailed)
-    let p = Prover(pool: pool, signal: signal, lock: newAsyncLock())
+    let
+      signal = ThreadSignalPtr.new().valueOr:
+        return err(ProverInitError.SignalCreateFailed)
+      p = Prover(pool: pool, signal: signal, lock: newAsyncLock())
     for c in Circuit:
       loadKey(p.keys[c], circuitsDir, c).isOkOr:
         p.close()

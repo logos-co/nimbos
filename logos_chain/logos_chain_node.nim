@@ -11,12 +11,10 @@ import
   system/ansi_c,
   std/os,
   bearssl/rand,
-  chronicles,
   metrics,
   ./node,
   ./api/server,
-  ./deployment/deployment_settings,
-  ./[buildinfo, binary_common, process_state]
+  ./[buildinfo, process_state]
 
 when defined(windows):
   from ./winservice import establishWindowsService
@@ -72,7 +70,7 @@ proc handleStartUpCmd(config: var LBNodeConf) {.raises: [CatchableError].} =
   doRunLBNode(config, rng)
 
 # noinline to keep it in stack traces
-proc main*() {.noinline, raises: [CatchableError].} =
+proc main() {.noinline, raises: [CatchableError].} =
   const copyright =
     "Copyright (c) 2026-" & compileYear & " Status Research & Development GmbH"
 

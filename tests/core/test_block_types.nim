@@ -9,13 +9,13 @@
 {.used.}
 
 import
+  unittest2,
   ../testutil,
   ./mantle/test_helpers,
   ../../logos_chain/core/types
 
 suite "core/types":
   const testBedrockVersion = 1'u8
-
 
   test "initBlock accepts empty tx list":
     let
@@ -33,8 +33,9 @@ suite "core/types":
         ),
       )
       b = initBlock(h, uncleHeaders = [], txs = [])
-    check b.txs.len == 0
-    check b.header.slot == 0'u64
+    check:
+      b.txs.len == 0
+      b.header.slot == 0'u64
 
   test "blockId returns 32-byte hash":
     let
@@ -74,8 +75,9 @@ suite "core/types":
       hB = mkTxHash(2)
       hC = mkTxHash(3)
       zero = default(Hash32)
-    check merkle_root([hA, hB, hC]) == hashPair(hashPair(hA, hB), hashPair(hC, zero))
-    check merkle_root([hA, hB, hC]) != merkle_root([hA, hB, hC, hC])
+    check:
+      merkle_root([hA, hB, hC]) == hashPair(hashPair(hA, hB), hashPair(hC, zero))
+      merkle_root([hA, hB, hC]) != merkle_root([hA, hB, hC, hC])
 
   test "blockId is deterministic for same header":
     let
@@ -102,19 +104,19 @@ suite "core/types":
       hA = mantleTxHash(txA.tx).get
       hB = mantleTxHash(txB.tx).get
       hashes = [hA, hB]
-    check merkle_root(hashes) == hashPair(hA, hB)
     let
       htxA = mkHashedSignedTx(txA, hA)
       htxB = mkHashedSignedTx(txB, hB)
       expectedRoot = body_root(openArray[SignedHeader]([]), merkle_root(hashes))
-    check body_root(openArray[SignedHeader]([]), [htxA, htxB]) == expectedRoot
-    let
       vtxA = mkValidTx(htxA)
       vtxB = mkValidTx(htxB)
-    check body_root(openArray[SignedHeader]([]), [vtxA, vtxB]) ==
-      body_root(openArray[SignedHeader]([]), [vtxA.hashed, vtxB.hashed])
-    check merkle_root(openArray[Hash32]([])) == default(Hash32)
-    check merkle_root([hA]) == hA
+    check:
+      merkle_root(hashes) == hashPair(hA, hB)
+      body_root(openArray[SignedHeader]([]), [htxA, htxB]) == expectedRoot
+      body_root(openArray[SignedHeader]([]), [vtxA, vtxB]) ==
+        body_root(openArray[SignedHeader]([]), [vtxA.hashed, vtxB.hashed])
+      merkle_root(openArray[Hash32]([])) == default(Hash32)
+      merkle_root([hA]) == hA
 
   test "initHeader accepts openArray[Hash32]":
     let

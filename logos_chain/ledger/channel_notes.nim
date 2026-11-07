@@ -11,7 +11,6 @@
 {.push raises: [], gcsafe.}
 
 import
-  results,
   ./types,
   ../core/mantle/primitives,
   ../utils/hash_trie_map

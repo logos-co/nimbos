@@ -115,9 +115,10 @@ suite "mempool":
 
   test "capacity limit evicts oldest tx to graceCache":
     var m = Mempool.init(capacity = 2)
-    let tx1 = mkValidTxWithOps(1, 1)
-    let tx2 = mkValidTxWithOps(1, 2)
-    let tx3 = mkValidTxWithOps(1, 3)
+    let
+      tx1 = mkValidTxWithOps(1, 1)
+      tx2 = mkValidTxWithOps(1, 2)
+      tx3 = mkValidTxWithOps(1, 3)
 
     check m.add(tx1, SlotNumber(1)) == true
     check m.add(tx2, SlotNumber(2)) == true
@@ -138,8 +139,9 @@ suite "mempool":
 
   test "add handles non-monotonic backwards slots by clamping to lastAddedSlot":
     var m = Mempool.init()
-    let tx1 = mkValidTxWithOps(1, 1)
-    let tx2 = mkValidTxWithOps(1, 2)
+    let
+      tx1 = mkValidTxWithOps(1, 1)
+      tx2 = mkValidTxWithOps(1, 2)
 
     check m.add(tx1, SlotNumber(10)) == true
     check m.lastAddedSlot == SlotNumber(10)

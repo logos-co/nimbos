@@ -9,9 +9,9 @@
 
 # All tests except scenarios, which as compiled separately for mainnet and minimal
 
-import ./testutil
-
-import # Unit test
+import
+  ./testutil,
+  # Unit test
   ./networking/test_peer_pool,
   ./networking/test_logos_p2p,
   ./networking/test_discovery,

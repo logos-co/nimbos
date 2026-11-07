@@ -10,12 +10,10 @@
 {.push raises: [], gcsafe.}
 
 import
-  results,
   std/sets,
   ./util,
   ../[registry, state],
   ../../utxo_store,
-  ../../../core/crypto/types,
   ../../../core/mantle/[operations, proofs]
 
 export util, registry, state
