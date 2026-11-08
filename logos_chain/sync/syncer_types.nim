@@ -23,6 +23,4 @@ type
     chainSyncProtocol*: string
     ibdFut*: Future[void].Raising([CancelledError])
 
-template localTree*(syncer: Syncer): LocalTree = syncer.processor.localTree
-
 {.pop.}

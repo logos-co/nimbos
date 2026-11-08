@@ -229,6 +229,11 @@ type
         defaultValue: DefaultBootstrapTimeout
         name: "bootstrap-timeout" .}: int
 
+      bootstrap* {.
+        desc: "Start with the Bootstrap fork choice rule (Ouroboros Genesis) regardless of saved state; unrelated to --bootstrap-node"
+        defaultValue: false
+        name: "bootstrap" .}: bool
+
       listenAddress* {.
         desc: "Listening address for Logos Chain libp2p traffic"
         defaultValueDesc: "*"
@@ -338,6 +343,9 @@ proc readValue*(r: var TomlReader, value: var ThreadCount)
                {.raises: [SerializationError, IOError].} =
   value = ThreadCount.init(r.parseInt(int)).valueOr:
     raise newException(SerializationError, error)
+
+proc dataDir*(config: LBNodeConf): OutDir =
+  config.dataDirFlag.get(OutDir defaultDataDir("logos_chain_node", $config.logosNetwork))
 
 func runAsService*(config: LBNodeConf): bool =
   config.runAsServiceFlag

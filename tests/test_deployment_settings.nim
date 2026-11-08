@@ -423,8 +423,9 @@ mempool:
   pubsub_topic: /a/mem
 """
     let r = parseDeploymentSettings(badYaml)
-    check r.isErr
-    check "block_root was renamed to body_root" in r.error
+    check:
+      r.isErr
+      "block_root was renamed to body_root" in r.error
 
   test "parseDeploymentSettings: genesis block with a non-empty uncle list":
     let badYaml = deploymentSettingsBlendBlock & """
@@ -439,8 +440,9 @@ mempool:
   pubsub_topic: /a/mem
 """
     let r = parseDeploymentSettings(badYaml)
-    check r.isErr
-    check "uncle_headers must be an empty sequence" in r.error
+    check:
+      r.isErr
+      "uncle_headers must be an empty sequence" in r.error
 
   test "validateDeploymentSettings: zero cryptarchia slot coeff denominator":
     let badYaml = deploymentSettingsBlendBlock & """
@@ -576,14 +578,23 @@ mempool:
       return
     check yamlGetPathNode(root, ["x"]).isNone
 
+  test "validateDeploymentSettings: valid genesis transaction and matching header pass":
+    let
+      ds = parseDeploymentSettings(minimalValidYaml).valueOr:
+        check false
+        return
+      v = validateDeploymentSettings(ds)
+    check v.isOk
+
   test "validateDeploymentSettings: mismatched genesis header body_root":
     var ds = parseDeploymentSettings(minimalValidYaml).valueOr:
       check false
       return
     ds.cryptarchia.genesisState.header.bodyRoot = default(Hash32)
     let v = validateDeploymentSettings(ds)
-    check v.isErr
-    check "genesis_block.header does not match header derived from genesis mantle_tx" in v.error
+    check:
+      v.isErr
+      "genesis_block.header does not match header derived from genesis mantle_tx" in v.error
 
   test "validateDeploymentSettings: mismatched genesis header slot":
     var ds = parseDeploymentSettings(minimalValidYaml).valueOr:
@@ -591,14 +602,55 @@ mempool:
       return
     ds.cryptarchia.genesisState.header.slot = 1
     let v = validateDeploymentSettings(ds)
-    check v.isErr
-    check "genesis_block.header does not match header derived from genesis mantle_tx" in v.error
+    check:
+      v.isErr
+      "genesis_block.header does not match header derived from genesis mantle_tx" in v.error
 
   test "parseDeploymentSettings: invalid genesis transaction rejected eagerly":
     # Empty ops in genesis mantle tx
-    let badYaml = minimalValidYaml.replace("opcode: 0", "opcode: 99")
-    let p = parseDeploymentSettings(badYaml)
-    check p.isErr
-    check "unsupported opcode" in p.error
+    let
+      badYaml = minimalValidYaml.replace("opcode: 0", "opcode: 99")
+      p = parseDeploymentSettings(badYaml)
+    check:
+      p.isErr
+      "unsupported opcode" in p.error
+
+suite "deployment/deployment_settings (densitySlotWindow)":
+  test "computes and stores s_gen = ⌊k / (4f)⌋ in DeploymentSettings":
+    let
+      # minimalValidYaml has k = 1, f = 1/20 -> ⌊(1 * 20) / (4 * 1)⌋ = 5
+      ds = parseDeploymentSettings(minimalValidYaml).valueOr:
+        check false
+        return
+      # Default parameters: k = 2160, f = 1/30 -> (2160 * 30) / 4 = 16200 slots (4h 30m)
+      defaultYaml = minimalValidYaml
+        .replace("security_param: 1", "security_param: 2160")
+        .replace("denominator: 20", "denominator: 30")
+      dsDefault = parseDeploymentSettings(defaultYaml).valueOr:
+        check false
+        return
+    check:
+      ds.cryptarchia.densitySlotWindow == 5'u64
+      dsDefault.cryptarchia.densitySlotWindow == 16200'u64
+
+  test "validateDeploymentSettings: zero densitySlotWindow triggers internal invariant assert":
+    var ds = parseDeploymentSettings(minimalValidYaml).valueOr:
+      check false
+      return
+    ds.cryptarchia.densitySlotWindow = 0'u64
+    expect(AssertionDefect):
+      discard validateDeploymentSettings(ds)
+
+  test "parseDeploymentSettings: extreme f numerator does not overflow":
+    let
+      hugeNumYaml = minimalValidYaml.replace("numerator: 1", "numerator: 18446744073709551615")
+      p = parseDeploymentSettings(hugeNumYaml)
+    check:
+      p.isOk
+      p.get.cryptarchia.densitySlotWindow == 0'u64
+    let v = validateDeploymentSettings(p.get)
+    check:
+      v.isErr
+      "pinned lottery constants" in v.error
 
 {.pop.}

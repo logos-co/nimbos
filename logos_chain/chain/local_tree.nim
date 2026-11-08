@@ -9,20 +9,15 @@
 
 import
   std/tables,
+  results,
+  intops,
   bincode,
   ../core/types
 from ../core/crypto/types as crypto_types import isZero
+from ../core/mantle/primitives import SlotNumber, BlockNumber
 from ./block_validation import ValidBlock, encode, header
 
 export Block, Header, BlockId, ValidBlock, encode, header
-
-type
-  Tip* = object
-    tip*: BlockId
-    slot*: SlotNumber
-    height*: BlockNumber
-
-deriveBincode(Tip)
 
 type
   BlockNode = ref object
@@ -34,33 +29,25 @@ type
   LocalTree* = ref object
     blocksById: Table[BlockId, BlockNode]
     idsByHeight: Table[BlockNumber, seq[BlockId]]
-    tipId: BlockId
-    latestImmutableId: BlockId
-    securityParam: uint64
 
-template isStrictlyHigherTip(currentTip, candidate: BlockNode): bool =
-  candidate.height > currentTip.height
+func ancestorAtHeight*(localTree: LocalTree, id: BlockId, targetHeight: BlockNumber): Opt[BlockId] =
+  localTree.blocksById.withValue(id, node):
+    var n = node[]
+    while n != nil:
+      if n.height == targetHeight:
+        return Opt.some(n.id)
+      if n.height < targetHeight:
+        return Opt.none(BlockId)
+      n = n.parent
+  Opt.none(BlockId)
 
-func ancestorAtHeight(node: BlockNode, targetHeight: BlockNumber): BlockNode =
-  var n = node
-  while n != nil:
-    if n.height == targetHeight:
-      return n
-    if n.height < targetHeight:
-      return nil
-    n = n.parent
-  nil
-
-func newLocalTree*(genesisBlock: ValidBlock, securityParam: uint64): LocalTree =
+func init*(T: type LocalTree, genesisBlock: ValidBlock): LocalTree =
   let
     gid = blockId(genesisBlock.header)
     gn = BlockNode(id: gid, blk: genesisBlock, parent: nil, height: 0'u64)
   LocalTree(
     blocksById: [(gid, gn)].toTable,
     idsByHeight: [(0'u64, @[gid])].toTable,
-    tipId: gid,
-    latestImmutableId: gid,
-    securityParam: securityParam,
   )
 
 func blockHeight*(localTree: LocalTree, blockId: BlockId): Opt[BlockNumber] =
@@ -68,19 +55,10 @@ func blockHeight*(localTree: LocalTree, blockId: BlockId): Opt[BlockNumber] =
     return Opt.some(node.height)
   Opt.none(BlockNumber)
 
-func latestImmutableHeight(localTree: LocalTree): BlockNumber =
-  localTree.blocksById.withValue(localTree.latestImmutableId, node):
-    return node.height
-  0'u64
-
-func latestImmutableSlot*(localTree: LocalTree): SlotNumber =
-  localTree.blocksById.withValue(localTree.latestImmutableId, node):
-    return node.blk.header.slot
-  SlotNumber(0)
-
-proc pruneForks(localTree: LocalTree, fromNode: BlockNode,
-    untilHeight: BlockNumber, tipHeight: BlockNumber): seq[BlockId] =
+proc pruneForks*(localTree: LocalTree, newImmId: BlockId,
+    oldImmHeight: BlockNumber): seq[BlockId] =
   var pruned: seq[BlockId]
+  let fromNode = localTree.blocksById.getOrDefault(newImmId, nil)
   if fromNode == nil:
     return pruned
 
@@ -96,7 +74,7 @@ proc pruneForks(localTree: LocalTree, fromNode: BlockNode,
             pruned.add(id)
         ids[] = @[curr.id]
 
-    if h == untilHeight:
+    if h == oldImmHeight:
       break
     curr = curr.parent
 
@@ -104,56 +82,38 @@ proc pruneForks(localTree: LocalTree, fromNode: BlockNode,
   if pruned.len == 0:
     return pruned
 
-  # Pass 2: upward cascade — remove orphans whose parent was pruned
-  var anyPrunedAtLevel = true
-  for h in (fromNode.height + 1) .. tipHeight:
-    if not anyPrunedAtLevel:
-      break # Cascade stopped: all parents at previous height were valid
-
-    anyPrunedAtLevel = false
+  # Pass 2: upward cascade — remove orphans whose parent was pruned.
+  # Heights are strictly contiguous: every block at height h+1 has its parent at h.
+  # If at any level h no block was pruned, no block at h+1 can be an orphan, so we stop.
+  var h = fromNode.height + 1
+  while true:
+    var anyPrunedAtLevel = false
     localTree.idsByHeight.withValue(h, ids):
-      if ids[].len > 1:
-        var kept: seq[BlockId]
-        for id in ids[]:
-          localTree.blocksById.withValue(id, node):
-            if localTree.blocksById.hasKey(node.parent.id):
-              kept.add(id)
-            else:
-              localTree.blocksById.del(id)
-              pruned.add(id)
-              anyPrunedAtLevel = true
+      var kept: seq[BlockId]
+      for id in ids[]:
+        localTree.blocksById.withValue(id, node):
+          if localTree.blocksById.hasKey(node.parent.id):
+            kept.add(id)
+          else:
+            localTree.blocksById.del(id)
+            pruned.add(id)
+            anyPrunedAtLevel = true
 
-        if anyPrunedAtLevel:
-          ids[] = kept
+      if anyPrunedAtLevel:
+        ids[] = kept
+        if ids[].len == 0:
+          localTree.idsByHeight.del(h)
+
+    if not anyPrunedAtLevel:
+      break # Cascade stopped: all parents at previous height were valid (or level h had no blocks)
+    inc h
 
   pruned
-
-# https://github.com/logos-co/logos-lips/blob/0ba596cfbd65ea4e9fd16ae572a848fcb43a45d5/docs/blockchain/raw/cryptarchia-v1-protocol.md#L338-L382
-proc tryUpdateLib*(localTree: LocalTree): seq[BlockId] {.discardable.} =
-  localTree.blocksById.withValue(localTree.tipId, tip):
-    if tip.height >= localTree.securityParam:
-      let immHeight = tip.height - localTree.securityParam
-      if immHeight > localTree.latestImmutableHeight():
-        let newImmNode = ancestorAtHeight(tip[], immHeight)
-        if newImmNode != nil:
-          let oldImmHeight = localTree.latestImmutableHeight()
-          localTree.latestImmutableId = newImmNode.id
-          return localTree.pruneForks(newImmNode, oldImmHeight, tip.height)
-  @[]
 
 func fetchHeader*(localTree: LocalTree, blockId: BlockId): Opt[Header] =
   localTree.blocksById.withValue(blockId, node):
     return Opt.some(node.blk.header)
   Opt.none(Header)
-
-func localTip*(localTree: LocalTree): Tip =
-  localTree.blocksById.withValue(localTree.tipId, node):
-    return Tip(
-      tip: localTree.tipId,
-      slot: node.blk.header.slot,
-      height: node.height,
-    )
-  raiseAssert "LocalTree invariant violated: tipId not in blocksById"
 
 func hasBlock*(localTree: LocalTree, blockId: BlockId): bool =
   localTree.blocksById.hasKey(blockId)
@@ -163,38 +123,17 @@ func getBlock*(localTree: LocalTree, id: BlockId): Opt[ValidBlock] =
     return Opt.some(node.blk)
   Opt.none(ValidBlock)
 
-func localTipId*(localTree: LocalTree): BlockId =
-  ## Returns the BlockId of the current active tip.
-  localTree.tipId
-
-func latestImmutableBlockId*(localTree: LocalTree): BlockId =
-  ## Returns the BlockId of the current Latest Immutable Block.
-  localTree.latestImmutableId
-
-# https://github.com/logos-co/logos-lips/blob/5587d1e5ca2964e38098cd18f81f0fbe19f51fd3/docs/blockchain/raw/cryptarchia-v1-protocol.md#L435-L436
-func canDescendFromImmutable*(localTree: LocalTree, header: Header): bool =
-  ## Validates whether a block header can descend from the latest immutable block:
-  ## - For known parents: candidate height > immutable height and ancestry path to LIB.
-  ## - For unknown parents (orphans): slot feasibility (header.slot > immutableSlot).
-  if header.parentBlock.isZero:
-    return false
-  if header.slot <= localTree.latestImmutableSlot():
-    return false
-
-  localTree.blocksById.withValue(header.parentBlock, parentNode):
-    if parentNode[].height + 1'u64 <= localTree.latestImmutableHeight():
-      return false
-    let immId = localTree.latestImmutableId
-    if immId.isZero:
-      return true
-    var cur = parentNode[]
-    while cur != nil:
-      if cur.id == immId:
+func isAncestor*(localTree: LocalTree, ancestor: BlockId,
+    descendant: BlockId): bool =
+  if ancestor == descendant:
+    return localTree.hasBlock(ancestor)
+  localTree.blocksById.withValue(descendant, start):
+    var n = start.parent
+    while n != nil:
+      if n.id == ancestor:
         return true
-      cur = cur.parent
-    return false
-
-  true
+      n = n.parent
+  false
 
 func lcaBlockIdAndHeight*(
     localTree: LocalTree, idA, idB: BlockId,
@@ -221,6 +160,53 @@ func lcaBlockIdAndHeight*(
       return Opt.none((BlockId, BlockNumber))
   Opt.some((na.id, na.height))
 
+# TODO: Backwards pointer traversal in highestAncestorInSlotWindow, lcaBlockIdAndHeight,
+# and ancestorAtHeight is currently O(N). To optimize without breaking spec compliance:
+# 1. Add binary-skip pointers to BlockNode (e.g. Bitcoin-style pskip / skipHeight(height))
+#    to enable O(log N) ancestor and LCA lookups. In highestAncestorInSlotWindow, take skip
+#    pointers while skip.slot > maxSlot, then step to parent (valid because slots strictly
+#    increase along any chain).
+# 2. Alternatively or additionally, compute candidate density inductively from parent:
+#    if child.slot > maxSlot: density(child, lca) = density(parent, lca);
+#    else: density(child, lca) = child.height - lcaHeight (O(1) with cached parent).
+func highestAncestorInSlotWindow(
+    localTree: LocalTree,
+    tipId: BlockId,
+    lcaSlot: SlotNumber,
+    maxSlot: SlotNumber,
+): uint64 =
+  ## Returns the height of the highest ancestor of `tipId` whose slot <= maxSlot and slot > lcaSlot.
+  ## Returns 0 if no block on the ancestor path falls in (lcaSlot, maxSlot].
+  var node = localTree.blocksById.getOrDefault(tipId, nil)
+  while node != nil:
+    let slot = node.blk.header.slot
+    if slot <= lcaSlot:
+      return 0'u64
+    if slot <= maxSlot:
+      return node.height
+    node = node.parent
+  0'u64
+
+func countChainDensity*(
+    localTree: LocalTree,
+    tipId: BlockId,
+    lcaSlot: SlotNumber,
+    lcaHeight: uint64,
+    densitySlotWindow: uint64,
+): uint64 =
+  ## Counts primary blocks on the chain segment starting from `tipId` down towards LCA
+  ## whose slot falls in the half-open interval (lcaSlot, lcaSlot + densitySlotWindow].
+  ## Uses the mathematical property that density equals the height delta between the
+  ## highest block in the window and the LCA: height(B_upper) - lcaHeight.
+  ## If tip.slot <= maxSlot, this evaluates in O(1) without backwards traversal.
+  let
+    maxSlot = saturatingAdd(lcaSlot, densitySlotWindow)
+    upperHeight = localTree.highestAncestorInSlotWindow(tipId, lcaSlot, maxSlot)
+  if upperHeight <= lcaHeight:
+    0'u64
+  else:
+    upperHeight - lcaHeight
+
 proc addBlockToTree*(localTree: LocalTree, blk: ValidBlock): bool =
   ## Inserts a header-validated block; only duplicate ids and unknown parents
   ## are guarded here.
@@ -231,9 +217,6 @@ proc addBlockToTree*(localTree: LocalTree, blk: ValidBlock): bool =
     let node = BlockNode(id: id, blk: blk, parent: parent[], height: parent.height + 1'u64)
     localTree.blocksById[id] = node
     localTree.idsByHeight.mgetOrPut(node.height, @[]).add(id)
-    localTree.blocksById.withValue(localTree.tipId, curTip):
-      if isStrictlyHigherTip(curTip[], node):
-        localTree.tipId = id
     return true
   false
 
@@ -243,11 +226,5 @@ when defined(unittest) or defined(test):
     localTree.idsByHeight.withValue(height, ids):
       return ids[]
     @[]
-
-  proc `latestImmutableHeight=`*(localTree: LocalTree, height: BlockNumber) =
-    localTree.blocksById.withValue(localTree.tipId, tip):
-      let node = ancestorAtHeight(tip[], height)
-      if node != nil:
-        localTree.latestImmutableId = node.id
 
 {.pop.}

@@ -27,7 +27,7 @@ proc processProposal*(
     idHex = toHex(id)
 
   # 1. Scalar slot checks (~2-20 ns)
-  if proposal.header.slot <= bp.localTree.latestImmutableSlot():
+  if proposal.header.slot <= bp.consensus.latestImmutableSlot():
     debug "GossipSub ignored proposal at or behind immutable slot",
       blockId = idHex, src
     return ValidationResult.Ignore

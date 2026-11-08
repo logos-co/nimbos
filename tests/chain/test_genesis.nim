@@ -17,8 +17,9 @@ import
   ../../logos_chain/deployment/deployment_settings,
   ../testutil
 
-const testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
-const deploymentSettingsPath = testsDir / "../../config/deployment-settings.yaml"
+const
+  testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
+  deploymentSettingsPath = testsDir / "../../config/deployment-settings.yaml"
 
 let devnetDeploymentSettings = block:
   let text = readAllChars(deploymentSettingsPath).expect("could not read deployment settings")
@@ -42,7 +43,7 @@ suite "chain/genesis":
       ds = devnetDeploymentSettings
       gstate = ds.cryptarchia.genesisState
       genesisTx = gstate.validGenesisTx
-      testChain = Chain.init(ds).valueOr:
+      testChain = Chain.init(ds, forkChoiceRule = ForkChoiceRule.Online).valueOr:
         fail "Chain.init: " & $error
       gb = testChain.genesisBlock
 

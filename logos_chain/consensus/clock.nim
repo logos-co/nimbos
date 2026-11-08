@@ -7,7 +7,9 @@
 
 {.push raises: [], gcsafe.}
 
-import results
+import
+  std/times,
+  results
 
 from ../core/utils import NonNegativeRatio
 from ../core/mantle/primitives import SlotNumber, EpochNumber
@@ -28,6 +30,10 @@ type
     ## Wallclock anchor for slot timing; `slotDurationSeconds` must be > 0.
     genesisTime*: WallclockSeconds ## start of the first epoch
     slotDurationSeconds*: uint64
+
+proc nowWallclockSeconds*(): WallclockSeconds =
+  ## Returns current system time in wallclock seconds (non-negative unix timestamp).
+  uint64(max(getTime().toUnix(), 0'i64))
 
 func basePeriodLength*(securityParam: uint64, f: NonNegativeRatio): uint64 =
   ## ⌊k/f⌋ — expected slots to produce `k` blocks at slot-activation rate `f`.
