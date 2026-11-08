@@ -10,7 +10,6 @@
 
 import
   std/os,
-  unittest2,
   results,
   stew/io2,
   ./testutil,
@@ -59,21 +58,19 @@ suite "node_state":
   test "loadNodeState on corrupted JSON file returns none safely":
     withTempDir(tmpDir, "test_node_state_corrupt"):
       let statePath = tmpDir / NodeStateFileName
-      check io2.writeFile(statePath, "{ invalid_json: true ]").isOk
-
-      let loadedOpt = loadNodeState(tmpDir)
-      check loadedOpt.isNone
+      check:
+        io2.writeFile(statePath, "{ invalid_json: true ]").isOk
+        loadNodeState(tmpDir).isNone
 
   test "loadNodeState on unsupported schema version returns none":
     withTempDir(tmpDir, "test_node_state_version"):
       let statePath = tmpDir / NodeStateFileName
-      check io2.writeFile(
-        statePath,
-        "{\"version\":99,\"lastOnlineTimestampUnix\":1700000000,\"libBlockId\":\"aa00000000000000000000000000000000000000000000000000000000000000\"}"
-      ).isOk
-
-      let loadedOpt = loadNodeState(tmpDir)
-      check loadedOpt.isNone
+      check:
+        io2.writeFile(
+          statePath,
+          "{\"version\":99,\"lastOnlineTimestampUnix\":1700000000,\"libBlockId\":\"aa00000000000000000000000000000000000000000000000000000000000000\"}"
+        ).isOk
+        loadNodeState(tmpDir).isNone
 
   test "loadNodeState parses uppercase hex libBlockId successfully":
     withTempDir(tmpDir, "test_node_state_upperhex"):
@@ -93,13 +90,12 @@ suite "node_state":
   test "loadNodeState on corrupted BlockId hex in JSON returns none safely":
     withTempDir(tmpDir, "test_node_state_badhex"):
       let statePath = tmpDir / NodeStateFileName
-      check io2.writeFile(
-        statePath,
-        "{\"version\":1,\"lastOnlineTimestampUnix\":1700000000,\"libBlockId\":\"not_a_valid_hex_string\"}"
-      ).isOk
-
-      let loadedOpt = loadNodeState(tmpDir)
-      check loadedOpt.isNone
+      check:
+        io2.writeFile(
+          statePath,
+          "{\"version\":1,\"lastOnlineTimestampUnix\":1700000000,\"libBlockId\":\"not_a_valid_hex_string\"}"
+        ).isOk
+        loadNodeState(tmpDir).isNone
 
   test "parseSavedNodeState returns defaults on none":
     var gid: BlockId

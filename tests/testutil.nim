@@ -506,7 +506,7 @@ proc testGenesisBlock*(): ValidBlock =
       hasDefaultGenesisBlockCache = true
     defaultGenesisBlockCache
 
-type BootstrapPeers* = object
+type BootstrapPeers = object
   listener*, dialer*: LBP2PNode
   listenerPeerId*: PeerId
 

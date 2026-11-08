@@ -7,8 +7,9 @@
 
 {.push raises: [], gcsafe.}
 
-import std/times
-import results
+import
+  std/times,
+  results
 
 from ../core/utils import NonNegativeRatio
 from ../core/mantle/primitives import SlotNumber, EpochNumber

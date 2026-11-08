@@ -32,16 +32,17 @@ proc initTestChain*(
 ): Chain =
   ## Chain over the genesis block's ledger state (epochs seeded under
   ## `testLedgerConfig`).
-  let gid = blockId(genesis.header)
-  let state =
-    if gid == blockId(testGenesisBlock().header):
-      testGenesisLedgerState()
-    else:
-      let validTx = mkValidGenesisTx(genesis.txs[0].hashed)
-      LedgerState.fromGenesis(
-          validTx, default(FieldElement), testSdpRegistry(),
-          testLedgerConfig).valueOr:
-        raiseAssert "initTestChain: genesis state: " & $error
+  let
+    gid = blockId(genesis.header)
+    state =
+      if gid == blockId(testGenesisBlock().header):
+        testGenesisLedgerState()
+      else:
+        let validTx = mkValidGenesisTx(genesis.txs[0].hashed)
+        LedgerState.fromGenesis(
+            validTx, default(FieldElement), testSdpRegistry(),
+            testLedgerConfig).valueOr:
+          raiseAssert "initTestChain: genesis state: " & $error
   Chain.init(
     genesis,
     Ledger[BlockId].init(gid, state, testLedgerConfig, mockVerifyLeaderProof),

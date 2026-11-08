@@ -5,7 +5,7 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-{.push raises: [].}
+{.push raises: [], gcsafe.}
 {.used.}
 
 import
@@ -497,11 +497,11 @@ suite "chain/orphan_resolution":
       id1 = blockId(b1.header)
       b2 = childBlock(b1.header, id1, SlotNumber(2), [wireHtx])
       id2 = blockId(b2.header)
-
-    let applyB2Res = chain.tryApplyBlock(b2)
-    check applyB2Res.isErr
-    check applyB2Res.error.kind == BlockApplyErrorKind.OrphanBuffered
-    check chain.orphanPool.hasOrphan(id2)
+      applyB2Res = chain.tryApplyBlock(b2)
+    check:
+      applyB2Res.isErr
+      applyB2Res.error.kind == BlockApplyErrorKind.OrphanBuffered
+      chain.orphanPool.hasOrphan(id2)
 
     # 4. Reset the PoC verifier so that if Tier 3 falls back to stateless validation,
     #    it would fail with VerifierNotInitialised.
@@ -513,21 +513,24 @@ suite "chain/orphan_resolution":
 
     # 6. Promote B2 from orphan pool and apply it
     let promoted = chain.orphanPool.takeChildren(id1)
-    check promoted.len == 1
-    check blockId(promoted[0].header) == id2
+    check:
+      promoted.len == 1
+      blockId(promoted[0].header) == id2
 
     let promoteRes = chain.tryApplyAdmittedBlock(promoted[0])
-    check promoteRes.isOk
-    check chain.consensus.hasBlock(id2)
-    check chain.consensus.canonicalTip.tip == id2
+    check:
+      promoteRes.isOk
+      chain.consensus.hasBlock(id2)
+      chain.consensus.canonicalTip.tip == id2
 
   test "promoted proposal orphan does not require mempool to retain its transactions":
     var (chain, genesis, gid) = setupChain()
 
     # 1. Add valid transaction to mempool
     let vtx = minimalValidSignedTx()
-    check chain.mempool.add(vtx, chain.currentWallclockSlot())
-    check chain.mempool.contains(vtx.hash)
+    check:
+      chain.mempool.add(vtx, chain.currentWallclockSlot())
+      chain.mempool.contains(vtx.hash)
 
     # 2. Buffer proposal orphan before parent B1 arrives
     let
@@ -535,29 +538,31 @@ suite "chain/orphan_resolution":
       id1 = blockId(b1.header)
       proposal = childProposal(b1.header, id1, SlotNumber(2), [vtx])
       id2 = blockId(proposal.header)
-
-    let applyPropRes = chain.tryApplyProposal(proposal)
-    check applyPropRes.isErr
-    check applyPropRes.error.kind == BlockApplyErrorKind.OrphanBuffered
-    check chain.orphanPool.hasOrphan(id2)
+      applyPropRes = chain.tryApplyProposal(proposal)
+    check:
+      applyPropRes.isErr
+      applyPropRes.error.kind == BlockApplyErrorKind.OrphanBuffered
+      chain.orphanPool.hasOrphan(id2)
 
     # 3. Evict transaction completely from mempool (including grace cache)
     chain.mempool.remove(vtx.hash, moveToGrace = false)
-    check not chain.mempool.contains(vtx.hash)
-
-    # 4. Ingest parent B1
-    check chain.tryApplyBlock(b1).isOk
+    check:
+      not chain.mempool.contains(vtx.hash)
+      # 4. Ingest parent B1
+      chain.tryApplyBlock(b1).isOk
 
     # 5. Promote proposal orphan: it already holds reconstructed txs in AdmittedBlock
     #    (txsVerified: true), so promotion succeeds without requiring the mempool.
     let promoted = chain.orphanPool.takeChildren(id1)
-    check promoted.len == 1
-    check blockId(promoted[0].header) == id2
+    check:
+      promoted.len == 1
+      blockId(promoted[0].header) == id2
 
     let promoteRes = chain.tryApplyAdmittedBlock(promoted[0])
-    check promoteRes.isOk
-    check chain.consensus.hasBlock(id2)
-    check chain.consensus.canonicalTip.tip == id2
+    check:
+      promoteRes.isOk
+      chain.consensus.hasBlock(id2)
+      chain.consensus.canonicalTip.tip == id2
 
   test "promoted orphan with slot <= parent slot is rejected and pruned upon promotion":
     let
@@ -570,24 +575,25 @@ suite "chain/orphan_resolution":
       id1 = blockId(b1.header)
       b2 = childBlock(b1.header, id1, SlotNumber(2), [])
       id2 = blockId(b2.header)
-
-    let b2Res = chain.tryApplyBlock(b2)
-    check b2Res.isErr
-    check b2Res.error.kind == BlockApplyErrorKind.OrphanBuffered
-    check chain.orphanPool.hasOrphan(id2)
-
-    check chain.tryApplyBlock(b1).isOk
-    check chain.consensus.hasBlock(id1)
+      b2Res = chain.tryApplyBlock(b2)
+    check:
+      b2Res.isErr
+      b2Res.error.kind == BlockApplyErrorKind.OrphanBuffered
+      chain.orphanPool.hasOrphan(id2)
+      chain.tryApplyBlock(b1).isOk
+      chain.consensus.hasBlock(id1)
 
     let promoted = chain.orphanPool.takeChildren(id1)
-    check promoted.len == 1
-    check blockId(header(promoted[0])) == id2
+    check:
+      promoted.len == 1
+      blockId(header(promoted[0])) == id2
 
     let promoteRes = chain.tryApplyAdmittedBlock(promoted[0])
-    check promoteRes.isErr
-    check promoteRes.error.kind == BlockApplyErrorKind.InvalidStructure
-    check not chain.consensus.hasBlock(id2)
-    check not chain.orphanPool.hasOrphan(id2)
+    check:
+      promoteRes.isErr
+      promoteRes.error.kind == BlockApplyErrorKind.InvalidStructure
+      not chain.consensus.hasBlock(id2)
+      not chain.orphanPool.hasOrphan(id2)
 
   test "promoted orphan whose parent state is gone is rejected and its descendants pruned":
     var (chain, genesis, gid) = setupChain()
@@ -599,25 +605,25 @@ suite "chain/orphan_resolution":
       idO = blockId(o.header)
       g = childBlock(o.header, idO, SlotNumber(3), [])
       idG = blockId(g.header)
-
-    # 1. Ingest grandchild g: buffers as orphan waiting for o
-    let gRes = chain.tryApplyBlock(g)
-    check gRes.isErr
-    check gRes.error.kind == BlockApplyErrorKind.OrphanBuffered
-    check chain.orphanPool.hasOrphan(idG)
-    check chain.orphanPool.len == 1
+      # 1. Ingest grandchild g: buffers as orphan waiting for o
+      gRes = chain.tryApplyBlock(g)
+    check:
+      gRes.isErr
+      gRes.error.kind == BlockApplyErrorKind.OrphanBuffered
+      chain.orphanPool.hasOrphan(idG)
+      chain.orphanPool.len == 1
 
     # 2. Ingest admitted o (parent p was never applied or was pruned):
     #    checkTopology returns TopologyStatus.Orphan because p is not in ledger
     let
       admittedO = admitBlock(o).get()
       oRes = chain.tryApplyAdmittedBlock(admittedO)
-    check oRes.isErr
-    check oRes.error.kind == BlockApplyErrorKind.UnviableFork
-
-    # 3. Assert o was not added to tree, and its descendant g was pruned from orphan pool
-    check not chain.consensus.hasBlock(idO)
-    check not chain.orphanPool.hasOrphan(idG)
-    check chain.orphanPool.len == 0
+    check:
+      oRes.isErr
+      oRes.error.kind == BlockApplyErrorKind.UnviableFork
+      # 3. Assert o was not added to tree, and its descendant g was pruned from orphan pool
+      not chain.consensus.hasBlock(idO)
+      not chain.orphanPool.hasOrphan(idG)
+      chain.orphanPool.len == 0
 
 {.pop.}

@@ -10,7 +10,6 @@
 
 import
   chronos/unittest2/asynctests,
-  unittest2,
   results,
   ./testutil,
   ./logos_chain/sync/helpers,

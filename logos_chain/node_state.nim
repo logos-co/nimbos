@@ -81,15 +81,12 @@ proc saveNodeState*(
     except CatchableError as exc:
       return err("Failed to encode node state to JSON: " & exc.msg)
 
-  let createRes = secureCreatePath(dataDir)
-  if createRes.isErr():
-    return err("Failed to create node state data directory: " & ioErrorMsg(createRes.error))
+  secureCreatePath(dataDir).isOkOr:
+    return err("Failed to create node state data directory: " & ioErrorMsg(error))
 
-  let
-    tmpPath = dataDir / (NodeStateFileName & ".tmp")
-    writeRes = secureWriteFile(tmpPath, payload)
-  if writeRes.isErr():
-    return err("Failed to write node state temporary file: " & ioErrorMsg(writeRes.error))
+  let tmpPath = dataDir / (NodeStateFileName & ".tmp")
+  secureWriteFile(tmpPath, payload).isOkOr:
+    return err("Failed to write node state temporary file: " & ioErrorMsg(error))
 
   secureReplaceFile(tmpPath, path).isOkOr:
     discard io2.removeFile(tmpPath)

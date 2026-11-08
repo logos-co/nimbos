@@ -86,7 +86,7 @@ const MaxKnownAdditionalBlocks = 5
 
 func buildKnownBlocks*(
     consensus: ConsensusState,
-    additionalBlocks: openArray[BlockId] = [],
+    additionalBlocks: openArray[BlockId],
 ): KnownBlocks =
   let takeCount = min(additionalBlocks.len, MaxKnownAdditionalBlocks)
   KnownBlocks(

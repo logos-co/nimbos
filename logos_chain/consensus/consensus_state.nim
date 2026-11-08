@@ -190,15 +190,14 @@ proc preferCandidate(
   if candidateId.isZero or currentTipId == candidateId:
     return false
 
-  let (lcaId, lcaHeight) = cs.localTree.lcaBlockIdAndHeight(currentTipId, candidateId).valueOr:
-    return false
-
-  let curTipHeight = cs.localTree.blockHeight(currentTipId).valueOr:
-    return false
-  let candHeight = cs.localTree.blockHeight(candidateId).valueOr:
-    return false
-
-  let divergenceDepth = curTipHeight - lcaHeight
+  let
+    (lcaId, lcaHeight) = cs.localTree.lcaBlockIdAndHeight(currentTipId, candidateId).valueOr:
+      return false
+    curTipHeight = cs.localTree.blockHeight(currentTipId).valueOr:
+      return false
+    candHeight = cs.localTree.blockHeight(candidateId).valueOr:
+      return false
+    divergenceDepth = curTipHeight - lcaHeight
 
   if divergenceDepth <= cs.securityParam:
     # Shallow fork: strictly longer chain wins
@@ -227,10 +226,11 @@ proc tryUpdateTip(
   ## Updates the canonical tip if candidateId is strictly preferred over the current tip
   ## according to the active fork choice rule (Online: Ouroboros Praos; Bootstrap: Ouroboros Genesis).
   if cs.preferCandidate(cs.canonicalTip.tip, candidateId):
-    let hdr = cs.localTree.fetchHeader(candidateId).valueOr:
-      raiseAssert "ConsensusState invariant violated: preferCandidate succeeded but candidate header missing"
-    let height = cs.localTree.blockHeight(candidateId).valueOr:
-      raiseAssert "ConsensusState invariant violated: preferCandidate succeeded but candidate height missing"
+    let
+      hdr = cs.localTree.fetchHeader(candidateId).valueOr:
+        raiseAssert "ConsensusState invariant violated: preferCandidate succeeded but candidate header missing"
+      height = cs.localTree.blockHeight(candidateId).valueOr:
+        raiseAssert "ConsensusState invariant violated: preferCandidate succeeded but candidate height missing"
     cs.canonicalTip = Tip(
       tip: candidateId,
       slot: hdr.slot,

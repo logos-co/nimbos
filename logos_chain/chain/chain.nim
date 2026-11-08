@@ -274,10 +274,11 @@ proc applyValidBlock(
     id: BlockId,
     curSlot: SlotNumber,
 ): Result[void, BlockApplyError] =
-  let preparedState = prepareBlockUpdate(validBlk, chain.ledger, headerState).valueOr:
-    chain.orphanPool.pruneDescendants(id)
-    return err(BlockApplyError(kind: LedgerRejected, ledgerError: error.ledgerError))
-  let oldTip = chain.consensus.canonicalTip.tip
+  let
+    preparedState = prepareBlockUpdate(validBlk, chain.ledger, headerState).valueOr:
+      chain.orphanPool.pruneDescendants(id)
+      return err(BlockApplyError(kind: LedgerRejected, ledgerError: error.ledgerError))
+    oldTip = chain.consensus.canonicalTip.tip
 
   if not chain.consensus.addBlockAndTryUpdateTip(validBlk):
     chain.orphanPool.pruneDescendants(id)
@@ -385,16 +386,13 @@ proc tryApplyProposal*(
   let
     curSlot = chain.currentWallclockSlot()
     id = ?chain.checkViability(proposal.header, curSlot)
-
-  let status = ?checkTopology(proposal.header, chain.consensus, chain.ledger)
-
-  let validTxs = reconstructProposalTxs(proposal, chain.mempool).valueOr:
-    case error
-    of ProposalValidationError.MissingReference:
-      return err(BlockApplyError(kind: BlockApplyErrorKind.MissingReference))
-
-  let admittedBlk = admitProposal(proposal, validTxs).valueOr:
-    return err(toBlockApplyError(error))
+    status = ?checkTopology(proposal.header, chain.consensus, chain.ledger)
+    validTxs = reconstructProposalTxs(proposal, chain.mempool).valueOr:
+      case error
+      of ProposalValidationError.MissingReference:
+        return err(BlockApplyError(kind: BlockApplyErrorKind.MissingReference))
+    admittedBlk = admitProposal(proposal, validTxs).valueOr:
+      return err(toBlockApplyError(error))
 
   chain.admitOrBuffer(status, admittedBlk, id, curSlot)
 

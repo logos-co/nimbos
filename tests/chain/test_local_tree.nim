@@ -148,7 +148,7 @@ suite "chain/local_tree (lcaBlockIdAndHeight)":
     check:
       lcaBlockIdAndHeight(tree, gid, unknown).isNone
       lcaBlockIdAndHeight(tree, unknown, gid).isNone
-    
+
   test "pruneForks prunes side-branch nodes below finality height":
     let
       genesis = testGenesisBlock()
@@ -259,9 +259,10 @@ suite "chain/local_tree (lcaBlockIdAndHeight)":
       b3 = mkChildValidBlock(b2.header, id2, slot = 6'u64)
       id3 = blockId(b3.header)
 
-    check tree.addBlockToTree(b1)
-    check tree.addBlockToTree(b2)
-    check tree.addBlockToTree(b3)
+    check:
+      tree.addBlockToTree(b1)
+      tree.addBlockToTree(b2)
+      tree.addBlockToTree(b3)
 
     # Competing dead fork branching off b1 (height 1) extends up to height 5:
     # Heights 4 and 5 exist ONLY on the dead fork (idsByHeight.len == 1, above canonical tipHeight = 3)
@@ -275,12 +276,11 @@ suite "chain/local_tree (lcaBlockIdAndHeight)":
       f5 = mkChildValidBlock(f4.header, idF4, slot = 40'u64)
       idF5 = blockId(f5.header)
 
-    check tree.addBlockToTree(f2)
-    check tree.addBlockToTree(f3)
-    check tree.addBlockToTree(f4)
-    check tree.addBlockToTree(f5)
-
     check:
+      tree.addBlockToTree(f2)
+      tree.addBlockToTree(f3)
+      tree.addBlockToTree(f4)
+      tree.addBlockToTree(f5)
       tree.hasBlock(idF2)
       tree.hasBlock(idF3)
       tree.hasBlock(idF4)

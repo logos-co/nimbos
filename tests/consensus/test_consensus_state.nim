@@ -9,7 +9,6 @@
 {.used.}
 
 import
-  unittest2,
   ../testutil,
   ../logos_chain/sync/helpers,
   ../../logos_chain/core/types,

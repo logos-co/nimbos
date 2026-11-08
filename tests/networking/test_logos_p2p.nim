@@ -10,7 +10,6 @@
 
 import
   std/[options, os, sequtils, strutils],
-  chronos,
   chronos/unittest2/asynctests,
   libp2p/[switch, multiaddress, peerid, peerstore],
   libp2p/protocols/connectivity/autonatv2/[types, client],
@@ -118,15 +117,16 @@ suite "P2P stack — bootstrap and discovery":
   test "Bootstrap multiaddr: loadBootstrapNodes accepts /dns4/.../udp/.../quic-v1/p2p/...":
     ## Full DNS dial integration depends on the resolver; ip4 bootstrap covers
     ## the dial path. This validates Logos Chain bootstrap string parsing for DNS.
+    const dnsPort = Port(5011)
     let
       peerId = getRandomPeerId()
-      dnsPort = Port(5011)
       dnsBootstrap =
         "/dns4/localhost/udp/" & $dnsPort & "/quic-v1/p2p/" & $peerId
       netCfg = NetworkConfig(bootstrapNodes: @[dnsBootstrap])
       nodes = loadBootstrapNodes(netCfg)
-    check nodes.len == 1
-    check nodes[0][0] == peerId
+    check:
+      nodes.len == 1
+      nodes[0][0] == peerId
 
   asyncTest "After bootstrap: libp2p QUIC session stays up (decentralized DHT deferred)":
     ## Peer pool admission still depends on Eth2-style protocol handshakes; we

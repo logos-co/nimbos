@@ -39,13 +39,15 @@ suite "sync/types (GetTip RequestMessage / response wire)":
     check m.get.kind == rmGetTip
 
   test "Fixture GetTipResponse Tip wire matches hex and roundtrips":
-    let tip = exampleGetTipTipFixture()
-    check tip.tip[0] == 0xAB'u8 and tip.tip[^1] == 0xAB'u8
-    check tip.slot == SlotNumber(12_345'u64) and tip.height == 999'u64
-    let wOpt = exampleSerializedGetTipResponseTipWire()
-    let wire = wOpt.get
-    check byteutils.toHex(wire) ==
-      "00000000abababababababababababababababababababababababababababababababab3930000000000000e703000000000000"
+    let
+      tip = exampleGetTipTipFixture()
+      wOpt = exampleSerializedGetTipResponseTipWire()
+      wire = wOpt.get
+    check:
+      tip.tip[0] == 0xAB'u8 and tip.tip[^1] == 0xAB'u8
+      tip.slot == SlotNumber(12_345'u64) and tip.height == 999'u64
+      byteutils.toHex(wire) ==
+        "00000000abababababababababababababababababababababababababababababababab3930000000000000e703000000000000"
     let d = try:
       Opt.some(decode(wire, GetTipResponse, cryptarchiaSyncBincodeConfig))
     except BincodeError as exc:
@@ -53,8 +55,9 @@ suite "sync/types (GetTip RequestMessage / response wire)":
     check d.isSome and d.get.kind == gtrTip and d.get.tipData == tip
 
   test "Fixture GetTipResponse Failure wire matches hex and roundtrips":
-    let wOpt = exampleSerializedGetTipResponseFailureWire("example: tip unavailable")
-    let wire = wOpt.get
+    let
+      wOpt = exampleSerializedGetTipResponseFailureWire("example: tip unavailable")
+      wire = wOpt.get
     check byteutils.toHex(wire) ==
       "0100000018000000000000006578616d706c653a2074697020756e617661696c61626c65"
     let d = try:

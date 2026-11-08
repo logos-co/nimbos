@@ -13,7 +13,7 @@ import
   libp2p/switch,
   ../../../logos_chain/networking/network,
   ../../../logos_chain/core/types,
-  ../../../logos_chain/chain/[chain, local_tree],
+  ../../../logos_chain/chain/local_tree,
   ../../../logos_chain/sync/[types, ibd_client, ibd_server, syncer],
   ./helpers,
   ../../testutil
@@ -22,9 +22,10 @@ template peerProvider(peers: varargs[PeerId]): PeerProvider =
   (proc(): seq[PeerId] = @peers)
 
 proc runLbp2pIbdSyncTest(extraBlocks: int) {.async.} =
-  let genesis = createGenesisBlock(testValidGenesisTx())
-  var chainBootstrap = initTestChain(genesis)
-  let tipId = extendChainAfterGenesis(chainBootstrap.consensus.localTree, genesis, extraBlocks)
+  let
+    genesis = createGenesisBlock(testValidGenesisTx())
+    chainBootstrap = initTestChain(genesis)
+    tipId = extendChainAfterGenesis(chainBootstrap.consensus.localTree, genesis, extraBlocks)
   chainBootstrap.consensus.tryUpdateTip(tipId)
   check chainBootstrap.consensus.canonicalTip.tip == tipId
 
@@ -79,8 +80,9 @@ suite "sync/initial_block_download (download blocks)":
           Block(header: genesis.header, signature: genesis.signature,
                 uncleHeaders: UncleHeaders(uncles), txs: BlockTxs(@[])),
           cryptarchiaSyncBincodeConfig))
-    check decodeBlocksFromDownloadResponses(@[response(@[uncle, uncle, uncle, uncle])]).get.len == 1
-    check decodeBlocksFromDownloadResponses(@[response(@[uncle, uncle, uncle, uncle, uncle])]).isNone
+    check:
+      decodeBlocksFromDownloadResponses(@[response(@[uncle, uncle, uncle, uncle])]).get.len == 1
+      decodeBlocksFromDownloadResponses(@[response(@[uncle, uncle, uncle, uncle, uncle])]).isNone
 
   test "cappedDownloadPathBlockIds returns target block when path is one hop":
     let
@@ -158,7 +160,7 @@ suite "sync/initial_block_download (download blocks)":
     withSyncPair(serverChain, clientChain):
       let
         req = DownloadBlocksRequest(
-          targetBlock: b1id, knownBlocks: buildKnownBlocks(clientSyncer.processor.consensus))
+          targetBlock: b1id, knownBlocks: buildKnownBlocks(clientSyncer.processor.consensus, []))
         blks = (await sendDownloadBlocksRequest(
           clientSyncer, server.peerInfo.peerId, req)).get()
         expectedBlks = decodeBlocksFromDownloadResponses(

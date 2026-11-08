@@ -319,11 +319,12 @@ proc initializeNetworking*(node: LBNode) {.async: (raises: [CancelledError]).} =
 
   await node.network.start()
   if node.syncer != nil:
-    let onIbdComplete: OnIbdComplete = proc() =
-      node.subscribeBlockTopic()
-      node.lifecycle.onSyncComplete()
-    let onIbdFailure: OnIbdFailure = proc(reason: string) =
-      ProcessState.scheduleStop(cstring(reason))
+    let
+      onIbdComplete: OnIbdComplete = proc() =
+        node.subscribeBlockTopic()
+        node.lifecycle.onSyncComplete()
+      onIbdFailure: OnIbdFailure = proc(reason: string) =
+        ProcessState.scheduleStop(cstring(reason))
 
     if node.network.bootstrapPeerIds.len > 0:
       debug "Waiting for bootstrap peer readiness before starting syncer",
