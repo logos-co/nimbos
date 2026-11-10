@@ -85,6 +85,7 @@ cryptarchia:
     epoch_period_nonce_buffer: 1
     epoch_period_nonce_stabilization: 1
   security_param: 1
+  uncle_reference_window_in_block: 12
   slot_activation_coeff:
     numerator: 1
     denominator: 20
@@ -161,6 +162,7 @@ cryptarchia:
     epoch_period_nonce_buffer: 1
     epoch_period_nonce_stabilization: 1
   security_param: 1
+  uncle_reference_window_in_block: 12
   slot_activation_coeff:
     numerator: 1
     denominator: 20
@@ -306,6 +308,14 @@ suite "deployment-settings":
       r.isErr
       "missing top-level section: blend" in r.error
 
+  test "parseDeploymentSettings: missing cryptarchia.uncle_reference_window_in_block":
+    let r = parseDeploymentSettings(
+      minimalValidYaml.replace("  uncle_reference_window_in_block: 12\n", ""))
+    check:
+      r.isErr
+      "missing or invalid path: cryptarchia.uncle_reference_window_in_block" in
+        r.error
+
   test "parseDeploymentSettings: network not a mapping":
     check fileExists(wrongTypesFixturePath)
     let
@@ -389,6 +399,7 @@ suite "deployment-settings":
       ds.blend.common.protocolName == "/stub/blend"
       ds.time.slotDuration == 1.seconds
       ds.cryptarchia.securityParam == 1
+      ds.cryptarchia.uncleReferenceWindowInBlock == 12'u32
       ds.cryptarchia.genesisState.validGenesisTx.tx.ops.len == 2
 
   test "validateDeploymentSettings: empty blend.common.protocol_name":

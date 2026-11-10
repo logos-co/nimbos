@@ -415,9 +415,7 @@ suite "chain/proposal":
     check admittedBlk.validTxs[0].hash == tx.hash
     check cast[pointer](admittedBlk.validTxs[0].hashed) == cast[pointer](tx.hashed)
 
-    let polRes = validatePolAndStatelessTransactions(admittedBlk, ledger, m)
-    check polRes.isOk
-    let (validBlk, _) = polRes.get()
+    let validBlk = validateStatelessTransactions(admittedBlk, m).expect("stateless txs")
     check validBlk.header == proposal.header
     check validBlk.signature == proposal.signature
     check validBlk.txs.len == 1

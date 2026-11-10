@@ -27,22 +27,29 @@ proc initTestChain*(
     genesis: ValidBlock,
     securityParam: uint64 = DefaultSecurityParam,
     genesisTime: uint64 = uint64(max(getTime().toUnix() - 500, 0'i64)),
+    verifier: LeaderProofVerifier = mockVerifyLeaderProof,
+    uncleWindowSlots: uint64 = testLedgerConfig.uncleWindowSlots,
 ): Chain =
   ## Chain over the genesis block's ledger state (epochs seeded under
   ## `testLedgerConfig`).
-  let gid = blockId(genesis.header)
-  let state =
-    if gid == blockId(testGenesisBlock().header):
-      testGenesisLedgerState()
-    else:
-      let validTx = mkValidGenesisTx(genesis.txs[0].hashed)
-      LedgerState.fromGenesis(
-          validTx, default(FieldElement), testSdpRegistry(),
-          testLedgerConfig).valueOr:
-        raiseAssert "initTestChain: genesis state: " & $error
+  # Only the uncle window varies. The genesis state does not depend on it,
+  # so the cached genesis state stays valid.
+  var config = testLedgerConfig
+  config.uncleWindowSlots = uncleWindowSlots
+  let
+    gid = blockId(genesis.header)
+    state =
+      if gid == blockId(testGenesisBlock().header):
+        testGenesisLedgerState()
+      else:
+        let validTx = mkValidGenesisTx(genesis.txs[0].hashed)
+        LedgerState.fromGenesis(
+            validTx, default(FieldElement), testSdpRegistry(),
+            config).valueOr:
+          raiseAssert "initTestChain: genesis state: " & $error
   Chain.init(
     genesis,
-    Ledger[BlockId].init(gid, state, testLedgerConfig, mockVerifyLeaderProof),
+    Ledger[BlockId].init(gid, state, config, verifier),
     SlotConfig(genesisTime: genesisTime, slotDurationSeconds: 1),
     securityParam = securityParam)
 

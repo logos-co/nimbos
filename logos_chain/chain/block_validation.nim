@@ -14,6 +14,7 @@
 {.push raises: [], gcsafe.}
 
 import
+  std/sequtils,
   bincode,
   libp2p/crypto/ed25519/ed25519,
   ../ledger/ledger,
@@ -50,7 +51,7 @@ type
   ValidBlock* = ref object
     ## In-memory block structure holding verified header and transaction pointers.
     ## A block that has successfully passed all structural, admission,
-    ## and stateless transaction verifications via ``validatePolAndStatelessTransactions``,
+    ## and stateless transaction verifications via ``validateStatelessTransactions``,
     ## or is constructed via ``createGenesisBlock``.
     header: Header
     signature: Ed25519Signature
@@ -75,6 +76,7 @@ type
 
 template header*(b: AdmittedBlock): Header = b.header
 template signature*(b: AdmittedBlock): Ed25519Signature = b.signature
+template uncleHeaders*(b: AdmittedBlock): UncleHeaders = b.uncleHeaders
 
 template header*(blk: ValidBlock): Header = blk.header
 template signature*(blk: ValidBlock): Ed25519Signature = blk.signature
@@ -112,9 +114,9 @@ func validateHeader[T: AnyHashedSignedMantleTx](
   if header.slot > 0 and header.parentBlock.isZero:
     return false
 
-  # Only the commitment to the carried uncle list is checked here; the uncle
-  # validity rules (Cryptarchia "Block Header Validation") are not
-  # implemented yet.
+  # Only the commitment to the carried uncle list is checked here. The uncle
+  # validity rules (Cryptarchia "Block Header Validation" step 10) live in
+  # `uncle_validation.nim` and run against the parent chain.
   # Body root computed directly from precomputed tx hashes in txs
   # TODO: remove this body-root check once a way to enforce at compile-time that
   # a caller checked bodyMatchesHeader is established without heavy wrapper types.
@@ -195,14 +197,47 @@ func admitProposal*(
     validTxs: validTxs,
   ))
 
-proc validateStatelessTransactions(
-    txs: openArray[HashedSignedMantleTx],
+proc validatePol*(
+    blk: AdmittedBlock,
+    ledger: Ledger[BlockId],
+): Result[LedgerState, BlockValidationError] =
+  ## Tier 3a: verifies the PoL of `blk` against its parent state and returns
+  ## the state after the header.
+  let parentState = ledger.state(blk.header.parentBlock).valueOr:
+    return err(BlockValidationError(
+      kind: BlockValidationErrorKind.HeaderRejected,
+      ledgerError: LedgerError.ParentNotFound,
+    ))
+
+  var afterHeader = parentState.tryApplyHeader(
+    blk.header.slot,
+    blk.header.proofOfLeadership,
+    blk.uncleHeaders.asSeq.mapIt(it.header.slot),
+    ledger.config,
+    ledger.leaderProofVerifier,
+  ).valueOr:
+    return err(BlockValidationError(
+      kind: BlockValidationErrorKind.HeaderRejected,
+      ledgerError: error,
+    ))
+  ok(move(afterHeader))
+
+proc validateStatelessTransactions*(
+    blk: AdmittedBlock,
     mempool: Mempool,
-): Result[seq[ValidSignedMantleTx], BlockValidationError] =
-  ## Validates mantle transactions statelessly using a 2-pass light-first scan:
-  ## Pass 1: Light (non-ZK) transactions (~130 ns per tx)
-  ## Pass 2: Heavy ZK transactions (LeaderClaim Groth16 proofs, ~1.13 ms per tx)
-  ## Bypasses validation for transactions already verified in the mempool to avoid redundant crypto checks.
+): Result[ValidBlock, BlockValidationError] =
+  ## Tier 3b: stateless checks of the transactions of `blk`, light before heavy
+  ## ZK. A proposal-admitted block gives up `blk.validTxs`, so validate it once.
+  # Light (non-ZK) txs cost ~130 ns, heavy ZK txs (LeaderClaim Groth16 proofs)
+  # ~1.13 ms. Txs already verified in the mempool skip the crypto checks.
+  template validBlock(validTxs: untyped): untyped =
+    ValidBlock(
+      header: blk.header,
+      signature: blk.signature,
+      uncleHeaders: blk.uncleHeaders,
+      txs: validTxs,
+    )
+
   template validateTx(htx: HashedSignedMantleTx): untyped =
     validateMantleTxStateless(htx).valueOr:
       return err(BlockValidationError(
@@ -210,6 +245,10 @@ proc validateStatelessTransactions(
         statelessError: error,
       ))
 
+  if blk.txsVerified:
+    return ok(validBlock(move(blk.validTxs)))
+
+  template txs: untyped = blk.txs.asSeq
   var
     heavyIndices: seq[int]
     res = newSeq[ValidSignedMantleTx](txs.len)
@@ -230,49 +269,7 @@ proc validateStatelessTransactions(
   for i in heavyIndices:
     res[i] = validateTx(txs[i])
 
-  ok(move(res))
-
-proc validatePolAndStatelessTransactions*(
-    blk: AdmittedBlock,
-    ledger: Ledger[BlockId],
-    mempool: Mempool,
-): Result[tuple[validBlk: ValidBlock, headerState: LedgerState], BlockValidationError] =
-  ## Tier 3a: Verify PoL against parent state before touching any transactions.
-  ## Note: For proposal-admitted blocks (``blk.txsVerified == true``), this proc consumes
-  ## ``blk.validTxs`` via ``move`` to assemble the resulting ``ValidBlock`` without copies.
-  ## Such blocks must not be validated more than once.
-  let parentState = ledger.state(blk.header.parentBlock).valueOr:
-    return err(BlockValidationError(
-      kind: BlockValidationErrorKind.HeaderRejected,
-      ledgerError: LedgerError.ParentNotFound,
-    ))
-
-  var afterHeader = parentState.tryApplyHeader(
-    blk.header.slot,
-    blk.header.proofOfLeadership,
-    ledger.config,
-    ledger.leaderProofVerifier,
-  ).valueOr:
-    return err(BlockValidationError(
-      kind: BlockValidationErrorKind.HeaderRejected,
-      ledgerError: error,
-    ))
-
-  var validTxs =
-    if blk.txsVerified:
-      move(blk.validTxs)
-    else:
-      ?validateStatelessTransactions(blk.txs.asSeq, mempool)
-
-  ok((
-    validBlk: ValidBlock(
-      header: blk.header,
-      signature: blk.signature,
-      uncleHeaders: blk.uncleHeaders,
-      txs: move(validTxs),
-    ),
-    headerState: move(afterHeader),
-  ))
+  ok(validBlock(move(res)))
 
 proc prepareBlockUpdate*(
     blk: ValidBlock,
