@@ -17,6 +17,7 @@ import
   ../../logos_chain/core/types,
   ../../logos_chain/chain/chain
 from ../../logos_chain/core/mantle/primitives import SlotNumber
+from ../ledger/test_helpers import testLedgerConfig
 
 type Scene = object
   # Applied chain over genesis. One block for each slot.
@@ -45,6 +46,7 @@ proc scene(
     slots: openArray[SlotNumber] = [1'u64, 2, 3],
     securityParam: uint64 = 10,
     verifier: LeaderProofVerifier = mockVerifyLeaderProof,
+    uncleWindowSlots: uint64 = testLedgerConfig.uncleWindowSlots,
 ): Scene =
   # One applied block for each entry of `slots`, in order over genesis.
   # `securityParam = 10` keeps the parent states of the uncles. The default
@@ -54,7 +56,9 @@ proc scene(
     genesis = createGenesisBlock(validGenesisTx)
   var
     s = Scene(
-      chain: initTestChain(genesis, securityParam = securityParam, verifier = verifier),
+      chain: initTestChain(
+        genesis, securityParam = securityParam, verifier = verifier,
+        uncleWindowSlots = uncleWindowSlots),
       genesis: genesis,
       blocks: newSeqOfCap[Block](slots.len))
     parent = initGenesisBlock(validGenesisTx)
@@ -68,7 +72,7 @@ proc scene(
 proc verdict(s: Scene, blk: Block): Result[void, UncleError] =
   validateUncles(createAdmittedBlockForTest(blk), s.chain.localTree, s.chain.ledger)
 
-proc committedState(s: Scene, blk: Block): LedgerState =
+func committedState(s: Scene, blk: Block): LedgerState =
   s.chain.ledger.state(blockId(blk.header)).expect("state of an applied block")
 
 suite "chain/uncle_validation":
@@ -115,6 +119,15 @@ suite "chain/uncle_validation":
       u = forkBlock(s.blocks[0].header, 2)
       a = carrier(s.blocks[2], 21, [signedHeader(u)])
     check s.verdict(a).isOk
+
+  test "a zero window rejects an uncle whose parent is the block's parent":
+    # The window starts at the block slot, so no parent of an uncle is in it.
+    # Fails if a zero window means no bound.
+    let
+      s = scene(uncleWindowSlots = 0)
+      u = forkBlock(s.blocks[2].header, 4)
+      a = carrier(s.blocks[2], 5, [signedHeader(u)])
+    check s.verdict(a).error == UncleError.ParentNotOnChain
 
   test "accepts an uncle whose parent is genesis":
     # Fails if the walk stops at the zero parent before it matches genesis.
@@ -248,13 +261,13 @@ suite "chain/uncle_validation":
       b2 = s.blocks[1]
       b3 = carrier(b2, 3, [])
       a = carrier(b3, 4, [signedHeader(b2)])
-    check:
-      s.chain.tryApplyBlock(a).error.kind == BlockApplyErrorKind.OrphanBuffered
-      s.chain.tryApplyBlock(b3).isOk
-    let
+      orphanRes = s.chain.tryApplyBlock(a)
+      parentRes = s.chain.tryApplyBlock(b3)
       children = s.chain.orphanPool.takeChildren(blockId(b3.header))
       res = s.chain.tryApplyAdmittedBlock(children[0])
     check:
+      orphanRes.error.kind == BlockApplyErrorKind.OrphanBuffered
+      parentRes.isOk
       res.error.kind == BlockApplyErrorKind.UncleRejected
       res.error.uncleError == UncleError.OnChain
       not s.chain.localTree.hasBlock(blockId(a.header))
