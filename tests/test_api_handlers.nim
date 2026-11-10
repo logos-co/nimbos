@@ -22,7 +22,7 @@ suite "Logos REST node API stub endpoints":
     address: TransportAddress
 
   block:
-    let serverAddress = initTAddress("127.0.0.1:0")
+    const serverAddress = initTAddress("127.0.0.1:0")
     var router = RestRouter.init(validateBeaconApiQueries)
     router.installNodeApiHandlers(nil) # LBNode is nil for stubs
 
