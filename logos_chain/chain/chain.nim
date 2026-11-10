@@ -267,19 +267,21 @@ proc applyAdmittedBlock(
     id: BlockId,
     curSlot: SlotNumber,
 ): Result[void, BlockApplyError] =
-  # Tier 3: PoL against parent state and stateless transaction validation (mempool fast path)
-  let
-    (validBlk, headerState) = validatePolAndStatelessTransactions(
-      admittedBlk, chain.ledger, chain.mempool
-    ).valueOr:
-      chain.orphanPool.pruneDescendants(id)
-      return err(toBlockApplyError(error))
-  # Step 10 runs after the PoL of the block. The order does not change the
-  # verdict. A sender without stake fails the PoL at one proof check, before
-  # the node pays up to `MaxUncles` signature and proof checks for its uncles.
+  # PoL, then uncles, then transactions, as in steps 2, 3 and 6 of Block
+  # Proposal Validation. A synced block has no order rule, so it uses the same
+  # order. The order does not change whether the block is accepted. A sender
+  # without stake fails at one proof check, before the up to `MaxUncles` uncle
+  # signature and proof checks. A bad uncle fails before the transaction
+  # checks, whose cost grows with the block.
+  let headerState = validatePol(admittedBlk, chain.ledger).valueOr:
+    chain.orphanPool.pruneDescendants(id)
+    return err(toBlockApplyError(error))
   validateUncles(admittedBlk, chain.localTree, chain.ledger).isOkOr:
     chain.orphanPool.pruneDescendants(id)
     return err(BlockApplyError(kind: UncleRejected, uncleError: error))
+  let validBlk = validateStatelessTransactions(admittedBlk, chain.mempool).valueOr:
+    chain.orphanPool.pruneDescendants(id)
+    return err(toBlockApplyError(error))
   chain.applyValidBlock(validBlk, headerState, id, curSlot)
 
 type

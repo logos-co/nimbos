@@ -17,6 +17,7 @@ import
   ../../logos_chain/core/types,
   ../../logos_chain/chain/chain
 from ../../logos_chain/core/mantle/primitives import SlotNumber
+from ../core/mantle/test_helpers import mkNote, mkTransferTx, mkUtxo
 from ../ledger/test_helpers import testLedgerConfig
 
 type Scene = object
@@ -244,6 +245,22 @@ suite "chain/uncle_validation":
       s.chain.localTree.hasBlock(blockId(b1.header))
       s.chain.ledger.state(blockId(b1.header)).isNone
       s.verdict(a).error == UncleError.ParentNotOnChain
+
+  test "rejects a bad uncle before the block transactions are checked":
+    # Fails with StatelessTxRejected if the transactions are checked first.
+    # The uncle is at the slot of the block, so it is not older than the block.
+    var s = scene()
+    let
+      note = mkUtxo(value = 100, pkSeed = 1)
+      badTx = mkTransferTx(@[note.id, note.id], @[mkNote(100, pkSeed = 2)])
+      parent = s.blocks[2]
+      u = forkBlock(s.blocks[0].header, 4)
+      a = childBlock(
+        parent.header, blockId(parent.header), 4, [badTx], [signedHeader(u)])
+      res = s.chain.tryApplyBlock(a)
+    check:
+      res.error.kind == BlockApplyErrorKind.UncleRejected
+      res.error.uncleError == UncleError.NotStrictlyOlder
 
   test "rejects a list with one valid and one invalid entry":
     let s = scene()
