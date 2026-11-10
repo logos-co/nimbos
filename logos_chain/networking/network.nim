@@ -49,10 +49,10 @@ type
   GossipMsg = messages.Message
 
   ValidationSyncProc[T] =
-    proc(msg: T, src: Opt[PeerId]): ValidationResult {.gcsafe, raises: [].}
+    proc(msg: T, src: PeerId): ValidationResult {.gcsafe, raises: [].}
 
   ValidationAsyncProc[T] =
-    proc(msg: T, src: Opt[PeerId]): Future[ValidationResult] {.
+    proc(msg: T, src: PeerId): Future[ValidationResult] {.
       async: (raises: [CancelledError]).}
 
   SeenItem = object
@@ -1050,9 +1050,7 @@ proc createLBP2PNode*(
     mounted = MountedProtocols(kad: kad, identify: ident)
 
   func msgIdProvider(m: messages.Message): Result[seq[byte], ValidationResult] =
-    let data = m.data.valueOr:
-      return err(ValidationResult.Reject)
-    ok(gossipId(data, m.topic))
+    ok(gossipId(m.data, m.topic))
 
   let
     bootstrapPeers = loadBootstrapPeers(config)
@@ -1155,20 +1153,17 @@ func addValidator*[MsgType](
   proc execValidator(topic: string, message: GossipMsg):
       Future[ValidationResult] =
     inc logos_p2p_gossip_messages_received
-    let data = message.data.valueOr:
-      debug "Rejecting gossip without data", topic
-      return newValidationResultFuture(ValidationResult.Reject)
-    trace "Validating incoming gossip message", len = data.len, topic
+    trace "Validating incoming gossip message", len = message.data.len, topic
 
-    let res = if data.len > 0:
+    let res = if message.data.len > 0:
       try:
-        msgValidator(Bincode.decode(data, MsgType, GossipBincodeConfig), message.fromPeer) # doesn't raise!
+        msgValidator(Bincode.decode(message.data, MsgType, GossipBincodeConfig), message.fromPeer) # doesn't raise!
       except SerializationError as e:
         debug "Error decoding gossip",
-          topic, len = data.len, error = e.msg
+          topic, len = message.data.len, error = e.msg
         ValidationResult.Reject
     else:
-      debug "Error decoding gossip", topic, len = data.len
+      debug "Error decoding gossip", topic, len = message.data.len
       ValidationResult.Reject
 
     newValidationResultFuture(res)
@@ -1186,20 +1181,17 @@ proc addAsyncValidator*[MsgType](
       message: GossipMsg
   ): Future[ValidationResult] {.async: (raw: true).} =
     inc logos_p2p_gossip_messages_received
-    let data = message.data.valueOr:
-      debug "Rejecting gossip without data", topic
-      return newValidationResultFuture(ValidationResult.Reject)
-    trace "Validating incoming gossip message", len = data.len, topic
+    trace "Validating incoming gossip message", len = message.data.len, topic
 
-    if data.len > 0:
+    if message.data.len > 0:
       try:
-        msgValidator(Bincode.decode(data, MsgType, GossipBincodeConfig), message.fromPeer) # doesn't raise!
+        msgValidator(Bincode.decode(message.data, MsgType, GossipBincodeConfig), message.fromPeer) # doesn't raise!
       except SerializationError as e:
         debug "Error decoding gossip",
-          topic, len = data.len, error = e.msg
+          topic, len = message.data.len, error = e.msg
         newValidationResultFuture(ValidationResult.Reject)
     else:
-      debug "Error decoding gossip", topic, len = data.len
+      debug "Error decoding gossip", topic, len = message.data.len
       newValidationResultFuture(ValidationResult.Reject)
 
   node.validTopics.incl topic # Only allow subscription to validated topics
