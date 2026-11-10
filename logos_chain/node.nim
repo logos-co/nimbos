@@ -226,7 +226,7 @@ proc installMessageValidators(node: LBNode) =
   let blockTopic = node.deploymentSettings.cryptarchia.gossipsubProtocol
   if blockTopic.len > 0:
     node.network.addValidator(blockTopic) do (
-        proposal: Proposal, src: Opt[PeerId]
+        proposal: Proposal, src: PeerId
     ) -> ValidationResult:
       node.processor.processProposal(proposal, src)
   else:
@@ -235,7 +235,7 @@ proc installMessageValidators(node: LBNode) =
   let mempoolTopic = node.deploymentSettings.mempool.pubsubTopic
   if mempoolTopic.len > 0:
     node.network.addValidator(mempoolTopic) do (
-        htx: HashedSignedMantleTx, src: Opt[PeerId]
+        htx: HashedSignedMantleTx, src: PeerId
     ) -> ValidationResult:
       node.processor.processTx(htx, src)
     node.network.subscribe(mempoolTopic, TopicParams.init())

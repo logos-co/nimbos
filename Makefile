@@ -146,7 +146,7 @@ DEPS_CIRCUITS_INSTALL := circuits-install
 DEPS_RAPIDSNARK_INSTALL := rapidsnark-install
 endif
 
-deps: | deps-common nat-libs build/generate_makefile $(DEPS_CIRCUITS_INSTALL) $(DEPS_RAPIDSNARK_INSTALL)
+deps: | deps-common build/generate_makefile $(DEPS_CIRCUITS_INSTALL) $(DEPS_RAPIDSNARK_INSTALL)
 ifneq ($(USE_LIBBACKTRACE), 0)
 deps: | libbacktrace
 endif

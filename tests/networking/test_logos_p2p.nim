@@ -276,7 +276,7 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
         txItem.get.tx.ops.len == 1
 
       # Duplicate tx sent to processTx should return Ignore and not duplicate in mempool
-      let dupRes = listenerNode.processor.processTx(sampleTx.hashed, Opt.some(peers.dialer.switch.peerInfo.peerId))
+      let dupRes = listenerNode.processor.processTx(sampleTx.hashed, peers.dialer.switch.peerInfo.peerId)
       check:
         dupRes == ValidationResult.Ignore
         listenerNode.processor.mempool.len == 1
@@ -287,7 +287,7 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
       corruptSigTx.opProofs[0].ed25519SigProof.data[0] = 0xFF
       let corruptHtx = mkHashedSignedTx(corruptSigTx, validHtx.hash)
       check:
-        listenerNode.processor.processTx(corruptHtx, Opt.some(peers.dialer.switch.peerInfo.peerId)) == ValidationResult.Reject
+        listenerNode.processor.processTx(corruptHtx, peers.dialer.switch.peerInfo.peerId) == ValidationResult.Reject
         listenerNode.processor.mempool.len == 1
 
       # Large tx (> 64 KiB) verifies GossipBincodeConfig handles messages exceeding default 64 KiB bincode limit
