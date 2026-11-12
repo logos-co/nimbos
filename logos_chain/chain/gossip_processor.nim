@@ -43,9 +43,14 @@ proc processProposal*(
     trace "GossipSub ignored duplicate proposal", blockId = idHex, src
     return ValidationResult.Ignore
 
-  if bp.orphanPool.isRejected(id) or bp.orphanPool.isRejected(proposal.header.parentBlock):
+  if bp.orphanPool.isRejected(id):
+    debug "GossipSub rejected proposal: block was rejected",
+      blockId = idHex, src
+    return ValidationResult.Reject
+
+  if bp.orphanPool.isRejected(proposal.header.parentBlock):
     bp.orphanPool.reject(id)
-    debug "GossipSub rejected proposal: block or parent is rejected",
+    debug "GossipSub rejected proposal: parent was rejected",
       blockId = idHex, src
     return ValidationResult.Reject
 

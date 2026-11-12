@@ -657,7 +657,7 @@ suite "chain/orphan_resolution":
       chain.tryApplyBlock(p).error.kind == BlockApplyErrorKind.LedgerRejected
       polCalls == 1
       chain.orphanPool.len == 0
-      chain.tryApplyBlock(p).error.kind == BlockApplyErrorKind.InvalidAncestor
+      chain.tryApplyBlock(p).error.kind == BlockApplyErrorKind.AlreadyRejected
       polCalls == 1
       chain.tryApplyBlock(b2).error.kind == BlockApplyErrorKind.InvalidAncestor
       chain.orphanPool.len == 0
@@ -665,5 +665,32 @@ suite "chain/orphan_resolution":
       chain.tryApplyBlock(b3).error.kind == BlockApplyErrorKind.InvalidAncestor
       chain.orphanPool.len == 0
       polCalls == 1
+
+  test "block with tampered opProofs does not poison BlockId against genuine copy":
+    var (chain, genesis, gid) = setupChain()
+
+    let
+      goodTx = minimalHashedSignedTx()
+      badTx = mkHashedSignedTx(
+        SignedMantleTx(tx: goodTx.tx, opProofs: @[default(OpProof)]),
+        goodTx.hash,
+      )
+      bGood = childBlock(genesis.header, gid, SlotNumber(1), [goodTx])
+      bBad = Block(
+        header: bGood.header,
+        signature: bGood.signature,
+        uncleHeaders: bGood.uncleHeaders,
+        txs: BlockTxs(@[badTx]),
+      )
+      id = blockId(bGood.header)
+      bBadPayload = childBlock(genesis.header, gid, SlotNumber(2), [mkTransferTx([], [])])
+
+    check:
+      chain.tryApplyBlock(bBad).error.kind == BlockApplyErrorKind.StatelessTxRejected
+      not chain.orphanPool.isRejected(id)
+      chain.tryApplyBlock(bGood).isOk
+      chain.localTree.localTipId == id
+      chain.tryApplyBlock(bBadPayload).error.kind == BlockApplyErrorKind.StatelessTxRejected
+      chain.orphanPool.isRejected(blockId(bBadPayload.header))
 
 {.pop.}

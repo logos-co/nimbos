@@ -18,7 +18,7 @@ import
 
 const
   MaxOrphans* = 128
-  MaxRejected = 512
+  MaxRejected = 2048
 
 type
   OrphanPool* = ref object
@@ -58,18 +58,22 @@ proc reject*(pool: OrphanPool, rootId: BlockId, remember = true) =
       if childList[].len == 0:
         pool.byParentId.del(parentId)
 
-  var
-    queue = @[rootId]
-    idx = 0
+  var queue: seq[BlockId]
+  template markAndEnqueue(id: BlockId) =
+    if remember:
+      pool.rejected.put(id, true)
+    if id in pool.byParentId:
+      queue.add(id)
+
+  markAndEnqueue(rootId)
+  var idx = 0
   while idx < queue.len:
     let parent = queue[idx]
     inc idx
-    if remember:
-      pool.rejected.put(parent, true)
     pool.byParentId.withValue(parent, list):
       for cid in list[]:
         pool.byBlockId.del(cid)
-        queue.add(cid)
+        markAndEnqueue(cid)
       pool.byParentId.del(parent)
 
 proc takeChildren*(pool: OrphanPool, parentId: BlockId): seq[AdmittedBlock] =
@@ -85,7 +89,7 @@ proc takeChildren*(pool: OrphanPool, parentId: BlockId): seq[AdmittedBlock] =
     pool.byParentId.del(parentId)
   children
 
-func compactQueue*(pool: OrphanPool) =
+proc compactQueue*(pool: OrphanPool) =
   ## Rebuilds arrivalOrder deque to eliminate stale entries of removed orphans.
   ## Time: O(Q) where Q is deque length | Space: O(N) where N is pool size
   var newOrder = initDeque[BlockId](pool.byBlockId.len)

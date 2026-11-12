@@ -37,6 +37,7 @@ type
 
   BlockApplyErrorKind* {.pure.} = enum
     AlreadyApplied
+    AlreadyRejected
     InFlight
     FutureSlot
     InvalidStructure
@@ -76,8 +77,9 @@ func isRecoverable*(kind: BlockApplyErrorKind): bool =
       BlockApplyErrorKind.MissingReference:
     true
   of BlockApplyErrorKind.InvalidStructure, BlockApplyErrorKind.UnviableFork,
-      BlockApplyErrorKind.InvalidAncestor, BlockApplyErrorKind.LedgerRejected,
-      BlockApplyErrorKind.StatelessTxRejected, BlockApplyErrorKind.UncleRejected:
+      BlockApplyErrorKind.AlreadyRejected, BlockApplyErrorKind.InvalidAncestor,
+      BlockApplyErrorKind.LedgerRejected, BlockApplyErrorKind.StatelessTxRejected,
+      BlockApplyErrorKind.UncleRejected:
     false
 
 func ledgerConfig*(settings: DeploymentSettings): LedgerConfig =
@@ -231,7 +233,9 @@ proc checkViability(
   # The tree keeps applied blocks whose states were pruned below the LIB.
   if chain.localTree.hasBlock(id):
     return err(BlockApplyError(kind: AlreadyApplied))
-  if chain.orphanPool.isRejected(id) or chain.orphanPool.isRejected(hdr.parentBlock):
+  if chain.orphanPool.isRejected(id):
+    return err(BlockApplyError(kind: AlreadyRejected))
+  if chain.orphanPool.isRejected(hdr.parentBlock):
     chain.orphanPool.reject(id)
     return err(BlockApplyError(kind: InvalidAncestor))
   if chain.orphanPool.hasOrphan(id):
@@ -245,6 +249,19 @@ proc checkViability(
     return err(BlockApplyError(kind: FutureSlot))
   ok(id)
 
+func shouldRemember(err: LedgerError): bool =
+  ## `BlockId` commits to `tx.ops` via `bodyRoot`, not `tx.opProofs`.
+  ## A peer can tamper with `opProofs` on a valid block to trigger proof or
+  ## fee-overflow errors (`mandatory_fees` sizes `opProofs` before `tryApplyTx`
+  ## checks them), so don't blacklist `BlockId` on those. Every other error
+  ## comes from `tx.ops` or parent state, which `BlockId` does commit to.
+  err notin {
+    LedgerError.PermanentInvalidTxProof,
+    LedgerError.InvalidTxProof,
+    LedgerError.ThresholdUnmet,
+    LedgerError.GasOverflow,
+  }
+
 proc applyValidBlock(
     chain: var Chain,
     validBlk: ValidBlock,
@@ -254,7 +271,7 @@ proc applyValidBlock(
 ): Result[void, BlockApplyError] =
   let
     preparedState = prepareBlockUpdate(validBlk, chain.ledger, headerState).valueOr:
-      chain.orphanPool.reject(id)
+      chain.orphanPool.reject(id, shouldRemember(error.ledgerError))
       return err(BlockApplyError(kind: LedgerRejected, ledgerError: error.ledgerError))
     oldTip = chain.localTree.localTipId()
 
@@ -286,7 +303,7 @@ proc applyAdmittedBlock(
     chain.orphanPool.reject(id)
     return err(BlockApplyError(kind: UncleRejected, uncleError: error))
   let validBlk = validateStatelessTransactions(admittedBlk, chain.mempool).valueOr:
-    chain.orphanPool.reject(id)
+    chain.orphanPool.reject(id, remember = error.statelessError != StatelessLedgerError.InvalidProof)
     return err(toBlockApplyError(error))
   chain.applyValidBlock(validBlk, headerState, id, curSlot)
 
