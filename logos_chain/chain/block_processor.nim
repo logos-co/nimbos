@@ -51,6 +51,7 @@ type
     blockQueue: AsyncQueue[BlockEntry]
     inFlight: Table[InFlightKey, BlockEntry]
     loopFut: Future[void].Raising([CancelledError])
+    orphanEvent*: AsyncEvent
 
 template inFlightKey*(id: BlockId, sig: Ed25519Signature): InFlightKey =
   ## Fast 32-byte in-flight key folding BlockId with both 32-byte halves of the
@@ -69,10 +70,17 @@ template inFlightKey*(id: BlockId, sig: Ed25519Signature): InFlightKey =
   res
 
 func new*(T: type BlockProcessor, chain: sink Chain): T =
-  T(chain: chain, blockQueue: newAsyncQueue[BlockEntry]())
+  T(
+    chain: chain,
+    blockQueue: newAsyncQueue[BlockEntry](),
+    orphanEvent: newAsyncEvent(),
+  )
 
 func localTree*(bp: BlockProcessor): LocalTree =
   bp.chain.localTree
+
+func orphanPool*(bp: BlockProcessor): OrphanPool =
+  bp.chain.orphanPool
 
 func ledger*(bp: BlockProcessor): lent Ledger[BlockId] =
   bp.chain.ledger
@@ -220,8 +228,15 @@ proc processBlock(bp: BlockProcessor, entry: BlockEntry) =
       debug "Promoted orphan rejected",
         id = toHex(id), slot = header(entry.admittedBlk).slot,
         queueDur, applyDur, err = error.kind
-    if entry.resfut.isSome:
-      entry.resfut.get().complete(BlockApplyResult.err(error))
+    # Spec: [Cryptarchia Bootstrapping & Synchronization § Listening for New Blocks]
+    # https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/cryptarchia-v1-bootstr-sync.md#L173-L201
+    # Only blocks received while listening for new blocks (gossip) trigger orphan sync.
+    if error.kind == BlockApplyErrorKind.OrphanBuffered and
+        entry.kind == BlockEntryKind.GossipIncoming:
+      bp.orphanEvent.fire()
+    let fut = entry.resfut.valueOr:
+      return
+    fut.complete(BlockApplyResult.err(error))
     return
 
   for child in bp.chain.orphanPool.takeChildren(id):
@@ -240,8 +255,9 @@ proc processBlock(bp: BlockProcessor, entry: BlockEntry) =
     debug "Promoted orphan applied",
       id = toHex(id), slot = header(entry.admittedBlk).slot,
       queueDur, applyDur
-  if entry.resfut.isSome:
-    entry.resfut.get().complete(BlockApplyResult.ok())
+  let fut = entry.resfut.valueOr:
+    return
+  fut.complete(BlockApplyResult.ok())
 
 proc runQueueProcessingLoop(bp: BlockProcessor) {.async: (raises: [CancelledError]).} =
   while true:
@@ -258,7 +274,7 @@ proc start*(bp: BlockProcessor) =
   bp.loopFut = bp.runQueueProcessingLoop()
 
 proc stop*(bp: BlockProcessor) {.async: (raises: []).} =
-  ## Cancel the loop and cancel every result future still queued.
+  ## Cancel the loop and cancel queued futures.
   if bp.loopFut == nil:
     return
   await bp.loopFut.cancelAndWait()

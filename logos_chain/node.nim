@@ -134,7 +134,11 @@ proc init*(
   if processor.localTree != nil and
       deploymentSettings.network.chainSyncProtocolName.len > 0:
     nodeSyncer = Syncer.init(
-      network.switch, processor, deploymentSettings.network.chainSyncProtocolName)
+      network.switch,
+      processor,
+      deploymentSettings.network.chainSyncProtocolName,
+      peerProvider = proc(): seq[PeerId] = network.connectedPeerIds(),
+    )
 
   if nodeSyncer != nil:
     info "Syncer configured at node startup",
@@ -249,18 +253,16 @@ proc subscribeBlockTopic(node: LBNode) =
     node.network.subscribe(blockTopic, TopicParams.init())
     debug "Subscribed to block gossip topic", topic = blockTopic
 
-proc stop(node: LBNode) =
-  # The IBD task may be awaiting a queued result. Cancel it before the
-  # processor cancels that future, so the cancellation comes from its owner.
+proc stop(node: LBNode) {.async: (raises: []).} =
+  await node.processor.stop()
   if node.syncer != nil:
-    waitFor node.syncer.stop()
-  waitFor node.processor.stop()
+    await node.syncer.stop()
   try:
-    waitFor node.network.stop()
+    await node.network.stop()
   except CancelledError as exc:
     warn "Couldn't stop network", msg = exc.msg
 
-  waitFor node.metricsServer.stopMetricsServer()
+  await node.metricsServer.stopMetricsServer()
 
   # Drain in-flight tasks before the prover frees the buffers they read.
   node.taskpool.shutdown()
@@ -276,6 +278,7 @@ proc initializeNetworking*(node: LBNode) {.async: (raises: [CancelledError]).} =
   await node.network.start()
   if node.syncer != nil:
     let onIbdComplete: OnIbdComplete = proc() =
+      node.syncer.startOrphanSync()
       node.subscribeBlockTopic()
     let onIbdFailure: OnIbdFailure = proc(reason: string) =
       ProcessState.scheduleStop(cstring(reason))
@@ -292,7 +295,7 @@ proc initializeNetworking*(node: LBNode) {.async: (raises: [CancelledError]).} =
       node.syncer.start(
         onIbdComplete,
         onIbdFailure,
-        Opt.some(proc(): seq[PeerId] = node.network.connectedBootstrapPeerIds()),
+        proc(): seq[PeerId] = node.network.connectedBootstrapPeerIds(),
       )
     else:
       node.syncer.start(onIbdComplete, onIbdFailure)
@@ -308,7 +311,7 @@ proc run*(node: LBNode, stopper: StopFuture) {.raises: [CatchableError].} =
 
   ProcessState.notifyRunning()
   if ProcessState.stopIt(notice("Shutting down during startup", reason = it)):
-    node.stop()
+    waitFor node.stop()
     return
 
   asyncSpawn runSlotLoop(node)
@@ -324,6 +327,6 @@ proc run*(node: LBNode, stopper: StopFuture) {.raises: [CatchableError].} =
     chronos.poll()
 
   # time to say goodbye
-  node.stop()
+  waitFor node.stop()
 
 {.pop.}

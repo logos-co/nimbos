@@ -302,4 +302,26 @@ suite "chain/orphan_pool":
     check not pool.hasOrphan(b1Id)
     check pool.hasOrphan(b2Id)
 
+  test "missingParentIds yields only unbuffered root ancestors":
+    let
+      pool = OrphanPool()
+      root = exampleBlockId(1)
+      b1 = mkAdmittedBlock(2, root)
+      b1Id = blockId(b1.header)
+      b2 = mkAdmittedBlock(3, b1Id)
+
+    check:
+      # Out-of-order arrival: grandchild arrives first
+      pool.addOrphan(b2)
+      pool.isMissingParent(b1Id)
+      # Intermediate arrives: root becomes missing, b1Id is no longer missing
+      pool.addOrphan(b1)
+      pool.isMissingParent(root)
+      not pool.isMissingParent(b1Id)
+
+    var missing: seq[BlockId]
+    for id in pool.missingParentIds:
+      missing.add(id)
+    check missing == @[root]
+
 {.pop.}

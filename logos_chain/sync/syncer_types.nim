@@ -8,8 +8,9 @@
 {.push raises: [], gcsafe.}
 
 import
+  std/tables,
   chronos,
-  libp2p/switch,
+  libp2p/[switch, peerid],
   ../chain/block_processor
 
 type
@@ -17,12 +18,25 @@ type
   OnIbdComplete* = proc() {.gcsafe, raises: [].}
   OnIbdFailure* = proc(reason: string) {.gcsafe, raises: [].}
 
+  OrphanFetch* = object
+    attempts*: int
+    lastAttempt*: Moment
+
+  OrphanSync = object
+    active*: Table[BlockId, Future[void]]
+    retries*: Table[BlockId, OrphanFetch]
+    triedPeers*: Table[BlockId, seq[PeerId]]
+
   Syncer* = ref object
     sw*: Switch
     processor*: BlockProcessor
     chainSyncProtocol*: string
     ibdFut*: Future[void].Raising([CancelledError])
+    orphanLoopFut*: Future[void].Raising([CancelledError])
+    peerProvider*: PeerProvider
+    orphans*: OrphanSync
 
 template localTree*(syncer: Syncer): LocalTree = syncer.processor.localTree
+template orphanPool*(syncer: Syncer): OrphanPool = syncer.processor.orphanPool
 
 {.pop.}
