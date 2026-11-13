@@ -10,7 +10,6 @@
 
 import
   unittest2,
-  libp2p/crypto/ed25519/ed25519,
   stew/byteutils,
   ../../../logos_chain/core/crypto/types
 

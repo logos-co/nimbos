@@ -16,7 +16,6 @@ import
   stew/[assign2, bitops2],
   bincode,
   bincode/types as bincodeTypes,
-  libp2p/crypto/ed25519/ed25519,
   ./crypto/hashing,
   ./mantle/[tx_types, tx_hashing, tx_validation]
 
