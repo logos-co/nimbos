@@ -122,7 +122,8 @@ suite "sync/orphan_sync (end-to-end orphan resolution via DBR)":
       # Deliver orphan B2 to client processor (as if received over GossipSub)
       let
         p2 = Proposal(header: b2.header, references: default(References), signature: b2.signature)
-        res = await clientSyncer.processor.addProposal(p2, b2id)
+        admittedBlk = admitProposal(p2, clientSyncer.processor.mempool).expect("proposal admits")
+        res = await clientSyncer.processor.addProposal(admittedBlk, b2id)
       check:
         res.error.kind == BlockApplyErrorKind.OrphanBuffered
         # Client orphanSync automatically sends DBR for B1, applies B1, and promotes B2

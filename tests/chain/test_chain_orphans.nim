@@ -538,7 +538,9 @@ suite "chain/orphan_resolution":
       proposal = childProposal(b1.header, id1, SlotNumber(2), [vtx])
       id2 = blockId(proposal.header)
 
-    let applyPropRes = chain.tryApplyProposal(proposal)
+    let
+      admittedBlk = admitProposal(proposal, chain.mempool).expect("proposal admits")
+      applyPropRes = chain.tryApplyProposal(admittedBlk)
     check applyPropRes.isErr
     check applyPropRes.error.kind == BlockApplyErrorKind.OrphanBuffered
     check chain.orphanPool.hasOrphan(id2)

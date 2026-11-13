@@ -33,7 +33,6 @@ func maxMempoolCapacity*(securityParam: uint64): uint64 {.inline.} =
 type
   MempoolError* {.pure.} = enum
     TxNotFound
-    CollidingReference ## more than one transaction carries the prefix
 
   MempoolItem = ref object
     tx*: ValidSignedMantleTx
@@ -146,15 +145,15 @@ func get*(m: Mempool, hash: Hash32): Result[ValidSignedMantleTx, MempoolError] =
     return err(MempoolError.TxNotFound)
   ok(item.tx)
 
-func resolve*(m: Mempool, reference: TxReference): Result[Hash32, MempoolError] =
-  ## Full hash of the one local transaction whose hash starts with `reference`.
+func resolve*(m: Mempool, reference: TxReference): Opt[ValidSignedMantleTx] =
+  ## The one local transaction whose hash starts with `reference`; none when
+  ## no transaction or more than one transaction matches.
   # The index covers the active set and the grace cache, so the unique-match
-  # rule holds over both sources.
+  # rule holds over both sources, and `get` finds every indexed hash.
   m.byPrefix.withValue(reference, hashes):
-    if hashes[].len > 1:
-      return err(MempoolError.CollidingReference)
-    return ok(hashes[][0])
-  err(MempoolError.TxNotFound)
+    if hashes[].len == 1:
+      return m.get(hashes[][0]).optValue
+  Opt.none(ValidSignedMantleTx)
 
 proc pruneExpiredTxs*(m: Mempool, currentSlot: SlotNumber) =
   while m.queue.len > 0:

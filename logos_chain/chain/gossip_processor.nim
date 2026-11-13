@@ -42,30 +42,23 @@ proc processProposal*(
     trace "GossipSub ignored duplicate proposal", blockId = idHex, src
     return ValidationResult.Ignore
 
-  # Header rules that need no mempool access run before any reference lookup.
-  if proposal.header.bedrockVersion != ExpectedBedrockVersion:
-    debug "GossipSub rejected proposal with unsupported bedrock version",
-      blockId = idHex, version = proposal.header.bedrockVersion, src
-    return ValidationResult.Reject
-  if not verify_signature(proposal.header, proposal.signature):
-    debug "GossipSub rejected proposal with invalid header signature",
-      blockId = idHex, src
-    return ValidationResult.Reject
-
-  # The body root is checked inside, so a tampered copy is never queued.
-  discard reconstructProposalTxs(proposal, bp.mempool).valueOr:
+  # Every check that needs no chain state runs here, so the verdict covers all
+  # of them and apply does not read the mempool again.
+  let admittedBlk = admitProposal(proposal, bp.mempool).valueOr:
     case error
-    of ProposalValidationError.BodyRootMismatch:
-      debug "GossipSub rejected proposal: references do not match body root",
-        blockId = idHex, src
-      return ValidationResult.Reject
-    of ProposalValidationError.MissingReference,
-        ProposalValidationError.CollidingReference:
+    of ProposalValidationError.UnresolvedReference:
       debug "GossipSub cannot accept proposal: unresolved reference",
-        blockId = idHex, error = $error, src
+        blockId = idHex, src
       return ValidationResult.Ignore
+    of ProposalValidationError.InvalidHeader,
+        ProposalValidationError.InvalidSignature,
+        ProposalValidationError.BodyRootMismatch,
+        ProposalValidationError.InvalidStructure:
+      debug "GossipSub rejected proposal",
+        blockId = idHex, error = $error, src
+      return ValidationResult.Reject
 
-  discard bp.addProposal(proposal, id)
+  discard bp.addProposal(admittedBlk, id)
 
   debug "GossipSub accepted proposal into block queue",
     blockId = idHex, slot = proposal.header.slot, src

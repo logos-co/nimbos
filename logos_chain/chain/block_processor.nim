@@ -41,9 +41,7 @@ type
     case kind: BlockEntryKind
     of BlockEntryKind.SyncIncoming:
       blk: Block
-    of BlockEntryKind.GossipIncoming:
-      proposal: Proposal
-    of BlockEntryKind.PromotedOrphan:
+    of BlockEntryKind.GossipIncoming, BlockEntryKind.PromotedOrphan:
       admittedBlk: AdmittedBlock
 
   BlockProcessor* = ref object
@@ -151,15 +149,15 @@ proc addBlock*(
 
 proc addProposal*(
     bp: BlockProcessor,
-    proposal: Proposal,
+    admittedBlk: AdmittedBlock,
     id: BlockId,
 ): BlockApplyFuture =
-  ## Queue `proposal` from gossip. The future completes with the apply result, or is cancelled
-  ## when the loop is not running. Cancelling it does not dequeue the proposal.
-  ## Caller must have passed `reconstructProposalTxs`, which checks the body root (gossip gate).
-  let sig = proposal.signature
+  ## Queue a proposal from gossip that `admitProposal` admitted. The future completes with the
+  ## apply result, or is cancelled when the loop is not running. Cancelling it does not dequeue
+  ## the proposal.
+  let sig = admittedBlk.signature
   bp.enqueueIncoming(
-    BlockEntry(kind: BlockEntryKind.GossipIncoming, proposal: proposal),
+    BlockEntry(kind: BlockEntryKind.GossipIncoming, admittedBlk: admittedBlk),
     id, sig,
   )
 
@@ -196,10 +194,7 @@ proc processBlock(bp: BlockProcessor, entry: BlockEntry) =
     of BlockEntryKind.SyncIncoming:
       let i = blockId(header(entry.blk))
       (i, inFlightKey(i, entry.blk.signature))
-    of BlockEntryKind.GossipIncoming:
-      let i = blockId(entry.proposal.header)
-      (i, inFlightKey(i, entry.proposal.signature))
-    of BlockEntryKind.PromotedOrphan:
+    of BlockEntryKind.GossipIncoming, BlockEntryKind.PromotedOrphan:
       let i = blockId(header(entry.admittedBlk))
       (i, inFlightKey(i, entry.admittedBlk.signature))
   defer:
@@ -209,7 +204,7 @@ proc processBlock(bp: BlockProcessor, entry: BlockEntry) =
     startTick = Moment.now()
     res = case entry.kind
       of BlockEntryKind.SyncIncoming: bp.chain.tryApplyBlock(entry.blk)
-      of BlockEntryKind.GossipIncoming: bp.chain.tryApplyProposal(entry.proposal)
+      of BlockEntryKind.GossipIncoming: bp.chain.tryApplyProposal(entry.admittedBlk)
       of BlockEntryKind.PromotedOrphan: bp.chain.tryApplyAdmittedBlock(entry.admittedBlk)
     applyDur = Moment.now() - startTick
     queueDur = startTick - entry.queueTick
@@ -222,7 +217,7 @@ proc processBlock(bp: BlockProcessor, entry: BlockEntry) =
         src = "Sync", queueDur, applyDur, err = error.kind
     of BlockEntryKind.GossipIncoming:
       debug "Proposal rejected",
-        id = toHex(id), slot = entry.proposal.header.slot,
+        id = toHex(id), slot = header(entry.admittedBlk).slot,
         src = "Gossip", queueDur, applyDur, err = error.kind
     of BlockEntryKind.PromotedOrphan:
       debug "Promoted orphan rejected",
@@ -249,7 +244,7 @@ proc processBlock(bp: BlockProcessor, entry: BlockEntry) =
       src = "Sync", queueDur, applyDur
   of BlockEntryKind.GossipIncoming:
     debug "Proposal applied",
-      id = toHex(id), slot = entry.proposal.header.slot,
+      id = toHex(id), slot = header(entry.admittedBlk).slot,
       src = "Gossip", queueDur, applyDur
   of BlockEntryKind.PromotedOrphan:
     debug "Promoted orphan applied",
