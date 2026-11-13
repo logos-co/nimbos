@@ -20,6 +20,9 @@ import
   ../../zk/poseidon2/hasher           # FieldElement (+ re-exported poseidon2 symbols)
 
 export hasher
+# Plain `verify` accepts a small-order key or `R`, so it is not exported.
+# Consensus code then gets only `verifyStrict`.
+export ed25519 except verify
 
 type
   Hash32* = array[32, byte]
