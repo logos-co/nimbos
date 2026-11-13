@@ -30,7 +30,6 @@ from ../core/types import
   MaxBlockSize, MaxUncles, asSeq, len, header, BlockId,
   Header, UncleHeaders, encode, MaxBlockTxs,
   createGenesisHeader, verify_signature
-from ../core/crypto/types import isSmallOrder
 from ../core/mantle/tx_hashing import
   HashedSignedMantleTx, byteLen, signedTx
 
@@ -101,14 +100,6 @@ func bodyMatchesHeader*(blk: Block): bool =
 
 func headerRulesHold(header: Header): bool =
   if header.bedrockVersion != ExpectedBedrockVersion:
-    return false
-
-  # Stands in for strict verification (Common Cryptographic Components 1.2.0,
-  # EdDSA: reject a small-order A), which `verify_signature` does not do yet.
-  # Anyone can sign under a small-order key. The all-zero key is also the
-  # leader key of the genesis proof, which the PoL verifier accepts at any
-  # slot. Delete this check when every signature uses strict verification.
-  if header.proofOfLeadership.leaderKey.isSmallOrder:
     return false
 
   # Stateless proxy of the "parent is in the block tree" rule.

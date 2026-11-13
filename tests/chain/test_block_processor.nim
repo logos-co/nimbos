@@ -14,8 +14,6 @@ import
   chronos/unittest2/asynctests,
   unittest2,
   results,
-  stew/byteutils,
-  libp2p/crypto/ed25519/ed25519,
   libp2p/protocols/pubsub/pubsub,
   ../testutil,
   ../logos_chain/sync/helpers,
@@ -360,18 +358,11 @@ suite "chain/block_processor":
       check bp.processProposal(p, getRandomPeerId()) == ValidationResult.Reject
 
   asyncTest "processProposal rejects a small-order leader key":
-    # Under the identity key, R = B and S = 1 verify for every message.
     withProcessor(chain):
       var p = childProposal(genesisBlk.header, gid, SlotNumber(1), [])
-      p.header.proofOfLeadership.leaderKey =
-        EdPublicKey(data: hexToByteArray[32](
-          "0100000000000000000000000000000000000000000000000000000000000000"))
-      p.signature = EdSignature(data: hexToByteArray[64](
-        "5866666666666666666666666666666666666666666666666666666666666666" &
-        "0100000000000000000000000000000000000000000000000000000000000000"))
-      check:
-        verify_signature(p.header, p.signature)
-        bp.processProposal(p, getRandomPeerId()) == ValidationResult.Reject
+      p.header.proofOfLeadership.leaderKey = SmallOrderForgery.key
+      p.signature = SmallOrderForgery.signature
+      check bp.processProposal(p, getRandomPeerId()) == ValidationResult.Reject
 
   asyncTest "stop ends the loop and cancels later addBlock calls":
     withProcessor(chain):

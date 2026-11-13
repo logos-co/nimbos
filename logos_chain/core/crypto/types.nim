@@ -8,7 +8,7 @@
 ## Common cryptographic wire types and little-endian / length-prefixed / fixed-size
 ## **byte** encoders and decoders shared across Bedrock (block ids, Ed25519
 ## wire, Groth16 bytes, Mantle wire, etc.).
-## Spec: [Common Cryptographic Components v1.0.2](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/common-cryptographic-components.md)
+## Spec: [Common Cryptographic Components v1.2.0](https://github.com/logos-co/logos-lips/blob/d788723992a805b395f377de6e6cf59859b47168/docs/blockchain/raw/common-cryptographic-components.md)
 ## Spec: [Bedrock v1.1 — Mantle Specification v1.17.0](https://github.com/logos-co/logos-lips/blob/949faa9563027de366514247a2a62b0de2f8c45f/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md)
 
 {.push raises: [], gcsafe.}
@@ -166,14 +166,28 @@ func encodeEd25519PublicKey*(value: Ed25519PublicKey): array[32, byte] =
   doAssert written == EdPublicKeySize, "failed to encode Ed25519 public key"
   buf
 
-func isSmallOrder*(key: Ed25519PublicKey): bool =
-  ## True if `key` encodes a point of order 1, 2, 4 or 8.
-  # Anyone can make a signature that verifies under such a key, and libp2p
-  # `verify` does not reject one. The sign bit is ignored, so each list entry
-  # also covers its negation.
-  var masked = key.data
+func isSmallOrder(encoding: openArray[byte]): bool =
+  ## Returns true if `encoding` is a point of order 1, 2, 4 or 8.
+  # The mask clears the sign bit, so each entry also covers its negation.
+  var masked: array[32, byte]
+  assign(masked, encoding)
   masked[31] = masked[31] and 0x7f'u8
   masked in SmallOrderEd25519Encodings
+
+func verifyStrict*(
+    signature: Ed25519Signature, message: openArray[byte], key: Ed25519PublicKey
+): bool =
+  ## Returns true if `signature` on `message` verifies strictly under `key`.
+  # Anyone can sign under a small-order key. libp2p `verify` does not check
+  # the order of `A` or `R`, so this check comes first.
+  # libp2p also rejects `S = 0`, which the spec allows. With `A` and `R` not
+  # small-order, `S = 0` needs a hash fixed point, so no real input differs.
+  # libp2p also compares the `R` bytes, so it rejects a non-canonical `R`
+  # (y >= p). The spec equation accepts it, but a signer needs the discrete
+  # log of that `R` to make one.
+  not key.data.isSmallOrder and
+    not signature.data.toOpenArray(0, 31).isSmallOrder and
+    signature.verify(message, key)
 
 func ed25519PkToFrPair*(pk: Ed25519PublicKey): (FieldElement, FieldElement) =
   ## Split a 32-byte Ed25519 public key into two 16-byte halves, each as a
