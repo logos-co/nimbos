@@ -58,7 +58,7 @@ proc processProposal*(
         blockId = idHex, error = $error, src
       return ValidationResult.Reject
 
-  discard bp.addProposal(admittedBlk, id)
+  discard bp.addProposalBlock(admittedBlk, id)
 
   debug "GossipSub accepted proposal into block queue",
     blockId = idHex, slot = proposal.header.slot, src

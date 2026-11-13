@@ -27,10 +27,10 @@ template addBlock(
 ): BlockApplyFuture =
   bp.addBlock(blk, blockId(header(blk)))
 
-template addProposal(
+template addProposalBlock(
     bp: BlockProcessor, proposal: Proposal
 ): BlockApplyFuture =
-  bp.addProposal(
+  bp.addProposalBlock(
     admitProposal(proposal, bp.mempool).expect("proposal admits"),
     blockId(proposal.header))
 
@@ -97,7 +97,7 @@ suite "chain/block_processor":
         (await bp.addBlock(b3)).error.kind == BlockApplyErrorKind.OrphanBuffered
         not bp.orphanEvent.isSet
         # Gossip source buffers orphan and triggers orphanEvent
-        (await bp.addProposal(p2)).error.kind == BlockApplyErrorKind.OrphanBuffered
+        (await bp.addProposalBlock(p2)).error.kind == BlockApplyErrorKind.OrphanBuffered
         bp.orphanEvent.isSet
 
   asyncTest "addBlock deduplicates in-flight blocks immediately":
@@ -305,12 +305,12 @@ suite "chain/block_processor":
       check (await bp.addBlock(stale)).error.kind ==
         BlockApplyErrorKind.InvalidStructure
 
-  asyncTest "addProposal applies an admitted child of genesis":
+  asyncTest "addProposalBlock applies an admitted child of genesis":
     withProcessor(chain):
       let
         b1 = childValidBlock(genesisBlk.header, gid, SlotNumber(1), [])
         p1 = Proposal(header: b1.header, references: default(References), signature: b1.signature)
-        r = await bp.addProposal(p1)
+        r = await bp.addProposalBlock(p1)
       check r.isOk
       check bp.localTree.localTipId == blockId(p1.header)
       check bp.ledger.state(blockId(p1.header)).isSome
@@ -341,7 +341,7 @@ suite "chain/block_processor":
       let admittedBlk = admitProposal(p, bp.mempool).expect("proposal admits")
       bp.mempool.remove(tx.hash, moveToGrace = false)
       check:
-        (await bp.addProposal(admittedBlk, id)).isOk
+        (await bp.addProposalBlock(admittedBlk, id)).isOk
         bp.localTree.localTipId == id
 
   asyncTest "processProposal rejects a body over MaxBlockSize":

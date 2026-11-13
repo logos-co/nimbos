@@ -59,7 +59,7 @@ template inFlightKey*(id: BlockId, sig: Ed25519Signature): InFlightKey =
   ## with junk signatures cannot lock out valid blocks.
   ##
   ## Invariant: This key is collision-free across differing bodies only because
-  ## every inserted entry (addBlock, addProposal, enqueueOrphanBlock) has its
+  ## every inserted entry (addBlock, addProposalBlock, enqueueOrphanBlock) has its
   ## body bound to header.bodyRoot before taking an in-flight slot. Two copies
   ## with the same (blockId, signature) therefore commit to the exact same body bytes.
   var res {.noinit.}: InFlightKey
@@ -147,7 +147,7 @@ proc addBlock*(
     id, sig,
   )
 
-proc addProposal*(
+proc addProposalBlock*(
     bp: BlockProcessor,
     admittedBlk: AdmittedBlock,
     id: BlockId,
@@ -204,8 +204,8 @@ proc processBlock(bp: BlockProcessor, entry: BlockEntry) =
     startTick = Moment.now()
     res = case entry.kind
       of BlockEntryKind.SyncIncoming: bp.chain.tryApplyBlock(entry.blk)
-      of BlockEntryKind.GossipIncoming: bp.chain.tryApplyProposal(entry.admittedBlk)
-      of BlockEntryKind.PromotedOrphan: bp.chain.tryApplyAdmittedBlock(entry.admittedBlk)
+      of BlockEntryKind.GossipIncoming: bp.chain.tryApplyProposalBlock(entry.admittedBlk)
+      of BlockEntryKind.PromotedOrphan: bp.chain.tryApplyPromotedOrphan(entry.admittedBlk)
     applyDur = Moment.now() - startTick
     queueDur = startTick - entry.queueTick
 

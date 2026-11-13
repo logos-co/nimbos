@@ -319,7 +319,7 @@ func checkTopology*(
 
   ok(if missing: TopologyStatus.Orphan else: TopologyStatus.ParentPresent)
 
-proc tryApplyAdmittedBlock*(
+proc tryApplyPromotedOrphan*(
     chain: var Chain,
     admittedBlk: AdmittedBlock,
 ): Result[void, BlockApplyError] =
@@ -354,7 +354,7 @@ proc tryApplyBlock*(
 
   chain.admitOrBuffer(status, admittedBlk, id, curSlot)
 
-proc tryApplyProposal*(
+proc tryApplyProposalBlock*(
     chain: var Chain,
     admittedBlk: AdmittedBlock,
 ): Result[void, BlockApplyError] =

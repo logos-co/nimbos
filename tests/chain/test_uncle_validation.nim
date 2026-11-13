@@ -281,7 +281,7 @@ suite "chain/uncle_validation":
       orphanRes = s.chain.tryApplyBlock(a)
       parentRes = s.chain.tryApplyBlock(b3)
       children = s.chain.orphanPool.takeChildren(blockId(b3.header))
-      res = s.chain.tryApplyAdmittedBlock(children[0])
+      res = s.chain.tryApplyPromotedOrphan(children[0])
     check:
       orphanRes.error.kind == BlockApplyErrorKind.OrphanBuffered
       parentRes.isOk
