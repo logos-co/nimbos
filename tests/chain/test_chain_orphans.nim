@@ -12,6 +12,7 @@ import
   std/times,
   ../testutil,
   ../logos_chain/sync/helpers,
+  ../ledger/test_helpers as ledger_helpers,
   ../../logos_chain/zk/poc,
   ../../logos_chain/chain/chain,
   ../../logos_chain/utils/dynamic_merkle_tree,
@@ -310,6 +311,7 @@ suite "chain/orphan_resolution":
     check:
       chain.tryApplyBlock(uncommittedParent).error.kind == BlockApplyErrorKind.UnviableFork
       chain.orphanPool.len == 0
+      chain.orphanPool.isRejected(blockId(uncommittedParent.header))
 
   test "orphan with invalid stateless transaction is buffered on ingestion and rejected during promotion":
     var (chain, genesis, gid) = setupChain()
@@ -408,7 +410,12 @@ suite "chain/orphan_resolution":
       # Applying a4 advances LIB to a3 (height 4 - 1 = 3), pruning fork f1 (height 1)
       chain.tryApplyBlock(a4).isOk
       chain.localTree.latestImmutableBlockId == idA3
-      # Orphan o2 had slot 3 <= LIB slot 5, so pruneIncompatibleWithImmutable pruned it from orphanPool on LIB update!
+
+    # Orphan o2 had slot 3 <= LIB slot 5, so pruneIncompatibleWithImmutable pruned it from orphanPool on LIB update!
+    let o3 = childBlock(o2.header, blockId(o2.header), SlotNumber(7), [])
+    check:
+      chain.orphanPool.len == 0
+      chain.tryApplyBlock(o3).error.kind == BlockApplyErrorKind.InvalidAncestor
       chain.orphanPool.len == 0
 
   test "asynchronous promotion: LIB advancement invalidating admitted child purges its orphan descendants":
@@ -621,5 +628,69 @@ suite "chain/orphan_resolution":
     check not chain.localTree.hasBlock(idO)
     check not chain.orphanPool.hasOrphan(idG)
     check chain.orphanPool.len == 0
+
+  test "descendant of block that failed PoL is rejected at admission without buffering or re-verification":
+    var
+      (chain, genesis, gid) = setupChain()
+      polCalls = 0
+    let failingPol: LeaderProofVerifier =
+      proc(proof: ProofOfLeadership, public: LeaderPublic): Result[bool, PolLoadError] {.gcsafe, raises: [].} =
+        inc polCalls
+        ok(false)
+    chain.ledger = Ledger[BlockId].init(
+      gid, chain.ledger.state(gid).get(), ledger_helpers.testLedgerConfig, failingPol
+    )
+
+    let
+      p = childBlock(genesis.header, gid, SlotNumber(1), [])
+      idP = blockId(p.header)
+      b1 = childBlock(p.header, idP, SlotNumber(2), [])
+      id1 = blockId(b1.header)
+      b2 = childBlock(b1.header, id1, SlotNumber(3), [])
+      id2 = blockId(b2.header)
+      b3 = childBlock(b2.header, id2, SlotNumber(4), [])
+
+    check:
+      chain.tryApplyBlock(b1).error.kind == BlockApplyErrorKind.OrphanBuffered
+      chain.orphanPool.len == 1
+      polCalls == 0
+      chain.tryApplyBlock(p).error.kind == BlockApplyErrorKind.LedgerRejected
+      polCalls == 1
+      chain.orphanPool.len == 0
+      chain.tryApplyBlock(p).error.kind == BlockApplyErrorKind.AlreadyRejected
+      polCalls == 1
+      chain.tryApplyBlock(b2).error.kind == BlockApplyErrorKind.InvalidAncestor
+      chain.orphanPool.len == 0
+      polCalls == 1
+      chain.tryApplyBlock(b3).error.kind == BlockApplyErrorKind.InvalidAncestor
+      chain.orphanPool.len == 0
+      polCalls == 1
+
+  test "block with tampered opProofs does not poison BlockId against genuine copy":
+    var (chain, genesis, gid) = setupChain()
+
+    let
+      goodTx = minimalHashedSignedTx()
+      badTx = mkHashedSignedTx(
+        SignedMantleTx(tx: goodTx.tx, opProofs: @[default(OpProof)]),
+        goodTx.hash,
+      )
+      bGood = childBlock(genesis.header, gid, SlotNumber(1), [goodTx])
+      bBad = Block(
+        header: bGood.header,
+        signature: bGood.signature,
+        uncleHeaders: bGood.uncleHeaders,
+        txs: BlockTxs(@[badTx]),
+      )
+      id = blockId(bGood.header)
+      bBadPayload = childBlock(genesis.header, gid, SlotNumber(2), [mkTransferTx([], [])])
+
+    check:
+      chain.tryApplyBlock(bBad).error.kind == BlockApplyErrorKind.StatelessTxRejected
+      not chain.orphanPool.isRejected(id)
+      chain.tryApplyBlock(bGood).isOk
+      chain.localTree.localTipId == id
+      chain.tryApplyBlock(bBadPayload).error.kind == BlockApplyErrorKind.StatelessTxRejected
+      chain.orphanPool.isRejected(blockId(bBadPayload.header))
 
 {.pop.}

@@ -95,6 +95,9 @@ suite "sync/orphan_sync (OrphanSync decision and lifecycle tests)":
       syncer.orphanPool.len == 0
       not syncer.orphanPool.hasOrphan(b1Id)
       not syncer.orphanPool.hasOrphan(b2Id)
+      not syncer.orphanPool.isRejected(parentId)
+      not syncer.orphanPool.isRejected(b1Id)
+      not syncer.orphanPool.isRejected(b2Id)
       parentId notin syncer.orphans.retries
 
 suite "sync/orphan_sync (end-to-end orphan resolution via DBR)":
