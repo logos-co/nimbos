@@ -8,6 +8,7 @@
 {.push raises: [], gcsafe.}
 
 import
+  std/sequtils,
   bincode,
   chronicles,
   chronos,
@@ -83,8 +84,6 @@ proc sendGetTipRequest*(
   finally:
     await noCancel conn.close()
 
-const MaxKnownAdditionalBlocks = 5
-
 func buildKnownBlocks*(
     localTree: LocalTree,
     additionalBlocks: openArray[BlockId],
@@ -147,13 +146,14 @@ proc sendDownloadBlocksRequest*(
         peer,
         responseBytes = inner.len,
         blockIndex = blks.len
-      let msgOpt = try:
-        Opt.some(decode(inner, DownloadBlocksResponse, cryptarchiaSyncBincodeConfig))
-      except BincodeError as exc:
-        debug "Sync download response deserialize failed", peer, exc = exc.msg
-        Opt.none(DownloadBlocksResponse)
-      let msg = msgOpt.valueOr:
-        return Opt.none(seq[Block])
+      let
+        msgOpt = try:
+          Opt.some(decode(inner, DownloadBlocksResponse, cryptarchiaSyncBincodeConfig))
+        except BincodeError as exc:
+          debug "Sync download response deserialize failed", peer, exc = exc.msg
+          Opt.none(DownloadBlocksResponse)
+        msg = msgOpt.valueOr:
+          return Opt.none(seq[Block])
       case msg.kind
       of dbrFailure:
         debug "Sync download deserialize ok (failure)",
@@ -205,19 +205,23 @@ proc onBlock(
     blockSignature = sbyteutils.toHex(blk.signature.data)
   res
 
-proc downloadFromPeer(
+proc downloadBlocks*(
     syncer: Syncer,
     peer: PeerId,
     targetBlock: BlockId,
-    latestDownloadedId: Opt[BlockId],
+    latestDownloadedId = Opt.none(BlockId),
 ): Future[(bool, Opt[BlockId])] {.async: (raises: [CancelledError]).} =
-  var latestId = latestDownloadedId
+  var latestDownloadedId = latestDownloadedId
   debug "Sync download loop start", peer,
     targetBlock = sbyteutils.toHex(targetBlock)
 
-  while not hasBlock(syncer.localTree, targetBlock):
+  while true:
+    if hasBlock(syncer.localTree, targetBlock):
+      debug "Sync: target already local", peer, targetBlock = sbyteutils.toHex(targetBlock)
+      return (true, latestDownloadedId)
+
     let
-      additionalKnown = latestId
+      additionalKnown = latestDownloadedId
         .map(proc (id: BlockId): seq[BlockId] = @[id])
         .valueOr(@[])
       downloadReq = DownloadBlocksRequest(
@@ -230,18 +234,19 @@ proc downloadFromPeer(
         downloadReq,
       )).valueOr:
         debug "Sync: download request failed", peer, targetBlock = sbyteutils.toHex(targetBlock)
-        return (false, latestId)
+        return (false, latestDownloadedId)
 
-    debug "Sync: download response ok", peer, blocks = blocks.len, targetBlock = sbyteutils.toHex(targetBlock)
+    debug "Sync: download response ok", peer, blocks = blocks.len, targetBlock = sbyteutils.toHex(downloadReq.targetBlock)
     if blocks.len == 0:
       debug "Sync: download returned no blocks", peer, targetBlock = sbyteutils.toHex(targetBlock)
-      return (false, latestId)
+      return (false, latestDownloadedId)
     info "Sync: applying downloaded blocks", peer, count = blocks.len, targetBlock = sbyteutils.toHex(targetBlock)
 
-    var progressed = false
+    var
+      targetReached = false
+      progressed = false
     for blk in blocks:
       let id = blockId(blk.header)
-      latestId = Opt.some(id)
       (await onBlock(syncer, blk, id)).isOkOr:
         # Sync streams blocks in parent order, so even a recoverable error
         # means this peer's stream is unusable (unless already applied or in flight).
@@ -250,144 +255,111 @@ proc downloadFromPeer(
           debug "Sync: block already applied",
             peer, blockId = sbyteutils.toHex(id)
         of BlockApplyErrorKind.InFlight:
-          progressed = true
           debug "Sync: block already in flight",
             peer, blockId = sbyteutils.toHex(id)
+          continue
         elif error.kind.isRecoverable:
           debug "Sync: block deferred, cancelling download",
             peer, blockId = sbyteutils.toHex(id), err = error.kind
-          return (false, latestId)
+          return (false, latestDownloadedId)
         else:
           warn "Sync: invalid block from peer, cancelling download",
             peer, blockId = sbyteutils.toHex(id), err = $error
-          return (false, latestId)
+          return (false, latestDownloadedId)
+        latestDownloadedId = Opt.some(id)
         if id == targetBlock:
-          debug "Sync: target reached", peer, targetBlock = sbyteutils.toHex(targetBlock)
-          return (true, latestId)
+          targetReached = true
+          break
         continue
+      latestDownloadedId = Opt.some(id)
       progressed = true
       debug "Sync: block ingest ok", peer, blockId = sbyteutils.toHex(id)
       if id == targetBlock:
-        debug "Sync: target reached", peer, targetBlock = sbyteutils.toHex(targetBlock)
-        return (true, latestId)
+        targetReached = true
+        break
 
+    if targetReached:
+      debug "Sync: target reached", peer, targetBlock = sbyteutils.toHex(targetBlock)
+      return (true, latestDownloadedId)
     if not progressed:
       debug "Sync: peer provided blocks but none were new", peer
-      return (false, latestId)
+      return (false, latestDownloadedId)
     info "Sync: batch applied, continuing", peer, blocksApplied = blocks.len
 
-  debug "Sync: target already local", peer, targetBlock = sbyteutils.toHex(targetBlock)
-  (true, latestId)
-
-proc downloadBlocks*(
-    syncer: Syncer,
-    peer: PeerId,
-    targetBlock: BlockId,
-): Future[bool] {.async: (raises: [CancelledError]).} =
-  (await downloadFromPeer(syncer, peer, targetBlock, Opt.none(BlockId)))[0]
-
-proc downloadTarget(
-    syncer: Syncer,
-    peerProvider: PeerProvider,
-    targetBlock: BlockId,
-): Future[bool] {.async: (raises: [CancelledError]).} =
-  var
-    attemptedPeers: seq[PeerId]
-    latestDownloadedId = Opt.none(BlockId)
-
-  while not hasBlock(syncer.localTree, targetBlock):
-    var newlyAttempted = 0
-    for peer in peerProvider():
-      if peer in attemptedPeers:
-        continue
-      attemptedPeers.add(peer)
-      inc newlyAttempted
-      debug "IBD: downloading blocks from peer", peer,
-        targetBlock = sbyteutils.toHex(targetBlock)
-      var reached: bool
-      (reached, latestDownloadedId) =
-        await downloadFromPeer(syncer, peer, targetBlock, latestDownloadedId)
-      if reached:
-        return true
-      debug "IBD: peer sync failed", peer
-
-    if newlyAttempted == 0:
-      break
-
-  hasBlock(syncer.localTree, targetBlock)
+const IbdRoundDelay = 1.seconds
+  ## Delay between rounds of Initial Block Download (`T_round` in spec).
 
 proc queryTrustedTips(
     syncer: Syncer,
     bootstrapPeerProvider: PeerProvider,
 ): Future[seq[BlockId]] {.async: (raises: [CancelledError]).} =
-  var
-    tips: seq[BlockId]
-    attemptedPeers: seq[PeerId]
+  let
+    peers = bootstrapPeerProvider()
+    futs = peers.mapIt(sendGetTipRequest(syncer, it))
+  try:
+    await allFutures(futs)
+  except CancelledError as exc:
+    for fut in futs:
+      fut.cancelSoon()
+    raise exc
 
-  while true:
-    var newlyAttempted = 0
-    for peer in bootstrapPeerProvider():
-      if peer in attemptedPeers:
-        continue
-      attemptedPeers.add(peer)
-      inc newlyAttempted
-      let resp = (await sendGetTipRequest(syncer, peer)).valueOr:
+  var tips: seq[BlockId]
+  for i, fut in futs:
+    let
+      peer = peers[i]
+      resp = (await fut).valueOr:
         debug "IBD: GetTip failed", peer
         continue
-      case resp.kind
-      of gtrFailure:
-        debug "IBD: GetTip returned failure", peer, reason = resp.failureMessage
-      of gtrTip:
-        let tip = resp.tipData.tip
-        info "IBD: GetTip returned success",
-          peer,
-          targetBlock = sbyteutils.toHex(tip),
-          height = resp.tipData.height,
-          slot = resp.tipData.slot
-        if tip notin tips:
-          tips.add(tip)
-    if newlyAttempted == 0:
-      break
-
+    case resp.kind
+    of gtrFailure:
+      debug "IBD: GetTip returned failure", peer, reason = resp.failureMessage
+    of gtrTip:
+      let tip = resp.tipData.tip
+      info "IBD: GetTip returned success",
+        peer,
+        targetBlock = sbyteutils.toHex(tip),
+        height = resp.tipData.height,
+        slot = resp.tipData.slot
+      if tip notin tips:
+        tips.add(tip)
   tips
 
 proc initialBlockDownload*(
     syncer: Syncer,
     bootstrapPeerProvider: PeerProvider,
+    roundDelay: Duration = IbdRoundDelay,
 ): Future[void] {.async: (raises: [IBDFailure, CancelledError]).} =
   if bootstrapPeerProvider == nil:
     debug "IBD skipped: no configured peers"
     return
 
   info "Starting initial block download", protocol = syncer.chainSyncProtocol
-  let tips = await queryTrustedTips(syncer, bootstrapPeerProvider)
-  if tips.len == 0:
-    warn "IBD failed: no trusted peer provided a valid tip"
-    raise newException(IBDFailure, "Initial block download failed: no trusted peer provided a valid tip")
-
   let dbrPeerProvider =
-    if syncer.peerProvider != nil:
-      syncer.peerProvider
-    else:
-      bootstrapPeerProvider
+    if syncer.peerProvider != nil: syncer.peerProvider
+    else: bootstrapPeerProvider
 
-  var numSuccess = 0
-  for tip in tips:
-    if hasBlock(syncer.localTree, tip):
-      inc numSuccess
-      debug "IBD: target tip already local",
-        targetBlock = sbyteutils.toHex(tip)
-      continue
-    if await downloadTarget(syncer, dbrPeerProvider, tip):
-      inc numSuccess
-      info "IBD synced target tip",
-        targetBlock = sbyteutils.toHex(tip)
-    else:
-      debug "IBD: failed to reach target tip",
-        targetBlock = sbyteutils.toHex(tip)
+  while true:
+    let tips = await queryTrustedTips(syncer, bootstrapPeerProvider)
+    if tips.len == 0:
+      warn "IBD failed: no trusted peer provided a valid tip"
+      raise newException(IBDFailure, "Initial block download failed: no trusted peer provided a valid tip")
 
-  if numSuccess == 0:
-    warn "IBD failed: no target tip reached", tipCount = tips.len
-    raise newException(IBDFailure, "Initial block download failed: no target tip reached")
+    let unsyncedTips = tips.filterIt(not hasBlock(syncer.localTree, it))
+    if unsyncedTips.len == 0:
+      return
+
+    for tip in unsyncedTips:
+      var
+        reached = false
+        latestDownloadedId = Opt.none(BlockId)
+      for peer in dbrPeerProvider():
+        (reached, latestDownloadedId) =
+          await downloadBlocks(syncer, peer, tip, latestDownloadedId)
+        if reached:
+          info "IBD synced target tip", peer, targetBlock = sbyteutils.toHex(tip)
+          break
+        debug "IBD: peer sync failed", peer, targetBlock = sbyteutils.toHex(tip)
+
+    await sleepAsync(roundDelay)
 
 {.pop.}
