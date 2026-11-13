@@ -39,6 +39,8 @@ proc runLbp2pIbdSyncTest(extraBlocks: int) {.async.} =
       await peers.listener.start()
       await peers.dialer.start()
       discard await peers.dialer.waitForBootstrapPeers()
+      clientSyncer.peerProvider = proc(): seq[PeerId] =
+        peers.dialer.connectedPeerIds()
       clientSyncer.start(
         nil,
         nil,
@@ -287,6 +289,83 @@ suite "sync/initial_block_download (IBD requester loop)":
     finally:
       await server1.stop()
       await server2.stop()
+
+  asyncTest "initialBlockDownload queries GetTip from bootstrapPeerProvider and downloads from peerProvider":
+    let
+      genesis = createGenesisBlock(testValidGenesisTx())
+      gid = blockId(genesis.header)
+      b1 = childValidBlock(genesis.header, gid, SlotNumber(1), [])
+      b1id = blockId(b1.header)
+      trustedChain = initTestChain(genesis)
+      downloadChain = initTestChain(genesis)
+      clientChain = initTestChain(genesis)
+    check:
+      trustedChain.localTree.addBlockToTree(b1)
+      downloadChain.localTree.addBlockToTree(b1)
+
+    let
+      trustedPeer = await startQuicTestSwitch()
+      failingPeer = await startQuicTestSwitch()
+      downloadPeer = await startQuicTestSwitch()
+    mountTestServer(trustedPeer, trustedChain)
+    mountTestServer(downloadPeer, downloadChain)
+    try:
+      withClientSyncer(clientChain):
+        await client.connect(trustedPeer.peerInfo.peerId, trustedPeer.peerInfo.addrs, forceDial = true)
+        await client.connect(failingPeer.peerInfo.peerId, failingPeer.peerInfo.addrs, forceDial = true)
+        await client.connect(downloadPeer.peerInfo.peerId, downloadPeer.peerInfo.addrs, forceDial = true)
+        clientSyncer.peerProvider = peerProvider(
+          failingPeer.peerInfo.peerId, downloadPeer.peerInfo.peerId
+        )
+        await initialBlockDownload(
+          clientSyncer, peerProvider(trustedPeer.peerInfo.peerId)
+        )
+        check:
+          clientChain.localTree.hasBlock(b1id)
+          clientChain.localTree.localTipId == b1id
+    finally:
+      await trustedPeer.stop()
+      await failingPeer.stop()
+      await downloadPeer.stop()
+
+  asyncTest "initialBlockDownload syncs all trusted tips and adopts tallest chain":
+    let
+      genesis = createGenesisBlock(testValidGenesisTx())
+      gid = blockId(genesis.header)
+      b1Short = childValidBlock(genesis.header, gid, SlotNumber(2), [])
+      b1ShortId = blockId(b1Short.header)
+      b1Tall = childValidBlock(genesis.header, gid, SlotNumber(5), [])
+      b1TallId = blockId(b1Tall.header)
+      b2Tall = childValidBlock(b1Tall.header, b1TallId, SlotNumber(6), [])
+      b2TallId = blockId(b2Tall.header)
+      chainShort = initTestChain(genesis)
+      chainTall = initTestChain(genesis)
+    check:
+      chainShort.localTree.addBlockToTree(b1Short)
+      chainTall.localTree.addBlockToTree(b1Tall)
+      chainTall.localTree.addBlockToTree(b2Tall)
+
+    let
+      serverShort = await startQuicTestSwitch()
+      serverTall = await startQuicTestSwitch()
+    mountTestServer(serverShort, chainShort)
+    mountTestServer(serverTall, chainTall)
+    try:
+      withClientSyncer(initTestChain(genesis, securityParam = 2)):
+        await client.connect(serverShort.peerInfo.peerId, serverShort.peerInfo.addrs, forceDial = true)
+        await client.connect(serverTall.peerInfo.peerId, serverTall.peerInfo.addrs, forceDial = true)
+        await initialBlockDownload(
+          clientSyncer,
+          peerProvider(serverShort.peerInfo.peerId, serverTall.peerInfo.peerId),
+        )
+        check:
+          clientSyncer.localTree.hasBlock(b1ShortId)
+          clientSyncer.localTree.hasBlock(b1TallId)
+          clientSyncer.localTree.hasBlock(b2TallId)
+          clientSyncer.localTree.localTipId == b2TallId
+    finally:
+      await serverShort.stop()
+      await serverTall.stop()
 
 suite "LBP2PNode cryptarchia IBD at startup":
   asyncTest "bootstrap peer serves chain; client syncs 1-block taller tip on start()":
