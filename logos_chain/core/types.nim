@@ -120,7 +120,7 @@ func signHeader*(key: EdPrivateKey, header: Header): Ed25519Signature =
 func verify_signature*(header: Header, signature: Ed25519Signature): bool =
   ## True if `signature` is the leader signature over the canonical header
   ## encoding, under the leader key that the header commits to.
-  signature.verify(encodeHeader(header), header.proofOfLeadership.leaderKey)
+  signature.verifyStrict(encodeHeader(header), header.proofOfLeadership.leaderKey)
 
 func encodeSignedHeader*(signed: SignedHeader): array[SignedHeaderSize, byte] =
   ## Canonical 361-byte signed header encoding.
