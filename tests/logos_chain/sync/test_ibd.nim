@@ -52,8 +52,7 @@ proc runLbp2pIbdSyncTest(extraBlocks: int) {.async.} =
         waitUntil(chainClient.localTree.hasBlock(tipId), chronos.milliseconds(waitAttempts * 100))
         chainClient.localTree.localTipId == tipId
   finally:
-    await peers.dialer.stop()
-    await peers.listener.stop()
+    await allFutures(peers.dialer.stop(), peers.listener.stop())
 
 suite "sync/initial_block_download (download blocks)":
   test "decodeSyncBlock roundtrip (genesis block on sync wire)":
@@ -63,7 +62,7 @@ suite "sync/initial_block_download (download blocks)":
         encode(genesis, cryptarchiaSyncBincodeConfig)
       except BincodeError:
         fail getCurrentExceptionMsg()
-    let blk = decodeSyncBlock(genesisWire).get
+      blk = decodeSyncBlock(genesisWire).get
     check blockId(blk.header) == blockId(genesis.header)
 
   test "decodeSyncBlock bounds the uncle count":
@@ -75,8 +74,9 @@ suite "sync/initial_block_download (download blocks)":
         Block(header: genesis.header, signature: genesis.signature,
               uncleHeaders: UncleHeaders(uncles), txs: BlockTxs(@[])),
         cryptarchiaSyncBincodeConfig)
-    check decodeSyncBlock(wire(@[uncle, uncle, uncle, uncle])).isOk
-    check decodeSyncBlock(wire(@[uncle, uncle, uncle, uncle, uncle])).isErr
+    check:
+      decodeSyncBlock(wire(@[uncle, uncle, uncle, uncle])).isOk
+      decodeSyncBlock(wire(@[uncle, uncle, uncle, uncle, uncle])).isErr
 
   test "cappedDownloadPathBlockIds returns target block when path is one hop":
     let
@@ -212,12 +212,13 @@ suite "sync/initial_block_download (GetTip)":
       serverChain = initTestChain(genesis)
       clientChain = initTestChain(genesis)
       server = await startQuicTestSwitch()
+      client = await startQuicTestSwitch()
       serverSyncer = Syncer.init(
         server, BlockProcessor.new(serverChain), testChainSyncProtocol, nil)
     serverSyncer.ibdFut = Future[void].Raising([CancelledError]).init("test.ibd")
     mountCryptarchiaSyncHandler(serverSyncer)
     try:
-      withClientSyncer(clientChain):
+      withClientSyncerOn(client, clientChain):
         await client.connect(server.peerInfo.peerId, server.peerInfo.addrs, forceDial = true)
         let
           tipResp = (await sendGetTipRequest(clientSyncer, server.peerInfo.peerId)).get()
@@ -230,19 +231,15 @@ suite "sync/initial_block_download (GetTip)":
           (await sendDownloadBlocksRequest(
             clientSyncer, server.peerInfo.peerId, dlReq)).isNone
     finally:
-      await server.stop()
+      await allFutures(client.stop(), server.stop())
 
 suite "sync/initial_block_download (IBD requester loop)":
   asyncTest "initialBlockDownload with no configured peers completes without raising":
-    let genesis = createGenesisBlock(testValidGenesisTx())
-    withClientSyncer(initTestChain(genesis)):
-      await initialBlockDownload(clientSyncer, nil)
+    await initialBlockDownload(Syncer(), nil)
 
   asyncTest "initialBlockDownload when no configured peers are connected raises IBDFailure":
-    let genesis = createGenesisBlock(testValidGenesisTx())
-    withClientSyncer(initTestChain(genesis)):
-      expect IBDFailure:
-        await initialBlockDownload(clientSyncer, peerProvider())
+    expect IBDFailure:
+      await initialBlockDownload(Syncer(), peerProvider())
 
   asyncTest "initialBlockDownload succeeds when peer tip is already in local tree":
     let genesis = createGenesisBlock(testValidGenesisTx())
@@ -260,14 +257,16 @@ suite "sync/initial_block_download (IBD requester loop)":
       serverChain.localTree.addBlockToTree(b1)
       serverChain.localTree.localTipId == blockId(b1.header)
 
-    let server = await startQuicTestSwitch()
+    let
+      server = await startQuicTestSwitch()
+      client = await startQuicTestSwitch()
     try:
-      withClientSyncer(initTestChain(genesis)):
+      withClientSyncerOn(client, initTestChain(genesis)):
         await client.connect(server.peerInfo.peerId, server.peerInfo.addrs, forceDial = true)
         expect IBDFailure:
           await initialBlockDownload(clientSyncer, peerProvider(server.peerInfo.peerId))
     finally:
-      await server.stop()
+      await allFutures(client.stop(), server.stop())
 
   asyncTest "initialBlockDownload succeeds when peer chain is taller and download sends blocks":
     let
@@ -330,10 +329,11 @@ suite "sync/initial_block_download (IBD requester loop)":
       trustedPeer = await startQuicTestSwitch()
       failingPeer = await startQuicTestSwitch()
       downloadPeer = await startQuicTestSwitch()
+      client = await startQuicTestSwitch()
     mountTestServer(trustedPeer, trustedChain)
     mountTestServer(downloadPeer, downloadChain)
     try:
-      withClientSyncer(clientChain):
+      withClientSyncerOn(client, clientChain):
         await client.connect(trustedPeer.peerInfo.peerId, trustedPeer.peerInfo.addrs, forceDial = true)
         await client.connect(failingPeer.peerInfo.peerId, failingPeer.peerInfo.addrs, forceDial = true)
         await client.connect(downloadPeer.peerInfo.peerId, downloadPeer.peerInfo.addrs, forceDial = true)
@@ -354,9 +354,7 @@ suite "sync/initial_block_download (IBD requester loop)":
           clientChain.localTree.hasBlock(b1id)
           clientChain.localTree.localTipId == b1id
     finally:
-      await trustedPeer.stop()
-      await failingPeer.stop()
-      await downloadPeer.stop()
+      await allFutures(client.stop(), trustedPeer.stop(), failingPeer.stop(), downloadPeer.stop())
 
 suite "LBP2PNode cryptarchia IBD at startup":
   asyncTest "bootstrap peer serves chain; client syncs 1-block taller tip on start()":
