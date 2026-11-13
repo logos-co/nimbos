@@ -5,7 +5,7 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to these terms.
 
-## Bedrock block proposal construction, transaction selection, and reconstruction.
+## Bedrock block proposal construction and transaction selection.
 ## Spec: [Block Construction, Validation and Execution v1.3.0](https://github.com/logos-co/logos-lips/blob/4deef612ce1ae1776167daf8779d4abae953201b/docs/blockchain/raw/bedrock-v1.1-block-construction.md)
 ## Spec: [Execution Market v1.1.0](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/execution-market.md)
 
@@ -23,12 +23,6 @@ const
   TxMaturitySlots* = 3'u64
   MaxConsecutiveCandidateMisses = 10
 
-type
-  ProposalValidationError* {.pure.} = enum
-    MissingReference
-    CollidingReference
-    BodyRootMismatch
-
 proc selectProposalReferences*(
     m: Mempool,
     tipLedgerState: LedgerState,
@@ -40,6 +34,7 @@ proc selectProposalReferences*(
 ): seq[Hash32] =
   ## Selects the hashes to reference, in block order, within the count,
   ## execution-gas and byte budgets.
+  ## Spec: [Execution Market — Block Construction](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/execution-market.md#block-builder-mechanism-block-construction)
   var
     refs = newSeqOfCap[Hash32](maxTxs)
     workingLedger = tipLedgerState.advanceEpochAndMarket(currentSlot, cfg).valueOr:
@@ -131,32 +126,5 @@ proc constructProposal*(
     )
     sig = signHeader(leaderSecKey, h)
   initProposal(h, [], hashes.mapIt(txReference(it)), sig)
-
-func reconstructProposalTxs*(
-    proposal: Proposal,
-    mempool: Mempool,
-): Result[seq[ValidSignedMantleTx], ProposalValidationError] =
-  ## Resolves every reference and checks the body root over the result.
-  var
-    hashes = newSeqOfCap[Hash32](proposal.references.len)
-    txs = newSeqOfCap[ValidSignedMantleTx](proposal.references.len)
-  for reference in proposal.references:
-    let
-      hash = mempool.resolve(reference).valueOr:
-        return err(
-          if error == MempoolError.CollidingReference:
-            ProposalValidationError.CollidingReference
-          else:
-            ProposalValidationError.MissingReference)
-      vtx = mempool.get(hash).valueOr:
-        return err(ProposalValidationError.MissingReference)
-    hashes.add(hash)
-    txs.add(vtx)
-
-  # Only the body root binds the unsigned reference list to the signed header.
-  if body_root(proposal.uncleHeaders.asSeq, hashes) != proposal.header.bodyRoot:
-    return err(ProposalValidationError.BodyRootMismatch)
-
-  ok(move(txs))
 
 {.pop.}

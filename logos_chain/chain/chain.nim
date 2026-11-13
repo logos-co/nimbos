@@ -40,7 +40,6 @@ type
     InFlight
     FutureSlot
     InvalidStructure
-    MissingReference
     UnviableFork
     LedgerRejected
     StatelessTxRejected
@@ -71,8 +70,7 @@ func isRecoverable*(kind: BlockApplyErrorKind): bool =
   case kind
   of BlockApplyErrorKind.AlreadyApplied, BlockApplyErrorKind.InFlight,
       BlockApplyErrorKind.FutureSlot, BlockApplyErrorKind.OrphanBuffered,
-      BlockApplyErrorKind.OrphanAlreadyBuffered,
-      BlockApplyErrorKind.MissingReference:
+      BlockApplyErrorKind.OrphanAlreadyBuffered:
     true
   of BlockApplyErrorKind.InvalidStructure, BlockApplyErrorKind.UnviableFork,
       BlockApplyErrorKind.LedgerRejected, BlockApplyErrorKind.StatelessTxRejected,
@@ -358,27 +356,17 @@ proc tryApplyBlock*(
 
 proc tryApplyProposal*(
     chain: var Chain,
-    proposal: Proposal,
+    admittedBlk: AdmittedBlock,
 ): Result[void, BlockApplyError] =
-  ## Privileged proposal ingestion: reconstructs transactions from the mempool,
-  ## admits the proposal through Tier 0-2 checks (buffering as orphan if parent is unknown),
-  ## and applies the resulting block without redundant stateless tx validation.
+  ## Applies a proposal that the gossip gate admitted, or buffers it as an
+  ## orphan. Only the rules that need chain state run here.
+  # The gate resolved the references, so the mempool is not read again. A
+  # second read could miss a transaction that the mempool evicted after the
+  # gate accepted, and drop a proposal that was already forwarded.
   let
     curSlot = chain.currentWallclockSlot()
-    id = ?chain.checkViability(proposal.header, curSlot)
-
-  let status = ?checkTopology(proposal.header, chain.localTree, chain.ledger)
-
-  let validTxs = reconstructProposalTxs(proposal, chain.mempool).valueOr:
-    case error
-    of ProposalValidationError.MissingReference,
-        ProposalValidationError.CollidingReference:
-      return err(BlockApplyError(kind: BlockApplyErrorKind.MissingReference))
-    of ProposalValidationError.BodyRootMismatch:
-      return err(BlockApplyError(kind: BlockApplyErrorKind.InvalidStructure))
-
-  let admittedBlk = admitProposal(proposal, validTxs).valueOr:
-    return err(toBlockApplyError(error))
+    id = ?chain.checkViability(admittedBlk.header, curSlot)
+    status = ?checkTopology(admittedBlk.header, chain.localTree, chain.ledger)
 
   chain.admitOrBuffer(status, admittedBlk, id, curSlot)
 

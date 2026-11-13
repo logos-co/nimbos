@@ -197,17 +197,18 @@ suite "mempool":
 
     check m.add(tx1, SlotNumber(1))
     check m.add(tx2, SlotNumber(1)) # tx1 moves to the grace cache
-    check m.resolve(txReference(tx1.hash)).get() == tx1.hash
+    check m.resolve(txReference(tx1.hash)).get().hash == tx1.hash
 
-    # A promotion that indexes the hash again makes resolve report a collision.
+    # A promotion must not index the hash a second time; a second index entry
+    # would make the prefix ambiguous and resolve would return none.
     check m.add(tx1, SlotNumber(1))
-    check m.resolve(txReference(tx1.hash)).get() == tx1.hash
+    check m.resolve(txReference(tx1.hash)).get().hash == tx1.hash
 
     # tx1 moves to the grace cache again, and the cache evicts tx2.
     check m.add(tx3, SlotNumber(1))
-    check m.resolve(txReference(tx2.hash)).error == MempoolError.TxNotFound
+    check m.resolve(txReference(tx2.hash)).isNone
 
     m.remove(tx3.hash, moveToGrace = false)
-    check m.resolve(txReference(tx3.hash)).error == MempoolError.TxNotFound
+    check m.resolve(txReference(tx3.hash)).isNone
 
 {.pop.}
