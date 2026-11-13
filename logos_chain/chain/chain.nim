@@ -19,7 +19,8 @@ import
   ../mempool,
   ./[block_validation, genesis, orphan_pool, proposal, uncle_validation]
 
-export types, genesis, local_tree, mempool, block_validation, orphan_pool, proposal,
+export
+  types, genesis, local_tree, mempool, block_validation, orphan_pool, proposal,
   uncle_validation
 export ledger except config
 
@@ -60,10 +61,14 @@ type
 
 func `$`*(e: BlockApplyError): string =
   case e.kind
-  of BlockApplyErrorKind.LedgerRejected: "ledger: " & $e.ledgerError
-  of BlockApplyErrorKind.StatelessTxRejected: "stateless tx: " & $e.statelessError
-  of BlockApplyErrorKind.UncleRejected: "uncle: " & $e.uncleError
-  else: $e.kind
+  of BlockApplyErrorKind.LedgerRejected:
+    "ledger: " & $e.ledgerError
+  of BlockApplyErrorKind.StatelessTxRejected:
+    "stateless tx: " & $e.statelessError
+  of BlockApplyErrorKind.UncleRejected:
+    "uncle: " & $e.uncleError
+  else:
+    $e.kind
 
 func isRecoverable*(kind: BlockApplyErrorKind): bool =
   ## True when the same block may still apply later without any change to it.
@@ -83,17 +88,18 @@ func ledgerConfig*(settings: DeploymentSettings): LedgerConfig =
   let c = settings.cryptarchia
   LedgerConfig(
     epochSchedule: EpochSchedule(
-      basePeriodLength:
-        slotsForBlocks(uint64(c.securityParam), c.slotActivationCoeff),
+      basePeriodLength: slotsForBlocks(uint64(c.securityParam), c.slotActivationCoeff),
       stakeDistributionStabilization:
         uint64(c.epochConfig.epochStakeDistributionStabilization),
       nonceBuffer: uint64(c.epochConfig.epochPeriodNonceBuffer),
-      nonceStabilization: uint64(c.epochConfig.epochPeriodNonceStabilization)),
+      nonceStabilization: uint64(c.epochConfig.epochPeriodNonceStabilization),
+    ),
     slotActivationCoeff: c.slotActivationCoeff,
     learningRateFixed: fixedPoint(c.learningRate),
     faucetPk: Opt.some(c.genesisState.faucetZkPublicKey),
     uncleWindowSlots:
-      slotsForBlocks(uint64(c.uncleReferenceWindowInBlock), c.slotActivationCoeff))
+      slotsForBlocks(uint64(c.uncleReferenceWindowInBlock), c.slotActivationCoeff),
+  )
 
 func init*(
     T: type Chain,
@@ -127,24 +133,33 @@ proc init*(
   # A stale body_root in the settings file must fail at start-up, not later.
   if genesisBlock.header != settings.cryptarchia.genesisState.header:
     return err(
-      "chain: genesis header in deployment settings does not match the genesis transaction")
+      "chain: genesis header in deployment settings does not match the genesis transaction"
+    )
   let
     cfg = ledgerConfig(settings)
     sdp = SdpRegistry.init(
       settings.cryptarchia.sdpConfig,
-      blendRewardsParams(settings, cfg.epochSchedule.epochLength))
-    genesisState = LedgerState.fromGenesis(
-        validGenesisTx, param.epochNonce, sdp, cfg).valueOr:
+      blendRewardsParams(settings, cfg.epochSchedule.epochLength),
+    )
+    genesisState = LedgerState.fromGenesis(validGenesisTx, param.epochNonce, sdp, cfg).valueOr:
       return err("chain: failed to build the genesis state: " & $error)
-  ok(T.init(
-    genesisBlock,
-    Ledger[BlockId].init(
-      blockId(genesisBlock.header), genesisState, cfg, leaderProofVerifier,
-      poqVerifier),
-    SlotConfig(
-      genesisTime: param.genesisTime,
-      slotDurationSeconds: uint64(settings.time.slotDuration.seconds)),
-    securityParam = uint64(settings.cryptarchia.securityParam)))
+  ok(
+    T.init(
+      genesisBlock,
+      Ledger[BlockId].init(
+        blockId(genesisBlock.header),
+        genesisState,
+        cfg,
+        leaderProofVerifier,
+        poqVerifier,
+      ),
+      SlotConfig(
+        genesisTime: param.genesisTime,
+        slotDurationSeconds: uint64(settings.time.slotDuration.seconds),
+      ),
+      securityParam = uint64(settings.cryptarchia.securityParam),
+    )
+  )
 
 proc currentWallclockSlot*(chain: Chain): SlotNumber =
   ## Slot containing the current system time.
@@ -156,7 +171,7 @@ proc readdBranchTxs(chain: var Chain, fromId, toId: BlockId) =
   while not curr.isZero and curr != toId:
     let b = chain.localTree.getBlock(curr).valueOr:
       warn "Missing block during reorg transaction re-addition",
-          missingBlockId = curr, toId = toId
+        missingBlockId = curr, toId = toId
       break
     for vtx in b.txs:
       discard chain.mempool.add(vtx, nowSlot)
@@ -167,7 +182,7 @@ proc removeBranchTxs(chain: var Chain, fromId, toId: BlockId) =
   while not curr.isZero and curr != toId:
     let b = chain.localTree.getBlock(curr).valueOr:
       warn "Missing block during reorg transaction removal",
-          missingBlockId = curr, toId = toId
+        missingBlockId = curr, toId = toId
       break
     chain.mempool.pruneTxs(b.txs)
     curr = header(b).parentBlock
@@ -191,9 +206,9 @@ proc handleTipChange(chain: var Chain, oldTip, newTip: BlockId) =
     return
   # Active tip advanced: handles both normal block extensions (lcaId == oldTip)
   # and multi-block fork reorganizations (lcaId == common ancestor).
-  let (lcaId, _) = chain.localTree.lcaBlockIdAndHeight(
-    oldTip, newTip
-  ).expect("LCA must exist between active tree tips")
+  let (lcaId, _) = chain.localTree.lcaBlockIdAndHeight(oldTip, newTip).expect(
+      "LCA must exist between active tree tips"
+    )
   # 1. readd before remove: if a transaction exists in both branches, readding first allows removing it next.
   # 2. tryUpdateLib after mempool reorg: ensures fork pruning does not delete orphaned blocks before transactions are restored.
   # 3. Prune fork states and canonical states older than the new immutable block (retaining latestImmutableId as anchor).
@@ -260,10 +275,7 @@ proc applyValidBlock(
   ok()
 
 proc applyAdmittedBlock(
-    chain: var Chain,
-    admittedBlk: AdmittedBlock,
-    id: BlockId,
-    curSlot: SlotNumber,
+    chain: var Chain, admittedBlk: AdmittedBlock, id: BlockId, curSlot: SlotNumber
 ): Result[void, BlockApplyError] =
   # PoL, then uncles, then transactions, as in steps 2, 3 and 6 of Block
   # Proposal Validation. A synced block has no order rule, so it uses the same
@@ -282,10 +294,9 @@ proc applyAdmittedBlock(
     return err(toBlockApplyError(error))
   chain.applyValidBlock(validBlk, headerState, id, curSlot)
 
-type
-  TopologyStatus* {.pure.} = enum
-    ParentPresent
-    Orphan
+type TopologyStatus* {.pure.} = enum
+  ParentPresent
+  Orphan
 
 proc admitOrBuffer(
     chain: var Chain,
@@ -303,9 +314,7 @@ proc admitOrBuffer(
     chain.applyAdmittedBlock(admittedBlk, id, curSlot)
 
 func checkTopology*(
-    header: Header,
-    localTree: LocalTree,
-    ledger: Ledger[BlockId],
+    header: Header, localTree: LocalTree, ledger: Ledger[BlockId]
 ): Result[TopologyStatus, BlockApplyError] =
   let missing = not ledger.hasState(header.parentBlock)
   if not missing:
@@ -320,8 +329,7 @@ func checkTopology*(
   ok(if missing: TopologyStatus.Orphan else: TopologyStatus.ParentPresent)
 
 proc tryApplyPromotedOrphan*(
-    chain: var Chain,
-    admittedBlk: AdmittedBlock,
+    chain: var Chain, admittedBlk: AdmittedBlock
 ): Result[void, BlockApplyError] =
   ## Directly applies an admitted block promoted from the orphan pool.
   let
@@ -340,10 +348,7 @@ proc tryApplyPromotedOrphan*(
 
   chain.applyAdmittedBlock(admittedBlk, id, curSlot)
 
-proc tryApplyBlock*(
-    chain: var Chain,
-    blk: Block,
-): Result[void, BlockApplyError] =
+proc tryApplyBlock*(chain: var Chain, blk: Block): Result[void, BlockApplyError] =
   ## Full block ingestion in `valid_header` order, with automatic orphan buffering.
   let
     curSlot = chain.currentWallclockSlot()
@@ -355,8 +360,7 @@ proc tryApplyBlock*(
   chain.admitOrBuffer(status, admittedBlk, id, curSlot)
 
 proc tryApplyProposalBlock*(
-    chain: var Chain,
-    admittedBlk: AdmittedBlock,
+    chain: var Chain, admittedBlk: AdmittedBlock
 ): Result[void, BlockApplyError] =
   ## Applies a proposal that the gossip gate admitted, or buffers it as an
   ## orphan. Only the rules that need chain state run here.
