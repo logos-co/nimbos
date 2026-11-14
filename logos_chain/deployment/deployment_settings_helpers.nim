@@ -14,7 +14,6 @@ import
   stew/byteutils,
   yaml/[dom, loading],
   libp2p/multiaddress,
-  libp2p/crypto/ed25519/ed25519,
   ../chain/genesis,
   ../core/[types, mantle/tx_types],
   ../zk/poseidon2/hasher

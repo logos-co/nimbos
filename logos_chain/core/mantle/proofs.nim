@@ -12,7 +12,6 @@
 {.push raises: [], gcsafe.}
 
 import
-  libp2p/crypto/ed25519/ed25519,
   stew/assign2,
   ../crypto/types,
   ./[primitives, opcodes, operations]

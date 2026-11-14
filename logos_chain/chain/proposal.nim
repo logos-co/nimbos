@@ -14,7 +14,6 @@
 import
   std/tables,
   chronicles,
-  libp2p/crypto/ed25519/ed25519,
   ../core/types,
   ../ledger/ledger,
   ../mempool

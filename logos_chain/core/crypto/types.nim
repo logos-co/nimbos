@@ -8,7 +8,7 @@
 ## Common cryptographic wire types and little-endian / length-prefixed / fixed-size
 ## **byte** encoders and decoders shared across Bedrock (block ids, Ed25519
 ## wire, Groth16 bytes, Mantle wire, etc.).
-## Spec: [Common Cryptographic Components v1.0.2](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/common-cryptographic-components.md)
+## Spec: [Common Cryptographic Components v1.2.0](https://github.com/logos-co/logos-lips/blob/d788723992a805b395f377de6e6cf59859b47168/docs/blockchain/raw/common-cryptographic-components.md)
 ## Spec: [Bedrock v1.1 — Mantle Specification v1.17.0](https://github.com/logos-co/logos-lips/blob/949faa9563027de366514247a2a62b0de2f8c45f/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md)
 
 {.push raises: [], gcsafe.}
@@ -16,10 +16,13 @@
 import
   bincode,
   libp2p/crypto/ed25519/ed25519,
-  stew/[assign2, endians2, staticfor],
+  stew/[assign2, byteutils, endians2, staticfor],
   ../../zk/poseidon2/hasher           # FieldElement (+ re-exported poseidon2 symbols)
 
 export hasher
+# Plain `verify` accepts a small-order key or `R`, so it is not exported.
+# Consensus code then gets only `verifyStrict`.
+export ed25519 except verify
 
 type
   Hash32* = array[32, byte]
@@ -83,6 +86,18 @@ const
   DefaultZkSignature* = DefaultCompressedGroth16Proof
   DefaultEd25519Signature* = default(Ed25519Signature)
   DefaultEd25519PublicKey* = default(Ed25519PublicKey)
+  SmallOrderEd25519Encodings = [
+    # Every point of order 1, 2, 4 or 8 in canonical form (y = 0, 1, p - 1
+    # and the two order-8 values), plus the non-canonical y = p and y = p + 1.
+    # The sign bit is cleared in all of them.
+    hexToByteArray[32]("0000000000000000000000000000000000000000000000000000000000000000"),
+    hexToByteArray[32]("0100000000000000000000000000000000000000000000000000000000000000"),
+    hexToByteArray[32]("26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05"),
+    hexToByteArray[32]("c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a"),
+    hexToByteArray[32]("ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"),
+    hexToByteArray[32]("edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"),
+    hexToByteArray[32]("eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"),
+  ]
   DefaultFieldElement = default(FieldElement)
 
 let
@@ -153,6 +168,29 @@ func encodeEd25519PublicKey*(value: Ed25519PublicKey): array[32, byte] =
   let written = toBytes(value, buf)
   doAssert written == EdPublicKeySize, "failed to encode Ed25519 public key"
   buf
+
+func isSmallOrder(encoding: openArray[byte]): bool =
+  ## Returns true if `encoding` is a point of order 1, 2, 4 or 8.
+  # The mask clears the sign bit, so each entry also covers its negation.
+  var masked: array[32, byte]
+  assign(masked, encoding)
+  masked[31] = masked[31] and 0x7f'u8
+  masked in SmallOrderEd25519Encodings
+
+func verifyStrict*(
+    signature: Ed25519Signature, message: openArray[byte], key: Ed25519PublicKey
+): bool =
+  ## Returns true if `signature` on `message` verifies strictly under `key`.
+  # Anyone can sign under a small-order key. libp2p `verify` does not check
+  # the order of `A` or `R`, so this check comes first.
+  # libp2p also rejects `S = 0`, which the spec allows. With `A` and `R` not
+  # small-order, `S = 0` needs a hash fixed point, so no real input differs.
+  # libp2p also compares the `R` bytes, so it rejects a non-canonical `R`
+  # (y >= p). The spec equation accepts it, but a signer needs the discrete
+  # log of that `R` to make one.
+  not key.data.isSmallOrder and
+    not signature.data.toOpenArray(0, 31).isSmallOrder and
+    signature.verify(message, key)
 
 func ed25519PkToFrPair*(pk: Ed25519PublicKey): (FieldElement, FieldElement) =
   ## Split a 32-byte Ed25519 public key into two 16-byte halves, each as a

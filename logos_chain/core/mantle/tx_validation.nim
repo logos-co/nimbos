@@ -12,7 +12,6 @@
 
 import
   std/[sets, sequtils],
-  libp2p/crypto/ed25519/ed25519,
   ./poc_verifier,
   ./primitives,
   ./operations,
@@ -139,10 +138,11 @@ proc validateMantleTxStateless*(
       template proof: untyped = stx.opProofs[i]
       case op.payload.kind
       of ChannelInscribe:
-        if not verify(proof.ed25519SigProof, txHash, op.payload.channelInscribe.signer):
+        if not verifyStrict(proof.ed25519SigProof, txHash, op.payload.channelInscribe.signer):
           return err(StatelessLedgerError.InvalidProof)
       of SdpDeclare:
-        if not verify(proof.declarationProof.ed25519Sig, txHash, op.payload.sdpDeclare.providerId):
+        if not verifyStrict(
+            proof.declarationProof.ed25519Sig, txHash, op.payload.sdpDeclare.providerId):
           return err(StatelessLedgerError.InvalidProof)
       else:
         discard
