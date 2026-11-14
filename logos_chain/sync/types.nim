@@ -13,8 +13,11 @@ import
   bincode
 export local_tree.Tip, types
 
-const MaxRequestBlocks* = 128
-  ## Maximum blocks served per ``DownloadBlocksRequest`` (DoS limit).
+const
+  MaxRequestBlocks* = 128
+    ## Maximum blocks served per ``DownloadBlocksRequest`` (DoS limit).
+  MaxKnownAdditionalBlocks* = 5
+    ## Maximum entries allowed in ``KnownBlocks.additionalBlocks``.
 
 type
   KnownBlocks* = object
