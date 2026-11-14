@@ -242,22 +242,16 @@ proc downloadBlocks*(
       return (false, latestDownloadedId)
     info "Sync: applying downloaded blocks", peer, count = blocks.len, targetBlock = sbyteutils.toHex(targetBlock)
 
-    var
-      targetReached = false
-      progressed = false
+    var targetReached = false
     for blk in blocks:
       let id = blockId(blk.header)
       (await onBlock(syncer, blk, id)).isOkOr:
         # Sync streams blocks in parent order, so even a recoverable error
         # means this peer's stream is unusable (unless already applied or in flight).
         case error.kind
-        of BlockApplyErrorKind.AlreadyApplied:
-          debug "Sync: block already applied",
-            peer, blockId = sbyteutils.toHex(id)
-        of BlockApplyErrorKind.InFlight:
-          debug "Sync: block already in flight",
-            peer, blockId = sbyteutils.toHex(id)
-          continue
+        of BlockApplyErrorKind.AlreadyApplied, BlockApplyErrorKind.InFlight:
+          debug "Sync: block already applied or in flight",
+            peer, blockId = sbyteutils.toHex(id), kind = error.kind
         elif error.kind.isRecoverable:
           debug "Sync: block deferred, cancelling download",
             peer, blockId = sbyteutils.toHex(id), err = error.kind
@@ -266,13 +260,7 @@ proc downloadBlocks*(
           warn "Sync: invalid block from peer, cancelling download",
             peer, blockId = sbyteutils.toHex(id), err = $error
           return (false, latestDownloadedId)
-        latestDownloadedId = Opt.some(id)
-        if id == targetBlock:
-          targetReached = true
-          break
-        continue
       latestDownloadedId = Opt.some(id)
-      progressed = true
       debug "Sync: block ingest ok", peer, blockId = sbyteutils.toHex(id)
       if id == targetBlock:
         targetReached = true
@@ -281,9 +269,6 @@ proc downloadBlocks*(
     if targetReached:
       debug "Sync: target reached", peer, targetBlock = sbyteutils.toHex(targetBlock)
       return (true, latestDownloadedId)
-    if not progressed:
-      debug "Sync: peer provided blocks but none were new", peer
-      return (false, latestDownloadedId)
     info "Sync: batch applied, continuing", peer, blocksApplied = blocks.len
 
 const IbdRoundDelay = 1.seconds
