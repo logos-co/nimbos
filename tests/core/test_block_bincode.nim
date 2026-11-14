@@ -11,7 +11,7 @@
 import
   std/sequtils,
   results,
-  stew/[byteutils, endians2],
+  stew/byteutils,
   unittest2,
   ../testutil,
   bincode,
@@ -139,29 +139,6 @@ suite "core/block bincode (cryptarchia sync)":
     except BincodeError:
       fail getCurrentExceptionMsg()
 
-  test "encode / decode roundtrip (Proposal)":
-    let
-      sm = minimalHashedSignedTx()
-      h = sampleHeader([sm])
-    var proposal = new(Proposal)
-    proposal.header = h
-    proposal.references[0] = sm.hash
-    proposal.signature = DefaultEd25519Signature
-    try:
-      let serialized = encode(proposal[], cfg)
-      check:
-        sizeof(proposal.references) == 32768
-        serialized.len == 33137
-      var deserialized = new(Proposal)
-      deserialized[] = decode(serialized, Proposal, cfg)
-      check:
-        deserialized.header == proposal.header
-        deserialized.uncleHeaders.len == 0
-        deserialized.references == proposal.references
-        deserialized.signature == proposal.signature
-    except BincodeError:
-      fail getCurrentExceptionMsg()
-
   test "empty block encodes to 377 bytes":
     let blk = initBlock(sampleHeader([]), uncleHeaders = [], txs = [])
     try:
@@ -191,46 +168,24 @@ suite "core/block bincode (cryptarchia sync)":
     except BincodeError:
       fail getCurrentExceptionMsg()
 
-  test "decode rejects more than MaxUncles uncles (Block and Proposal)":
+  test "decode rejects more than MaxUncles uncles":
     let
       uncle = SignedHeader(
         header: sampleHeader([]), signature: DefaultEd25519Signature)
       tooMany = UncleHeaders(newSeqWith(MaxUncles + 1, uncle))
       atLimit = UncleHeaders(newSeqWith(MaxUncles, uncle))
       h = sampleHeader([])
-    var
-      proposal = new(Proposal)
-      wireBlock, wireProposal: seq[byte]
-    proposal.header = h
+    var wireBlock: seq[byte]
     try:
       # Not `initBlock`: the constructor asserts the bound.
       check decode(
         encode(Block(header: h, uncleHeaders: atLimit), cfg), Block, cfg
       ).uncleHeaders.len == MaxUncles
       wireBlock = encode(Block(header: h, uncleHeaders: tooMany), cfg)
-      proposal.uncleHeaders = tooMany
-      wireProposal = encode(proposal[], cfg)
     except BincodeError:
       fail getCurrentExceptionMsg()
     expect BincodeError:
       discard decode(wireBlock, Block, cfg)
-    expect BincodeError:
-      var decoded = new(Proposal)
-      decoded[] = decode(wireProposal, Proposal, cfg)
-
-  test "decode rejects a false uncle count with no uncle data":
-    # The uncle count follows the header. A large count with no elements
-    # must fail before the decoder allocates for it.
-    let h = sampleHeader([])
-    var wire: seq[byte]
-    try:
-      wire = encode(h, cfg)
-    except BincodeError:
-      fail getCurrentExceptionMsg()
-    wire.add toBytesLE(10_000_000'u64)
-    expect BincodeError:
-      var decoded = new(Proposal)
-      decoded[] = decode(wire, Proposal, cfg)
 
   test "decode rejects more than MaxBlockTxs transactions":
     let

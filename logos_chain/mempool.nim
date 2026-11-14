@@ -42,6 +42,8 @@ type
 
   Mempool* = ref object
     txs*: Table[Hash32, MempoolItem]
+    byPrefix: Table[TxReference, seq[Hash32]]
+      # full hashes per prefix, over `txs` and `graceCache` together
     queue*: Deque[Hash32]
     graceCache*: LruCache[Hash32, MempoolItem]
     capacity*: uint64
@@ -58,10 +60,33 @@ func init*(_: typedesc[Mempool],
     capacity: cap
   )
 
+proc indexPrefix(m: Mempool, hash: Hash32) =
+  let prefix = txReference(hash)
+  m.byPrefix.withValue(prefix, hashes):
+    hashes[].add(hash)
+  do:
+    m.byPrefix[prefix] = @[hash]
+
+proc unindexPrefix(m: Mempool, hash: Hash32) =
+  let prefix = txReference(hash)
+  var emptied = false
+  m.byPrefix.withValue(prefix, hashes):
+    let i = hashes[].find(hash)
+    if i >= 0:
+      hashes[].del(i)
+    emptied = hashes[].len == 0
+  if emptied:
+    m.byPrefix.del(prefix)
+
 proc remove*(m: Mempool, hash: Hash32, moveToGrace: bool) =
   m.txs.withValue(hash, item):
     if moveToGrace:
-      m.graceCache.put(hash, item[])
+      # The hash stays in the index. An entry that the cache evicts leaves it.
+      for entry in m.graceCache.putWithEvicted(hash, item[]):
+        if entry.evicted:
+          m.unindexPrefix(entry.key)
+    else:
+      m.unindexPrefix(hash)
     m.txs.del(hash)
 
 proc compactQueue(m: Mempool) =
@@ -83,8 +108,8 @@ proc add*(
   if hash in m.txs:
     return false
 
-  # If transaction is currently in grace cache, remove it from grace and promote to active txs
-  m.graceCache.del(hash)
+  # A hash in the grace cache is already in the prefix index.
+  let promoted = m.graceCache.pop(hash).isSome
 
   while uint64(m.txs.len) >= m.capacity and m.queue.len > 0:
     # Evict oldest transaction to grace cache when capacity is reached
@@ -102,6 +127,8 @@ proc add*(
     byteSize: Opt.none(int),
     execGas: Opt.none(Gas),
   )
+  if not promoted:
+    m.indexPrefix(hash)
   m.queue.addLast(hash)
   m.lastAddedSlot = effectiveSlot
   true
@@ -117,6 +144,16 @@ func get*(m: Mempool, hash: Hash32): Result[ValidSignedMantleTx, MempoolError] =
   let item = m.graceCache.peek(hash).valueOr:
     return err(MempoolError.TxNotFound)
   ok(item.tx)
+
+func resolve*(m: Mempool, reference: TxReference): Opt[ValidSignedMantleTx] =
+  ## The one local transaction whose hash starts with `reference`; none when
+  ## no transaction or more than one transaction matches.
+  # The index covers the active set and the grace cache, so the unique-match
+  # rule holds over both sources, and `get` finds every indexed hash.
+  m.byPrefix.withValue(reference, hashes):
+    if hashes[].len == 1:
+      return m.get(hashes[][0]).optValue
+  Opt.none(ValidSignedMantleTx)
 
 proc pruneExpiredTxs*(m: Mempool, currentSlot: SlotNumber) =
   while m.queue.len > 0:

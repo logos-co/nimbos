@@ -200,13 +200,14 @@ suite "chain/epoch wiring (devnet deployment settings)":
     check txHash in chain.mempool.txs
 
     # Proposal selection on the new tip picks up the restored dummyTx
-    let (refs, count) = chain.mempool.selectProposalReferences(
+    let refs = chain.mempool.selectProposalReferences(
       chain.ledger.state(id3_fork).get, ledgerConfig(ds),
       chain.currentWallclockSlot() + TxMaturitySlots,
       verifyPoq = verifyProofOfQuota,
     )
-    check count == 1
-    check refs[0] == txHash
+    check:
+      refs.len == 1
+      refs[0] == txHash
 
   test "multi-fork reorg correctly handles multiple competing branches":
     var chain = initZeroFeeChain(ds)
@@ -315,11 +316,11 @@ suite "chain/epoch wiring (devnet deployment settings)":
     check tipState.epochs.activeEpoch.epoch == 0
 
     # Proposal at slot 6500 crosses epoch 0 (epoch length = 6000 slots)
-    let (refs, count) = chain.mempool.selectProposalReferences(
+    let refs = chain.mempool.selectProposalReferences(
       tipState, ledgerConfig(ds), SlotNumber(6500), verifyPoq = verifyProofOfQuota
     )
     check:
-      count == 1
+      refs.len == 1
       refs[0] == tx.hash
 
     # Verify that a block constructed from this proposal is valid and admitted to localTree & ledger

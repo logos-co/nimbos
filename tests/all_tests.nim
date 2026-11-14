@@ -37,6 +37,7 @@ import
   ./core/test_block_bincode,
   ./core/test_block_validation,
   ./core/test_body_root,
+  ./core/test_proposal_codec,
   ./core/test_mempool,
   ./core/test_utils,
   ./consensus/test_clock,

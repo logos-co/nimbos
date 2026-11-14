@@ -354,14 +354,15 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
       check reconstructedBlock.txs.len == 0
 
       # Broadcast proposal referencing a missing transaction (not in listener's mempool)
-      var missingRefs: References
-      missingRefs[0] = minimalValidSignedTx().hash
-      let missingBlock = childValidBlock(sampleProposal.header, blockId(sampleProposal.header), SlotNumber(2), [])
-      let missingProposal = Proposal(
-        header: missingBlock.header,
-        references: missingRefs,
-        signature: missingBlock.signature
-      )
+      let
+        missingTx = minimalValidSignedTx()
+        missingBlock = childValidBlock(
+          sampleProposal.header, blockId(sampleProposal.header), SlotNumber(2), [missingTx])
+        missingProposal = Proposal(
+          header: missingBlock.header,
+          references: References(@[txReference(missingTx.hash)]),
+          signature: missingBlock.signature
+        )
       check waitUntil((await peers.dialer.broadcast(topic, missingProposal)).isOk)
       # Wait a brief moment to ensure validation ran and rejected it without adding to localTree
       await sleepAsync(chronos.milliseconds(25))

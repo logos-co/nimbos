@@ -26,7 +26,6 @@ proc processProposal*(
     id = blockId(proposal.header)
     idHex = toHex(id)
 
-  # 1. Scalar slot checks (~2-20 ns)
   if proposal.header.slot <= bp.localTree.latestImmutableSlot():
     debug "GossipSub ignored proposal at or behind immutable slot",
       blockId = idHex, src
@@ -38,23 +37,28 @@ proc processProposal*(
       blockId = idHex, blockSlot = proposal.header.slot, wallclockSlot = nowSlot, src
     return ValidationResult.Ignore
 
-  # 2. Ingestion deduplication (in-flight, localTree, orphanPool) (~20-40 ns)
+  # Only accepted copies are in flight, applied or buffered.
   if bp.checkDeduplication(id, proposal.signature).isErr:
     trace "GossipSub ignored duplicate proposal", blockId = idHex, src
     return ValidationResult.Ignore
 
-  # 3. Binding of the reference list (~µs, mempool-free)
-  if not proposal.bodyMatchesHeader:
-    debug "GossipSub rejected proposal: references do not match body root",
-      blockId = idHex, src
-    return ValidationResult.Reject
+  # Every check that needs no chain state runs here, so the verdict covers all
+  # of them and apply does not read the mempool again.
+  let admittedBlk = admitProposal(proposal, bp.mempool).valueOr:
+    case error
+    of ProposalValidationError.UnresolvedReference:
+      debug "GossipSub cannot accept proposal: unresolved reference",
+        blockId = idHex, src
+      return ValidationResult.Ignore
+    of ProposalValidationError.InvalidHeader,
+        ProposalValidationError.InvalidSignature,
+        ProposalValidationError.BodyRootMismatch,
+        ProposalValidationError.InvalidStructure:
+      debug "GossipSub rejected proposal",
+        blockId = idHex, error = $error, src
+      return ValidationResult.Reject
 
-  if proposal.hasMissingReference(bp.mempool):
-    debug "GossipSub cannot accept proposal: missing tx in mempool",
-      blockId = idHex, src
-    return ValidationResult.Ignore
-
-  discard bp.addProposal(proposal, id)
+  discard bp.addProposalBlock(admittedBlk, id)
 
   debug "GossipSub accepted proposal into block queue",
     blockId = idHex, slot = proposal.header.slot, src

@@ -29,7 +29,8 @@ from ../core/types import
   Block, BlockTxs, Proposal, body_root, ExpectedBedrockVersion,
   MaxBlockSize, MaxUncles, asSeq, len, header, BlockId,
   Header, UncleHeaders, encode, MaxBlockTxs,
-  createGenesisHeader, activeLen, verify_signature
+  createGenesisHeader, verify_signature
+from ../core/crypto/types import isSmallOrder
 from ../core/mantle/tx_hashing import
   HashedSignedMantleTx, byteLen, signedTx
 
@@ -57,6 +58,13 @@ type
     signature: Ed25519Signature
     uncleHeaders: UncleHeaders
     txs: seq[ValidSignedMantleTx]
+
+  ProposalValidationError* {.pure.} = enum
+    InvalidHeader        ## a header rule that needs no chain state
+    InvalidSignature
+    UnresolvedReference  ## no unique local transaction for a reference
+    BodyRootMismatch
+    InvalidStructure     ## a count or byte bound over the resolved body
 
   BlockValidationErrorKind* {.pure.} = enum
     InvalidBlockStructure
@@ -88,16 +96,26 @@ func txBytesLen[T: AnyHashedSignedMantleTx](txs: openArray[T]): int =
     total += byteLen(txs[i])
   total
 
-func bodyMatchesHeader*(proposal: Proposal): bool =
-  ## Binding of the reference list (Block Construction 1.3.0): references and
-  ## uncle headers must commit to header.bodyRoot, before the copy may suppress
-  ## any other copy of the same block ID.
-  let n = proposal.references.activeLen
-  body_root(proposal.uncleHeaders.asSeq,
-            proposal.references.toOpenArray(0, n - 1)) == proposal.header.bodyRoot
-
 func bodyMatchesHeader*(blk: Block): bool =
   body_root(blk.uncleHeaders.asSeq, blk.txs.asSeq) == blk.header.bodyRoot
+
+func headerRulesHold(header: Header): bool =
+  if header.bedrockVersion != ExpectedBedrockVersion:
+    return false
+
+  # Stands in for strict verification (Common Cryptographic Components 1.2.0,
+  # EdDSA: reject a small-order A), which `verify_signature` does not do yet.
+  # Anyone can sign under a small-order key. The all-zero key is also the
+  # leader key of the genesis proof, which the PoL verifier accepts at any
+  # slot. Delete this check when every signature uses strict verification.
+  if header.proofOfLeadership.leaderKey.isSmallOrder:
+    return false
+
+  # Stateless proxy of the "parent is in the block tree" rule.
+  if header.slot > 0 and header.parentBlock.isZero:
+    return false
+
+  true
 
 func validateHeader[T: AnyHashedSignedMantleTx](
     header: Header,
@@ -105,22 +123,17 @@ func validateHeader[T: AnyHashedSignedMantleTx](
     uncleHeaders: UncleHeaders,
     txs: openArray[T],
 ): bool =
-  if header.bedrockVersion != ExpectedBedrockVersion:
-    return false
-
-  if header.proofOfLeadership.leaderKey == DefaultEd25519PublicKey:
-    return false
-
-  if header.slot > 0 and header.parentBlock.isZero:
+  if not headerRulesHold(header):
     return false
 
   # Only the commitment to the carried uncle list is checked here. The uncle
   # validity rules (Cryptarchia "Block Header Validation" step 10) live in
   # `uncle_validation.nim` and run against the parent chain.
-  # Body root computed directly from precomputed tx hashes in txs
-  # TODO: remove this body-root check once a way to enforce at compile-time that
-  # a caller checked bodyMatchesHeader is established without heavy wrapper types.
-  # This check is currently redundant for blocks/proposals arriving via block_processor ingress.
+  # `addBlock` checks `bodyMatchesHeader` before it queues a synced block, and
+  # it is the only route into `tryApplyBlock`, so this body-root check repeats
+  # that one. The signature check is not a repeat: a synced block gets it only
+  # here. TODO: let `addBlock` produce the `AdmittedBlock`, as the gossip gate
+  # does with `admitProposal`, and drop the repeat.
   let root = body_root(uncleHeaders.asSeq, txs)
   if root != header.bodyRoot:
     return false
@@ -181,20 +194,36 @@ func admitBlock*(
 
 func admitProposal*(
     proposal: Proposal,
-    validTxs: seq[ValidSignedMantleTx],
-): Result[AdmittedBlock, BlockValidationError] =
-  ## Validates a proposal with statelessly pre-verified transactions:
-  ## Runs Tier 0 structural checks and Tier 2 header/body root checks.
-  ## Returns an AdmittedBlock with txsVerified: true, preserving the verified transactions.
-  if not validateStatelessBlock(proposal.header, proposal.signature, proposal.uncleHeaders, validTxs):
-    return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))
+    mempool: Mempool,
+): Result[AdmittedBlock, ProposalValidationError] =
+  ## Runs every proposal check that needs no chain state, with the
+  ## transactions that the references resolve to in `mempool`.
+  # Header bytes and the signature are checked before any mempool access.
+  if not headerRulesHold(proposal.header):
+    return err(ProposalValidationError.InvalidHeader)
+
+  if not verify_signature(proposal.header, proposal.signature):
+    return err(ProposalValidationError.InvalidSignature)
+
+  var validTxs = newSeqOfCap[ValidSignedMantleTx](proposal.references.len)
+  for reference in proposal.references.asSeq:
+    let vtx = mempool.resolve(reference).valueOr:
+      return err(ProposalValidationError.UnresolvedReference)
+    validTxs.add(vtx)
+
+  # Only the body root binds the unsigned reference list to the signed header.
+  if body_root(proposal.uncleHeaders.asSeq, validTxs) != proposal.header.bodyRoot:
+    return err(ProposalValidationError.BodyRootMismatch)
+
+  if not validateBlockStructure(proposal.signature, proposal.uncleHeaders, validTxs):
+    return err(ProposalValidationError.InvalidStructure)
 
   ok(AdmittedBlock(
     header: proposal.header,
     signature: proposal.signature,
     uncleHeaders: proposal.uncleHeaders,
     txsVerified: true,
-    validTxs: validTxs,
+    validTxs: move(validTxs),
   ))
 
 proc validatePol*(
@@ -227,7 +256,7 @@ proc validateStatelessTransactions*(
     mempool: Mempool,
 ): Result[ValidBlock, BlockValidationError] =
   ## Tier 3b: stateless checks of the transactions of `blk`, light before heavy
-  ## ZK. A proposal-admitted block gives up `blk.validTxs`, so validate it once.
+  ## ZK.
   # Light (non-ZK) txs cost ~130 ns, heavy ZK txs (LeaderClaim Groth16 proofs)
   # ~1.13 ms. Txs already verified in the mempool skip the crypto checks.
   template validBlock(validTxs: untyped): untyped =
@@ -245,8 +274,10 @@ proc validateStatelessTransactions*(
         statelessError: error,
       ))
 
+  # Copy, not move: `blk` keeps its transactions, so a second apply of the
+  # same block cannot apply an empty body under a header that commits to txs.
   if blk.txsVerified:
-    return ok(validBlock(move(blk.validTxs)))
+    return ok(validBlock(blk.validTxs))
 
   template txs: untyped = blk.txs.asSeq
   var

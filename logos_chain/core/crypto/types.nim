@@ -16,7 +16,7 @@
 import
   bincode,
   libp2p/crypto/ed25519/ed25519,
-  stew/[assign2, endians2, staticfor],
+  stew/[assign2, byteutils, endians2, staticfor],
   ../../zk/poseidon2/hasher           # FieldElement (+ re-exported poseidon2 symbols)
 
 export hasher
@@ -83,6 +83,18 @@ const
   DefaultZkSignature* = DefaultCompressedGroth16Proof
   DefaultEd25519Signature* = default(Ed25519Signature)
   DefaultEd25519PublicKey* = default(Ed25519PublicKey)
+  SmallOrderEd25519Encodings = [
+    # Every point of order 1, 2, 4 or 8 in canonical form (y = 0, 1, p - 1
+    # and the two order-8 values), plus the non-canonical y = p and y = p + 1.
+    # The sign bit is cleared in all of them.
+    hexToByteArray[32]("0000000000000000000000000000000000000000000000000000000000000000"),
+    hexToByteArray[32]("0100000000000000000000000000000000000000000000000000000000000000"),
+    hexToByteArray[32]("26e8958fc2b227b045c3f489f2ef98f0d5dfac05d3c63339b13802886d53fc05"),
+    hexToByteArray[32]("c7176a703d4dd84fba3c0b760d10670f2a2053fa2c39ccc64ec7fd7792ac037a"),
+    hexToByteArray[32]("ecffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"),
+    hexToByteArray[32]("edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"),
+    hexToByteArray[32]("eeffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f"),
+  ]
   DefaultFieldElement = default(FieldElement)
 
 let
@@ -153,6 +165,15 @@ func encodeEd25519PublicKey*(value: Ed25519PublicKey): array[32, byte] =
   let written = toBytes(value, buf)
   doAssert written == EdPublicKeySize, "failed to encode Ed25519 public key"
   buf
+
+func isSmallOrder*(key: Ed25519PublicKey): bool =
+  ## True if `key` encodes a point of order 1, 2, 4 or 8.
+  # Anyone can make a signature that verifies under such a key, and libp2p
+  # `verify` does not reject one. The sign bit is ignored, so each list entry
+  # also covers its negation.
+  var masked = key.data
+  masked[31] = masked[31] and 0x7f'u8
+  masked in SmallOrderEd25519Encodings
 
 func ed25519PkToFrPair*(pk: Ed25519PublicKey): (FieldElement, FieldElement) =
   ## Split a 32-byte Ed25519 public key into two 16-byte halves, each as a
