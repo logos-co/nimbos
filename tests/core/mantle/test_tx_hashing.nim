@@ -177,20 +177,6 @@ suite "core/mantle/tx_hashing":
         nonce: 2'u64,
       ))
 
-  test "sdp declare opId is over wire-encoded payload, not declaration_id preimage":
-    let
-      declare = DeclarationMessage(
-        serviceType: ServiceType.bn,
-        locators: @[],
-        providerId: mkProvider(1),
-        lockedNoteId: id(mkUtxo(pkSeed = 1)),
-        zkId: mkUtxo(pkSeed = 1).note.zkPublicKey,
-      )
-      wire = encodeSdpDeclare(declare).get
-    check:
-      wire[0] == encodeServiceType(ServiceType.bn)
-      opId(declare).get != declarationId(declare).get
-
 suite "core/mantle/tx_hashing — op_id spec vectors":
   # Payload/op_id pairs from the Mantle specification's "Operation Id" table.
   test "CHANNEL_DEPOSIT payload and op_id are unchanged by the notes rework":

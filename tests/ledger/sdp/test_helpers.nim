@@ -118,27 +118,9 @@ proc installTestDeclaration*(
     declaration: DeclarationMessage,
     epoch: EpochNumber,
 ): DeclarationId =
-  let declarationId = declarationId(declaration).get
-  registry.state = insertDeclaration(
-    addDeclarationToLockedNote(
-      registry.state,
-      declaration.lockedNoteId,
-      declarationId,
-    ),
-    declarationId,
-    DeclarationInfo(
-      service: declaration.serviceType,
-      locators: declaration.locators,
-      providerId: declaration.providerId,
-      zkId: declaration.zkId,
-      lockedNoteId: declaration.lockedNoteId,
-      created: epoch,
-      active: Opt.none(EpochNumber),
-      withdrawAt: Opt.none(EpochNumber),
-      nonce: 0'u64,
-    ),
-  )
-  declarationId
+  registry = applySdpDeclare(registry, declaration, epoch).expect(
+    "test SDP config has parameters for the service")
+  declarationId(declaration)
 
 proc installTestActive*(
     registry: var SdpRegistry,

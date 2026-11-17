@@ -51,12 +51,10 @@ suite "ledger/sdp/state":
 
   proc checkInvariants(state: SdpState) =
     check:
-      state.activeProviders.len == state.declarations.len
-      state.activeZkIds.len == state.declarations.len
+      state.providers.len == state.declarations.len
     for declId, info in state.declarations.pairs:
       check:
-        (info.service, info.providerId) in state.activeProviders
-        (info.service, info.zkId) in state.activeZkIds
+        (info.service, info.providerId) in state.providers
         info.lockedNoteId in state.lockedNotes
       let declsInNote = state.lockedNotes.get(info.lockedNoteId).get()
       check declId in declsInNote
@@ -153,22 +151,6 @@ suite "ledger/sdp/state":
     check declId in state.declarations
     check noteId in state.lockedNotes
 
-  test "hasProviderOrZkIdConflict uses secondary index maps":
-    var state = SdpState.init()
-    let declId = seedDeclId(10)
-    var info: DeclarationInfo
-    info.service = ServiceType.bn
-    info.providerId = mkProvider(1)
-    info.zkId = seedNoteId(9)
-
-    check not hasProviderOrZkIdConflict(state, info.service, info.providerId, info.zkId)
-    state = insertDeclaration(state, declId, info)
-    check hasProviderOrZkIdConflict(state, info.service, info.providerId, info.zkId)
-
-    # Provider and ZK ID remain conflict-protected until declaration is removed
-    state = removeDeclaration(state, declId)
-    check not hasProviderOrZkIdConflict(state, info.service, info.providerId, info.zkId)
-
   test "SdpState preserves invariants across declare, active, withdraw, and finalization":
     var seeded1 = seedDeclaration(pkSeed = 1, declareEpoch = 1)
     let seeded2 = seedDeclaration(pkSeed = 2, declareEpoch = 1)
@@ -214,6 +196,7 @@ suite "ledger/sdp/state":
     check seeded1.declId notin seeded1.registry.state.declarations
 
   test "a withdrawing declaration still blocks its ids":
+    # The zk_id case fails if the declaration ID is not service and zk_id.
     var seeded = seedDeclaration(pkSeed = 4, declareEpoch = 1)
     let
       withdraw = WithdrawMessage(
@@ -229,14 +212,26 @@ suite "ledger/sdp/state":
     let
       utxo = mkUtxo(value = 200, pkSeed = 5)
       store = seeded.store.insert(utxo.id, utxo).store
-      redeclaration = DeclarationMessage(
+      fresh = DeclarationMessage(
         serviceType: ServiceType.bn,
         locators: @[mkLocator(30305)],
-        providerId: seeded.declaration.providerId,
+        providerId: mkProvider(5),
         lockedNoteId: utxo.id,
-        zkId: utxo.note.zkPublicKey,
+        zkId: mkZkPubKey(6),
       )
-    check execDeclare(seeded.registry, redeclaration, store, 3).error ==
-      DuplicateProviderOrZkId
+    var
+      sameZkId = fresh
+      sameProvider = fresh
+      sameNote = fresh
+    sameZkId.zkId = seeded.declaration.zkId
+    sameProvider.providerId = seeded.declaration.providerId
+    sameNote.lockedNoteId = seeded.declaration.lockedNoteId
+    check:
+      execDeclare(seeded.registry, sameZkId, store, 3).error ==
+        DuplicateDeclaration
+      execDeclare(seeded.registry, sameProvider, store, 3).error ==
+        DuplicateProviderId
+      execDeclare(seeded.registry, sameNote, store, 3).error ==
+        LockedNoteServiceConflict
 
 {.pop.}
