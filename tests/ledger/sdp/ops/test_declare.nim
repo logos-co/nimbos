@@ -95,16 +95,26 @@ suite "ledger/sdp/ops/declare":
       declareResult.isErr
       declareResult.error == ChannelNoteSpend
 
-  test "tryApplySdpDeclare stores declaration":
+  test "applySdpDeclare stores the created lifecycle nonce":
+    # Fails if declare stores a nonce outside the `created` lifecycle.
     let
-      seeded = seedDeclaration(pkSeed = 4, declareEpoch = 10)
-      info = getDeclaration(seeded.registry.state, seeded.declId).get()
+      utxo = mkUtxo(value = 200, pkSeed = 4)
+      declaration = DeclarationMessage(
+        serviceType: ServiceType.bn,
+        locators: @[mkLocator(30303)],
+        providerId: mkProvider(4),
+        lockedNoteId: utxo.id,
+        zkId: utxo.note.zkPublicKey,
+      )
+      registry = applySdpDeclare(testSdpRegistry(), declaration, 10).expect(
+        "test SDP config has parameters for the service")
+      info = getDeclaration(registry.state, declarationId(declaration)).get()
     check:
-      info.created == 10'u64
+      info.created == 10'u32
       info.active.isNone
       info.withdrawAt.isNone
-      info.nonce == 0'u64
-      getLockedNote(seeded.registry.state, seeded.declaration.lockedNoteId).isSome
+      info.nonce == nonce(10, 0)
+      getLockedNote(registry.state, utxo.id).isSome
 
   test "tryApplySdpDeclare rejects a zk_id already bound in the service":
     # Fails if the declaration ID holds the provider or the locators.

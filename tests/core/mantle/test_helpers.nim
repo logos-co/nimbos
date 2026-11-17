@@ -187,7 +187,7 @@ func mkSpecActiveMessage*(): ActiveMessage =
   selection.fill(0x03)
   ActiveMessage(
     declarationId: declarationId,
-    nonce: 31,
+    nonce: Nonce(sequence: 31),
     metadata: ActivityProof(
       epoch: 10,
       signingKey: Ed25519PublicKey.init(

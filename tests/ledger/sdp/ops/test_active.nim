@@ -50,15 +50,16 @@ proc seedBlendTarget(): BlendTarget =
     frFromBytesLE([byte 5]).get, testBlendLotteryParams, testPoqChain).rewards
   BlendTarget(registry: registry, declId: declId, providerId: providerId)
 
-proc mkTargetActivity(target: BlendTarget, nonce: Nonce = 1): ActiveMessage =
+proc mkTargetActivity(target: BlendTarget): ActiveMessage =
   ## Active message whose metadata proves selection at the provider's own
   ## index in the frozen target epoch.
   let
     state = target.registry.blendRewards.target.get.state
     index = state.providers.get(target.providerId).get.index
+    created = getDeclaration(target.registry.state, target.declId).get.created
   ActiveMessage(
     declarationId: target.declId,
-    nonce: nonce,
+    nonce: nonce(created, 1),
     metadata: mkActivity(findRho(index, 2), 0, 3))
 
 suite "ledger/sdp/ops/active":
@@ -66,30 +67,33 @@ suite "ledger/sdp/ops/active":
     let seeded = seedDeclaration(pkSeed = 21, declareEpoch = 10)
     var unknown = ActiveMessage(
       declarationId: seeded.declId,
-      nonce: 1,
+      nonce: nonce(10, 1),
     )
     unknown.declarationId[0] = byte(77)
     check execActive(seeded, unknown, 15).error == DeclarationNotFound
 
-  test "tryApplySdpActive rejects a stale nonce":
-    let
-      seeded = seedDeclaration(pkSeed = 26, declareEpoch = 10)
-      stale = ActiveMessage(
-        declarationId: seeded.declId,
-        nonce: 0,
-      )
-    check execActive(seeded, stale, 15).error == InvalidNonce
+  test "tryApplySdpActive rejects a nonce outside the lifecycle or sequence":
+    # A packed u64 nonce comparison accepts nonce(11, 6) and fails this.
+    var seeded = seedDeclaration(pkSeed = 26, declareEpoch = 10)
+    let declaration = getDeclaration(seeded.registry.state, seeded.declId).get()
+    seeded.registry = applySdpActive(
+      seeded.registry,
+      ActiveMessage(declarationId: seeded.declId, nonce: nonce(10, 5)),
+      declaration, 11)
+    for stale in [
+        nonce(11, 6), nonce(9, high(uint32)), nonce(10, 5), nonce(10, 4)]:
+      checkpoint("nonce " & $stale)
+      let active = ActiveMessage(declarationId: seeded.declId, nonce: stale)
+      check execActive(seeded, active, 15).error == InvalidNonce
 
   test "rejects a report after withdraw_at":
     # Pins the SDP Active validity rule. The epoch boundary removes the
     # declaration first, so on a valid chain this path is defensive.
     var seeded = seedDeclaration(pkSeed = 24, declareEpoch = 1)
     installTestWithdraw(seeded.registry, WithdrawMessage(
-      declarationId: seeded.declId,
-      lockedNoteId: seeded.declaration.lockedNoteId,
-      nonce: 1), withdrawAt = 5)
+      declarationId: seeded.declId, nonce: nonce(1, 1)), withdrawAt = 5)
     let active = ActiveMessage(
-      declarationId: seeded.declId, nonce: 2)
+      declarationId: seeded.declId, nonce: nonce(1, 2))
     check execActive(seeded, active, 6).error == AlreadyWithdrawn
 
 suite "ledger/sdp/ops/active — blend activity":
@@ -108,7 +112,7 @@ suite "ledger/sdp/ops/active — blend activity":
     check:
       applied.blendRewards.target.get.tracker.submitted.len == 1
       info.active == Opt.some(1'u32)
-      info.nonce == 1'u64
+      info.nonce == nonce(1, 1)
 
   test "a rejected proof of quota invalidates the op":
     check tryApplySdpActive(

@@ -165,7 +165,6 @@ suite "core/mantle/operations":
 
     check createSdpWithdrawOp(WithdrawMessage(
       declarationId: default(DeclarationId),
-      lockedNoteId: default(NoteId),
       nonce: default(Nonce),
     )).opcode == OpSdpWithdraw
 
@@ -382,13 +381,12 @@ suite "core/mantle/operations":
       # 7. SdpWithdraw
       opSdpWithdraw = createSdpWithdrawOp(WithdrawMessage(
         declarationId: default(DeclarationId),
-        nonce: 123'u64,
-        lockedNoteId: default(LockedNoteId),
+        nonce: Nonce(sequence: 123),
       ))
       # 8. SdpActive
       opSdpActive = createSdpActiveOp(ActiveMessage(
         declarationId: default(DeclarationId),
-        nonce: 456'u64,
+        nonce: Nonce(sequence: 456),
         metadata: mkActivityProof(),
       ))
       # 9. LeaderClaim

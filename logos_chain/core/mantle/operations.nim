@@ -49,7 +49,6 @@ type
 
   WithdrawMessage* = object
     declarationId*: DeclarationId
-    lockedNoteId*: NoteId
     nonce*: Nonce
 
   ActiveMessage* = object
@@ -215,7 +214,6 @@ func defaultOpForOpcode*(opcode: Opcode): Result[Op, EncodingError] =
     ok(createSdpWithdrawOp(WithdrawMessage(
       declarationId: default(DeclarationId),
       nonce: default(Nonce),
-      lockedNoteId: default(LockedNoteId),
     )))
   of OpSdpActive:
     ok(createSdpActiveOp(ActiveMessage(
@@ -265,22 +263,28 @@ func declarationId*(declaration: DeclarationMessage): DeclarationId =
   assign(preimage.toOpenArray(1, 32), encodeZkId(declaration.zkId))
   blake2b256Hash(preimage)
 
-func encodeSdpWithdraw*(value: WithdrawMessage): array[72, byte] =
-  ## SDPWithdraw = DeclarationId || Nonce || LockedNoteId
-  var res: array[72, byte]
-  res[0 ..< 32] = encodeDeclarationId(value.declarationId)
-  res[32 ..< 40] = encodeNonce(value.nonce)
-  res[40 ..< 72] = encodeLockedNoteId(value.lockedNoteId)
-  res
+const
+  # SDP_WITHDRAW and SDP_ACTIVE both start with DeclarationId || Nonce.
+  NonceOffset = sizeof(DeclarationId)
+  MetadataOffset = NonceOffset + NonceLen
+  SdpWithdrawLen = MetadataOffset
+  SdpActiveLen = MetadataOffset + ActivityMetadataLen
 
-const SdpActiveLen = sizeof(DeclarationId) + sizeof(Nonce) + ActivityMetadataLen
+func encodeSdpWithdraw*(value: WithdrawMessage): array[SdpWithdrawLen, byte] =
+  ## SDPWithdraw = DeclarationId || Nonce
+  var res {.noinit.}: array[SdpWithdrawLen, byte]
+  assign(res.toOpenArray(0, NonceOffset - 1), encodeDeclarationId(value.declarationId))
+  assign(res.toOpenArray(NonceOffset, MetadataOffset - 1), encodeNonce(value.nonce))
+  res
 
 func encodeSdpActive*(value: ActiveMessage): array[SdpActiveLen, byte] =
   ## SDPActive = DeclarationId || Nonce || ActivityMetadata
   var res {.noinit.}: array[SdpActiveLen, byte]
-  assign(res.toOpenArray(0, 31), encodeDeclarationId(value.declarationId))
-  assign(res.toOpenArray(32, 39), encodeNonce(value.nonce))
-  assign(res.toOpenArray(40, SdpActiveLen - 1), encodeActivityMetadata(value.metadata))
+  assign(res.toOpenArray(0, NonceOffset - 1), encodeDeclarationId(value.declarationId))
+  assign(res.toOpenArray(NonceOffset, MetadataOffset - 1), encodeNonce(value.nonce))
+  assign(
+    res.toOpenArray(MetadataOffset, SdpActiveLen - 1),
+    encodeActivityMetadata(value.metadata))
   res
 
 func encodeLeaderClaim*(value: LeaderClaimPayload): array[96, byte] =
@@ -427,7 +431,7 @@ func byteLen*(payload: OpPayload): int =
     sizeof(byte) + sizeof(byte) + locLen + sizeof(ProviderId) +
       sizeof(ZkId) + sizeof(LockedNoteId)
   of SdpWithdraw:
-    sizeof(DeclarationId) + sizeof(Nonce) + sizeof(LockedNoteId)
+    SdpWithdrawLen
   of SdpActive:
     SdpActiveLen
   of LeaderClaim:
@@ -469,19 +473,15 @@ func readSdpDeclare(data: openArray[byte], pos: var int): Result[DeclarationMess
   ))
 
 func readSdpWithdraw(data: openArray[byte], pos: var int): Result[WithdrawMessage, DecodingError] =
-  let declarationId = ?readFixed[32](data, pos)
-  let nonce = ?readLe[uint64](data, pos)
-  let lockedNoteId = ?decodeFieldElementAt(data, pos)
-  ok(WithdrawMessage(
-    declarationId: declarationId,
-    nonce: nonce,
-    lockedNoteId: lockedNoteId,
-  ))
+  let
+    declarationId = ?readFixed[32](data, pos)
+    nonce = ?readNonce(data, pos)
+  ok(WithdrawMessage(declarationId: declarationId, nonce: nonce))
 
 func readSdpActive(data: openArray[byte], pos: var int): Result[ActiveMessage, DecodingError] =
   let
     declarationId = ?readFixed[32](data, pos)
-    nonce = ?readLe[uint64](data, pos)
+    nonce = ?readNonce(data, pos)
     metadata = ?readActivityMetadata(data, pos)
   ok(ActiveMessage(declarationId: declarationId, nonce: nonce, metadata: metadata))
 

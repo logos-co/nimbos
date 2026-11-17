@@ -40,10 +40,13 @@ func checkWithinWithdrawal*(
     return err(AlreadyWithdrawn)
   ok()
 
-func checkNonceMonotonic*(
+func checkNonce*(
     info: DeclarationInfo, nonce: Nonce,
 ): Result[void, LedgerError] =
-  if nonce <= info.nonce:
+  ## Fails unless ``nonce`` is in the declaration's lifecycle and its
+  ## sequence advances.
+  if nonce.lifecycleEpoch != info.created or
+      nonce.sequence <= info.nonce.sequence:
     return err(InvalidNonce)
   ok()
 

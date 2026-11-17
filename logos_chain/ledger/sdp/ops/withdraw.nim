@@ -28,23 +28,19 @@ proc validateSdpWithdraw(
 ): Result[DeclarationInfo, LedgerError] =
   let declareInfo = ?loadDeclaration(state, withdraw.declarationId)
   ?checkNotWithdrawn(declareInfo)
-  ?checkNonceMonotonic(declareInfo, withdraw.nonce)
+  ?checkNonce(declareInfo, withdraw.nonce)
   # `withdraw_at = epoch + 2` must fit in an EpochNumber.
   if epoch > high(EpochNumber) - SnapshotFinalizationDelay:
     return err(InvalidEpoch)
-
-  if withdraw.lockedNoteId != declareInfo.lockedNoteId:
-    return err(LockedNoteIdMismatch)
-
-  let lockedNote = getLockedNote(state, withdraw.lockedNoteId).valueOr:
-    return err(LockedNoteNotFound)
+  let
+    noteId = declareInfo.lockedNoteId
+    lockedNote = getLockedNote(state, noteId).valueOr:
+      return err(LockedNoteNotFound)
   if withdraw.declarationId notin lockedNote:
     return err(DeclarationNotInLockedNote)
-
-  let utxo = utxos.get(withdraw.lockedNoteId).valueOr:
+  let utxo = utxos.get(noteId).valueOr:
     return err(LockedNoteNotFound)
-  ?verifyZkSig(proof, txHash, @[utxo.note.zkPublicKey, declareInfo.zkId])
-
+  ?verifyZkSig(proof, txHash, [utxo.note.zkPublicKey, declareInfo.zkId])
   ok(declareInfo)
 
 proc applySdpWithdraw*(

@@ -186,7 +186,7 @@ suite "ledger/header apply (epoch pipeline)":
           zkId: fe(uint64(seed)))
         declId = installTestDeclaration(registry, declaration, 0)
       installTestActive(
-        registry, ActiveMessage(declarationId: declId, nonce: 1), 0)
+        registry, ActiveMessage(declarationId: declId, nonce: nonce(0, 1)), 0)
     registry = onEpochStarted(registry, 0)
     var s = LedgerState.fromUtxos(
       [mkUtxo(value = 1000)], fe(7), registry, testLedgerConfig

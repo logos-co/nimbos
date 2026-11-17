@@ -50,7 +50,10 @@ type
 
   TokenValue* = uint64
   Value* = uint64
-  Nonce* = uint64
+  Nonce* = object
+    ## SDP op nonce: the declaration's ``created`` epoch, then a sequence.
+    lifecycleEpoch*: EpochNumber
+    sequence*: uint32
 
   PostingTimeframe* = uint32
   PostingTimeout* = uint32
@@ -158,9 +161,11 @@ func encodeValue*(value: Value): array[8, byte] =
   ## Value = UINT64
   encodeLe(value)
 
-func encodeNonce*(value: Nonce): array[8, byte] =
-  ## Nonce = UINT64
-  encodeLe(value)
+const NonceLen* = 8
+
+func encodeNonce*(value: Nonce): array[NonceLen, byte] =
+  ## Nonce = UINT64: ``lifecycleEpoch`` in the high 32 bits, ``sequence`` low.
+  encodeLe((uint64(value.lifecycleEpoch) shl 32) or uint64(value.sequence))
 
 func encodeDepositMetadata*(value: DepositMetadata): Result[seq[byte], EncodingError] =
   ## DepositMetadata = UINT32 *BYTE ; Max MAX_OPERATION_DATA_SIZE bytes
@@ -306,6 +311,12 @@ func readDepositMetadata*(data: openArray[byte], pos: var int): Result[DepositMe
 
 func readInscription*(data: openArray[byte], pos: var int): Result[Inscription, DecodingError] =
   readOperationData(data, pos)
+
+func readNonce*(data: openArray[byte], pos: var int): Result[Nonce, DecodingError] =
+  let packed = ?readLe[uint64](data, pos)
+  ok(Nonce(
+    lifecycleEpoch: EpochNumber(packed shr 32),
+    sequence: uint32(packed)))
 
 func readNote(data: openArray[byte], pos: var int): Result[Note, DecodingError] =
   let

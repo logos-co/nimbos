@@ -76,7 +76,7 @@ proc applySdpDeclare*(
       created: epoch,
       active: Opt.none(EpochNumber),
       withdrawAt: Opt.none(EpochNumber),
-      nonce: 0'u64,
+      nonce: Nonce(lifecycleEpoch: epoch, sequence: 0),
     ),
   )
   ok(registry)
