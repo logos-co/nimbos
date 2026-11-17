@@ -183,7 +183,8 @@ suite "core/mantle/primitives":
   test "primitive scalar encoders produce exact little-endian byte representations":
     check:
       encodeValue(100'u64) == [100'u8, 0, 0, 0, 0, 0, 0, 0]
-      encodeNonce(42'u64) == [42'u8, 0, 0, 0, 0, 0, 0, 0]
+      encodeNonce(Nonce(lifecycleEpoch: 0xFFFF_FFFF'u32, sequence: 1)) ==
+        [1'u8, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0xFF]
       encodeOpcode(0x10'u8) == 0x10'u8
       encodeOpCount(5'u8) == 5'u8
       encodeSignatureCount(2'u16) == [2'u8, 0]
@@ -193,6 +194,13 @@ suite "core/mantle/primitives":
       encodePostingTimeout(20'u32) == [20'u8, 0, 0, 0]
       encodeConfigurationThreshold(2'u16) == [2'u8, 0]
       encodeTransferThreshold(1'u16) == [1'u8, 0]
+
+    # The lifecycle epoch is the high 32 bits of the LE u64.
+    var noncePos = 0
+    check:
+      readNonce([1'u8, 0, 0, 0, 0xFF, 0xFF, 0xFF, 0xFF], noncePos).get ==
+        Nonce(lifecycleEpoch: 0xFFFF_FFFF'u32, sequence: 1)
+      noncePos == 8
 
     var h: Hash32
     h[0] = 0xAA'u8

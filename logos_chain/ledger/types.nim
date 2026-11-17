@@ -45,7 +45,6 @@ type
     DeclarationNotFound
     AlreadyWithdrawn
     InvalidNonce
-    LockedNoteIdMismatch
     DeclarationNotInLockedNote
     TargetEpochNotSet ## SDP Active submitted while no target epoch is set
     InvalidEpoch ## op epoch out of range

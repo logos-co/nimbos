@@ -570,8 +570,7 @@ suite "tryApplyTx — SDP":
 
     let withdraw = WithdrawMessage(
       declarationId: declId,
-      lockedNoteId: input.id,
-      nonce: 1,
+      nonce: nonce(1, 1),
     )
     installTestWithdraw(state.sdp, withdraw, withdrawAt = 5)
     state.sdp.state = finalizeWithdrawals(state.sdp.state, 5)
@@ -624,7 +623,7 @@ suite "ledger — sdp withdrawal through the epoch boundary":
     s = s.tryApplyHeader(100'u64, mkProof(), [], testLedgerConfig).expect("epoch 1")
     let infoA = getDeclaration(s.sdp.state, declIdA).get()
     s.sdp = applySdpWithdraw(s.sdp, WithdrawMessage(
-      declarationId: declIdA, lockedNoteId: noteA.id, nonce: 1), infoA, 1)
+      declarationId: declIdA, nonce: nonce(0, 1)), infoA, 1)
 
     # Epoch 2 is the last epoch A serves. Its income is 1000.
     s = s.tryApplyHeader(200'u64, mkProof(), [], testLedgerConfig).expect("epoch 2")
@@ -640,7 +639,7 @@ suite "ledger — sdp withdrawal through the epoch boundary":
         declarationA.providerId).get.index
       report = ActiveMessage(
         declarationId: declIdA,
-        nonce: 2,
+        nonce: nonce(0, 5),
         metadata: mkActivity(findRho(indexA, 2), epoch = 2, keySeed = 3))
     s.sdp = tryApplySdpActive(
       s.sdp, report, loadProof(transferProofPath),

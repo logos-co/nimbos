@@ -19,14 +19,6 @@ import
   ../../../logos_chain/zk/poseidon2/hasher
 
 suite "ledger/sdp/state":
-  test "DeclarationInfo fields are default-zero":
-    var d: DeclarationInfo
-    check:
-      d.nonce == 0'u64
-      d.service == ServiceType.bn
-      d.active.isNone
-      d.withdrawAt.isNone
-
   test "validateLocator accepts valid locator and rejects oversized ones":
     let good = MultiAddress.init("/ip4/127.0.0.1/tcp/30303").tryGet()
     check:
@@ -164,7 +156,7 @@ suite "ledger/sdp/state":
     let
       activeMsg1 = ActiveMessage(
         declarationId: seeded1.declId,
-        nonce: 1,
+        nonce: nonce(1, 1),
       )
       decl1 = seeded1.registry.state.declarations.get(seeded1.declId).get()
     seeded1.registry = applySdpActive(seeded1.registry, activeMsg1, decl1, 2)
@@ -174,8 +166,7 @@ suite "ledger/sdp/state":
     let
       withdrawMsg1 = WithdrawMessage(
         declarationId: seeded1.declId,
-        lockedNoteId: seeded1.declaration.lockedNoteId,
-        nonce: 2,
+        nonce: nonce(1, 2),
       )
       decl1Active = seeded1.registry.state.declarations.get(seeded1.declId).get()
     seeded1.registry = applySdpWithdraw(seeded1.registry, withdrawMsg1, decl1Active, 5)
@@ -201,8 +192,7 @@ suite "ledger/sdp/state":
     let
       withdraw = WithdrawMessage(
         declarationId: seeded.declId,
-        lockedNoteId: seeded.declaration.lockedNoteId,
-        nonce: 1,
+        nonce: nonce(1, 1),
       )
       declaration = getDeclaration(seeded.registry.state, seeded.declId).get()
     seeded.registry = applySdpWithdraw(seeded.registry, withdraw, declaration, 1)
@@ -233,5 +223,33 @@ suite "ledger/sdp/state":
         DuplicateProviderId
       execDeclare(seeded.registry, sameNote, store, 3).error ==
         LockedNoteServiceConflict
+
+  test "a redeclaration starts a new nonce lifecycle and rejects the old nonces":
+    # Fails if the declaration ID changes with the locators, or if a nonce
+    # from the earlier lifecycle passes the nonce check.
+    var seeded = seedDeclaration(pkSeed = 6, declareEpoch = 1)
+    let declaration = getDeclaration(seeded.registry.state, seeded.declId).get()
+    seeded.registry = applySdpWithdraw(
+      seeded.registry,
+      WithdrawMessage(declarationId: seeded.declId, nonce: nonce(1, 1)),
+      declaration, 1)
+    # withdraw_at is 3, so the boundary of epoch 4 removes the declaration.
+    seeded.registry = onEpochStarted(seeded.registry, 4)
+    check seeded.declId notin seeded.registry.state.declarations
+
+    var redeclaration = seeded.declaration
+    redeclaration.locators = @[mkLocator(30306)]
+    check validateSdpDeclareState(
+      redeclaration, seeded.registry.params.minStake, seeded.store,
+      ChannelNotes.init(), seeded.registry.state).isOk
+    seeded.registry = applySdpDeclare(seeded.registry, redeclaration, 4).expect(
+      "test SDP config has parameters for the service")
+    let info = getDeclaration(seeded.registry.state, seeded.declId).get()
+    check:
+      declarationId(redeclaration) == seeded.declId
+      info.nonce == nonce(4, 0)
+    for replayed in [nonce(1, 1), nonce(1, 2)]:
+      let replay = WithdrawMessage(declarationId: seeded.declId, nonce: replayed)
+      check execWithdraw(seeded, replay, 4).error == InvalidNonce
 
 {.pop.}

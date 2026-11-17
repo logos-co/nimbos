@@ -26,8 +26,8 @@ proc validateSdpActive(
 ): Result[DeclarationInfo, LedgerError] =
   let declaration = ?loadDeclaration(state, active.declarationId)
   ?checkWithinWithdrawal(declaration, epoch)
-  ?checkNonceMonotonic(declaration, active.nonce)
-  ?verifyZkSig(proof, txHash, @[declaration.zkId])
+  ?checkNonce(declaration, active.nonce)
+  ?verifyZkSig(proof, txHash, [declaration.zkId])
   ok(declaration)
 
 proc applySdpActive*(

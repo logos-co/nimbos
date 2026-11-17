@@ -146,6 +146,9 @@ proc installTestWithdraw*(
     registry.state, withdraw.declarationId, declaration,
   )
 
+func nonce*(created: EpochNumber, sequence: uint32): Nonce =
+  Nonce(lifecycleEpoch: created, sequence: sequence)
+
 func mkTxHash*(seed: byte = 0x42): ZkHash =
   var h: ZkHash
   h[0] = seed

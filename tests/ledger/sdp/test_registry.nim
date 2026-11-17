@@ -47,8 +47,7 @@ suite "ledger/sdp/registry":
     var seeded = seedDeclaration(pkSeed = 30, declareEpoch = 1)
     let withdraw = WithdrawMessage(
       declarationId: seeded.declId,
-      lockedNoteId: seeded.declaration.lockedNoteId,
-      nonce: 1,
+      nonce: nonce(1, 1),
     )
     installTestWithdraw(seeded.registry, withdraw, withdrawAt = 5)
     seeded.registry = onEpochStarted(seeded.registry, 5)
@@ -82,7 +81,6 @@ suite "ledger/sdp/registry — epoch snapshots":
         created: 1,
         active: Opt.none(EpochNumber),
         withdrawAt: Opt.none(EpochNumber),
-        nonce: 0,
       ),
     )
     check getEpochSnapshot(registry.snapshots, ServiceType.bn, 0).get()
@@ -134,7 +132,6 @@ suite "ledger/sdp/registry — epoch snapshots":
         created: 2,
         active: Opt.none(EpochNumber),
         withdrawAt: Opt.none(EpochNumber),
-        nonce: 0,
       ),
     )
     check:
@@ -182,7 +179,7 @@ suite "ledger/sdp/registry — active blend providers":
   test "a provider drops out once the inactivity period lapses":
     var seeded = seedDeclaration(pkSeed = 41, declareEpoch = 1)
     installTestActive(seeded.registry, ActiveMessage(
-      declarationId: seeded.declId, nonce: 1), 1)
+      declarationId: seeded.declId, nonce: nonce(1, 1)), 1)
     seeded.registry = onEpochStarted(seeded.registry, 2)
     seeded.registry = onEpochStarted(seeded.registry, 3)
     # Last activity in epoch 1 plus an inactivity period of 2 reaches epoch 3.
@@ -195,8 +192,7 @@ suite "ledger/sdp/registry — active blend providers":
     let
       withdraw = WithdrawMessage(
         declarationId: seeded.declId,
-        lockedNoteId: seeded.declaration.lockedNoteId,
-        nonce: 1,
+        nonce: nonce(1, 1),
       )
       declaration = getDeclaration(seeded.registry.state, seeded.declId).get()
     seeded.registry = applySdpWithdraw(seeded.registry, withdraw, declaration, 1)

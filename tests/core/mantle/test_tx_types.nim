@@ -148,13 +148,13 @@ suite "core/mantle/tx_types":
           # 8. SdpWithdraw
           txSdpWithdraw = SignedMantleTx(
             tx: MantleTx(ops: @[createSdpWithdrawOp(WithdrawMessage(
-              declarationId: default(DeclarationId), nonce: 42, lockedNoteId: default(LockedNoteId)))]),
+              declarationId: default(DeclarationId), nonce: Nonce(sequence: 42)))]),
             opProofs: @[OpProof(kind: opfSdpWithdraw, sdpWithdrawProof: DefaultZkSignature)])
 
           # 9. SdpActive
           txSdpActive = SignedMantleTx(
             tx: MantleTx(ops: @[createSdpActiveOp(ActiveMessage(
-              declarationId: default(DeclarationId), nonce: 42))]),
+              declarationId: default(DeclarationId), nonce: Nonce(sequence: 42)))]),
             opProofs: @[OpProof(kind: opfSdpActive, sdpActiveProof: DefaultZkSignature)])
 
           # 10. LeaderClaim
@@ -168,7 +168,7 @@ suite "core/mantle/tx_types":
             tx: MantleTx(ops: @[
               createTransferOp(TransferPayload(inputs: Inputs(noteIds: @[NoteId.default]), outputs: Outputs(notes: @[]))),
               createChannelInscribeOp(ChannelInscribePayload(channelId: default(ChannelId), inscription: @[1'u8, 2], parent: default(Parent), signer: default(Signer))),
-              createSdpWithdrawOp(WithdrawMessage(declarationId: default(DeclarationId), nonce: 1, lockedNoteId: default(LockedNoteId)))
+              createSdpWithdrawOp(WithdrawMessage(declarationId: default(DeclarationId), nonce: Nonce(sequence: 1)))
             ]),
             opProofs: @[
               OpProof(kind: opfTransfer, transferProof: DefaultZkSignature),
