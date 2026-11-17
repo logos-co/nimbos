@@ -23,10 +23,6 @@ const SnapshotFinalizationDelay* = EpochNumber(2)
   ## the one in force.
 
 type
-  MinStake* = object
-    stakeThreshold*: uint64
-    epoch*: EpochNumber
-
   ServiceParameters* = object
     inactivityPeriod*: NumberOfEpochs
     epoch*: EpochNumber
