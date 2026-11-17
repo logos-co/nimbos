@@ -258,15 +258,12 @@ func encodeSdpDeclare*(value: DeclarationMessage): Result[seq[byte], EncodingErr
   res.add(encodeLockedNoteId(value.lockedNoteId))
   ok(res)
 
-func declarationId*(declaration: DeclarationMessage): Result[DeclarationId, EncodingError] =
-  ## ``declaration_id``: wire ServiceType byte, ProviderId 32B, ZkId 32B,
-  ## then wire locators (u8 count + u16-prefixed multiaddr bytes), blake2b256.
-  var preimage = @[encodeServiceType(declaration.serviceType)]
-  preimage.add(encodeProviderId(declaration.providerId))
-  preimage.add(encodeZkId(declaration.zkId))
-  let locs = ?encodeLocators(declaration.locators)
-  preimage.add(locs)
-  ok(blake2b256Hash(preimage))
+func declarationId*(declaration: DeclarationMessage): DeclarationId =
+  ## ``declaration_id``: BLAKE2b-256 over the service byte and the 32-byte zk_id.
+  var preimage {.noinit.}: array[33, byte]
+  preimage[0] = encodeServiceType(declaration.serviceType)
+  assign(preimage.toOpenArray(1, 32), encodeZkId(declaration.zkId))
+  blake2b256Hash(preimage)
 
 func encodeSdpWithdraw*(value: WithdrawMessage): array[72, byte] =
   ## SDPWithdraw = DeclarationId || Nonce || LockedNoteId

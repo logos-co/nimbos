@@ -334,7 +334,7 @@ suite "tryApplyTx — happy path (Rust-generated fixture)":
       verifyPoq = acceptAllPoq)
     check r.isOk
     check s0.epochs == prevEpochs
-    check declarationId(declaration).get in s0.sdp.state.declarations
+    check declarationId(declaration) in s0.sdp.state.declarations
 
 # Suites below need a valid `OpProof` per transfer op — i.e. a zksign proof
 # generated for that op's input pks + tx hash. nimbos has no Nim-side prover
@@ -682,7 +682,7 @@ suite "ledger — sdp withdrawal through the epoch boundary":
     )
     check r.isOk
     l.commitUpdate(mkId(0x11), r.get)
-    check declarationId(declaration).get in l.state(mkId(0x11)).get.sdp.state.declarations
+    check declarationId(declaration) in l.state(mkId(0x11)).get.sdp.state.declarations
 
 suite "block rewards — per-block leader crediting":
   # At every stake these fixtures reach, the interpolation weight pins at

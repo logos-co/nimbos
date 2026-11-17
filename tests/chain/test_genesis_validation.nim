@@ -319,15 +319,7 @@ suite "chain/genesis validation: stage 3 (ledger state)":
       tx = twoNoteGenesis([
         declareOn(genesisNoteId(base, 0), mkZkPubKey(1), providerSeed = 1),
         declareOn(genesisNoteId(base, 1), mkZkPubKey(2), providerSeed = 1)])
-    check genesisState(tx).error == LedgerError.DuplicateProviderOrZkId
-
-  test "rejects two declarations with one zk id":
-    let
-      base = twoNoteGenesis()
-      tx = twoNoteGenesis([
-        declareOn(genesisNoteId(base, 0), mkZkPubKey(1), providerSeed = 1),
-        declareOn(genesisNoteId(base, 1), mkZkPubKey(1), providerSeed = 2)])
-    check genesisState(tx).error == LedgerError.DuplicateProviderOrZkId
+    check genesisState(tx).error == LedgerError.DuplicateProviderId
 
   test "stores declarations with created == 0":
     let

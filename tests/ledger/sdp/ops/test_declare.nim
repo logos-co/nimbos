@@ -30,21 +30,6 @@ suite "ledger/sdp/ops/declare":
       registry = testSdpRegistry()
     check execDeclare(registry, declaration, store, 1).isErr
 
-  test "tryApplySdpDeclare rejects duplicate declaration_id":
-    let utxo = mkUtxo(value = 200, pkSeed = 2)
-    var store = UtxoStore.init()
-    store = store.insert(utxo.id, utxo).store
-    let declaration = DeclarationMessage(
-      serviceType: ServiceType.bn,
-      locators: @[mkLocator(30303)],
-      providerId: mkProvider(1),
-      lockedNoteId: utxo.id,
-      zkId: utxo.note.zkPublicKey,
-    )
-    var registry = testSdpRegistry()
-    discard installTestDeclaration(registry, declaration, 1)
-    check execDeclare(registry, declaration, store, 2).isErr
-
   test "tryApplySdpDeclare rejects missing locked note and insufficient stake":
     let utxo = mkUtxo(value = 99, pkSeed = 3)
     var store = UtxoStore.init()
@@ -121,7 +106,25 @@ suite "ledger/sdp/ops/declare":
       info.nonce == 0'u64
       getLockedNote(seeded.registry.state, seeded.declaration.lockedNoteId).isSome
 
-  test "tryApplySdpDeclare rejects duplicate providerId or zkId for the same service":
+  test "tryApplySdpDeclare rejects a zk_id already bound in the service":
+    # Fails if the declaration ID holds the provider or the locators.
+    let
+      seeded = seedDeclaration(pkSeed = 4, declareEpoch = 10)
+      utxo = mkUtxo(value = 200, pkSeed = 8)
+      store = seeded.store.insert(utxo.id, utxo).store
+      declaration2 = DeclarationMessage(
+        serviceType: ServiceType.bn,
+        locators: @[mkLocator(30304)],
+        providerId: mkProvider(8),
+        lockedNoteId: utxo.id,
+        zkId: seeded.declaration.zkId,
+      )
+      declareResult = execDeclare(seeded.registry, declaration2, store, 11)
+    check:
+      declareResult.isErr
+      declareResult.error == DuplicateDeclaration
+
+  test "tryApplySdpDeclare rejects a provider_id already bound in the service":
     let
       seeded = seedDeclaration(pkSeed = 4, declareEpoch = 10)
       utxo = mkUtxo(value = 200, pkSeed = 8)
@@ -136,6 +139,6 @@ suite "ledger/sdp/ops/declare":
       declareResult = execDeclare(seeded.registry, declaration2, store, 1)
     check:
       declareResult.isErr
-      declareResult.error == DuplicateProviderOrZkId
+      declareResult.error == DuplicateProviderId
 
 {.pop.}

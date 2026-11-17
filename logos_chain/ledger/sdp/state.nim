@@ -43,15 +43,14 @@ type
   SdpState* = object
     declarations*: HashTrieMap[DeclarationId, DeclarationInfo]
     lockedNotes*: LockedNotes
-    activeProviders*: HashTrieMap[tuple[service: ServiceType, providerId: Ed25519PublicKey], tuple[]]
-    activeZkIds*: HashTrieMap[tuple[service: ServiceType, zkId: ZkPublicKey], tuple[]]
+    providers*: HashTrieMap[tuple[service: ServiceType, providerId: Ed25519PublicKey], tuple[]]
 
 func init*(_: typedesc[SdpState]): SdpState =
   SdpState()
 
 func `==`*(a, b: SdpState): bool =
   a.declarations == b.declarations and a.lockedNotes == b.lockedNotes and
-  a.activeProviders == b.activeProviders and a.activeZkIds == b.activeZkIds
+  a.providers == b.providers
 
 func getDeclaration*(
     state: SdpState, id: DeclarationId,
@@ -71,10 +70,12 @@ func lockedNoteHasService*(
       let info = getDeclaration(state, it)
       info.isSome and info.get().service == service
 
-func hasProviderOrZkIdConflict*(
-    state: SdpState, service: ServiceType, providerId: Ed25519PublicKey, zkId: ZkPublicKey,
+func hasProvider*(
+    state: SdpState, service: ServiceType, providerId: Ed25519PublicKey,
 ): bool =
-  ((service, providerId) in state.activeProviders) or ((service, zkId) in state.activeZkIds)
+  # A zk_id needs no index: `(service, zk_id)` is bound exactly when its
+  # `declaration_id` is in `declarations`.
+  (service, providerId) in state.providers
 
 func insertDeclaration*(
     state: sink SdpState,
@@ -82,8 +83,7 @@ func insertDeclaration*(
     info: sink DeclarationInfo,
 ): SdpState =
   if id notin state.declarations:
-    state.activeProviders = state.activeProviders.insert((info.service, info.providerId), ())
-    state.activeZkIds = state.activeZkIds.insert((info.service, info.zkId), ())
+    state.providers = state.providers.insert((info.service, info.providerId), ())
   state.declarations = state.declarations.insert(id, info)
   state
 
@@ -93,8 +93,7 @@ func removeDeclaration*(
 ): SdpState =
   let info = state.declarations.get(id).valueOr:
     return state
-  state.activeProviders = state.activeProviders.remove((info.service, info.providerId))
-  state.activeZkIds = state.activeZkIds.remove((info.service, info.zkId))
+  state.providers = state.providers.remove((info.service, info.providerId))
   state.declarations = state.declarations.remove(id)
   state
 

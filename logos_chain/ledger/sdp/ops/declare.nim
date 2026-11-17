@@ -43,13 +43,11 @@ func validateSdpDeclareState*(
   if note.value < minStake:
     return err(InsufficientStake)
 
-  let declarationId = declarationId(declaration).valueOr:
-    return err(error.toLedgerError)
-  if declarationId in state.declarations:
+  if declarationId(declaration) in state.declarations:
     return err(DuplicateDeclaration)
 
-  if hasProviderOrZkIdConflict(state, declaration.serviceType, declaration.providerId, declaration.zkId):
-    return err(DuplicateProviderOrZkId)
+  if hasProvider(state, declaration.serviceType, declaration.providerId):
+    return err(DuplicateProviderId)
 
   ok(note.zkPublicKey)
 
@@ -61,8 +59,7 @@ proc applySdpDeclare*(
   ## Mutation only; assumes validation passed.
   if getParametersAt(registry, declaration.serviceType, epoch).isNone:
     return err(MissingServiceParameters)
-  let declarationId = declarationId(declaration).valueOr:
-    return err(error.toLedgerError)
+  let declarationId = declarationId(declaration)
   registry.state = insertDeclaration(
     addDeclarationToLockedNote(
       registry.state,

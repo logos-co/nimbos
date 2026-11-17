@@ -37,7 +37,7 @@ type
       ## node startup — wiring bug, not adversarial input
     # SDP (Service Declaration Protocol)
     DuplicateDeclaration
-    DuplicateProviderOrZkId
+    DuplicateProviderId
     LockedNoteNotFound
     InsufficientStake
     LockedNoteServiceConflict
