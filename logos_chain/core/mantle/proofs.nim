@@ -6,8 +6,8 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## Mantle proof domain types.
-## Spec: [Bedrock v1.1 — Mantle Specification v1.17.0](https://github.com/logos-co/logos-lips/blob/949faa9563027de366514247a2a62b0de2f8c45f/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md)
-## Spec: [Mantle Transaction Encoding v1.9.0](https://github.com/logos-co/logos-lips/blob/fddc2c1911626f7b1949360b8924bb6c05252bff/docs/blockchain/raw/mantle-transaction-encoding.md)
+## Spec: [Bedrock v1.1 — Mantle Specification v1.19.0](https://github.com/logos-co/logos-lips/blob/bd1ca2c881ae94606d4ab23af1255fd922e85dd6/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md)
+## Spec: [Mantle Transaction Encoding v1.11.0](https://github.com/logos-co/logos-lips/blob/6b84187f0ae37a0e8c28c32d3bb1e6f619cec147/docs/blockchain/raw/mantle-transaction-encoding.md)
 
 {.push raises: [], gcsafe.}
 

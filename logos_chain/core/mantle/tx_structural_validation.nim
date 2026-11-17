@@ -7,7 +7,7 @@
 
 ## Pure structural and stateless validation rules for Mantle transactions
 ## with zero cryptographic or ZK dependencies.
-## Spec: [Bedrock v1.1 — Mantle Specification v1.17.0](https://github.com/logos-co/logos-lips/blob/949faa9563027de366514247a2a62b0de2f8c45f/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md)
+## Spec: [Bedrock v1.1 — Mantle Specification v1.19.0](https://github.com/logos-co/logos-lips/blob/bd1ca2c881ae94606d4ab23af1255fd922e85dd6/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md)
 
 {.push raises: [], gcsafe.}
 

@@ -124,7 +124,7 @@ proc fromGenesis*(
   s.epochs = ?genesisEpochTracker(
     nonce, s.cryptarchiaLedger.latestUtxos.root, max(total, 1), cfg)
   # Epochs 0 and 1 read the registry snapshot taken at genesis:
-  # https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/bedrock-service-declaration-protocol.md#snapshots
+  # https://github.com/logos-co/logos-lips/blob/bd1ca2c881ae94606d4ab23af1255fd922e85dd6/docs/blockchain/raw/bedrock-service-declaration-protocol.md#snapshots
   s.sdp = onEpochStarted(s.sdp, genesisEpoch)
   ok(s)
 
@@ -153,7 +153,7 @@ func advanceEpochAndMarket*(
     s.cryptarchiaLedger.leader = ?s.cryptarchiaLedger.leader.addEpochVouchers()
     # Rewards distribute before withdrawal removal, so a withdrawn
     # provider still collects its final reward:
-    # https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md#sdp-epoch-finalization
+    # https://github.com/logos-co/logos-lips/blob/bd1ca2c881ae94606d4ab23af1255fd922e85dd6/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md#sdp-epoch-finalization
     let (blendRewards, minted) = s.sdp.blendRewards.rotateEpoch(
       prevEpoch, s.epochs.activeEpoch.epoch,
       s.sdp.activeBlendProviders(prevEpoch),
