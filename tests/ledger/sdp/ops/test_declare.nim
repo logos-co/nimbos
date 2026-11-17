@@ -46,7 +46,7 @@ suite "ledger/sdp/ops/declare":
     check execDeclare(registry, declaration, store, 2).isErr
 
   test "tryApplySdpDeclare rejects missing locked note and insufficient stake":
-    let utxo = mkUtxo(value = 50, pkSeed = 3)
+    let utxo = mkUtxo(value = 99, pkSeed = 3)
     var store = UtxoStore.init()
     store = store.insert(utxo.id, utxo).store
     let declaration = DeclarationMessage(
@@ -59,11 +59,36 @@ suite "ledger/sdp/ops/declare":
     let
       registry = testSdpRegistry()
       registryCopy = registry
-    check execDeclare(registryCopy, declaration, store, 1).isErr
+      lowStake = execDeclare(registryCopy, declaration, store, 1)
+    check:
+      lowStake.isErr
+      lowStake.error == InsufficientStake
 
     var missingNote = declaration
     missingNote.lockedNoteId = frFromBytesLE([byte(99)]).get
-    check execDeclare(registry, missingNote, store, 1).isErr
+    let noNote = execDeclare(registry, missingNote, store, 1)
+    check:
+      noNote.isErr
+      noNote.error == LockedNoteNotFound
+
+  test "validateSdpDeclareState accepts a note exactly at the threshold":
+    # Pins `>=`: a strict comparison against the threshold fails this.
+    let utxo = mkUtxo(value = 100, pkSeed = 3)
+    var store = UtxoStore.init()
+    store = store.insert(utxo.id, utxo).store
+    let
+      declaration = DeclarationMessage(
+        serviceType: ServiceType.bn,
+        locators: @[mkLocator(30303)],
+        providerId: mkProvider(1),
+        lockedNoteId: utxo.id,
+        zkId: mkZkPubKey(9),
+      )
+      notePk = validateSdpDeclareState(
+        declaration, 100, store, ChannelNotes.init(), SdpState.init())
+    check:
+      notePk.isOk
+      notePk.get == utxo.note.zkPublicKey
 
   test "tryApplySdpDeclare rejects a channel note as collateral":
     let utxo = mkUtxo(value = 200, pkSeed = 7)

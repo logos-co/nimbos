@@ -35,27 +35,13 @@ suite "ledger/sdp/registry":
       getParametersAt(registry, ServiceType.bn, 25).isNone
       getParametersAt(registry, ServiceType.bn, 50).get().inactivityPeriod == 3'u32
 
-  test "stores versioned minimum stake entries":
-    var registry = testSdpRegistry()
-    check:
-      registry.params.stakeThresholds.len == 1
-      getMinStakeAt(registry, 100).isSome
-
-    appendMinStake(registry, MinStake(stakeThreshold: 1000, epoch: 0))
-    appendMinStake(registry, MinStake(stakeThreshold: 2000, epoch: 50))
-    check:
-      registry.params.stakeThresholds.len == 3
-      getMinStakeAt(registry, 25).get().stakeThreshold == 1000'u64
-      getMinStakeAt(registry, 50).get().stakeThreshold == 2000'u64
-      getMinStakeAt(registry, 100).get().stakeThreshold == 2000'u64
-
   test "bundles state, snapshots, and params":
     let registry = testSdpRegistry()
     check:
       registry.state.declarations.len == 0
       registry.snapshots.len == 0
       registry.params.parameters.len == 1
-      registry.params.stakeThresholds.len == 1
+      registry.params.minStake == 100'u64
 
   test "onEpochStarted finalizes pending withdrawals":
     var seeded = seedDeclaration(pkSeed = 30, declareEpoch = 1)

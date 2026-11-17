@@ -42,7 +42,6 @@ type
     InsufficientStake
     LockedNoteServiceConflict
     MissingServiceParameters
-    MinStakeNotFound
     DeclarationNotFound
     AlreadyWithdrawn
     InvalidNonce

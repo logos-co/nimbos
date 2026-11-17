@@ -51,7 +51,7 @@ const testBlendLotteryParams* = BlendRewardsParams(
 func testSdpConfig*(): deploy.SdpConfig =
   deploy.SdpConfig(
     bn: deploy.BnServiceParams(inactivityPeriod: 2, epoch: 0),
-    minStake: deploy.MinStake(threshold: 100, epoch: 0),
+    minStake: deploy.MinStake(threshold: 100),
   )
 
 func testSdpRegistry*(): SdpRegistry =

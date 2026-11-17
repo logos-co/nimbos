@@ -36,7 +36,7 @@ cryptarchia:
         epoch: 0
     min_stake:
       threshold: 1
-      epoch: 0
+      timestamp: 0
   gossipsub_protocol: /e
   genesis_block:
     header:

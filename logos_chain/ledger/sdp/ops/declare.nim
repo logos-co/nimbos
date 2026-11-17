@@ -20,7 +20,7 @@ export util, registry, state
 
 func validateSdpDeclareState*(
     declaration: DeclarationMessage,
-    minStake: MinStake,
+    minStake: TokenValue,
     utxos: UtxoStore,
     channelNotes: ChannelNotes,
     state: SdpState,
@@ -40,7 +40,7 @@ func validateSdpDeclareState*(
       return err(LockedNoteNotFound)
     note = utxo.note
 
-  if note.value < minStake.stakeThreshold:
+  if note.value < minStake:
     return err(InsufficientStake)
 
   let declarationId = declarationId(declaration).valueOr:
@@ -93,11 +93,8 @@ proc tryApplySdpDeclare*(
     channelNotes: ChannelNotes,
     epoch: EpochNumber,
 ): Result[SdpRegistry, LedgerError] =
-  let
-    minStake = getMinStakeAt(registry, epoch).valueOr:
-      return err(MinStakeNotFound)
-    notePk = ?validateSdpDeclareState(
-      declaration, minStake, utxos, channelNotes, registry.state)
+  let notePk = ?validateSdpDeclareState(
+    declaration, registry.params.minStake, utxos, channelNotes, registry.state)
   ?verifyZkSig(proof.zkSig, txHash, [notePk, declaration.zkId])
   applySdpDeclare(registry, declaration, epoch)
 

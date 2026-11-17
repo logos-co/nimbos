@@ -26,7 +26,7 @@ type
 
   SdpParams = object
     parameters*: Table[ServiceType, ServiceParameters]
-    stakeThresholds*: seq[sdpState.MinStake]
+    minStake*: TokenValue
     rewardsParams*: BlendRewardsParams
 
   SdpRegistry* = object
@@ -73,10 +73,7 @@ func init*(
     snapshots: SdpSnapshots(),
     params: SdpParams(
       parameters: [(ServiceType.bn, bnParams)].toTable(),
-      stakeThresholds: @[sdpState.MinStake(
-        stakeThreshold: sdpConfig.minStake.threshold.uint64,
-        epoch: sdpConfig.minStake.epoch,
-      )],
+      minStake: sdpConfig.minStake.threshold,
       rewardsParams: rewardsParams,
     ),
     lastEpochStarted: Opt.none(EpochNumber),
@@ -198,22 +195,5 @@ func appendParameters*(
 ) =
   validateInactivityPeriod(params)
   registry.params.parameters[service] = params
-
-func appendMinStake*(
-    registry: var SdpRegistry,
-    entry: sdpState.MinStake,
-) =
-  registry.params.stakeThresholds.add(entry)
-
-func getMinStakeAt*(
-    registry: SdpRegistry,
-    epoch: EpochNumber,
-): Opt[sdpState.MinStake] =
-  var best = Opt.none(sdpState.MinStake)
-  for entry in registry.params.stakeThresholds:
-    if entry.epoch <= epoch:
-      if best.isNone or entry.epoch >= best.get().epoch:
-        best = Opt.some(entry)
-  best
 
 {.pop.}

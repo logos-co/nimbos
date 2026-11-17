@@ -114,14 +114,12 @@ proc fromGenesis*(
   s.mantleLedger = ?s.mantleLedger.tryApplyChannelInscribe(inscribe, genesisSlot)
   # The declaration count is not checked against the Blend minimum network
   # size: the devnet genesis declares one provider under a minimum of two.
-  let minStake = getMinStakeAt(s.sdp, genesisEpoch).valueOr:
-    return err(MinStakeNotFound)
   for op in tx.tx.ops.toOpenArray(2, tx.tx.ops.high):
     template decl: untyped = op.payload.sdpDeclare
     # The note key feeds the zkSig check, which genesis skips.
     discard ?validateSdpDeclareState(
-      decl, minStake, s.cryptarchiaLedger.latestUtxos, s.mantleLedger.channelNotes,
-      s.sdp.state)
+      decl, s.sdp.params.minStake, s.cryptarchiaLedger.latestUtxos,
+      s.mantleLedger.channelNotes, s.sdp.state)
     s.sdp = ?applySdpDeclare(s.sdp, decl, genesisEpoch)
   s.epochs = ?genesisEpochTracker(
     nonce, s.cryptarchiaLedger.latestUtxos.root, max(total, 1), cfg)
