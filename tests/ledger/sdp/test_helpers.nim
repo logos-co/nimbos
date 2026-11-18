@@ -51,7 +51,7 @@ const testBlendLotteryParams* = BlendRewardsParams(
 func testSdpConfig*(): deploy.SdpConfig =
   deploy.SdpConfig(
     bn: deploy.BnServiceParams(inactivityPeriod: 2, epoch: 0),
-    minStake: deploy.MinStake(threshold: 100, epoch: 0),
+    minStake: deploy.MinStake(threshold: 100),
   )
 
 func testSdpRegistry*(): SdpRegistry =
@@ -118,27 +118,9 @@ proc installTestDeclaration*(
     declaration: DeclarationMessage,
     epoch: EpochNumber,
 ): DeclarationId =
-  let declarationId = declarationId(declaration).get
-  registry.state = insertDeclaration(
-    addDeclarationToLockedNote(
-      registry.state,
-      declaration.lockedNoteId,
-      declarationId,
-    ),
-    declarationId,
-    DeclarationInfo(
-      service: declaration.serviceType,
-      locators: declaration.locators,
-      providerId: declaration.providerId,
-      zkId: declaration.zkId,
-      lockedNoteId: declaration.lockedNoteId,
-      created: epoch,
-      active: Opt.none(EpochNumber),
-      withdrawAt: Opt.none(EpochNumber),
-      nonce: 0'u64,
-    ),
-  )
-  declarationId
+  registry = applySdpDeclare(registry, declaration, epoch).expect(
+    "test SDP config has parameters for the service")
+  declarationId(declaration)
 
 proc installTestActive*(
     registry: var SdpRegistry,
@@ -163,6 +145,9 @@ proc installTestWithdraw*(
   registry.state = insertDeclaration(
     registry.state, withdraw.declarationId, declaration,
   )
+
+func nonce*(created: EpochNumber, sequence: uint32): Nonce =
+  Nonce(lifecycleEpoch: created, sequence: sequence)
 
 func mkTxHash*(seed: byte = 0x42): ZkHash =
   var h: ZkHash

@@ -5,7 +5,7 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-## Spec: [Service Declaration Protocol v1.6.0](https://github.com/logos-co/logos-lips/blob/7c2ec59fadcdc2ba0ae74ff7600a14b55d90efcd/docs/blockchain/raw/bedrock-service-declaration-protocol.md)
+## Spec: [Service Declaration Protocol v1.8.0](https://github.com/logos-co/logos-lips/blob/bd1ca2c881ae94606d4ab23af1255fd922e85dd6/docs/blockchain/raw/bedrock-service-declaration-protocol.md)
 
 {.push raises: [], gcsafe.}
 
@@ -28,23 +28,19 @@ proc validateSdpWithdraw(
 ): Result[DeclarationInfo, LedgerError] =
   let declareInfo = ?loadDeclaration(state, withdraw.declarationId)
   ?checkNotWithdrawn(declareInfo)
-  ?checkNonceMonotonic(declareInfo, withdraw.nonce)
+  ?checkNonce(declareInfo, withdraw.nonce)
   # `withdraw_at = epoch + 2` must fit in an EpochNumber.
   if epoch > high(EpochNumber) - SnapshotFinalizationDelay:
     return err(InvalidEpoch)
-
-  if withdraw.lockedNoteId != declareInfo.lockedNoteId:
-    return err(LockedNoteIdMismatch)
-
-  let lockedNote = getLockedNote(state, withdraw.lockedNoteId).valueOr:
-    return err(LockedNoteNotFound)
+  let
+    noteId = declareInfo.lockedNoteId
+    lockedNote = getLockedNote(state, noteId).valueOr:
+      return err(LockedNoteNotFound)
   if withdraw.declarationId notin lockedNote:
     return err(DeclarationNotInLockedNote)
-
-  let utxo = utxos.get(withdraw.lockedNoteId).valueOr:
+  let utxo = utxos.get(noteId).valueOr:
     return err(LockedNoteNotFound)
-  ?verifyZkSig(proof, txHash, @[utxo.note.zkPublicKey, declareInfo.zkId])
-
+  ?verifyZkSig(proof, txHash, [utxo.note.zkPublicKey, declareInfo.zkId])
   ok(declareInfo)
 
 proc applySdpWithdraw*(

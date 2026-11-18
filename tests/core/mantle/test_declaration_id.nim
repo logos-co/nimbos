@@ -13,8 +13,7 @@ import
   stew/byteutils,
   libp2p/[crypto/ed25519/ed25519, multiaddress],
   ./test_helpers,
-  ../../../logos_chain/core/crypto/hashing,
-  ../../../logos_chain/core/mantle/[operations, tx_hashing],
+  ../../../logos_chain/core/mantle/operations,
   ../../../logos_chain/zk/poseidon2/hasher
 
 suite "core/mantle/operations — declarationId":
@@ -35,129 +34,33 @@ suite "core/mantle/operations — declarationId":
     bytes[0] = seed
     frFromBytesLE(bytes).get
 
-  test "declarationId is deterministic and excludes locked_note_id":
-    let
-      provider = mkProvider(1)
-      zkId = seedZkId(2)
-      locators = @[mkLocator(30303)]
-      base = DeclarationMessage(
-        serviceType: ServiceType.bn,
-        locators: locators,
-        providerId: provider,
-        zkId: zkId,
-        lockedNoteId: seedNoteId(1),
-      )
-    var otherNote = base
-    otherNote.lockedNoteId = seedNoteId(9)
-
-    let
-      idA = declarationId(base).get
-      idB = declarationId(base).get
-      idC = declarationId(otherNote).get
-    check:
-      idA == idB
-      idA == idC
-
-  test "declarationId changes when identity fields change":
-    let
-      provider = mkProvider(1)
-      zkId = seedZkId(2)
-      locators = @[mkLocator(30303)]
-      base = declarationId(DeclarationMessage(
-        serviceType: ServiceType.bn,
-        locators: locators,
-        providerId: provider,
-        zkId: zkId,
-        lockedNoteId: default(NoteId),
-      )).get
-    check:
-      base != declarationId(DeclarationMessage(
-        serviceType: ServiceType.bn,
-        locators: locators,
-        providerId: mkProvider(2),
-        zkId: zkId,
-        lockedNoteId: default(NoteId),
-      )).get
-      base != declarationId(DeclarationMessage(
-        serviceType: ServiceType.bn,
-        locators: locators,
-        providerId: provider,
-        zkId: seedZkId(3),
-        lockedNoteId: default(NoteId),
-      )).get
-      base != declarationId(DeclarationMessage(
-        serviceType: ServiceType.bn,
-        locators: @[mkLocator(30304)],
-        providerId: provider,
-        zkId: zkId,
-        lockedNoteId: default(NoteId),
-      )).get
-
-  test "declarationId matches blake2b over identity preimage encoding":
-    let
-      provider = mkProvider(7)
-      zkId = seedZkId(4)
-      locators = @[mkLocator(30303), mkLocator(30304)]
-      decl = DeclarationMessage(
-        serviceType: ServiceType.bn,
-        locators: locators,
-        providerId: provider,
-        zkId: zkId,
-        lockedNoteId: default(NoteId),
-      )
-    var preimage = @[encodeServiceType(decl.serviceType)]
-    preimage.add(encodeProviderId(decl.providerId))
-    preimage.add(encodeZkId(decl.zkId))
-    preimage.add(encodeLocators(decl.locators).get)
-    check declarationId(decl).get == blake2b256Hash(preimage)
-
-  test "declarationId is independent of full mantle SDPDeclare wire bytes":
-    let
-      provider = mkProvider(1)
-      zkId = seedZkId(2)
-      declare = DeclarationMessage(
-        serviceType: ServiceType.bn,
-        locators: @[],
-        providerId: provider,
-        zkId: zkId,
-        lockedNoteId: default(NoteId),
-      )
-    check:
-      declarationId(declare).get != blake2b256Hash(encodeSdpDeclare(declare).get)
-      opId(declare).get != declarationId(declare).get
-
   test "declarationId matches the spec vector":
     # Vector from the Declaration Id table of the Mantle Specification
-    # v1.17.0:
-    # https://github.com/logos-co/logos-lips/blob/949faa9563027de366514247a2a62b0de2f8c45f/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md
-    var provider: ProviderId
-    check provider.init(hexToByteArray[32](
-      "0x53470962558a6e0839022ae65c6b2723b32772e5c0c5f4776cb8e6a3e10ba2f3"))
-    let
-      locators = @[
-        MultiAddress.init("/ip4/127.0.0.1/udp/3000/quic-v1").get()]
-      declaration = DeclarationMessage(
-        serviceType: ServiceType.bn,
-        locators: locators,
-        providerId: provider,
-        zkId: frFromBytesLE([byte 25]).get,
-        lockedNoteId: default(NoteId),
-      )
-    check encodeServiceType(declaration.serviceType) == 0x00'u8
-    check encodeZkId(declaration.zkId) == hexToByteArray[32](
-      "0x1900000000000000000000000000000000000000000000000000000000000000")
-    check encodeLocators(locators).get ==
-      hexToSeqByte("0x010b00047f00000191020bb8cd03")
-    # The spec preimage row, assembled by hand on purpose.
-    var preimage = @[encodeServiceType(declaration.serviceType)]
-    preimage.add(encodeProviderId(declaration.providerId))
-    preimage.add(encodeZkId(declaration.zkId))
-    preimage.add(encodeLocators(locators).get)
-    check preimage == hexToSeqByte(
-      "0x0053470962558a6e0839022ae65c6b2723b32772e5c0c5f4776cb8e6a3e10ba2f3" &
-      "1900000000000000000000000000000000000000000000000000000000000000" &
-      "010b00047f00000191020bb8cd03")
-    check declarationId(declaration).get == hexToByteArray[32](
-      "0x7fb647c069bade94e06685b0825299d220e7cc14752cfc474773b6c4040e37b5")
+    # v1.18.0:
+    # https://github.com/logos-co/logos-lips/blob/6b84187f0ae37a0e8c28c32d3bb1e6f619cec147/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md#declaration-id
+    let declaration = DeclarationMessage(
+      serviceType: ServiceType.bn,
+      locators: @[MultiAddress.init("/ip4/127.0.0.1/udp/3000/quic-v1").get()],
+      providerId: mkProvider(1),
+      zkId: frFromBytesLE([byte 25]).get,
+      lockedNoteId: seedNoteId(26),
+    )
+    check declarationId(declaration) == hexToByteArray[32](
+      "0x67fa7d1fe7f1391195fdd479bba30dd97c9e6d2e1525436ac2427f2bf8567a0d")
+
+  test "declarationId ignores provider, locators and service note":
+    # A preimage that holds the provider or the locators fails this.
+    let base = DeclarationMessage(
+      serviceType: ServiceType.bn,
+      locators: @[mkLocator(30303)],
+      providerId: mkProvider(1),
+      zkId: seedZkId(2),
+      lockedNoteId: seedNoteId(1),
+    )
+    var other = base
+    other.locators = @[mkLocator(30304), mkLocator(30305)]
+    other.providerId = mkProvider(2)
+    other.lockedNoteId = seedNoteId(9)
+    check declarationId(other) == declarationId(base)
 
 {.pop.}

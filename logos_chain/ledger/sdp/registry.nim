@@ -5,7 +5,7 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-## Spec: [Service Declaration Protocol v1.6.0](https://github.com/logos-co/logos-lips/blob/7c2ec59fadcdc2ba0ae74ff7600a14b55d90efcd/docs/blockchain/raw/bedrock-service-declaration-protocol.md)
+## Spec: [Service Declaration Protocol v1.8.0](https://github.com/logos-co/logos-lips/blob/bd1ca2c881ae94606d4ab23af1255fd922e85dd6/docs/blockchain/raw/bedrock-service-declaration-protocol.md)
 
 {.push raises: [], gcsafe.}
 
@@ -26,7 +26,7 @@ type
 
   SdpParams = object
     parameters*: Table[ServiceType, ServiceParameters]
-    stakeThresholds*: seq[sdpState.MinStake]
+    minStake*: TokenValue
     rewardsParams*: BlendRewardsParams
 
   SdpRegistry* = object
@@ -73,10 +73,7 @@ func init*(
     snapshots: SdpSnapshots(),
     params: SdpParams(
       parameters: [(ServiceType.bn, bnParams)].toTable(),
-      stakeThresholds: @[sdpState.MinStake(
-        stakeThreshold: sdpConfig.minStake.threshold.uint64,
-        epoch: sdpConfig.minStake.epoch,
-      )],
+      minStake: sdpConfig.minStake.threshold,
       rewardsParams: rewardsParams,
     ),
     lastEpochStarted: Opt.none(EpochNumber),
@@ -112,7 +109,7 @@ func onEpochStarted*(
     # Spec citation: "At the start of epoch n, each node takes a snapshot of the SDP registry
     # at the last block from the finalized epoch. ... Changes to the declaration registry
     # take effect with up to a two-epoch delay: messages sent during epoch n are included in
-    # the next snapshot (for epoch n+2)." (https://github.com/logos-co/logos-lips/blob/7c2ec59fadcdc2ba0ae74ff7600a14b55d90efcd/docs/blockchain/raw/bedrock-service-declaration-protocol.md#snapshots)
+    # the next snapshot (for epoch n+2)." (https://github.com/logos-co/logos-lips/blob/bd1ca2c881ae94606d4ab23af1255fd922e85dd6/docs/blockchain/raw/bedrock-service-declaration-protocol.md#snapshots)
     #
     # No state changes (like finalizeWithdrawals) should occur before the snapshot is taken.
     # Since onEpochStarted is called at the start of epoch `epoch`, registry.state represents
@@ -198,22 +195,5 @@ func appendParameters*(
 ) =
   validateInactivityPeriod(params)
   registry.params.parameters[service] = params
-
-func appendMinStake*(
-    registry: var SdpRegistry,
-    entry: sdpState.MinStake,
-) =
-  registry.params.stakeThresholds.add(entry)
-
-func getMinStakeAt*(
-    registry: SdpRegistry,
-    epoch: EpochNumber,
-): Opt[sdpState.MinStake] =
-  var best = Opt.none(sdpState.MinStake)
-  for entry in registry.params.stakeThresholds:
-    if entry.epoch <= epoch:
-      if best.isNone or entry.epoch >= best.get().epoch:
-        best = Opt.some(entry)
-  best
 
 {.pop.}

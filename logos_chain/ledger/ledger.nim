@@ -114,19 +114,17 @@ proc fromGenesis*(
   s.mantleLedger = ?s.mantleLedger.tryApplyChannelInscribe(inscribe, genesisSlot)
   # The declaration count is not checked against the Blend minimum network
   # size: the devnet genesis declares one provider under a minimum of two.
-  let minStake = getMinStakeAt(s.sdp, genesisEpoch).valueOr:
-    return err(MinStakeNotFound)
   for op in tx.tx.ops.toOpenArray(2, tx.tx.ops.high):
     template decl: untyped = op.payload.sdpDeclare
     # The note key feeds the zkSig check, which genesis skips.
     discard ?validateSdpDeclareState(
-      decl, minStake, s.cryptarchiaLedger.latestUtxos, s.mantleLedger.channelNotes,
-      s.sdp.state)
+      decl, s.sdp.params.minStake, s.cryptarchiaLedger.latestUtxos,
+      s.mantleLedger.channelNotes, s.sdp.state)
     s.sdp = ?applySdpDeclare(s.sdp, decl, genesisEpoch)
   s.epochs = ?genesisEpochTracker(
     nonce, s.cryptarchiaLedger.latestUtxos.root, max(total, 1), cfg)
   # Epochs 0 and 1 read the registry snapshot taken at genesis:
-  # https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/bedrock-service-declaration-protocol.md#snapshots
+  # https://github.com/logos-co/logos-lips/blob/bd1ca2c881ae94606d4ab23af1255fd922e85dd6/docs/blockchain/raw/bedrock-service-declaration-protocol.md#snapshots
   s.sdp = onEpochStarted(s.sdp, genesisEpoch)
   ok(s)
 
@@ -155,7 +153,7 @@ func advanceEpochAndMarket*(
     s.cryptarchiaLedger.leader = ?s.cryptarchiaLedger.leader.addEpochVouchers()
     # Rewards distribute before withdrawal removal, so a withdrawn
     # provider still collects its final reward:
-    # https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md#sdp-epoch-finalization
+    # https://github.com/logos-co/logos-lips/blob/bd1ca2c881ae94606d4ab23af1255fd922e85dd6/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md#sdp-epoch-finalization
     let (blendRewards, minted) = s.sdp.blendRewards.rotateEpoch(
       prevEpoch, s.epochs.activeEpoch.epoch,
       s.sdp.activeBlendProviders(prevEpoch),

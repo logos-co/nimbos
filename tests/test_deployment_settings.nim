@@ -97,7 +97,7 @@ cryptarchia:
         epoch: 0
     min_stake:
       threshold: 1
-      epoch: 0
+      timestamp: 0
   gossipsub_protocol: /a/cryp
 """ & deploymentGenesisBlockMin & """
   faucet_pk: '0000000000000000000000000000000000000000000000000000000000000001'
@@ -174,7 +174,7 @@ cryptarchia:
         epoch: 0
     min_stake:
       threshold: 1
-      epoch: 0
+      timestamp: 0
   gossipsub_protocol:
     - /a/cryp
 """ & deploymentGenesisBlockMin & """
@@ -526,6 +526,22 @@ mempool:
     check:
       r.isErr
       "non-negative integer" in r.error
+
+  test "parseDeploymentSettings: min_stake reads a u64 threshold and ignores timestamp":
+    # Fails if the loader needs min_stake.epoch or reads threshold as int.
+    func withMinStake(minStake: string): string =
+      minimalValidYaml.replace(
+        "      threshold: 1\n      timestamp: 0\n", minStake)
+    let
+      ds = parseDeploymentSettings(withMinStake(
+        "      threshold: 18446744073709551615\n      timestamp: 7\n")).valueOr:
+        check false
+        return
+      noTimestamp = parseDeploymentSettings(
+        withMinStake("      threshold: 1\n"))
+    check:
+      ds.cryptarchia.sdpConfig.minStake.threshold == high(uint64)
+      noTimestamp.isOk
 
   test "validateDeploymentSettings: zero learning rate denominator":
     var ds = parseDeploymentSettings(minimalValidYaml).valueOr:

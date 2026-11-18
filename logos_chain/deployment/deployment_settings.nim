@@ -19,7 +19,7 @@ import
   yaml/dom,
   ./deployment_settings_helpers
 
-from ../core/mantle/primitives import EpochNumber, NumberOfEpochs
+from ../core/mantle/primitives import EpochNumber, NumberOfEpochs, TokenValue
 from ../core/types import createGenesisHeader
 from ../zk/pol_lottery import isSupportedLotteryF
 
@@ -71,8 +71,7 @@ type
     epoch*: EpochNumber
 
   MinStake* = object
-    threshold*: int
-    epoch*: EpochNumber
+    threshold*: TokenValue
 
   SdpConfig* = object
     bn*: BnServiceParams
@@ -134,7 +133,6 @@ func validateDeploymentSettingsStructure(root: YamlNode): Result[void, string] =
   needPath(["cryptarchia", "sdp_config", "service_params", "BN", "inactivity_period"])
   needPath(["cryptarchia", "sdp_config", "service_params", "BN", "epoch"])
   needPath(["cryptarchia", "sdp_config", "min_stake", "threshold"])
-  needPath(["cryptarchia", "sdp_config", "min_stake", "epoch"])
   needPath(["cryptarchia", "gossipsub_protocol"])
   needPath(["cryptarchia", "faucet_pk"])
   ? validateCryptarchiaGenesisYaml(root)
@@ -197,8 +195,7 @@ func deploymentSettingsFromYaml(root: YamlNode): Result[DeploymentSettings, stri
           epoch: ? reqUInt32(root, ["cryptarchia", "sdp_config", "service_params", "BN", "epoch"]),
         ),
         minStake: MinStake(
-          threshold: ? reqInt(root, ["cryptarchia", "sdp_config", "min_stake", "threshold"]),
-          epoch: ? reqUInt32(root, ["cryptarchia", "sdp_config", "min_stake", "epoch"]),
+          threshold: ? reqUInt64(root, ["cryptarchia", "sdp_config", "min_stake", "threshold"]),
         )
       ),
       gossipsubProtocol: ? reqScalar(root, ["cryptarchia", "gossipsub_protocol"]),
@@ -252,8 +249,6 @@ func validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
     "cryptarchia.learning_rate denominator must be > 0")
   need(ds.cryptarchia.sdpConfig.bn.inactivityPeriod >= 2,
     "cryptarchia.sdp_config.service_params.BN.inactivity_period must be >= 2")
-  need(ds.cryptarchia.sdpConfig.minStake.threshold > 0,
-    "cryptarchia.sdp_config.min_stake.threshold must be > 0")
   need(ds.network.kademliaProtocolName.len > 0, "empty network.kademlia_protocol_name")
   need(ds.network.identifyProtocolName.len > 0, "empty network.identify_protocol_name")
   need(ds.network.chainSyncProtocolName.len > 0, "empty network.chain_sync_protocol_name")

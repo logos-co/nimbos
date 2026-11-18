@@ -5,7 +5,7 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-## Spec: [Bedrock v1.1 — Mantle Specification v1.17.0](https://github.com/logos-co/logos-lips/blob/949faa9563027de366514247a2a62b0de2f8c45f/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md)
+## Spec: [Bedrock v1.1 — Mantle Specification v1.19.0](https://github.com/logos-co/logos-lips/blob/bd1ca2c881ae94606d4ab23af1255fd922e85dd6/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md)
 
 {.push raises: [], gcsafe.}
 
@@ -27,8 +27,8 @@ const
   MaxOutputs* = 255
   MaxSdpLocators* = 8
   MaxLocatorMultiaddrBytes* = 329
-  # MAX_OPERATION_DATA_SIZE, Mantle Transaction Encoding v1.10.0:
-  # https://github.com/logos-co/logos-lips/blob/949faa9563027de366514247a2a62b0de2f8c45f/docs/blockchain/raw/mantle-transaction-encoding.md
+  # MAX_OPERATION_DATA_SIZE, Mantle Transaction Encoding v1.11.0:
+  # https://github.com/logos-co/logos-lips/blob/6b84187f0ae37a0e8c28c32d3bb1e6f619cec147/docs/blockchain/raw/mantle-transaction-encoding.md
   MaxOperationDataSize* = 1_835_008
 
 type
@@ -48,7 +48,10 @@ type
 
   TokenValue* = uint64
   Value* = uint64
-  Nonce* = uint64
+  Nonce* = object
+    ## SDP op nonce: the declaration's ``created`` epoch, then a sequence.
+    lifecycleEpoch*: EpochNumber
+    sequence*: uint32
 
   PostingTimeframe* = uint32
   PostingTimeout* = uint32
@@ -150,9 +153,11 @@ func encodeValue*(value: Value): array[8, byte] =
   ## Value = UINT64
   encodeLe(value)
 
-func encodeNonce*(value: Nonce): array[8, byte] =
-  ## Nonce = UINT64
-  encodeLe(value)
+const NonceLen* = 8
+
+func encodeNonce*(value: Nonce): array[NonceLen, byte] =
+  ## Nonce = UINT64: ``lifecycleEpoch`` in the high 32 bits, ``sequence`` low.
+  encodeLe((uint64(value.lifecycleEpoch) shl 32) or uint64(value.sequence))
 
 func encodeDepositMetadata*(value: DepositMetadata): Result[seq[byte], EncodingError] =
   ## DepositMetadata = UINT32 *BYTE ; Max MAX_OPERATION_DATA_SIZE bytes
@@ -298,6 +303,12 @@ func readDepositMetadata*(data: openArray[byte], pos: var int): Result[DepositMe
 
 func readInscription*(data: openArray[byte], pos: var int): Result[Inscription, DecodingError] =
   readOperationData(data, pos)
+
+func readNonce*(data: openArray[byte], pos: var int): Result[Nonce, DecodingError] =
+  let packed = ?readLe[uint64](data, pos)
+  ok(Nonce(
+    lifecycleEpoch: EpochNumber(packed shr 32),
+    sequence: uint32(packed)))
 
 func readNote(data: openArray[byte], pos: var int): Result[Note, DecodingError] =
   let
