@@ -16,7 +16,6 @@
 import
   std/sequtils,
   bincode,
-  libp2p/crypto/ed25519/ed25519,
   ../ledger/ledger,
   ../mempool
 from ../core/mantle/tx_validation import
