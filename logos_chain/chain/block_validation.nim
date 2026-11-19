@@ -97,7 +97,8 @@ func txBytesLen[T: AnyHashedSignedMantleTx](txs: openArray[T]): int =
 func bodyMatchesHeader*(blk: Block): bool =
   body_root(blk.uncleHeaders.asSeq, blk.txs.asSeq) == blk.header.bodyRoot
 
-func headerRulesHold(header: Header): bool =
+func headerRulesHold*(header: Header): bool =
+  ## The header rules that need no chain state.
   if header.bedrockVersion != ExpectedBedrockVersion:
     return false
 

@@ -352,12 +352,12 @@ suite "chain/block_processor":
         bp.processProposal(p, getRandomPeerId()) == ValidationResult.Reject
         bp.checkDeduplication(blockId(p.header), p.signature).isOk
 
-  asyncTest "processProposal ignores a zero parent above slot 0":
-    # A zero parent cannot descend from the immutable block, so the topology
-    # check drops the proposal as an unviable fork.
+  asyncTest "processProposal rejects a zero parent above slot 0":
+    # Guard: the header rules run before the topology check, which gives an
+    # Ignore for a zero parent.
     withProcessor(chain):
       let p = childProposal(genesisBlk.header, default(BlockId), SlotNumber(1), [])
-      check bp.processProposal(p, getRandomPeerId()) == ValidationResult.Ignore
+      check bp.processProposal(p, getRandomPeerId()) == ValidationResult.Reject
 
   asyncTest "stop ends the loop and cancels later addBlock calls":
     withProcessor(chain):

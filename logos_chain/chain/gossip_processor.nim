@@ -42,8 +42,15 @@ proc processProposal*(
     trace "GossipSub ignored duplicate proposal", blockId = idHex, src
     return ValidationResult.Ignore
 
-  # The topology check runs first, so a proposal that cannot be applied costs
-  # no signature check.
+  # A header that breaks these rules is invalid for each node, on any parent,
+  # so the check runs before the topology check. `admitProposal` does the
+  # check again, so that each admitted block has it.
+  if not headerRulesHold(proposal.header):
+    debug "GossipSub rejected proposal: invalid header", blockId = idHex, src
+    return ValidationResult.Reject
+
+  # The topology check runs before admission, so a proposal that cannot be
+  # applied costs no signature check.
   checkTopology(proposal.header, bp.localTree, bp.ledger).isOkOr:
     # A slot not after the parent slot is invalid for each node. An unviable
     # fork depends on the local view.
