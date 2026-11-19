@@ -31,7 +31,7 @@ const
   # MAX_OPERATION_DATA_SIZE, Mantle Transaction Encoding v1.10.0:
   # https://github.com/logos-co/logos-lips/blob/949faa9563027de366514247a2a62b0de2f8c45f/docs/blockchain/raw/mantle-transaction-encoding.md
   MaxOperationDataSize* = 1_835_008
-  ReferencePrefixLength* = 16
+  ReferencePrefixLength = 16
 
 type
   ChannelId* = Hash32
