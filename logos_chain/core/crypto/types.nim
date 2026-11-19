@@ -22,7 +22,11 @@ import
 export hasher
 # Plain `verify` accepts a small-order key or `R`, so it is not exported.
 # Consensus code then gets only `verifyStrict`.
-export ed25519 except verify
+export
+  ed25519.EdPublicKey, ed25519.EdPrivateKey, ed25519.EdSignature,
+  ed25519.EdPublicKeySize, ed25519.EdSignatureSize,
+  ed25519.init, ed25519.toBytes, ed25519.sign,
+  ed25519.`==`, ed25519.`$`
 
 type
   Hash32* = array[32, byte]
