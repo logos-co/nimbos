@@ -15,7 +15,6 @@
 import
   std/strutils,
   confutils/defs,
-  intops,
   stew/io2,
   yaml/dom,
   ./deployment_settings_helpers
@@ -83,7 +82,6 @@ type
     epochConfig*: EpochConfig
     securityParam*: int
     slotActivationCoeff*: NonNegativeRatio ## f — exact rational, no float
-    densitySlotWindow*: uint64             ## s_gen = ⌊k / (4f)⌋
     learningRate*: NonNegativeRatio ## beta — parsed exactly from the decimal scalar
     sdpConfig*: SdpConfig
     gossipsubProtocol*: string
@@ -142,31 +140,8 @@ func validateDeploymentSettingsStructure(root: YamlNode): Result[void, string] =
   needPath(["mempool", "pubsub_topic"])
   ok()
 
-func densitySlotWindow(securityParam: uint64, f: NonNegativeRatio): uint64 =
-  ## Returns the density check slot window length s_gen = ⌊k / (4f)⌋ = ⌊(k * f.den) / (4 * f.num)⌋.
-  ## For default parameters (k=2160, f=1/30), s_gen = 16200 slots (4h 30m).
-  ## Guards against 64-bit integer multiplication overflow and division by zero.
-  if f.num == 0 or f.den == 0 or securityParam == 0:
-    return 0'u64
-  if f.num > uint64.high div 4'u64:
-    return 0'u64
-  let
-    den = 4'u64 * f.num
-    (numHi, numLo) = wideningMul(securityParam, f.den)
-  if numHi >= den:
-    return uint64.high
-  let (q, _) = narrowingDiv(numHi, numLo, den)
-  q
-
 func deploymentSettingsFromYaml(root: YamlNode): Result[DeploymentSettings, string] =
-  let
-    parsedGenesis = ? parseDeploymentGenesisState(root)
-    secParam = ? reqInt(root, ["cryptarchia", "security_param"])
-    slotCoeff = NonNegativeRatio(
-      num: ? reqUInt64(root, ["cryptarchia", "slot_activation_coeff", "numerator"]),
-      den: ? reqUInt64(root, ["cryptarchia", "slot_activation_coeff", "denominator"])
-    )
-    sGen = if secParam > 0: densitySlotWindow(uint64(secParam), slotCoeff) else: 0'u64
+  let parsedGenesis = ? parseDeploymentGenesisState(root)
   ok(DeploymentSettings(
     blend: BlendSettings(
       common: BlendCommon(
@@ -205,9 +180,11 @@ func deploymentSettingsFromYaml(root: YamlNode): Result[DeploymentSettings, stri
         epochPeriodNonceStabilization: ? reqInt(
           root, ["cryptarchia", "epoch_config", "epoch_period_nonce_stabilization"])
       ),
-      securityParam: secParam,
-      slotActivationCoeff: slotCoeff,
-      densitySlotWindow: sGen,
+      securityParam: ? reqInt(root, ["cryptarchia", "security_param"]),
+      slotActivationCoeff: NonNegativeRatio(
+        num: ? reqUInt64(root, ["cryptarchia", "slot_activation_coeff", "numerator"]),
+        den: ? reqUInt64(root, ["cryptarchia", "slot_activation_coeff", "denominator"])
+      ),
       learningRate: ? reqDecimalRatio(root, ["cryptarchia", "learning_rate"]),
       sdpConfig: SdpConfig(
         bn: BnServiceParams(
@@ -270,10 +247,6 @@ func validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
   )
   need(isSupportedLotteryF(ds.cryptarchia.slotActivationCoeff),
     "cryptarchia.slot_activation_coeff must have pinned lottery constants")
-  # Invariant: valid securityParam and supported lottery f mathematically guarantee s_gen >= 2.
-  # A zero window indicates an internal software bug or uninitialized state.
-  doAssert ds.cryptarchia.densitySlotWindow > 0,
-    "internal invariant violated: densitySlotWindow must be > 0 for valid cryptarchia params"
   need(ds.cryptarchia.learningRate.num > 0, "cryptarchia.learning_rate must be > 0")
   need(ds.cryptarchia.learningRate.den > 0,
     "cryptarchia.learning_rate denominator must be > 0")
@@ -286,7 +259,7 @@ func validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
   need(ds.network.chainSyncProtocolName.len > 0, "empty network.chain_sync_protocol_name")
   # Sub-second durations would truncate to a zero slot length; the spec pins
   # slot length at 1 second:
-  # https://github.com/logos-co/logos-lips/blob/d064449307d28a76b3555dc7b5064d15ee19d7f5/docs/blockchain/raw/cryptarchia-v1-protocol.md#constants
+  # https://github.com/logos-co/logos-lips/blob/663ae35d59d834784dd086cc5f14ec35e8dbecf5/docs/blockchain/raw/cryptarchia-v1-protocol.md#constants
   need(ds.time.slotDuration >= 1.seconds, "time.slot_duration must be at least 1s")
   need(ds.mempool.pubsubTopic.len > 0, "empty mempool.pubsub_topic")
   need(ds.cryptarchia.gossipsubProtocol.len > 0, "empty cryptarchia.gossipsub_protocol")
