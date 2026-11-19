@@ -5,23 +5,19 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-## Spec: [Cryptarchia Fork Choice Rule](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/fork-choice.md)
-## Spec: [Cryptarchia Bootstrapping & Synchronization](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/cryptarchia-v1-bootstr-sync.md)
+## Spec: [Cryptarchia Fork Choice Rule v1.1.0](https://github.com/logos-co/logos-lips/blob/663ae35d59d834784dd086cc5f14ec35e8dbecf5/docs/blockchain/raw/fork-choice.md)
+## Spec: [Cryptarchia Bootstrapping & Synchronization v1.0.2](https://github.com/logos-co/logos-lips/blob/663ae35d59d834784dd086cc5f14ec35e8dbecf5/docs/blockchain/raw/cryptarchia-v1-bootstr-sync.md)
 
 {.push raises: [], gcsafe.}
 
 import
   minilru,
-  results
+  results,
+  ./local_tree
 
+from std/sets import items
 from ../core/crypto/types as crypto_types import isZero
-from ../core/mantle/primitives import SlotNumber
-from ../core/types import BlockId, Header, Tip, blockId, BlockNumber
-from ../chain/block_validation import ValidBlock, header
-from ../chain/local_tree import
-  LocalTree, init, fetchHeader, blockHeight, lcaBlockIdAndHeight,
-  ancestorAtHeight, pruneForks, countChainDensity, isAncestor, hasBlock,
-  addBlockToTree, getBlock
+from ../core/types import BlockId, Header, Tip, blockId, BlockNumber, SlotNumber
 
 const
   DensityCacheCapacity = 512
@@ -43,31 +39,23 @@ type
   ConsensusState* = ref object
     localTree: LocalTree
     canonicalTip: Tip
-    latestImmutableId: BlockId
+    latestImmutable: Tip
     forkChoiceRule: ForkChoiceRule
     securityParam: uint64
     densitySlotWindow: uint64
     densityCache: DensityCache
 
-when defined(unittest) or defined(test):
-  func securityParam*(cs: ConsensusState): uint64
-  func latestImmutableHeight*(cs: ConsensusState): uint64
-  proc preferCandidate*(cs: ConsensusState, currentTipId, candidateId: BlockId): bool
-  proc tryUpdateTip*(cs: ConsensusState, candidateId: BlockId)
-else:
-  func securityParam(cs: ConsensusState): uint64
-  func latestImmutableHeight(cs: ConsensusState): uint64
-  proc preferCandidate(cs: ConsensusState, currentTipId, candidateId: BlockId): bool
-  proc tryUpdateTip(cs: ConsensusState, candidateId: BlockId)
+func genesisId*(cs: ConsensusState): BlockId =
+  cs.localTree.genesisId
 
 func hasBlock*(cs: ConsensusState, id: BlockId): bool =
   cs.localTree.hasBlock(id)
 
-func getBlock*(cs: ConsensusState, id: BlockId): Opt[ValidBlock] =
-  cs.localTree.getBlock(id)
+func slotOf*(cs: ConsensusState, id: BlockId): Opt[SlotNumber] =
+  cs.localTree.slotOf(id)
 
-func fetchHeader*(cs: ConsensusState, id: BlockId): Opt[Header] =
-  cs.localTree.fetchHeader(id)
+func parentOf*(cs: ConsensusState, id: BlockId): Opt[BlockId] =
+  cs.localTree.parentOf(id)
 
 func blockHeight*(cs: ConsensusState, id: BlockId): Opt[BlockNumber] =
   cs.localTree.blockHeight(id)
@@ -80,85 +68,70 @@ func lcaBlockIdAndHeight*(
 func canonicalTip*(cs: ConsensusState): Tip =
   cs.canonicalTip
 
-func latestImmutableId*(cs: ConsensusState): BlockId =
-  cs.latestImmutableId
+func latestImmutable*(cs: ConsensusState): Tip =
+  cs.latestImmutable
 
 func forkChoiceRule*(cs: ConsensusState): ForkChoiceRule =
   cs.forkChoiceRule
 
-func securityParam(cs: ConsensusState): uint64 =
-  cs.securityParam
-
-func latestImmutableHeight(cs: ConsensusState): uint64 =
-  cs.localTree.blockHeight(cs.latestImmutableId).valueOr:
-    raiseAssert "ConsensusState invariant violated: LIB not in local tree"
-
-func latestImmutableSlot*(cs: ConsensusState): SlotNumber =
-  let hdr = cs.localTree.fetchHeader(cs.latestImmutableId).valueOr:
-    raiseAssert "ConsensusState invariant violated: LIB not in local tree"
-  hdr.slot
-
-# https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/cryptarchia-v1-protocol.md#block-validation
+# https://github.com/logos-co/logos-lips/blob/663ae35d59d834784dd086cc5f14ec35e8dbecf5/docs/blockchain/raw/cryptarchia-v1-protocol.md#block-header-validation
 func canDescendFromImmutable*(cs: ConsensusState, header: Header): bool =
   ## Validates whether a block header can descend from the latest immutable block:
   ## - For known parents: candidate height > immutable height and ancestry path to LIB.
   ##   Fast paths:
   ##   - Parent is canonical tip: by invariant, the canonical tip always descends from LIB
-  ##     and satisfies canonicalTip.height >= latestImmutableHeight().
+  ##     and satisfies canonicalTip.height >= latestImmutable.height.
   ##   - Parent is LIB itself: trivially descends from LIB.
-  ## - For unknown parents (orphans): slot feasibility (header.slot > immutableSlot).
+  ## - For unknown parents (orphans): slot feasibility (header.slot > latestImmutable.slot).
   if header.parentBlock.isZero:
     return false
-  if header.slot <= cs.latestImmutableSlot():
+  if header.slot <= cs.latestImmutable.slot:
     return false
-  if cs.localTree.hasBlock(header.parentBlock):
-    if header.parentBlock == cs.canonicalTip.tip or header.parentBlock == cs.latestImmutableId:
-      return true
-    let parentHeight = cs.localTree.blockHeight(header.parentBlock).valueOr:
-      raiseAssert "ConsensusState invariant violated: parent in tree but blockHeight missing"
-    if parentHeight + 1'u64 <= cs.latestImmutableHeight():
-      return false
-    return cs.localTree.isAncestor(ancestor = cs.latestImmutableId, descendant = header.parentBlock)
-  true
+  if header.parentBlock == cs.canonicalTip.tip or header.parentBlock == cs.latestImmutable.tip:
+    return true
+  let parentHeight = cs.localTree.blockHeight(header.parentBlock).valueOr:
+    return true
+  if parentHeight + 1'u64 <= cs.latestImmutable.height:
+    return false
+  cs.localTree.isAncestor(ancestor = cs.latestImmutable.tip, descendant = header.parentBlock)
 
 func init*(
     T: type ConsensusState,
-    genesisBlock: ValidBlock,
+    genesisHeader: Header,
     securityParam: uint64,
     densitySlotWindow: uint64,
     forkChoiceRule: ForkChoiceRule,
 ): ConsensusState =
   doAssert densitySlotWindow > 0, "ConsensusState invariant violated: densitySlotWindow must be > 0"
-  let gid = blockId(genesisBlock.header)
+  let
+    gid = blockId(genesisHeader)
+    genesisTip = Tip(tip: gid, slot: genesisHeader.slot, height: 0'u64)
   ConsensusState(
-    localTree: LocalTree.init(genesisBlock),
+    localTree: LocalTree.init(genesisHeader),
     forkChoiceRule: forkChoiceRule,
     securityParam: securityParam,
     densitySlotWindow: densitySlotWindow,
     densityCache: DensityCache.init(DensityCacheCapacity),
-    canonicalTip: Tip(
-      tip: gid,
-      slot: genesisBlock.header.slot,
-      height: 0'u64,
-    ),
-    latestImmutableId: gid,
+    canonicalTip: genesisTip,
+    latestImmutable: genesisTip,
   )
 
 proc switchToOnline*(cs: ConsensusState) =
   cs.forkChoiceRule = ForkChoiceRule.Online
+  reset(cs.densityCache)
 
-# https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/cryptarchia-v1-protocol.md#immutable-blocks
+# https://github.com/logos-co/logos-lips/blob/663ae35d59d834784dd086cc5f14ec35e8dbecf5/docs/blockchain/raw/cryptarchia-v1-protocol.md#latest-immutable-block
 proc tryUpdateLib*(cs: ConsensusState): seq[BlockId] =
   let tipHeight = cs.canonicalTip.height
   if tipHeight >= cs.securityParam:
     let
       immHeight = tipHeight - cs.securityParam
-      oldImmHeight = cs.latestImmutableHeight()
+      oldImmHeight = cs.latestImmutable.height
     if immHeight > oldImmHeight:
-      let newImmId = cs.localTree.ancestorAtHeight(cs.canonicalTip.tip, immHeight).valueOr:
+      let newImm = cs.localTree.ancestorAtHeight(cs.canonicalTip.tip, immHeight).valueOr:
         raiseAssert "ConsensusState invariant violated: ancestor at immHeight not found on canonical tip branch"
-      cs.latestImmutableId = newImmId
-      return cs.localTree.pruneForks(newImmId, oldImmHeight)
+      cs.latestImmutable = newImm
+      return cs.localTree.pruneForks(newImm.tip, oldImmHeight)
   @[]
 
 proc densityOf(
@@ -187,16 +160,16 @@ proc preferCandidate(
   ##    - Online mode: strictly rejects the deep fork (returns false).
   ##    - Bootstrap mode: compares primary block densities in the window (lcaSlot, lcaSlot + densitySlotWindow].
   ## 4. On tie (equal height for shallow, equal density for deep), current tip is preserved (returns false).
-  if candidateId.isZero or currentTipId == candidateId:
-    return false
+  doAssert not candidateId.isZero and currentTipId != candidateId,
+    "ConsensusState invariant violated: candidate must not be zero or equal to current tip"
 
   let
     (lcaId, lcaHeight) = cs.localTree.lcaBlockIdAndHeight(currentTipId, candidateId).valueOr:
-      return false
+      raiseAssert "ConsensusState invariant violated: LCA missing for active tree blocks"
     curTipHeight = cs.localTree.blockHeight(currentTipId).valueOr:
-      return false
+      raiseAssert "ConsensusState invariant violated: currentTipId height missing"
     candHeight = cs.localTree.blockHeight(candidateId).valueOr:
-      return false
+      raiseAssert "ConsensusState invariant violated: candidateId height missing"
     divergenceDepth = curTipHeight - lcaHeight
 
   if divergenceDepth <= cs.securityParam:
@@ -209,48 +182,53 @@ proc preferCandidate(
     # Online rule forbids reorganizations beyond finality depth k
     return false
   of ForkChoiceRule.Bootstrap:
-    let lcaHeader = cs.localTree.fetchHeader(lcaId).valueOr:
-      return false
+    let lcaSlot = cs.localTree.slotOf(lcaId).valueOr:
+      raiseAssert "ConsensusState invariant violated: LCA slot missing"
     # Bootstrap rule compares chain densities in the slot window s_gen immediately following LCA
-    let candDensity = cs.densityOf(candidateId, lcaHeader.slot, lcaHeight)
+    let candDensity = cs.densityOf(candidateId, lcaSlot, lcaHeight)
     # Early shortcut: if candidate has zero density in the window, it cannot beat incumbent (avoids looking up curDensity)
     if candDensity == 0:
       return false
-    let curDensity = cs.densityOf(currentTipId, lcaHeader.slot, lcaHeight)
+    let curDensity = cs.densityOf(currentTipId, lcaSlot, lcaHeight)
     return candDensity > curDensity
+
+proc setCanonicalTip(cs: ConsensusState, candidateId: BlockId) =
+  cs.canonicalTip = cs.localTree.tipOf(candidateId).valueOr:
+    raiseAssert "ConsensusState invariant violated: selected tip missing"
 
 proc tryUpdateTip(
     cs: ConsensusState,
     candidateId: BlockId,
+    parentBlock: BlockId,
 ) =
-  ## Updates the canonical tip if candidateId is strictly preferred over the current tip
-  ## according to the active fork choice rule (Online: Ouroboros Praos; Bootstrap: Ouroboros Genesis).
-  if cs.preferCandidate(cs.canonicalTip.tip, candidateId):
-    let
-      hdr = cs.localTree.fetchHeader(candidateId).valueOr:
-        raiseAssert "ConsensusState invariant violated: preferCandidate succeeded but candidate header missing"
-      height = cs.localTree.blockHeight(candidateId).valueOr:
-        raiseAssert "ConsensusState invariant violated: preferCandidate succeeded but candidate height missing"
-    cs.canonicalTip = Tip(
-      tip: candidateId,
-      slot: hdr.slot,
-      height: height,
-    )
+  ## Updates the canonical tip according to the active fork choice rule
+  ## (Online: Ouroboros Praos; Bootstrap: Ouroboros Genesis).
+  # https://github.com/logos-co/logos-lips/blob/663ae35d59d834784dd086cc5f14ec35e8dbecf5/docs/blockchain/raw/cryptarchia-v1-protocol.md#L477
+  # Extending the current tip skips fork_choice; in Bootstrap mode, crossing height(LCA) + k -> k + 1
+  # via tip extension can make an existing denser tip win under maxvalid-bg (kept spec-literal for now).
+  if parentBlock == cs.canonicalTip.tip:
+    cs.setCanonicalTip(candidateId)
+    return
 
-proc addBlockAndTryUpdateTip*(cs: ConsensusState, blk: ValidBlock): bool =
-  ## Inserts a block into the local tree and attempts to update the canonical tip.
-  let id = blockId(blk.header)
-  if not cs.localTree.addBlockToTree(blk):
+  let startId = cs.canonicalTip.tip
+  var bestId =
+    if cs.preferCandidate(startId, candidateId): candidateId
+    else: startId
+  if cs.forkChoiceRule == ForkChoiceRule.Bootstrap:
+    for tipId in cs.localTree.tips:
+      if tipId != bestId and not (tipId == candidateId and bestId == startId) and
+          cs.preferCandidate(bestId, tipId):
+        bestId = tipId
+  if bestId != startId:
+    cs.setCanonicalTip(bestId)
+
+proc addHeaderAndTryUpdateTip*(
+    cs: ConsensusState, header: Header, id: BlockId
+): bool =
+  ## Inserts a header (`id == blockId(header)`) into the local tree and updates the canonical tip.
+  if not cs.localTree.addHeaderToTree(header, id):
     return false
-  cs.tryUpdateTip(id)
+  cs.tryUpdateTip(id, header.parentBlock)
   true
-
-when defined(unittest) or defined(test):
-  func localTree*(cs: ConsensusState): LocalTree =
-    cs.localTree
-  func densityCacheLen*(cs: ConsensusState): int =
-    cs.densityCache.len
-  func densityCacheContains*(cs: ConsensusState, tipId: BlockId, lcaSlot: SlotNumber): bool =
-    DensityCacheKey(tipId: tipId, lcaSlot: lcaSlot) in cs.densityCache
 
 {.pop.}

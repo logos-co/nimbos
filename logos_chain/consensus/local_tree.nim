@@ -8,46 +8,49 @@
 {.push raises: [], gcsafe.}
 
 import
-  std/tables,
+  std/[sets, tables],
   results,
   intops,
-  bincode,
   ../core/types
-from ../core/crypto/types as crypto_types import isZero
-from ../core/mantle/primitives import SlotNumber, BlockNumber
-from ./block_validation import ValidBlock, encode, header
-
-export Block, Header, BlockId, ValidBlock, encode, header
 
 type
   BlockNode = ref object
     id: BlockId
-    blk: ValidBlock
     parent: BlockNode
+    slot: SlotNumber
     height: BlockNumber
 
   LocalTree* = ref object
+    genesisId: BlockId
     blocksById: Table[BlockId, BlockNode]
-    idsByHeight: Table[BlockNumber, seq[BlockId]]
+    unfinalizedIdsByHeight: Table[BlockNumber, seq[BlockId]]
+    tips: HashSet[BlockId]
 
-func ancestorAtHeight*(localTree: LocalTree, id: BlockId, targetHeight: BlockNumber): Opt[BlockId] =
+func genesisId*(localTree: LocalTree): BlockId =
+  localTree.genesisId
+
+func tips*(localTree: LocalTree): lent HashSet[BlockId] =
+  localTree.tips
+
+func ancestorAtHeight*(localTree: LocalTree, id: BlockId, targetHeight: BlockNumber): Opt[Tip] =
   localTree.blocksById.withValue(id, node):
     var n = node[]
     while n != nil:
       if n.height == targetHeight:
-        return Opt.some(n.id)
+        return Opt.some(Tip(tip: n.id, slot: n.slot, height: n.height))
       if n.height < targetHeight:
-        return Opt.none(BlockId)
+        return Opt.none(Tip)
       n = n.parent
-  Opt.none(BlockId)
+  Opt.none(Tip)
 
-func init*(T: type LocalTree, genesisBlock: ValidBlock): LocalTree =
+func init*(T: type LocalTree, genesisHeader: Header): LocalTree =
   let
-    gid = blockId(genesisBlock.header)
-    gn = BlockNode(id: gid, blk: genesisBlock, parent: nil, height: 0'u64)
+    gid = blockId(genesisHeader)
+    gn = BlockNode(id: gid, parent: nil, slot: genesisHeader.slot, height: 0'u64)
   LocalTree(
+    genesisId: gid,
     blocksById: [(gid, gn)].toTable,
-    idsByHeight: [(0'u64, @[gid])].toTable,
+    tips: [gid].toHashSet,
   )
 
 func blockHeight*(localTree: LocalTree, blockId: BlockId): Opt[BlockNumber] =
@@ -55,6 +58,16 @@ func blockHeight*(localTree: LocalTree, blockId: BlockId): Opt[BlockNumber] =
     return Opt.some(node.height)
   Opt.none(BlockNumber)
 
+func tipOf*(localTree: LocalTree, blockId: BlockId): Opt[Tip] =
+  localTree.blocksById.withValue(blockId, node):
+    return Opt.some(Tip(tip: node.id, slot: node.slot, height: node.height))
+  Opt.none(Tip)
+
+# TODO: Canonical nodes strictly below LIB currently stay in `blocksById` forever because
+# `ibd_server` walks ancestry back to peer `knownBlocks` and `checkViability` relies on
+# `hasBlock` returning `AlreadyApplied` before the `slot <= LIB.slot` `UnviableFork` check.
+# Once persistent header/block storage lands, sever `fromNode.parent = nil` and evict
+# canonical `< LIB` nodes so `LocalTree` only holds the volatile tree rooted at LIB (~O(k)).
 proc pruneForks*(localTree: LocalTree, newImmId: BlockId,
     oldImmHeight: BlockNumber): seq[BlockId] =
   var pruned: seq[BlockId]
@@ -62,20 +75,16 @@ proc pruneForks*(localTree: LocalTree, newImmId: BlockId,
   if fromNode == nil:
     return pruned
 
-  # Pass 1: downward sweep — keep only canonical ancestors between new and old LIB
+  # Pass 1: downward sweep — keep only canonical ancestors strictly above old LIB
   var curr = fromNode
-  while curr != nil:
-    let h = curr.height
-    localTree.idsByHeight.withValue(h, ids):
-      if ids[].len > 1:
-        for id in ids[]:
-          if id != curr.id:
-            localTree.blocksById.del(id)
-            pruned.add(id)
-        ids[] = @[curr.id]
-
-    if h == oldImmHeight:
-      break
+  while curr != nil and curr.height > oldImmHeight:
+    var ids: seq[BlockId]
+    if localTree.unfinalizedIdsByHeight.pop(curr.height, ids):
+      for id in ids:
+        if id != curr.id:
+          localTree.blocksById.del(id)
+          localTree.tips.excl(id)
+          pruned.add(id)
     curr = curr.parent
 
   # Fast path: if no forks were pruned below LIB, no orphans can exist above it
@@ -88,7 +97,7 @@ proc pruneForks*(localTree: LocalTree, newImmId: BlockId,
   var h = fromNode.height + 1
   while true:
     var anyPrunedAtLevel = false
-    localTree.idsByHeight.withValue(h, ids):
+    localTree.unfinalizedIdsByHeight.withValue(h, ids):
       var kept: seq[BlockId]
       for id in ids[]:
         localTree.blocksById.withValue(id, node):
@@ -96,13 +105,14 @@ proc pruneForks*(localTree: LocalTree, newImmId: BlockId,
             kept.add(id)
           else:
             localTree.blocksById.del(id)
+            localTree.tips.excl(id)
             pruned.add(id)
             anyPrunedAtLevel = true
 
       if anyPrunedAtLevel:
         ids[] = kept
         if ids[].len == 0:
-          localTree.idsByHeight.del(h)
+          localTree.unfinalizedIdsByHeight.del(h)
 
     if not anyPrunedAtLevel:
       break # Cascade stopped: all parents at previous height were valid (or level h had no blocks)
@@ -110,18 +120,19 @@ proc pruneForks*(localTree: LocalTree, newImmId: BlockId,
 
   pruned
 
-func fetchHeader*(localTree: LocalTree, blockId: BlockId): Opt[Header] =
+func slotOf*(localTree: LocalTree, blockId: BlockId): Opt[SlotNumber] =
   localTree.blocksById.withValue(blockId, node):
-    return Opt.some(node.blk.header)
-  Opt.none(Header)
+    return Opt.some(node.slot)
+  Opt.none(SlotNumber)
+
+func parentOf*(localTree: LocalTree, blockId: BlockId): Opt[BlockId] =
+  localTree.blocksById.withValue(blockId, node):
+    if node.parent != nil:
+      return Opt.some(node.parent.id)
+  Opt.none(BlockId)
 
 func hasBlock*(localTree: LocalTree, blockId: BlockId): bool =
   localTree.blocksById.hasKey(blockId)
-
-func getBlock*(localTree: LocalTree, id: BlockId): Opt[ValidBlock] =
-  localTree.blocksById.withValue(id, node):
-    return Opt.some(node.blk)
-  Opt.none(ValidBlock)
 
 func isAncestor*(localTree: LocalTree, ancestor: BlockId,
     descendant: BlockId): bool =
@@ -179,10 +190,9 @@ func highestAncestorInSlotWindow(
   ## Returns 0 if no block on the ancestor path falls in (lcaSlot, maxSlot].
   var node = localTree.blocksById.getOrDefault(tipId, nil)
   while node != nil:
-    let slot = node.blk.header.slot
-    if slot <= lcaSlot:
+    if node.slot <= lcaSlot:
       return 0'u64
-    if slot <= maxSlot:
+    if node.slot <= maxSlot:
       return node.height
     node = node.parent
   0'u64
@@ -207,24 +217,18 @@ func countChainDensity*(
   else:
     upperHeight - lcaHeight
 
-proc addBlockToTree*(localTree: LocalTree, blk: ValidBlock): bool =
-  ## Inserts a header-validated block; only duplicate ids and unknown parents
-  ## are guarded here.
-  let id = blockId(blk.header)
+proc addHeaderToTree*(localTree: LocalTree, header: Header, id: BlockId): bool =
+  ## Inserts a validated header (`id == blockId(header)`); only duplicate ids
+  ## and unknown parents are guarded here.
   if localTree.blocksById.hasKey(id):
     return false
-  localTree.blocksById.withValue(blk.header.parentBlock, parent):
-    let node = BlockNode(id: id, blk: blk, parent: parent[], height: parent.height + 1'u64)
+  localTree.blocksById.withValue(header.parentBlock, parent):
+    let node = BlockNode(id: id, parent: parent[], slot: header.slot, height: parent.height + 1'u64)
     localTree.blocksById[id] = node
-    localTree.idsByHeight.mgetOrPut(node.height, @[]).add(id)
+    localTree.unfinalizedIdsByHeight.mgetOrPut(node.height).add(id)
+    localTree.tips.excl(header.parentBlock)
+    localTree.tips.incl(id)
     return true
   false
-
-when defined(unittest) or defined(test):
-  func blocksIdsAtHeight*(localTree: LocalTree, height: BlockNumber): seq[BlockId] =
-    ## Returns a sequence of block IDs admitted at the specified height.
-    localTree.idsByHeight.withValue(height, ids):
-      return ids[]
-    @[]
 
 {.pop.}

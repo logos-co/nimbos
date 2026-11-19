@@ -91,7 +91,7 @@ func buildKnownBlocks*(
   let takeCount = min(additionalBlocks.len, MaxKnownAdditionalBlocks)
   KnownBlocks(
     localTip: consensus.canonicalTip.tip,
-    latestImmutableBlock: consensus.latestImmutableId,
+    latestImmutableBlock: consensus.latestImmutable.tip,
     additionalBlocks: (0 ..< takeCount).mapIt(additionalBlocks[it]),
   )
 

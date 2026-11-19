@@ -74,6 +74,9 @@ func new*(T: type BlockProcessor, chain: sink Chain): T =
 func consensus*(bp: BlockProcessor): ConsensusState =
   bp.chain.consensus
 
+func blockStore*(bp: BlockProcessor): BlockStore =
+  bp.chain.blockStore
+
 func ledger*(bp: BlockProcessor): lent Ledger[BlockId] =
   bp.chain.ledger
 

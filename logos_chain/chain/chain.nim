@@ -12,15 +12,14 @@
 import
   chronicles,
   results,
-  ./local_tree,
   ../core/types,
   ../consensus/[clock, consensus_state],
   ../deployment/deployment_settings,
   ../ledger/[ledger, stake_inference],
   ../mempool,
-  ./[block_validation, genesis, orphan_pool, proposal]
+  ./[block_store, block_validation, genesis, orphan_pool, proposal]
 
-export types, genesis, local_tree, mempool, block_validation, orphan_pool, proposal, consensus_state
+export types, genesis, block_store, mempool, block_validation, orphan_pool, proposal, consensus_state
 export ledger except config
 
 const DefaultSecurityParam*: uint64 = 1'u64
@@ -28,6 +27,7 @@ const DefaultSecurityParam*: uint64 = 1'u64
 type
   Chain* = object
     genesisBlock*: ValidBlock
+    blockStore*: BlockStore
     consensus*: ConsensusState
     ledger*: Ledger[BlockId]
     mempool*: Mempool
@@ -101,8 +101,9 @@ func init*(
   let secParam = max(securityParam, DefaultSecurityParam)
   T(
     genesisBlock: genesisBlock,
+    blockStore: BlockStore.init(genesisBlock),
     consensus: ConsensusState.init(
-      genesisBlock = genesisBlock,
+      genesisHeader = genesisBlock.header,
       securityParam = secParam,
       densitySlotWindow = densitySlotWindow,
       forkChoiceRule = forkChoiceRule,
@@ -116,7 +117,7 @@ func init*(
 proc init*(
     T: type Chain,
     settings: DeploymentSettings,
-    forkChoiceRule: ForkChoiceRule,
+    forkChoiceRule: ForkChoiceRule = ForkChoiceRule.Bootstrap,
     leaderProofVerifier: LeaderProofVerifier = verifyLeaderProof,
     poqVerifier: ProofOfQuotaVerifier = verifyProofOfQuota,
 ): Result[T, string] =
@@ -146,7 +147,7 @@ proc init*(
       genesisTime: param.genesisTime,
       slotDurationSeconds: uint64(settings.time.slotDuration.seconds)),
     securityParam = uint64(settings.cryptarchia.securityParam),
-    densitySlotWindow = settings.cryptarchia.densitySlotWindow,
+    densitySlotWindow = cfg.epochSchedule.basePeriodLength div 4,
     forkChoiceRule = forkChoiceRule))
 
 proc currentWallclockSlot*(chain: Chain): SlotNumber =
@@ -162,7 +163,7 @@ proc readdBranchTxs(chain: var Chain, fromId, toId: BlockId) =
   let nowSlot = chain.currentWallclockSlot()
   var curr = fromId
   while not curr.isZero and curr != toId:
-    let b = chain.consensus.getBlock(curr).valueOr:
+    let b = chain.blockStore.getBlock(curr).valueOr:
       warn "Missing block during reorg transaction re-addition",
           missingBlockId = curr, toId = toId
       break
@@ -173,7 +174,7 @@ proc readdBranchTxs(chain: var Chain, fromId, toId: BlockId) =
 proc removeBranchTxs(chain: var Chain, fromId, toId: BlockId) =
   var curr = fromId
   while not curr.isZero and curr != toId:
-    let b = chain.consensus.getBlock(curr).valueOr:
+    let b = chain.blockStore.getBlock(curr).valueOr:
       warn "Missing block during reorg transaction removal",
           missingBlockId = curr, toId = toId
       break
@@ -183,24 +184,23 @@ proc removeBranchTxs(chain: var Chain, fromId, toId: BlockId) =
 func pruneStatesBeforeLib(chain: var Chain, newLibId, oldLibId: BlockId) =
   ## Prunes canonical ledger states strictly older than the new immutable block (LIB).
   ## The state at `newLibId` is retained as the finalized base anchor.
-  let newLib = chain.consensus.getBlock(newLibId).valueOr:
+  var curr = chain.consensus.parentOf(newLibId).valueOr:
     return
-  var curr = header(newLib).parentBlock
-  while not curr.isZero:
+  while true:
     chain.ledger.pruneStateAt(curr)
     if curr == oldLibId:
       break
-    let blk = chain.consensus.getBlock(curr).valueOr:
+    curr = chain.consensus.parentOf(curr).valueOr:
       break
-    curr = header(blk).parentBlock
 
 proc updateLibAndPrune(chain: var Chain) =
   let
-    oldLibId = chain.consensus.latestImmutableId
+    oldLibId = chain.consensus.latestImmutable.tip
     prunedBlockIds = chain.consensus.tryUpdateLib()
   for prunedId in prunedBlockIds:
+    chain.blockStore.del(prunedId)
     chain.ledger.pruneStateAt(prunedId)
-  let newLibId = chain.consensus.latestImmutableId
+  let newLibId = chain.consensus.latestImmutable.tip
   if newLibId != oldLibId:
     chain.pruneStatesBeforeLib(newLibId, oldLibId)
     chain.orphanPool.pruneIncompatibleWithImmutable(chain.consensus)
@@ -223,7 +223,7 @@ proc handleTipChange(chain: var Chain, oldTip, newTip: BlockId) =
   ).expect("LCA must exist between active tree tips")
   # 1. readd before remove: if a transaction exists in both branches, readding first allows removing it next.
   # 2. tryUpdateLib after mempool reorg: ensures fork pruning does not delete orphaned blocks before transactions are restored.
-  # 3. Prune fork states and canonical states older than the new immutable block (retaining latestImmutableId as anchor).
+  # 3. Prune fork states and canonical states older than the new immutable block (retaining latestImmutable.tip as anchor).
   chain.readdBranchTxs(oldTip, lcaId)
   chain.removeBranchTxs(newTip, lcaId)
   # TODO: In Bootstrap mode, LIB advancement and state pruning are suspended to allow
@@ -261,7 +261,7 @@ func checkViability(
     return err(BlockApplyError(kind: OrphanAlreadyBuffered))
   # Slots increase along a chain, so a block at or before the LIB slot cannot
   # descend from the LIB. Holds without the parent, which pruning may remove.
-  if hdr.slot <= chain.consensus.latestImmutableSlot():
+  if hdr.slot <= chain.consensus.latestImmutable.slot:
     return err(BlockApplyError(kind: UnviableFork))
   if hdr.slot > curSlot:
     return err(BlockApplyError(kind: FutureSlot))
@@ -280,9 +280,10 @@ proc applyValidBlock(
       return err(BlockApplyError(kind: LedgerRejected, ledgerError: error.ledgerError))
     oldTip = chain.consensus.canonicalTip.tip
 
-  if not chain.consensus.addBlockAndTryUpdateTip(validBlk):
+  if not chain.consensus.addHeaderAndTryUpdateTip(validBlk.header, id):
     chain.orphanPool.pruneDescendants(id)
     return err(BlockApplyError(kind: UnviableFork))
+  chain.blockStore.put(id, validBlk)
   chain.ledger.commitUpdate(id, preparedState)
   let newTip = chain.consensus.canonicalTip.tip
   chain.handleTipChange(oldTip, newTip)
@@ -331,9 +332,9 @@ func checkTopology*(
 ): Result[TopologyStatus, BlockApplyError] =
   let missing = not ledger.hasState(header.parentBlock)
   if not missing:
-    let parentHdr = consensus.fetchHeader(header.parentBlock).valueOr:
+    let parentSlot = consensus.slotOf(header.parentBlock).valueOr:
       return err(BlockApplyError(kind: UnviableFork))
-    if header.slot <= parentHdr.slot:
+    if header.slot <= parentSlot:
       return err(BlockApplyError(kind: InvalidStructure))
 
   if not consensus.canDescendFromImmutable(header):

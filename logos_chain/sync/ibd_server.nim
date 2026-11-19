@@ -13,12 +13,8 @@ import
   chronos,
   libp2p/switch,
   stew/byteutils as sbyteutils,
-  ../consensus/consensus_state,
   ../chain/block_processor,
   ./[framing, syncer_types, types]
-
-from ../core/types import BlockId
-from ../chain/block_validation import encode, header
 
 logScope:
   topics = "cryptarchia_ibd"
@@ -90,9 +86,8 @@ func cappedDownloadPathBlockIds*(
       inc skipped
     else:
       sendIds.add curId
-    let blk = consensus.getBlock(curId).valueOr:
+    curId = consensus.parentOf(curId).valueOr:
       return @[]
-    curId = blk.header.parentBlock
   sendIds
 
 proc serveGetTipRequest(
@@ -113,7 +108,7 @@ proc serveGetTipRequest(
     height = tipResp.tipData.height
 
 proc serveDownloadBlocksRequest(
-    conn: Connection, consensus: ConsensusState, req: DownloadBlocksRequest,
+    conn: Connection, consensus: ConsensusState, blockStore: BlockStore, req: DownloadBlocksRequest,
 ) {.async: (raises: [BincodeError, LPStreamError, CancelledError]).} =
   proc writeResp(msg: DownloadBlocksResponse) {.async: (raises: [BincodeError, LPStreamError, CancelledError]).} =
     let innerBytes = try:
@@ -148,7 +143,7 @@ proc serveDownloadBlocksRequest(
   var blocksSent = 0
   for i in countdown(sendIds.high, 0):
     let
-      blk = consensus.getBlock(sendIds[i]).valueOr:
+      blk = blockStore.getBlock(sendIds[i]).valueOr:
         debug "IBD handler: block load failed", blockId = sbyteutils.toHex(sendIds[i])
         await writeResp(DownloadBlocksResponse(
           kind: dbrFailure,
@@ -191,7 +186,8 @@ proc dispatchCryptarchiaSyncRequest(
     debug "IBD handler: download request decode ok",
       targetBlock = sbyteutils.toHex(reqMsg.downloadBlocksRequest.targetBlock)
     await serveDownloadBlocksRequest(
-      conn, syncer.processor.consensus, reqMsg.downloadBlocksRequest)
+      conn, syncer.processor.consensus, syncer.processor.blockStore,
+      reqMsg.downloadBlocksRequest)
 
 proc mountCryptarchiaSyncHandler*(syncer: Syncer) {.raises: [LPError].} =
   proc handle(conn: Connection, proto: string) {.async: (raises: [CancelledError]).} =
