@@ -199,8 +199,7 @@ suite "mempool":
     check m.add(tx2, SlotNumber(1)) # tx1 moves to the grace cache
     check m.resolve(txReference(tx1.hash)).get().hash == tx1.hash
 
-    # A promotion must not index the hash a second time; a second index entry
-    # would make the prefix ambiguous and resolve would return none.
+    # A promotion keeps the prefix resolvable.
     check m.add(tx1, SlotNumber(1))
     check m.resolve(txReference(tx1.hash)).get().hash == tx1.hash
 
@@ -210,5 +209,29 @@ suite "mempool":
 
     m.remove(tx3.hash, moveToGrace = false)
     check m.resolve(txReference(tx3.hash)).isNone
+
+  test "add keeps the first of two transactions with the same prefix":
+    var
+      m = Mempool.init()
+      hash1 = Hash32.default
+      hash2 = Hash32.default
+    hash1[^1] = 1
+    hash2[^1] = 2
+    let
+      first = mkValidTx(mkHashedSignedTx(mkValidTxWithOps(1, 1).hashed.signedTx, hash1))
+      second = mkValidTx(mkHashedSignedTx(mkValidTxWithOps(1, 2).hashed.signedTx, hash2))
+      reference = txReference(hash1)
+    check:
+      reference == txReference(hash2)
+      m.add(first, SlotNumber(1))
+      not m.add(second, SlotNumber(1))
+      hash2 notin m
+      m.resolve(reference).get().hash == hash1
+
+    # The prefix becomes free when the first transaction leaves.
+    m.remove(hash1, moveToGrace = false)
+    check:
+      m.add(second, SlotNumber(1))
+      m.resolve(reference).get().hash == hash2
 
 {.pop.}

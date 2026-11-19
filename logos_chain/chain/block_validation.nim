@@ -60,7 +60,7 @@ type
   ProposalValidationError* {.pure.} = enum
     InvalidHeader        ## a header rule that needs no chain state
     InvalidSignature
-    UnresolvedReference  ## no unique local transaction for a reference
+    UnresolvedReference  ## no local transaction for a reference
     BodyRootMismatch
     InvalidStructure     ## a count or byte bound over the resolved body
 
@@ -168,7 +168,7 @@ func admitBlock*(
   ## Multi-tier stateless block admission:
   ## Tier 0: Structural & size bounds (~1 µs)
   ## Tier 2a: Body root verification (~20 µs)
-  ## Tier 2b: Header Ed25519 signature verification (~0.8 ms)
+  ## Tier 2b: Header Ed25519 signature verification
   ##
   ## On successful validation, transitions Block into AdmittedBlock.
   if not validateStatelessBlock(blk.header, blk.signature, blk.uncleHeaders, blk.txs.asSeq):
@@ -264,10 +264,10 @@ proc validateStatelessTransactions*(
         statelessError: error,
       ))
 
-  # Copy, not move: `blk` keeps its transactions, so a second apply of the
-  # same block cannot apply an empty body under a header that commits to txs.
+  # Each admitted block is applied one time (`processBlock`, `takeChildren`),
+  # so the list moves out.
   if blk.txsVerified:
-    return ok(validBlock(blk.validTxs))
+    return ok(validBlock(move(blk.validTxs)))
 
   template txs: untyped = blk.txs.asSeq
   var

@@ -352,10 +352,12 @@ suite "chain/block_processor":
         bp.processProposal(p, getRandomPeerId()) == ValidationResult.Reject
         bp.checkDeduplication(blockId(p.header), p.signature).isOk
 
-  asyncTest "processProposal rejects a zero parent above slot 0":
+  asyncTest "processProposal ignores a zero parent above slot 0":
+    # A zero parent cannot descend from the immutable block, so the topology
+    # check drops the proposal as an unviable fork.
     withProcessor(chain):
       let p = childProposal(genesisBlk.header, default(BlockId), SlotNumber(1), [])
-      check bp.processProposal(p, getRandomPeerId()) == ValidationResult.Reject
+      check bp.processProposal(p, getRandomPeerId()) == ValidationResult.Ignore
 
   asyncTest "stop ends the loop and cancels later addBlock calls":
     withProcessor(chain):
@@ -517,6 +519,34 @@ suite "chain/block_processor":
       let goodFut = bp.addBlock(b, id)
       check (await goodFut).isOk
       check bp.localTree.localTipId == id
+
+  asyncTest "processProposal rejects a slot that is not after the parent slot":
+    withProcessor(chain):
+      let
+        b1 = childBlock(genesisBlk.header, gid, SlotNumber(2), [])
+        p = childProposal(b1.header, blockId(b1.header), SlotNumber(1), [])
+      check:
+        (await bp.addBlock(b1)).isOk
+        bp.processProposal(p, getRandomPeerId()) == ValidationResult.Reject
+
+  asyncTest "processProposal ignores an unviable fork before the signature check":
+    # Guard: the topology check runs before the signature check. The signature
+    # is bad, so without that order the verdict would be Reject.
+    withProcessor(chain):
+      let
+        a1 = childBlock(genesisBlk.header, gid, SlotNumber(2), [])
+        idA1 = blockId(a1.header)
+        a2 = childBlock(a1.header, idA1, SlotNumber(4), [])
+        a3 = childBlock(a2.header, blockId(a2.header), SlotNumber(5), [])
+        a4 = childBlock(a3.header, blockId(a3.header), SlotNumber(6), [])
+      for blk in [a1, a2, a3, a4]:
+        check (await bp.addBlock(blk)).isOk
+      check bp.localTree.latestImmutableBlockId == blockId(a3.header)
+
+      # A child of a1 forks below the immutable block a3.
+      var p = childProposal(a1.header, idA1, SlotNumber(7), [])
+      p.signature.data[0] = p.signature.data[0] xor 1
+      check bp.processProposal(p, getRandomPeerId()) == ValidationResult.Ignore
 
   asyncTest "processProposal rejects a bad signature before resolving references":
     # Guard: the signature check runs before the mempool step. The tx is not

@@ -42,7 +42,19 @@ proc processProposal*(
     trace "GossipSub ignored duplicate proposal", blockId = idHex, src
     return ValidationResult.Ignore
 
-  # Every check that needs no chain state runs here, so the verdict covers all
+  # The topology check runs first, so a proposal that cannot be applied costs
+  # no signature check.
+  checkTopology(proposal.header, bp.localTree, bp.ledger).isOkOr:
+    # A slot not after the parent slot is invalid for each node. An unviable
+    # fork depends on the local view.
+    if error.kind == BlockApplyErrorKind.InvalidStructure:
+      debug "GossipSub rejected proposal: slot not after the parent slot",
+        blockId = idHex, src
+      return ValidationResult.Reject
+    debug "GossipSub ignored proposal on an unviable fork", blockId = idHex, src
+    return ValidationResult.Ignore
+
+  # The checks that need no chain state run here, so the verdict covers all
   # of them and apply does not read the mempool again.
   let admittedBlk = admitProposal(proposal, bp.mempool).valueOr:
     case error
@@ -50,6 +62,10 @@ proc processProposal*(
       debug "GossipSub cannot accept proposal: unresolved reference",
         blockId = idHex, src
       return ValidationResult.Ignore
+    # A body root mismatch is a Reject: the lists are not signed, and a
+    # missing transaction is an Ignore through `UnresolvedReference`. An
+    # Ignore here lets a peer send changed copies at no cost. A prefix
+    # collision can also fail here; the spec calls it infeasible.
     of ProposalValidationError.InvalidHeader,
         ProposalValidationError.InvalidSignature,
         ProposalValidationError.BodyRootMismatch,

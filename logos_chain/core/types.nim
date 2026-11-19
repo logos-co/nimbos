@@ -13,7 +13,7 @@
 import
   std/sequtils,
   results,
-  stew/[assign2, bitops2, endians2],
+  stew/[assign2, bitops2],
   bincode,
   bincode/types as bincodeTypes,
   ./crypto/hashing,
@@ -31,6 +31,13 @@ const
   MaxUncles* = 4
   HeaderSize* = 297
   SignedHeaderSize* = HeaderSize + EdSignatureSize
+  # Widths in bytes of the list counts, Block Construction 1.3.0 "Canonical
+  # Encoding": `UncleCount = Byte`, `ReferenceCount = UINT16`.
+  UncleCountWidth = 1
+  ReferenceCountWidth = 2
+  # The header and the signature hold no list. Any fixed width keeps their
+  # integers at their own size.
+  FixedIntWidth = 8
 
 type
   ProofOfLeadershipProof = CompressedGroth16Proof
@@ -67,19 +74,14 @@ type
     uncleHeaders*: UncleHeaders
     txs*: BlockTxs
 
-  # Encoded by `encodeProposal` / `decodeProposal` (Block Construction 1.3.0
-  # "Canonical Encoding"), never by the bincode derive.
+  # Encoded by its own `encode` / `decodeAt` (Block Construction 1.3.0
+  # "Canonical Encoding"), never by the bincode derive: the two list counts
+  # are narrower than the bincode default.
   Proposal* = object
     header*: Header
     uncleHeaders*: UncleHeaders
     references*: References
     signature*: Ed25519Signature
-
-  ProposalDecodeError* {.pure.} = enum
-    TruncatedInput
-    TrailingBytes
-    TooManyUncles      ## uncle count above `MaxUncles`
-    TooManyReferences  ## reference count above `MaxBlockTxs`
 
 const
   ExpectedBedrockVersion* = 1'u8
@@ -134,102 +136,23 @@ func encodeSignedHeader*(signed: SignedHeader): array[SignedHeaderSize, byte] =
     encodeEd25519Signature(signed.signature))
   res
 
-func encodeProposal*(proposal: Proposal): seq[byte] =
-  ## Canonical proposal encoding; the caller bounds both lists.
-  doAssert proposal.uncleHeaders.len <= MaxUncles and
-    proposal.references.len <= MaxBlockTxs
-  let
-    uncleCount = proposal.uncleHeaders.len
-    referenceCount = proposal.references.len
-    referenceCountOffset = HeaderSize + 1 + uncleCount * SignedHeaderSize
-    signatureOffset =
-      referenceCountOffset + 2 + referenceCount * ReferencePrefixLength
-  # Every byte is written below, so the buffer needs no zero fill.
-  var res = newSeqUninit[byte](signatureOffset + EdSignatureSize)
-  assign(res.toOpenArray(0, HeaderSize - 1), encodeHeader(proposal.header))
-  res[HeaderSize] = uint8(uncleCount)
-  for i, uncle in proposal.uncleHeaders.asSeq:
-    let start = HeaderSize + 1 + i * SignedHeaderSize
-    assign(res.toOpenArray(start, start + SignedHeaderSize - 1),
-      encodeSignedHeader(uncle))
-  assign(res.toOpenArray(referenceCountOffset, referenceCountOffset + 1),
-    encodeLe(uint16(referenceCount)))
-  for i, reference in proposal.references.asSeq:
-    let start = referenceCountOffset + 2 + i * ReferencePrefixLength
-    assign(res.toOpenArray(start, start + ReferencePrefixLength - 1), reference)
-  assign(res.toOpenArray(signatureOffset, res.high),
-    encodeEd25519Signature(proposal.signature))
-  res
-
-func decodeHeader(data: openArray[byte]): Header =
-  # Inverse of `encodeHeader`; `decodeProposal` checks the length first.
-  doAssert data.len == HeaderSize
-  var res: Header
-  res.bedrockVersion = data[0]
-  assign(res.parentBlock, data.toOpenArray(1, 32))
-  res.slot = uint64.fromBytesLE(data.toOpenArray(33, 40))
-  assign(res.bodyRoot, data.toOpenArray(41, 72))
-  assign(res.proofOfLeadership.proof, data.toOpenArray(73, 200))
-  assign(res.proofOfLeadership.entropyContribution, data.toOpenArray(201, 232))
-  assign(res.proofOfLeadership.leaderKey.data, data.toOpenArray(233, 264))
-  assign(res.proofOfLeadership.leaderVoucher, data.toOpenArray(265, 296))
-  res
-
-func decodeSignature(data: openArray[byte]): Ed25519Signature =
-  doAssert data.len == EdSignatureSize
-  var res: Ed25519Signature
-  assign(res.data, data)
-  res
-
-func decodeProposal*(data: openArray[byte]): Result[Proposal, ProposalDecodeError] =
-  ## Exact-length canonical decode; both counts are checked before any
-  ## allocation that depends on them.
-  if data.len < HeaderSize + 1:
-    return err(ProposalDecodeError.TruncatedInput)
-  let uncleCount = int(data[HeaderSize])
-  if uncleCount > MaxUncles:
-    return err(ProposalDecodeError.TooManyUncles)
-
-  let referenceCountOffset = HeaderSize + 1 + uncleCount * SignedHeaderSize
-  if data.len < referenceCountOffset + 2:
-    return err(ProposalDecodeError.TruncatedInput)
-  let referenceCount = int(uint16.fromBytesLE(
-    data.toOpenArray(referenceCountOffset, referenceCountOffset + 1)))
-  if referenceCount > MaxBlockTxs:
-    return err(ProposalDecodeError.TooManyReferences)
-
-  let
-    signatureOffset =
-      referenceCountOffset + 2 + referenceCount * ReferencePrefixLength
-    total = signatureOffset + EdSignatureSize
-  if data.len < total:
-    return err(ProposalDecodeError.TruncatedInput)
-  if data.len > total:
-    return err(ProposalDecodeError.TrailingBytes)
-
-  var
-    uncles = newSeq[SignedHeader](uncleCount)
-    references = newSeq[TxReference](referenceCount)
-  for i in 0 ..< uncleCount:
-    let start = HeaderSize + 1 + i * SignedHeaderSize
-    uncles[i].header = decodeHeader(data.toOpenArray(start, start + HeaderSize - 1))
-    uncles[i].signature = decodeSignature(
-      data.toOpenArray(start + HeaderSize, start + SignedHeaderSize - 1))
-  for i in 0 ..< referenceCount:
-    let start = referenceCountOffset + 2 + i * ReferencePrefixLength
-    assign(references[i], data.toOpenArray(start, start + ReferencePrefixLength - 1))
-
-  ok(Proposal(
-    header: decodeHeader(data.toOpenArray(0, HeaderSize - 1)),
-    uncleHeaders: UncleHeaders(uncles),
-    references: References(references),
-    signature: decodeSignature(data.toOpenArray(signatureOffset, total - 1))))
+func withCountWidth(config: BincodeConfig, width: int): BincodeConfig =
+  # Keeps only the size limit of `config`.
+  BincodeConfig(byteOrder: LittleEndian, intSize: width, sizeLimit: config.sizeLimit)
 
 proc encode*(
     stream: OutputStreamHandle, value: Proposal, config: BincodeConfig = standard()
-) {.raises: [IOError].} =
-  ## Bincode bridge: a proposal is always its canonical bytes.
-  stream.write(encodeProposal(value))
+) {.raises: [BincodeError, IOError].} =
+  ## Canonical proposal encoding; the caller bounds both lists.
+  doAssert value.uncleHeaders.len <= MaxUncles and
+    value.references.len <= MaxBlockTxs
+  # The spec fixes the byte order and the count widths. `SignedHeader` and
+  # `TxReference` hold no list, so a count width does not change their bytes.
+  let fixed = config.withCountWidth(FixedIntWidth)
+  encode(stream, value.header, fixed)
+  encode(stream, value.uncleHeaders, config.withCountWidth(UncleCountWidth))
+  encode(stream, value.references, config.withCountWidth(ReferenceCountWidth))
+  encode(stream, value.signature, fixed)
 
 func decodeAt*(
     data: openArray[byte],
@@ -237,12 +160,30 @@ func decodeAt*(
     config: BincodeConfig = standard(),
     start: int = 0,
 ): (Proposal, int) {.raises: [BincodeError].} =
-  ## Bincode bridge: canonical decode of the whole remaining input.
-  if start < 0 or start > data.len:
-    raise newException(BincodeError, "Invalid start offset for proposal")
-  let proposal = decodeProposal(data.toOpenArray(start, data.high)).valueOr:
-    raise newException(BincodeError, "proposal: " & $error)
-  (proposal, data.len - start)
+  ## Canonical proposal decoding; both counts are checked before any
+  ## allocation that depends on them.
+  let
+    fixed = config.withCountWidth(FixedIntWidth)
+    (header, headerLen) = decodeAt(data, typedesc[Header], fixed, start)
+    unclesStart = start + headerLen
+    (uncles, unclesLen) = decodeBoundedSeqAt(
+      data, typedesc[SignedHeader], MaxUncles,
+      config.withCountWidth(UncleCountWidth), unclesStart)
+    referencesStart = unclesStart + unclesLen
+    (references, referencesLen) = decodeBoundedSeqAt(
+      data, typedesc[TxReference], MaxBlockTxs,
+      config.withCountWidth(ReferenceCountWidth), referencesStart)
+    signatureStart = referencesStart + referencesLen
+    (signature, signatureLen) = decodeAt(
+      data, typedesc[Ed25519Signature], fixed, signatureStart)
+  (
+    Proposal(
+      header: header,
+      uncleHeaders: UncleHeaders(uncles),
+      references: References(references),
+      signature: signature),
+    signatureStart + signatureLen - start,
+  )
 
 func merkle_root*(hashes: openArray[Hash32]): Hash32 =
   ## Merkle root over the transaction hashes in block order.
@@ -285,10 +226,6 @@ func body_root*(uncles: openArray[SignedHeader], txRoot: Hash32): Hash32 =
     preimage.add(encodeSignedHeader(uncle))
   preimage.add(txRoot)
   blake2b256Hash("BODY_ROOT_V1", preimage)
-
-func body_root*(uncles: openArray[SignedHeader], txHashes: openArray[Hash32]): Hash32 =
-  ## Body root over the uncle list and the transaction hashes.
-  body_root(uncles, merkle_root(txHashes))
 
 func body_root*[T: AnyHashedSignedMantleTx](
     uncles: openArray[SignedHeader],
@@ -353,7 +290,7 @@ func initHeader*(
     bedrockVersion: bedrockVersion,
     parentBlock: parentBlock,
     slot: slot,
-    bodyRoot: body_root(uncleHeaders, txHashes),
+    bodyRoot: body_root(uncleHeaders, merkle_root(txHashes)),
     proofOfLeadership: proofOfLeadership,
   )
 

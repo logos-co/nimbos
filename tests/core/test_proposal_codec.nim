@@ -19,7 +19,7 @@ const
   # Proposal over `fixtureHeader(0x00)`, three uncles, three references and
   # signature `[0x01; 64]`: 1,495 bytes. External vector, not made by this
   # encoder, in the layout of Block Construction 1.3.0, Canonical Encoding:
-  # https://github.com/logos-co/logos-lips/blob/5fa8ee40c1de478b0934d95ddade7ce6a406fd1c/docs/blockchain/raw/bedrock-v1.1-block-construction.md#canonical-encoding
+  # https://github.com/logos-co/logos-lips/blob/4deef612ce1ae1776167daf8779d4abae953201b/docs/blockchain/raw/bedrock-v1.1-block-construction.md#canonical-encoding
   # Replace it only when that section changes.
   ProposalHex =
     "0100000000000000000000000000000000000000000000000000000000000000002a000000000000" &
@@ -100,51 +100,63 @@ func sized(uncles, references: int): Proposal =
     uncleHeaders: UncleHeaders(newSeqWith(uncles, fixtureUncle(0x66'u8))),
     references: References(newSeqWith(references, fixtureReference(0x01'u8))))
 
+proc wireOf(proposal: Proposal, config = standard()): seq[byte] =
+  try:
+    Bincode.encode(proposal, config)
+  except SerializationError as exc:
+    raiseAssert exc.msg
+
+proc decoded(wire: openArray[byte]): Opt[Proposal] =
+  try:
+    Opt.some(Bincode.decode(wire, Proposal, standard()))
+  except SerializationError:
+    Opt.none(Proposal)
+
 suite "core/proposal codec":
-  test "full proposal vector encodes and decodes, through the bincode bridge":
-    # Guard: a layout, width or field-order error, or a bridge that still uses a bincode derive.
+  test "full proposal vector encodes and decodes":
+    # Guard: a layout, count-width or field-order error.
     let
       proposal = fixtureProposal()
       wire = hexToSeqByte(ProposalHex)
-    check encodeProposal(proposal) == wire
-    check decodeProposal(wire).get() == proposal
-    try:
-      check Bincode.encode(proposal, standard()) == wire
-      check Bincode.decode(wire, Proposal, standard()) == proposal
-    except SerializationError as exc:
-      checkpoint exc.msg
-      fail()
-    expect SerializationError:
-      discard Bincode.decode(wire & @[0'u8], Proposal, standard())
+    check:
+      wireOf(proposal) == wire
+      decoded(wire) == Opt.some(proposal)
+
+  test "the encoding does not follow the bincode config of the caller":
+    # Guard: a codec that passes the caller's integer mode to its fields.
+    check wireOf(fixtureProposal(), standard().withVariableIntEncoding()) ==
+      hexToSeqByte(ProposalHex)
 
   test "decoding consumes the input exactly":
-    # Guard: spec rule 4; a missing length check gives an IndexDefect, not an error.
+    # Guard: spec rule 4, for input that is too long and input that is too short.
     let wire = hexToSeqByte(ProposalHex)
-    check decodeProposal(wire & @[0'u8]).error == ProposalDecodeError.TrailingBytes
-    check decodeProposal(wire.toOpenArray(0, wire.len - 2)).error ==
-      ProposalDecodeError.TruncatedInput
-    check decodeProposal(wire.toOpenArray(0, HeaderSize + 100)).error ==
-      ProposalDecodeError.TruncatedInput
-    check decodeProposal(wire.toOpenArray(0, HeaderSize - 1)).error ==
-      ProposalDecodeError.TruncatedInput
+    check:
+      decoded(wire & @[0'u8]).isNone
+      decoded(wire.toOpenArray(0, wire.len - 2)).isNone
+      decoded(wire.toOpenArray(0, HeaderSize + 100)).isNone
+      decoded(wire.toOpenArray(0, HeaderSize - 1)).isNone
 
-  test "counts at the bound decode, counts above it are rejected before any further read":
-    # Guard: an off-by-one on either bound, or a bound check after the length check.
+  test "counts at the bound decode, counts above it are rejected":
+    # Guard: an off-by-one on either bound. Each rejected input is complete
+    # for its count, so only the bound can reject it.
     let
       largest = sized(MaxUncles, MaxBlockTxs)
-      largestWire = encodeProposal(largest)
-    check largestWire.len == 18_192
-    check decodeProposal(largestWire).get() == largest
-    check encodeProposal(sized(0, 0)).len == 364
+      largestWire = wireOf(largest)
+    check:
+      largestWire.len == 18_192
+      decoded(largestWire) == Opt.some(largest)
+      wireOf(sized(0, 0)).len == 364
 
-    var
-      tooManyUncles = newSeq[byte](HeaderSize + 1)
-      tooManyReferences = newSeq[byte](HeaderSize + 3)
-    tooManyUncles[HeaderSize] = 5'u8
+    var tooManyUncles = wireOf(sized(MaxUncles, 0))
+    tooManyUncles[HeaderSize] = uint8(MaxUncles + 1)
+    tooManyUncles.insert(encodeSignedHeader(fixtureUncle(0x66'u8)), HeaderSize + 1)
+
+    var tooManyReferences = wireOf(sized(0, MaxBlockTxs))
     tooManyReferences[HeaderSize + 1] = 0x01'u8 # 1025 = 0x0401, little-endian
     tooManyReferences[HeaderSize + 2] = 0x04'u8
-    check decodeProposal(tooManyUncles).error == ProposalDecodeError.TooManyUncles
-    check decodeProposal(tooManyReferences).error ==
-      ProposalDecodeError.TooManyReferences
+    tooManyReferences.insert(fixtureReference(0x01'u8), HeaderSize + 3)
+    check:
+      decoded(tooManyUncles).isNone
+      decoded(tooManyReferences).isNone
 
 {.pop.}
