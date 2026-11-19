@@ -56,7 +56,7 @@ func generateZkSignature*(): ZkSignature =
 
 func prng*(seed: Hash32, output: var openArray[byte]) =
   ## Writes the first `output.len` bytes of the ChaCha20 keystream of `seed`.
-  ## Spec: [ChaCha20-Based PRNG Construction](https://github.com/logos-co/logos-lips/blob/5587d1e5ca2964e38098cd18f81f0fbe19f51fd3/docs/blockchain/raw/common-cryptographic-components.md#chacha20-based-prng-construction)
+  ## Spec: [ChaCha20-Based PRNG Construction](https://github.com/logos-co/logos-lips/blob/d788723992a805b395f377de6e6cf59859b47168/docs/blockchain/raw/common-cryptographic-components.md#chacha20-based-prng-construction)
   # bearssl implements RFC 8439 (96-bit nonce, 32-bit counter). With a zero
   # nonce, its keystream is equal to the original variant that the spec
   # names, for the first 2^32 blocks.
