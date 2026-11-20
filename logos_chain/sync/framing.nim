@@ -15,7 +15,7 @@ import
   stew/[assign2, endians2]
 
 logScope:
-  topics = "cryptarchia_ibd"
+  topics = "cryptarchia_sync"
 
 const CryptarchiaSyncInnerLengthPrefixSize = 4
 
@@ -44,13 +44,13 @@ proc readCryptarchiaPrefixedInner*(
     else:
       var inner = newSeqUninit[byte](innerLen)
       await conn.readExactly(addr inner[0], innerLen)
-      debug "IBD wire read ok", innerBytes = inner.len
+      debug "Sync wire read ok", innerBytes = inner.len
       Opt.some(inner)
   except BincodeError as exc:
-    debug "IBD wire read failed", exc = exc.msg
+    debug "Sync wire read failed", exc = exc.msg
     Opt.none(seq[byte])
   except LPStreamError as exc:
-    debug "IBD wire read failed", exc = exc.msg
+    debug "Sync wire read failed", exc = exc.msg
     Opt.none(seq[byte])
 
 proc writeCryptarchiaPrefixedInner*(
@@ -62,10 +62,10 @@ proc writeCryptarchiaPrefixedInner*(
   let lenPrefix = inner.len.uint32.toBytesLE
   var prefix = newSeqUninit[byte](CryptarchiaSyncInnerLengthPrefixSize)
   assign(prefix.toOpenArray(0, 3), lenPrefix)
-  debug "IBD wire write", innerBytes = inner.len, framedBytes = CryptarchiaSyncInnerLengthPrefixSize + inner.len
+  debug "Sync wire write", innerBytes = inner.len, framedBytes = CryptarchiaSyncInnerLengthPrefixSize + inner.len
   await conn.write(prefix)
   if inner.len > 0:
     await conn.write(inner)
-  debug "IBD wire write ok", framedBytes = CryptarchiaSyncInnerLengthPrefixSize + inner.len
+  debug "Sync wire write ok", framedBytes = CryptarchiaSyncInnerLengthPrefixSize + inner.len
 
 {.pop.}

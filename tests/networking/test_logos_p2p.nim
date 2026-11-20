@@ -20,7 +20,7 @@ import
   ../../logos_chain/core/types,
   ../../logos_chain/core/mantle/[operations, tx_types, tx_hashing],
   ../../logos_chain/networking/[network, protocols],
-  ../../logos_chain/sync/[syncer, ibd_server],
+  ../../logos_chain/sync/[syncer, sync_server],
   ../../logos_chain/[node, fork_choice_lifecycle],
   ../../logos_chain/deployment/deployment_settings,
   ../core/mantle/test_helpers
@@ -282,7 +282,7 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
         check txItem.get.tx.ops.len == 1
 
         # Duplicate tx sent to processTx should return Ignore and not duplicate in mempool
-        let dupRes = listenerNode.processor.processTx(sampleTx.hashed, Opt.some(peers.dialer.switch.peerInfo.peerId))
+        let dupRes = listenerNode.processor.processTx(sampleTx.hashed, peers.dialer.switch.peerInfo.peerId)
         check:
           dupRes == ValidationResult.Ignore
           listenerNode.processor.mempool.len == 1
@@ -293,7 +293,7 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
         corruptSigTx.opProofs[0].ed25519SigProof.data[0] = 0xFF
         let corruptHtx = mkHashedSignedTx(corruptSigTx, validHtx.hash)
         check:
-          listenerNode.processor.processTx(corruptHtx, Opt.some(peers.dialer.switch.peerInfo.peerId)) == ValidationResult.Reject
+          listenerNode.processor.processTx(corruptHtx, peers.dialer.switch.peerInfo.peerId) == ValidationResult.Reject
           listenerNode.processor.mempool.len == 1
 
         # Large tx (> 64 KiB) verifies GossipBincodeConfig handles messages exceeding default 64 KiB bincode limit
@@ -361,17 +361,18 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
           reconstructedBlock.txs.len == 0
 
         # Broadcast proposal referencing a missing transaction (not in listener's mempool)
-        var missingRefs: References
-        missingRefs[0] = minimalValidSignedTx().hash
-        let missingBlock = childValidBlock(sampleProposal.header, blockId(sampleProposal.header), SlotNumber(2), [])
-        let missingProposal = Proposal(
-          header: missingBlock.header,
-          references: missingRefs,
-          signature: missingBlock.signature
-        )
+        let
+          missingTx = minimalValidSignedTx()
+          missingBlock = childValidBlock(
+            sampleProposal.header, blockId(sampleProposal.header), SlotNumber(2), [missingTx])
+          missingProposal = Proposal(
+            header: missingBlock.header,
+            references: References(@[txReference(missingTx.hash)]),
+            signature: missingBlock.signature
+          )
 
         check waitUntil((await peers.dialer.broadcast(topic, missingProposal)).isOk)
-        # Wait a brief moment to ensure validation ran and rejected it without adding to localTree
+        # Wait a brief moment to ensure validation ran and rejected it without adding to consensus
         await sleepAsync(chronos.milliseconds(25))
         check not listenerNode.processor.consensus.hasBlock(blockId(missingProposal.header))
 
@@ -418,7 +419,7 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
       pendingProto.started = true
       peers.listener.switch.mount(pendingProto)
 
-      dialerNode.syncer = Syncer.init(peers.dialer.switch, dialerNode.processor, testChainSyncProtocol)
+      dialerNode.syncer = Syncer.init(peers.dialer.switch, dialerNode.processor, testChainSyncProtocol, nil)
 
       try:
         await listenerNode.initializeNetworking()
@@ -464,9 +465,9 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
         b1 = childBlock(genesis.header, gid, SlotNumber(1), [])
         id1 = blockId(b1.header)
       check (await listenerNode.processor.addBlock(b1, id1)).isOk
-      mountCryptarchiaSyncHandler(Syncer.init(peers.listener.switch, listenerNode.processor, testChainSyncProtocol))
+      mountCryptarchiaSyncHandler(Syncer.init(peers.listener.switch, listenerNode.processor, testChainSyncProtocol, nil))
 
-      dialerNode.syncer = Syncer.init(peers.dialer.switch, dialerNode.processor, testChainSyncProtocol)
+      dialerNode.syncer = Syncer.init(peers.dialer.switch, dialerNode.processor, testChainSyncProtocol, nil)
 
       try:
         await listenerNode.initializeNetworking()

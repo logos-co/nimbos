@@ -34,6 +34,10 @@ func hasOrphan*(pool: OrphanPool, id: BlockId): bool =
   ## Time: O(1) avg | Space: O(1)
   pool.byBlockId.hasKey(id)
 
+func isMissingParent*(pool: OrphanPool, id: BlockId): bool =
+  ## Checks if a block ID is currently a missing root parent.
+  id in pool.byParentId and id notin pool.byBlockId
+
 proc pruneDescendants*(pool: OrphanPool, rootId: BlockId) =
   ## Purges all descendant subtrees waiting on `rootId` via iterative BFS traversal.
   ## Time: O(M), where M is the number of descendant nodes | Space: O(M) for BFS queue
@@ -140,5 +144,11 @@ proc addOrphan*(
   pool.arrivalOrder.addLast(id)
   pool.byParentId.mgetOrPut(parentId, @[]).add(id)
   true
+
+iterator missingParentIds*(pool: OrphanPool): BlockId =
+  ## Yields missing root parents directly without heap allocations.
+  for parentId in pool.byParentId.keys:
+    if parentId notin pool.byBlockId:
+      yield parentId
 
 {.pop.}

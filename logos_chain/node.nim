@@ -139,7 +139,11 @@ proc init*(
   var nodeSyncer: Syncer = nil
   if deploymentSettings.network.chainSyncProtocolName.len > 0:
     nodeSyncer = Syncer.init(
-      network.switch, processor, deploymentSettings.network.chainSyncProtocolName)
+      network.switch,
+      processor,
+      deploymentSettings.network.chainSyncProtocolName,
+      peerProvider = proc(): seq[PeerId] = network.connectedPeerIds(),
+    )
 
   if nodeSyncer != nil:
     info "Syncer configured at node startup",
@@ -238,7 +242,7 @@ proc installMessageValidators(node: LBNode) =
   let blockTopic = node.deploymentSettings.cryptarchia.gossipsubProtocol
   if blockTopic.len > 0:
     node.network.addValidator(blockTopic) do (
-        proposal: Proposal, src: Opt[PeerId]
+        proposal: Proposal, src: PeerId
     ) -> ValidationResult:
       node.processor.processProposal(proposal, src)
   else:
@@ -247,7 +251,7 @@ proc installMessageValidators(node: LBNode) =
   let mempoolTopic = node.deploymentSettings.mempool.pubsubTopic
   if mempoolTopic.len > 0:
     node.network.addValidator(mempoolTopic) do (
-        htx: HashedSignedMantleTx, src: Opt[PeerId]
+        htx: HashedSignedMantleTx, src: PeerId
     ) -> ValidationResult:
       node.processor.processTx(htx, src)
     node.network.subscribe(mempoolTopic, TopicParams.init())
@@ -261,19 +265,17 @@ proc subscribeBlockTopic(node: LBNode) =
     node.network.subscribe(blockTopic, TopicParams.init())
     debug "Subscribed to block gossip topic", topic = blockTopic
 
-proc stop(node: LBNode) =
-  # The IBD task may be awaiting a queued result. Cancel it before the
-  # processor cancels that future, so the cancellation comes from its owner.
+proc stop(node: LBNode) {.async: (raises: []).} =
+  await node.processor.stop()
   if node.syncer != nil:
-    waitFor node.syncer.stop()
-  waitFor node.lifecycle.stop()
-  waitFor node.processor.stop()
+    await node.syncer.stop()
+  await node.lifecycle.stop()
   try:
-    waitFor node.network.stop()
+    await node.network.stop()
   except CancelledError as exc:
     warn "Couldn't stop network", msg = exc.msg
 
-  waitFor node.metricsServer.stopMetricsServer()
+  await node.metricsServer.stopMetricsServer()
 
   # Drain in-flight tasks before the prover frees the buffers they read.
   node.taskpool.shutdown()
@@ -290,6 +292,7 @@ proc initializeNetworking*(node: LBNode) {.async: (raises: [CancelledError]).} =
   if node.syncer != nil:
     let
       onIbdComplete: OnIbdComplete = proc() =
+        node.syncer.startOrphanSync()
         node.subscribeBlockTopic()
         node.lifecycle.onIbdComplete()
       onIbdFailure: OnIbdFailure = proc(reason: string) =
@@ -307,7 +310,7 @@ proc initializeNetworking*(node: LBNode) {.async: (raises: [CancelledError]).} =
       node.syncer.start(
         onIbdComplete,
         onIbdFailure,
-        Opt.some(proc(): seq[PeerId] = node.network.connectedBootstrapPeerIds()),
+        proc(): seq[PeerId] = node.network.connectedBootstrapPeerIds(),
       )
     else:
       node.syncer.start(onIbdComplete, onIbdFailure)
@@ -325,7 +328,7 @@ proc run*(node: LBNode, stopper: StopFuture) {.raises: [CatchableError].} =
 
   ProcessState.notifyRunning()
   if ProcessState.stopIt(notice("Shutting down during startup", reason = it)):
-    node.stop()
+    waitFor node.stop()
     return
 
   let loopFuts = [
@@ -345,6 +348,6 @@ proc run*(node: LBNode, stopper: StopFuture) {.raises: [CatchableError].} =
   finally:
     # time to say goodbye
     waitFor cancelAndWait(loopFuts)
-    node.stop()
+    waitFor node.stop()
 
 {.pop.}

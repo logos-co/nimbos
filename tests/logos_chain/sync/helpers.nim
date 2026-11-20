@@ -17,7 +17,7 @@ import
   ../../../logos_chain/chain/[chain, block_processor],
   ../../../logos_chain/core/types,
   ../../../logos_chain/ledger/ledger,
-  ../../../logos_chain/sync/[framing, types, ibd_server, syncer]
+  ../../../logos_chain/sync/[framing, types, sync_server, syncer]
 from ../../../logos_chain/core/mantle/primitives import SlotNumber
 from ../../ledger/test_helpers import testLedgerConfig, testGenesisLedgerState
 
@@ -28,9 +28,15 @@ proc initTestChain*(
     securityParam: uint64 = DefaultSecurityParam,
     densitySlotWindow: uint64 = 100'u64,
     genesisTime: uint64 = uint64(max(getTime().toUnix() - 500, 0'i64)),
+    verifier: LeaderProofVerifier = mockVerifyLeaderProof,
+    uncleWindowSlots: uint64 = testLedgerConfig.uncleWindowSlots,
 ): Chain =
   ## Chain over the genesis block's ledger state (epochs seeded under
   ## `testLedgerConfig`).
+  # Only the uncle window varies. The genesis state does not depend on it,
+  # so the cached genesis state stays valid.
+  var config = testLedgerConfig
+  config.uncleWindowSlots = uncleWindowSlots
   let
     gid = blockId(genesis.header)
     state =
@@ -40,11 +46,11 @@ proc initTestChain*(
         let validTx = mkValidGenesisTx(genesis.txs[0].hashed)
         LedgerState.fromGenesis(
             validTx, default(FieldElement), testSdpRegistry(),
-            testLedgerConfig).valueOr:
+            config).valueOr:
           raiseAssert "initTestChain: genesis state: " & $error
   Chain.init(
     genesis,
-    Ledger[BlockId].init(gid, state, testLedgerConfig, mockVerifyLeaderProof),
+    Ledger[BlockId].init(gid, state, config, verifier),
     SlotConfig(genesisTime: genesisTime, slotDurationSeconds: 1),
     densitySlotWindow = densitySlotWindow,
     securityParam = securityParam)
@@ -58,7 +64,7 @@ proc mountTestServer*(
     sw: Switch, chain: Chain, protocol = testChainSyncProtocol
 ) {.raises: [LPError].} =
   ## Syncer that only serves. Its processor loop does not run.
-  let syncer = Syncer.init(sw, BlockProcessor.new(chain), protocol)
+  let syncer = Syncer.init(sw, BlockProcessor.new(chain), protocol, nil)
   mountCryptarchiaSyncHandler(syncer)
 
 template withProcessor*(chain: Chain, body: untyped) =
@@ -71,13 +77,16 @@ template withProcessor*(chain: Chain, body: untyped) =
 
 template withClientSyncerOn*(sw: Switch, clientChain: Chain, body: untyped) =
   ## Client syncer on the caller's switch, stopped with its processor after `body`.
+  let bp = BlockProcessor.new(clientChain)
   let clientSyncer {.inject.} =
-    Syncer.init(sw, startTestProcessor(clientChain), testChainSyncProtocol)
+    Syncer.init(sw, bp, testChainSyncProtocol, nil)
+  bp.start()
+  clientSyncer.startOrphanSync()
   try:
     body
   finally:
+    await bp.stop()
     await clientSyncer.stop()
-    await clientSyncer.processor.stop()
 
 template withClientSyncer*(clientChain: Chain, body: untyped) =
   ## One switch and a client syncer, stopped after `body`.

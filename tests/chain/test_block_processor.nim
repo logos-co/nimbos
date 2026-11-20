@@ -23,10 +23,22 @@ template addBlock(
 ): BlockApplyFuture =
   bp.addBlock(blk, blockId(header(blk)))
 
-template addProposal(
+template addProposalBlock(
     bp: BlockProcessor, proposal: Proposal
 ): BlockApplyFuture =
-  bp.addProposal(proposal, blockId(proposal.header))
+  bp.addProposalBlock(
+    admitProposal(proposal, bp.mempool).expect("proposal admits"),
+    blockId(proposal.header))
+
+proc initZeroFeeTestChain(genesis: ValidBlock): Chain =
+  ## Test chain whose genesis state charges no fees, so a block can carry txs.
+  var chain = initTestChain(genesis)
+  let gid = blockId(genesis.header)
+  var s = chain.ledger.state(gid).get()
+  s.feeMarket.executionBaseFee = 0
+  s.feeMarket.storageGasPrice = 0
+  chain.ledger.commitUpdate(gid, s)
+  chain
 
 suite "chain/block_processor":
   setup:
@@ -66,6 +78,23 @@ suite "chain/block_processor":
       check:
         fDup.finished
         (await fDup).error.kind == BlockApplyErrorKind.OrphanAlreadyBuffered
+
+  asyncTest "buffering an orphan triggers bp.orphanEvent only for gossip source":
+    withProcessor(chain):
+      let
+        b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
+        b2 = childBlock(b1.header, blockId(b1.header), SlotNumber(2), [])
+        b3 = childBlock(b2.header, blockId(b2.header), SlotNumber(3), [])
+        p2 = Proposal(header: b2.header, references: default(References), signature: b2.signature)
+
+      check:
+        # Non-gossip source (Sync) buffers orphan without triggering orphanEvent
+        not bp.orphanEvent.isSet
+        (await bp.addBlock(b3)).error.kind == BlockApplyErrorKind.OrphanBuffered
+        not bp.orphanEvent.isSet
+        # Gossip source buffers orphan and triggers orphanEvent
+        (await bp.addProposalBlock(p2)).error.kind == BlockApplyErrorKind.OrphanBuffered
+        bp.orphanEvent.isSet
 
   asyncTest "addBlock deduplicates in-flight blocks immediately":
     withProcessor(chain):
@@ -279,26 +308,62 @@ suite "chain/block_processor":
         (await bp.addBlock(stale)).error.kind ==
           BlockApplyErrorKind.InvalidStructure
 
-  asyncTest "addProposal on Proposal reconstructs, validates, and applies child of genesis":
+  asyncTest "addProposalBlock applies an admitted child of genesis":
     withProcessor(chain):
       let
         b1 = childValidBlock(genesisBlk.header, gid, SlotNumber(1), [])
         p1 = Proposal(header: b1.header, references: default(References), signature: b1.signature)
-        r = await bp.addProposal(p1)
+        r = await bp.addProposalBlock(p1)
       check:
         r.isOk
         bp.consensus.canonicalTip.id == blockId(p1.header)
         bp.ledger.state(blockId(p1.header)).isSome
 
-  asyncTest "addProposal on Proposal with missing tx reference fails with MissingReference":
+  asyncTest "processProposal ignores an unresolved reference without taking an in-flight slot":
+    # Guard: the only test that maps an unresolved reference to Ignore.
     withProcessor(chain):
       let
-        tx = minimalValidSignedTx()
-        p1 = childProposal(genesisBlk.header, gid, SlotNumber(1), [tx])
-        r = await bp.addProposal(p1)
+        p = childProposal(genesisBlk.header, gid, SlotNumber(1), [minimalValidSignedTx()])
+        id = blockId(p.header)
       check:
-        r.isErr
-        r.error.kind == BlockApplyErrorKind.MissingReference
+        bp.processProposal(p, getRandomPeerId()) == ValidationResult.Ignore
+        bp.checkDeduplication(id, p.signature).isOk
+
+  asyncTest "an admitted proposal applies after its transaction leaves the mempool":
+    # Guard: apply uses the transactions that the gate resolved. A second
+    # mempool read would miss the removed transaction.
+    let zeroFeeChain = initZeroFeeTestChain(genesisBlk)
+    withProcessor(zeroFeeChain):
+      let
+        tx = validSignedTxWithOps(1, 1)
+        b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
+        p = childProposal(b1.header, blockId(b1.header), SlotNumber(2), [tx])
+        id = blockId(p.header)
+      check:
+        (await bp.addBlock(b1)).isOk
+        bp.mempool.add(tx, SlotNumber(0))
+      let admittedBlk = admitProposal(p, bp.mempool).expect("proposal admits")
+      bp.mempool.remove(tx.hash, moveToGrace = false)
+      check:
+        (await bp.addProposalBlock(admittedBlk, id)).isOk
+        bp.consensus.canonicalTip.id == id
+
+  asyncTest "processProposal rejects a body over MaxBlockSize":
+    withProcessor(chain):
+      let
+        tx = createValidTxForTest(mkSizedTx(MaxBlockSize + 1))
+        p = childProposal(genesisBlk.header, gid, SlotNumber(1), [tx])
+      check:
+        bp.mempool.add(tx, SlotNumber(0))
+        bp.processProposal(p, getRandomPeerId()) == ValidationResult.Reject
+        bp.checkDeduplication(blockId(p.header), p.signature).isOk
+
+  asyncTest "processProposal rejects a zero parent above slot 0":
+    # Guard: the header rules run before the topology check, which gives an
+    # Ignore for a zero parent.
+    withProcessor(chain):
+      let p = childProposal(genesisBlk.header, default(BlockId), SlotNumber(1), [])
+      check bp.processProposal(p, getRandomPeerId()) == ValidationResult.Reject
 
   asyncTest "stop ends the loop and cancels later addBlock calls":
     withProcessor(chain):
@@ -402,10 +467,12 @@ suite "chain/block_processor":
         b = childValidBlock(genesisBlk.header, gid, SlotNumber(1), [])
         p = Proposal(header: b.header, references: default(References), signature: b.signature)
         id = blockId(p.header)
-        peer = Opt.some(getRandomPeerId())
+        peer = getRandomPeerId()
+        sm = minimalValidSignedTx()
 
+      check bp.mempool.add(sm, SlotNumber(0))
       var pBad = p
-      pBad.references[0][0] = 0xAA'u8 # non-zero reference disagrees with bodyRoot
+      pBad.references = References(@[txReference(sm.hash)])
 
       # 1. pBad is rejected immediately at gossip gate
       check:
@@ -422,7 +489,7 @@ suite "chain/block_processor":
         b = childValidBlock(genesisBlk.header, gid, SlotNumber(1), [])
         p = Proposal(header: b.header, references: default(References), signature: b.signature)
         id = blockId(p.header)
-        peer = Opt.some(getRandomPeerId())
+        peer = getRandomPeerId()
 
       var
         pBad = p
@@ -457,22 +524,41 @@ suite "chain/block_processor":
         (await goodFut).isOk
         bp.consensus.canonicalTip.id == id
 
-  asyncTest "processProposal rejects a tampered copy and accepts the genuine one after it":
+  asyncTest "processProposal rejects a slot that is not after the parent slot":
     withProcessor(chain):
       let
-        b = childValidBlock(genesisBlk.header, gid, SlotNumber(1), [])
-        p = Proposal(header: b.header, references: default(References), signature: b.signature)
-        peer = Opt.some(getRandomPeerId())
-
-      var pBad = p
-      pBad.references[0][0] = 0xAA'u8
-
+        b1 = childBlock(genesisBlk.header, gid, SlotNumber(2), [])
+        p = childProposal(b1.header, blockId(b1.header), SlotNumber(1), [])
       check:
-        # Gossip rejects tampered copy
-        bp.processProposal(pBad, peer) == ValidationResult.Reject
-        # Dedup check is still ok
-        bp.checkDeduplication(blockId(p.header), p.signature).isOk
-        # Gossip accepts genuine copy
-        bp.processProposal(p, peer) == ValidationResult.Accept
+        (await bp.addBlock(b1)).isOk
+        bp.processProposal(p, getRandomPeerId()) == ValidationResult.Reject
+
+  asyncTest "processProposal ignores an unviable fork before the signature check":
+    # Guard: the topology check runs before the signature check. The signature
+    # is bad, so without that order the verdict would be Reject.
+    withProcessor(chain):
+      bp.switchToOnline()
+      let
+        a1 = childBlock(genesisBlk.header, gid, SlotNumber(2), [])
+        idA1 = blockId(a1.header)
+        a2 = childBlock(a1.header, idA1, SlotNumber(4), [])
+        a3 = childBlock(a2.header, blockId(a2.header), SlotNumber(5), [])
+        a4 = childBlock(a3.header, blockId(a3.header), SlotNumber(6), [])
+      for blk in [a1, a2, a3, a4]:
+        check (await bp.addBlock(blk)).isOk
+      check bp.consensus.latestImmutable.id == blockId(a3.header)
+
+      # A child of a1 forks below the immutable block a3.
+      var p = childProposal(a1.header, idA1, SlotNumber(7), [])
+      p.signature.data[0] = p.signature.data[0] xor 1
+      check bp.processProposal(p, getRandomPeerId()) == ValidationResult.Ignore
+
+  asyncTest "processProposal rejects a bad signature before resolving references":
+    # Guard: the signature check runs before the mempool step. The tx is not
+    # in the mempool, so without that check the verdict would be Ignore.
+    withProcessor(chain):
+      var p = childProposal(genesisBlk.header, gid, SlotNumber(1), [minimalValidSignedTx()])
+      p.signature.data[0] = p.signature.data[0] xor 1
+      check bp.processProposal(p, getRandomPeerId()) == ValidationResult.Reject
 
 {.pop.}

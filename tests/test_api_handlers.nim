@@ -17,13 +17,19 @@ import
 from ../logos_chain/binary_common import validateBeaconApiQueries
 
 suite "Logos REST node API stub endpoints":
-  const serverAddress = initTAddress("127.0.0.1:0")
-  var router = RestRouter.init(validateBeaconApiQueries)
-  router.installNodeApiHandlers(nil) # LBNode is nil for stubs
+  var
+    server: RestServerRef
+    address: TransportAddress
 
-  let server = RestServerRef.new(router, serverAddress).get()
-  server.start()
-  let address = server.localAddress()
+  block:
+    const serverAddress = initTAddress("127.0.0.1:0")
+    var router = RestRouter.init(validateBeaconApiQueries)
+    router.installNodeApiHandlers(nil) # LBNode is nil for stubs
+
+    let sres = RestServerRef.new(router, serverAddress)
+    server = sres.get()
+    server.start()
+    address = server.localAddress()
 
   asyncTest "GET /cryptarchia/headers returns empty list":
     let res = await httpClient(address, MethodGet, CRYPTARCHIA_HEADERS, "")

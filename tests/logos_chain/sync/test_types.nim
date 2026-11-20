@@ -15,7 +15,7 @@ import
   ../../testutil,
   ../../../logos_chain/core/types,
   ../../../logos_chain/deployment/deployment_settings,
-  ../../../logos_chain/sync/[types, ibd_client],
+  ../../../logos_chain/sync/[types, sync_client],
   ./helpers
 
 const
@@ -139,13 +139,11 @@ suite "sync/types (download RequestMessage / request & response payloads)":
           Opt.some(decode(inner, DownloadBlocksResponse, cryptarchiaSyncBincodeConfig))
         except BincodeError as exc:
           fail exc.msg
-    check backOpt.isSome
-    let back = backOpt.get
-    check back.kind == dbrBlock
-    let blksOpt = decodeBlocksFromDownloadResponses(@[back])
+      back = backOpt.get
+      blk = decodeSyncBlock(back.downloadedBlock).get
     check:
-      blksOpt.get.len == 1
-      blockId(blksOpt.get[0].header) == blockId(genesis.header)
+      back.kind == dbrBlock
+      blockId(blk.header) == blockId(genesis.header)
 
   test "encode / decode DownloadBlocksResponse (Failure reasons)":
     let cases = @[

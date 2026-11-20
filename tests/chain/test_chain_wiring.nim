@@ -64,6 +64,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
       cfg.epochSchedule.nonceContributionPeriod == 3600
       cfg.slotActivationCoeff == NonNegativeRatio(num: 1, den: 20)
       cfg.learningRateFixed == 500 # fixedPoint(0.5)
+      cfg.uncleWindowSlots == 240 # W = 12 blocks at f = 1/20
 
   test "cryptarchiaParameter decodes the devnet ceremony values":
     let
@@ -203,13 +204,13 @@ suite "chain/epoch wiring (devnet deployment settings)":
       txHash in chain.mempool.txs
 
     # Proposal selection on the new tip picks up the restored dummyTx
-    let (refs, count) = chain.mempool.selectProposalReferences(
+    let refs = chain.mempool.selectProposalReferences(
       chain.ledger.state(id3_fork).get, ledgerConfig(ds),
       chain.currentWallclockSlot() + TxMaturitySlots,
       verifyPoq = verifyProofOfQuota,
     )
     check:
-      count == 1
+      refs.len == 1
       refs[0] == txHash
 
   test "multi-fork reorg correctly handles multiple competing branches":
@@ -330,11 +331,11 @@ suite "chain/epoch wiring (devnet deployment settings)":
     check tipState.epochs.activeEpoch.epoch == 0
 
     # Proposal at slot 6500 crosses epoch 0 (epoch length = 6000 slots)
-    let (refs, count) = chain.mempool.selectProposalReferences(
+    let refs = chain.mempool.selectProposalReferences(
       tipState, ledgerConfig(ds), SlotNumber(6500), verifyPoq = verifyProofOfQuota
     )
     check:
-      count == 1
+      refs.len == 1
       refs[0] == tx.hash
 
     # Verify that a block constructed from this proposal is valid and admitted to localTree & ledger

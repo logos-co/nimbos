@@ -60,8 +60,8 @@ proc collectKadDiscoveredPeers[T](
   let selfId = sw.peerInfo.peerId
   for bucket in kad.rtable.buckets:
     let peers = bucket.peers
-    for entry in peers:
-      let peerId = entry.nodeId.toPeerId().valueOr:
+    for nodeId in peers:
+      let peerId = nodeId.toPeerId().valueOr:
         continue
       if peerId == selfId or peerPool.hasPeer(peerId) or seen.containsOrIncl(peerId):
         continue

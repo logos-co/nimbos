@@ -40,7 +40,7 @@ proc syncApplyBlock(chain: var Chain, blk: Block): Result[void, BlockApplyError]
   while idx < queue.len:
     let child = queue[idx]
     inc idx
-    let res = chain.tryApplyAdmittedBlock(child)
+    let res = chain.tryApplyPromotedOrphan(child)
     if res.isOk:
       queue.add(chain.orphanPool.takeChildren(blockId(child.header)))
   ok()
@@ -438,7 +438,7 @@ suite "chain/orphan_resolution":
       chain.orphanPool.hasOrphan(idB3)
       chain.orphanPool.len == 1
 
-    # 4. Before b2 runs tryApplyAdmittedBlock, competing Branch A advances and moves LIB:
+    # 4. Before b2 runs tryApplyPromotedOrphan, competing Branch A advances and moves LIB:
     # a1 (slot 2) -> a2 (slot 4) -> a3 (slot 5) -> a4 (slot 6)
     let
       a1 = childBlock(genesis.header, gid, SlotNumber(2), [])
@@ -459,13 +459,13 @@ suite "chain/orphan_resolution":
       # b3 (slot 7 > LIB slot 5) was not pruned by LIB slot check alone
       chain.orphanPool.hasOrphan(idB3)
 
-    # 5. Asynchronous promotion executes tryApplyAdmittedBlock(b2):
+    # 5. Asynchronous promotion executes tryApplyPromotedOrphan(b2):
     # b2 has slot 3 <= LIB slot 5 -> checkViability returns UnviableFork
-    let res = chain.tryApplyAdmittedBlock(promotedChildren[0])
+    let res = chain.tryApplyPromotedOrphan(promotedChildren[0])
     check:
       res.isErr
       res.error.kind == BlockApplyErrorKind.UnviableFork
-      # With the fix, tryApplyAdmittedBlock pruned descendants of b2 upon failure -> b3 is purged!
+      # With the fix, tryApplyPromotedOrphan pruned descendants of b2 upon failure -> b3 is purged!
       not chain.orphanPool.hasOrphan(idB3)
       chain.orphanPool.len == 0
 
@@ -517,7 +517,7 @@ suite "chain/orphan_resolution":
       promoted.len == 1
       blockId(promoted[0].header) == id2
 
-    let promoteRes = chain.tryApplyAdmittedBlock(promoted[0])
+    let promoteRes = chain.tryApplyPromotedOrphan(promoted[0])
     check:
       promoteRes.isOk
       chain.consensus.hasBlock(id2)
@@ -538,7 +538,8 @@ suite "chain/orphan_resolution":
       id1 = blockId(b1.header)
       proposal = childProposal(b1.header, id1, SlotNumber(2), [vtx])
       id2 = blockId(proposal.header)
-      applyPropRes = chain.tryApplyProposal(proposal)
+      admittedBlk = admitProposal(proposal, chain.mempool).expect("proposal admits")
+      applyPropRes = chain.tryApplyProposalBlock(admittedBlk)
     check:
       applyPropRes.isErr
       applyPropRes.error.kind == BlockApplyErrorKind.OrphanBuffered
@@ -558,7 +559,7 @@ suite "chain/orphan_resolution":
       promoted.len == 1
       blockId(promoted[0].header) == id2
 
-    let promoteRes = chain.tryApplyAdmittedBlock(promoted[0])
+    let promoteRes = chain.tryApplyPromotedOrphan(promoted[0])
     check:
       promoteRes.isOk
       chain.consensus.hasBlock(id2)
@@ -588,7 +589,7 @@ suite "chain/orphan_resolution":
       promoted.len == 1
       blockId(header(promoted[0])) == id2
 
-    let promoteRes = chain.tryApplyAdmittedBlock(promoted[0])
+    let promoteRes = chain.tryApplyPromotedOrphan(promoted[0])
     check:
       promoteRes.isErr
       promoteRes.error.kind == BlockApplyErrorKind.InvalidStructure
@@ -617,7 +618,7 @@ suite "chain/orphan_resolution":
     #    checkTopology returns TopologyStatus.Orphan because p is not in ledger
     let
       admittedO = admitBlock(o).get()
-      oRes = chain.tryApplyAdmittedBlock(admittedO)
+      oRes = chain.tryApplyPromotedOrphan(admittedO)
     check:
       oRes.isErr
       oRes.error.kind == BlockApplyErrorKind.UnviableFork

@@ -14,12 +14,12 @@ import
   ../ledger/test_helpers
 
 suite "consensus/clock":
-  test "base period length is ⌊k/f⌋ for every deployment":
+  test "slotsForBlocks is ⌊blocks/f⌋ for every deployment":
     check:
-      basePeriodLength(5, NonNegativeRatio(num: 1, den: 2)) == 10
-      basePeriodLength(2160, NonNegativeRatio(num: 1, den: 30)) == 64800 # mainnet
-      basePeriodLength(30, NonNegativeRatio(num: 1, den: 20)) == 600 # devnet
-      basePeriodLength(30, NonNegativeRatio(num: 1, den: 10)) == 300 # standalone
+      slotsForBlocks(5, NonNegativeRatio(num: 1, den: 2)) == 10
+      slotsForBlocks(2160, NonNegativeRatio(num: 1, den: 30)) == 64800 # mainnet
+      slotsForBlocks(30, NonNegativeRatio(num: 1, den: 20)) == 600 # devnet
+      slotsForBlocks(30, NonNegativeRatio(num: 1, den: 10)) == 300 # standalone
 
   test "epoch length is 10⌊k/f⌋":
     check testSchedule.epochLength == 100

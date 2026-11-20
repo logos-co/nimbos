@@ -41,9 +41,7 @@ type
     case kind: BlockEntryKind
     of BlockEntryKind.SyncIncoming:
       blk: Block
-    of BlockEntryKind.GossipIncoming:
-      proposal: Proposal
-    of BlockEntryKind.PromotedOrphan:
+    of BlockEntryKind.GossipIncoming, BlockEntryKind.PromotedOrphan:
       admittedBlk: AdmittedBlock
 
   BlockProcessor* = ref object
@@ -51,6 +49,7 @@ type
     blockQueue: AsyncQueue[BlockEntry]
     inFlight: Table[InFlightKey, BlockEntry]
     loopFut: Future[void].Raising([CancelledError])
+    orphanEvent*: AsyncEvent
 
 template inFlightKey*(id: BlockId, sig: Ed25519Signature): InFlightKey =
   ## Fast 32-byte in-flight key folding BlockId with both 32-byte halves of the
@@ -60,7 +59,7 @@ template inFlightKey*(id: BlockId, sig: Ed25519Signature): InFlightKey =
   ## with junk signatures cannot lock out valid blocks.
   ##
   ## Invariant: This key is collision-free across differing bodies only because
-  ## every inserted entry (addBlock, addProposal, enqueueOrphanBlock) has its
+  ## every inserted entry (addBlock, addProposalBlock, enqueueOrphanBlock) has its
   ## body bound to header.bodyRoot before taking an in-flight slot. Two copies
   ## with the same (blockId, signature) therefore commit to the exact same body bytes.
   var res {.noinit.}: InFlightKey
@@ -69,13 +68,20 @@ template inFlightKey*(id: BlockId, sig: Ed25519Signature): InFlightKey =
   res
 
 func new*(T: type BlockProcessor, chain: sink Chain): T =
-  T(chain: chain, blockQueue: newAsyncQueue[BlockEntry]())
+  T(
+    chain: chain,
+    blockQueue: newAsyncQueue[BlockEntry](),
+    orphanEvent: newAsyncEvent(),
+  )
 
 func consensus*(bp: BlockProcessor): ConsensusState =
   bp.chain.consensus
 
 func blockStore*(bp: BlockProcessor): BlockStore =
   bp.chain.blockStore
+
+func orphanPool*(bp: BlockProcessor): OrphanPool =
+  bp.chain.orphanPool
 
 func ledger*(bp: BlockProcessor): lent Ledger[BlockId] =
   bp.chain.ledger
@@ -149,17 +155,17 @@ proc addBlock*(
     id, sig,
   )
 
-proc addProposal*(
+proc addProposalBlock*(
     bp: BlockProcessor,
-    proposal: Proposal,
+    admittedBlk: AdmittedBlock,
     id: BlockId,
 ): BlockApplyFuture =
-  ## Queue `proposal` from gossip. The future completes with the apply result, or is cancelled
-  ## when the loop is not running. Cancelling it does not dequeue the proposal.
-  ## Caller must ensure `proposal.bodyMatchesHeader` before calling (verified at gossip gate).
-  let sig = proposal.signature
+  ## Queue a proposal from gossip that `admitProposal` admitted. The future completes with the
+  ## apply result, or is cancelled when the loop is not running. Cancelling it does not dequeue
+  ## the proposal.
+  let sig = admittedBlk.signature
   bp.enqueueIncoming(
-    BlockEntry(kind: BlockEntryKind.GossipIncoming, proposal: proposal),
+    BlockEntry(kind: BlockEntryKind.GossipIncoming, admittedBlk: admittedBlk),
     id, sig,
   )
 
@@ -196,10 +202,7 @@ proc processBlock(bp: BlockProcessor, entry: BlockEntry) =
     of BlockEntryKind.SyncIncoming:
       let i = blockId(header(entry.blk))
       (i, inFlightKey(i, entry.blk.signature))
-    of BlockEntryKind.GossipIncoming:
-      let i = blockId(entry.proposal.header)
-      (i, inFlightKey(i, entry.proposal.signature))
-    of BlockEntryKind.PromotedOrphan:
+    of BlockEntryKind.GossipIncoming, BlockEntryKind.PromotedOrphan:
       let i = blockId(header(entry.admittedBlk))
       (i, inFlightKey(i, entry.admittedBlk.signature))
   defer:
@@ -209,8 +212,8 @@ proc processBlock(bp: BlockProcessor, entry: BlockEntry) =
     startTick = Moment.now()
     res = case entry.kind
       of BlockEntryKind.SyncIncoming: bp.chain.tryApplyBlock(entry.blk)
-      of BlockEntryKind.GossipIncoming: bp.chain.tryApplyProposal(entry.proposal)
-      of BlockEntryKind.PromotedOrphan: bp.chain.tryApplyAdmittedBlock(entry.admittedBlk)
+      of BlockEntryKind.GossipIncoming: bp.chain.tryApplyProposalBlock(entry.admittedBlk)
+      of BlockEntryKind.PromotedOrphan: bp.chain.tryApplyPromotedOrphan(entry.admittedBlk)
     applyDur = Moment.now() - startTick
     queueDur = startTick - entry.queueTick
 
@@ -222,14 +225,21 @@ proc processBlock(bp: BlockProcessor, entry: BlockEntry) =
         src = "Sync", queueDur, applyDur, err = error.kind
     of BlockEntryKind.GossipIncoming:
       debug "Proposal rejected",
-        id = toHex(id), slot = entry.proposal.header.slot,
+        id = toHex(id), slot = header(entry.admittedBlk).slot,
         src = "Gossip", queueDur, applyDur, err = error.kind
     of BlockEntryKind.PromotedOrphan:
       debug "Promoted orphan rejected",
         id = toHex(id), slot = header(entry.admittedBlk).slot,
         queueDur, applyDur, err = error.kind
-    if entry.resfut.isSome:
-      entry.resfut.get().complete(BlockApplyResult.err(error))
+    # Spec: [Cryptarchia Bootstrapping & Synchronization § Listening for New Blocks]
+    # https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/cryptarchia-v1-bootstr-sync.md#L173-L201
+    # Only blocks received while listening for new blocks (gossip) trigger orphan sync.
+    if error.kind == BlockApplyErrorKind.OrphanBuffered and
+        entry.kind == BlockEntryKind.GossipIncoming:
+      bp.orphanEvent.fire()
+    let fut = entry.resfut.valueOr:
+      return
+    fut.complete(BlockApplyResult.err(error))
     return
 
   for child in bp.chain.orphanPool.takeChildren(id):
@@ -242,14 +252,15 @@ proc processBlock(bp: BlockProcessor, entry: BlockEntry) =
       src = "Sync", queueDur, applyDur
   of BlockEntryKind.GossipIncoming:
     debug "Proposal applied",
-      id = toHex(id), slot = entry.proposal.header.slot,
+      id = toHex(id), slot = header(entry.admittedBlk).slot,
       src = "Gossip", queueDur, applyDur
   of BlockEntryKind.PromotedOrphan:
     debug "Promoted orphan applied",
       id = toHex(id), slot = header(entry.admittedBlk).slot,
       queueDur, applyDur
-  if entry.resfut.isSome:
-    entry.resfut.get().complete(BlockApplyResult.ok())
+  let fut = entry.resfut.valueOr:
+    return
+  fut.complete(BlockApplyResult.ok())
 
 proc runQueueProcessingLoop(bp: BlockProcessor) {.async: (raises: [CancelledError]).} =
   while true:
@@ -266,7 +277,7 @@ proc start*(bp: BlockProcessor) =
   bp.loopFut = bp.runQueueProcessingLoop()
 
 proc stop*(bp: BlockProcessor) {.async: (raises: []).} =
-  ## Cancel the loop and cancel every result future still queued.
+  ## Cancel the loop and cancel queued futures.
   if bp.loopFut == nil:
     return
   await bp.loopFut.cancelAndWait()

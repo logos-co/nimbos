@@ -17,9 +17,10 @@ import
   ../deployment/deployment_settings,
   ../ledger/[ledger, stake_inference],
   ../mempool,
-  ./[block_store, block_validation, genesis, orphan_pool, proposal]
+  ./[block_store, block_validation, genesis, orphan_pool, proposal, uncle_validation]
 
-export types, genesis, block_store, mempool, block_validation, orphan_pool, proposal, consensus_state
+export types, genesis, block_store, mempool, block_validation, orphan_pool, proposal,
+  uncle_validation, consensus_state
 export ledger except config
 
 const DefaultSecurityParam*: uint64 = 1'u64
@@ -39,12 +40,12 @@ type
     InFlight
     FutureSlot
     InvalidStructure
-    MissingReference
     UnviableFork
     LedgerRejected
     StatelessTxRejected
     OrphanBuffered
     OrphanAlreadyBuffered
+    UncleRejected
 
   BlockApplyError* = object
     case kind*: BlockApplyErrorKind
@@ -52,6 +53,8 @@ type
       ledgerError: LedgerError
     of BlockApplyErrorKind.StatelessTxRejected:
       statelessError*: StatelessLedgerError
+    of BlockApplyErrorKind.UncleRejected:
+      uncleError*: UncleError
     else:
       discard
 
@@ -59,6 +62,7 @@ func `$`*(e: BlockApplyError): string =
   case e.kind
   of BlockApplyErrorKind.LedgerRejected: "ledger: " & $e.ledgerError
   of BlockApplyErrorKind.StatelessTxRejected: "stateless tx: " & $e.statelessError
+  of BlockApplyErrorKind.UncleRejected: "uncle: " & $e.uncleError
   else: $e.kind
 
 func isRecoverable*(kind: BlockApplyErrorKind): bool =
@@ -66,11 +70,11 @@ func isRecoverable*(kind: BlockApplyErrorKind): bool =
   case kind
   of BlockApplyErrorKind.AlreadyApplied, BlockApplyErrorKind.InFlight,
       BlockApplyErrorKind.FutureSlot, BlockApplyErrorKind.OrphanBuffered,
-      BlockApplyErrorKind.OrphanAlreadyBuffered,
-      BlockApplyErrorKind.MissingReference:
+      BlockApplyErrorKind.OrphanAlreadyBuffered:
     true
   of BlockApplyErrorKind.InvalidStructure, BlockApplyErrorKind.UnviableFork,
-      BlockApplyErrorKind.LedgerRejected, BlockApplyErrorKind.StatelessTxRejected:
+      BlockApplyErrorKind.LedgerRejected, BlockApplyErrorKind.StatelessTxRejected,
+      BlockApplyErrorKind.UncleRejected:
     false
 
 func ledgerConfig*(settings: DeploymentSettings): LedgerConfig =
@@ -80,14 +84,16 @@ func ledgerConfig*(settings: DeploymentSettings): LedgerConfig =
   LedgerConfig(
     epochSchedule: EpochSchedule(
       basePeriodLength:
-        basePeriodLength(uint64(c.securityParam), c.slotActivationCoeff),
+        slotsForBlocks(uint64(c.securityParam), c.slotActivationCoeff),
       stakeDistributionStabilization:
         uint64(c.epochConfig.epochStakeDistributionStabilization),
       nonceBuffer: uint64(c.epochConfig.epochPeriodNonceBuffer),
       nonceStabilization: uint64(c.epochConfig.epochPeriodNonceStabilization)),
     slotActivationCoeff: c.slotActivationCoeff,
     learningRateFixed: fixedPoint(c.learningRate),
-    faucetPk: Opt.some(c.genesisState.faucetZkPublicKey))
+    faucetPk: Opt.some(c.genesisState.faucetZkPublicKey),
+    uncleWindowSlots:
+      slotsForBlocks(uint64(c.uncleReferenceWindowInBlock), c.slotActivationCoeff))
 
 func init*(
     T: type Chain,
@@ -295,13 +301,21 @@ proc applyAdmittedBlock(
     id: BlockId,
     curSlot: SlotNumber,
 ): Result[void, BlockApplyError] =
-  # Tier 3: PoL against parent state and stateless transaction validation (mempool fast path)
-  let
-    (validBlk, headerState) = validatePolAndStatelessTransactions(
-      admittedBlk, chain.ledger, chain.mempool
-    ).valueOr:
-      chain.orphanPool.pruneDescendants(id)
-      return err(toBlockApplyError(error))
+  # PoL, then uncles, then transactions, as in steps 2, 3 and 6 of Block
+  # Proposal Validation. A synced block has no order rule, so it uses the same
+  # order. The order does not change whether the block is accepted. A sender
+  # without stake fails at one proof check, before the up to `MaxUncles` uncle
+  # signature and proof checks. A bad uncle fails before the transaction
+  # checks, whose cost grows with the block.
+  let headerState = validatePol(admittedBlk, chain.ledger).valueOr:
+    chain.orphanPool.pruneDescendants(id)
+    return err(toBlockApplyError(error))
+  validateUncles(admittedBlk, chain.consensus, chain.ledger).isOkOr:
+    chain.orphanPool.pruneDescendants(id)
+    return err(BlockApplyError(kind: UncleRejected, uncleError: error))
+  let validBlk = validateStatelessTransactions(admittedBlk, chain.mempool).valueOr:
+    chain.orphanPool.pruneDescendants(id)
+    return err(toBlockApplyError(error))
   chain.applyValidBlock(validBlk, headerState, id, curSlot)
 
 type
@@ -341,7 +355,7 @@ func checkTopology*(
 
   ok(if missing: TopologyStatus.Orphan else: TopologyStatus.ParentPresent)
 
-proc tryApplyAdmittedBlock*(
+proc tryApplyPromotedOrphan*(
     chain: var Chain,
     admittedBlk: AdmittedBlock,
 ): Result[void, BlockApplyError] =
@@ -376,23 +390,19 @@ proc tryApplyBlock*(
 
   chain.admitOrBuffer(status, admittedBlk, id, curSlot)
 
-proc tryApplyProposal*(
+proc tryApplyProposalBlock*(
     chain: var Chain,
-    proposal: Proposal,
+    admittedBlk: AdmittedBlock,
 ): Result[void, BlockApplyError] =
-  ## Privileged proposal ingestion: reconstructs transactions from the mempool,
-  ## admits the proposal through Tier 0-2 checks (buffering as orphan if parent is unknown),
-  ## and applies the resulting block without redundant stateless tx validation.
+  ## Applies a proposal that the gossip gate admitted, or buffers it as an
+  ## orphan. Only the rules that need chain state run here.
+  # The gate resolved the references, so the mempool is not read again. A
+  # second read could miss a transaction that the mempool evicted after the
+  # gate accepted, and drop a proposal that was already forwarded.
   let
     curSlot = chain.currentWallclockSlot()
-    id = ?chain.checkViability(proposal.header, curSlot)
-    status = ?checkTopology(proposal.header, chain.consensus, chain.ledger)
-    validTxs = reconstructProposalTxs(proposal, chain.mempool).valueOr:
-      case error
-      of ProposalValidationError.MissingReference:
-        return err(BlockApplyError(kind: BlockApplyErrorKind.MissingReference))
-    admittedBlk = admitProposal(proposal, validTxs).valueOr:
-      return err(toBlockApplyError(error))
+    id = ?chain.checkViability(admittedBlk.header, curSlot)
+    status = ?checkTopology(admittedBlk.header, chain.consensus, chain.ledger)
 
   chain.admitOrBuffer(status, admittedBlk, id, curSlot)
 

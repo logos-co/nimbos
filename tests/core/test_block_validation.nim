@@ -19,37 +19,10 @@ import
   ../../logos_chain/mempool,
   ../../logos_chain/zk/poc,
   ./mantle/test_helpers,
+  ../logos_chain/sync/helpers,
   ../testutil
 from ../../logos_chain/core/mantle/primitives import MaxBlockTxs, SlotNumber
 from ../ledger/test_helpers import testLedgerConfig, testGenesisLedgerState
-
-const
-  inscribeOpFraming = 165
-    ## Opcode, ChannelId, the u32 inscription length, Parent, Signer and the
-    ## 64-byte Ed25519 proof — everything but the inscription itself.
-  inscribeTxFraming = 1 + 2 * inscribeOpFraming
-    ## OpCount plus two inscribe ops.
-
-func inscribe(size: int, signer: Ed25519PublicKey): Op =
-  createChannelInscribeOp(ChannelInscribePayload(
-    channelId: default(ChannelId),
-    inscription: newSeq[byte](size),
-    parent: default(Parent),
-    signer: signer,
-  ))
-
-proc mkSizedTx(bytes: int): HashedSignedMantleTx =
-  ## Two-inscription transaction padded to encode to exactly `bytes`. Two ops
-  ## keep each inscription under MaxOperationDataSize at MaxBlockSize.
-  doAssert bytes >= inscribeTxFraming
-  let
-    padding = bytes - inscribeTxFraming
-    first = padding div 2
-    signer = testTxKeyPair.pubkey
-    tx = MantleTx(ops: @[inscribe(first, signer), inscribe(padding - first, signer)])
-    txHash = mantleTxHash(tx).get
-    proof = OpProof(kind: opfChannelInscribe, ed25519SigProof: sign(testTxKeyPair.seckey, txHash))
-  mkHashedSignedTx(SignedMantleTx(tx: tx, opProofs: @[proof, proof]), txHash)
 
 func admitWithTopology(
     blk: Block,
@@ -77,8 +50,8 @@ proc validate(genesis: ValidBlock, blk: Block): Result[ValidBlock, BlockValidati
         return err(BlockValidationError(kind: BlockValidationErrorKind.InvalidBlockStructure))
   if isOrphan:
     return err(BlockValidationError(kind: BlockValidationErrorKind.UnviableFork))
-  let (validBlk, _) = ?validatePolAndStatelessTransactions(admittedBlk, ledger, nil)
-  ok(validBlk)
+  discard ?validatePol(admittedBlk, ledger)
+  validateStatelessTransactions(admittedBlk, nil)
 
 proc treeWithLib(genesis: ValidBlock): tuple[cs: ConsensusState, b1, b2: ValidBlock] =
   ## ConsensusState with security parameter 1 holding genesis, b1, b2, b3; the LIB is b2.
@@ -393,18 +366,11 @@ suite "core/block_validation — multi-tier evaluation order":
       badTx = mkTransferTx(@[note.id, note.id], @[mkNote(100, pkSeed = 2)])
       genesis = testGenesisBlock()
       gid = blockId(genesis.header)
-      cs = ConsensusState.init(genesis.header, securityParam = 1'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Online)
-      state = testGenesisLedgerState()
-      ledger = Ledger[BlockId].init(gid, state, testLedgerConfig, failingPolVerifier)
       blk = childBlock(genesis.header, gid, SlotNumber(1), [badTx])
-      (admittedBlk, isOrphan) = admitWithTopology(blk, cs, ledger).expect("header valid")
-    check not isOrphan
-    let res = validatePolAndStatelessTransactions(admittedBlk, ledger, nil)
-    check:
-      res.isErr
-      # PoL failure at Tier 3a triggers HeaderRejected, BEFORE reaching Tier 3b StatelessTxRejected
-      res.error.kind == BlockValidationErrorKind.HeaderRejected
-      res.error.ledgerError == LedgerError.InvalidProofOfLeadership
+    var chain = initTestChain(genesis, verifier = failingPolVerifier)
+    # Fails with StatelessTxRejected if the transactions are checked first.
+    # `ledgerError` is private, so the error string pins the PoL failure.
+    check $chain.tryApplyBlock(blk).error == "ledger: InvalidProofOfLeadership"
 
   test "Tier 3: consensus proof mismatch rejects block even if hash exists in mempool (D1)":
     let
@@ -429,7 +395,7 @@ suite "core/block_validation — multi-tier evaluation order":
       blk = childBlock(genesis.header, gid, SlotNumber(1), [tamperedHtx])
       (admittedBlk, isOrphan) = admitWithTopology(blk, cs, ledger).expect("header valid")
     check not isOrphan
-    let res = validatePolAndStatelessTransactions(admittedBlk, ledger, mempool)
+    let res = validateStatelessTransactions(admittedBlk, mempool)
     check:
       res.isErr
       res.error.kind == BlockValidationErrorKind.StatelessTxRejected
@@ -470,13 +436,13 @@ suite "core/block_validation — multi-tier evaluation order":
       ledger = Ledger[BlockId].init(gid, state, testLedgerConfig, mockVerifyLeaderProof)
       (admittedBlk, isOrphan) = admitWithTopology(child, cs, ledger).expect("header valid")
     check not isOrphan
-    let res = validatePolAndStatelessTransactions(admittedBlk, ledger, mempool)
+    let res = validateStatelessTransactions(admittedBlk, mempool)
     check res.isOk
 
     # 5. Negative check: with empty mempool, Tier 3 falls back to stateless validation and FAILS with VerifierNotInitialised
     let
       emptyMempool = Mempool.init()
-      resMiss = validatePolAndStatelessTransactions(admittedBlk, ledger, emptyMempool)
+      resMiss = validateStatelessTransactions(admittedBlk, emptyMempool)
     check:
       resMiss.isErr
       resMiss.error.kind == BlockValidationErrorKind.StatelessTxRejected
@@ -498,7 +464,8 @@ suite "core/block_validation — multi-tier evaluation order":
       (admittedBlk3, isOrphan3) = admitWithTopology(blk, cs, ledger).expect("header valid")
     check not isOrphan3
     let
-      (validBlk, headerState) = validatePolAndStatelessTransactions(admittedBlk3, ledger, nil).expect("header state")
+      headerState = validatePol(admittedBlk3, ledger).expect("header state")
+      validBlk = validateStatelessTransactions(admittedBlk3, nil).expect("stateless txs")
       res = prepareBlockUpdate(validBlk, ledger, headerState)
     check res.isErr and res.error.kind == BlockValidationErrorKind.TransactionsRejected
 
@@ -518,52 +485,15 @@ suite "core/block_validation — multi-tier evaluation order":
     let res = admitWithTopology(blk, cs, ledger)
     check res.get.isOrphan == true
 
-  test "validatePolAndStatelessTransactions consumes validTxs from proposal-admitted block":
+  test "bodyMatchesHeader rejects a block whose transactions or uncles do not match":
     let
       validTx = minimalValidSignedTx()
       genesis = testGenesisBlock()
       gid = blockId(genesis.header)
-      proposal = childProposal(genesis.header, gid, SlotNumber(1), [validTx])
-      admitted = admitProposal(proposal, @[validTx]).expect("valid proposal")
-
-    check admitted.validTxs.len == 1
-    let
-      state = testGenesisLedgerState()
-      ledger = Ledger[BlockId].init(gid, state, testLedgerConfig, mockVerifyLeaderProof)
-      res = validatePolAndStatelessTransactions(admitted, ledger, nil)
-    check res.isOk
-    let (validBlk, _) = res.get()
-    check validBlk.txs.len == 1
-    doAssert admitted.validTxs.len == 0,
-      "admitted block validTxs must be consumed by validatePolAndStatelessTransactions"
-
-  test "bodyMatchesHeader unit tests for Proposal and Block":
-    let
-      validTx = minimalValidSignedTx()
-      genesis = testGenesisBlock()
-      gid = blockId(genesis.header)
-      proposal = childProposal(genesis.header, gid, SlotNumber(1), [validTx])
       blk = childBlock(genesis.header, gid, SlotNumber(1), [validTx.hashed])
 
-    # Genuine proposal & block match
-    check:
-      proposal.bodyMatchesHeader == true
-      blk.bodyMatchesHeader == true
-
-    # Proposal with modified reference fails
-    var badRefProp = proposal
-    badRefProp.references[0][0] = badRefProp.references[0][0] xor 0xff'u8
-    check badRefProp.bodyMatchesHeader == false
-
-    # Proposal with dropped reference (early zero) fails
-    var droppedRefProp = proposal
-    droppedRefProp.references[0] = default(Hash32)
-    check droppedRefProp.bodyMatchesHeader == false
-
-    # Proposal with modified uncle fails
-    var badUncleProp = proposal
-    badUncleProp.uncleHeaders = UncleHeaders(@[sampleUncle(0x11'u8)])
-    check badUncleProp.bodyMatchesHeader == false
+    # Genuine block matches
+    check blk.bodyMatchesHeader == true
 
     # Block with modified transaction hash fails
     var

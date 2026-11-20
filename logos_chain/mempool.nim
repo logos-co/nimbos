@@ -8,7 +8,7 @@
 ## In-memory transaction pool for Mantle transactions.
 ## Transactions are stored in insertion order and dynamically evaluated against
 ## active LedgerState base fee rates during block proposal construction.
-## Spec: [Execution Market — Block Construction](https://github.com/logos-co/logos-lips/blob/38916aa474164ac4acd81e62d19715e17626be17/docs/blockchain/raw/execution-market.md#block-builder-mechanism-block-construction)
+## Spec: [Execution Market — Block Construction](https://github.com/logos-co/logos-lips/blob/4deef612ce1ae1776167daf8779d4abae953201b/docs/blockchain/raw/execution-market.md#block-builder-mechanism-block-construction)
 
 {.push raises: [], gcsafe.}
 
@@ -42,6 +42,9 @@ type
 
   Mempool* = ref object
     txs*: Table[Hash32, MempoolItem]
+    byPrefix: Table[TxReference, MempoolItem]
+      # One transaction for each prefix, over `txs` and `graceCache`
+      # together.
     queue*: Deque[Hash32]
     graceCache*: LruCache[Hash32, MempoolItem]
     capacity*: uint64
@@ -58,10 +61,19 @@ func init*(_: typedesc[Mempool],
     capacity: cap
   )
 
+proc unindexPrefix(m: Mempool, hash: Hash32) =
+  # Each prefix has one transaction, so the entry of this prefix is `hash`.
+  m.byPrefix.del(txReference(hash))
+
 proc remove*(m: Mempool, hash: Hash32, moveToGrace: bool) =
   m.txs.withValue(hash, item):
     if moveToGrace:
-      m.graceCache.put(hash, item[])
+      # The hash stays in the index. An entry that the cache evicts leaves it.
+      for entry in m.graceCache.putWithEvicted(hash, item[]):
+        if entry.evicted:
+          m.unindexPrefix(entry.key)
+    else:
+      m.unindexPrefix(hash)
     m.txs.del(hash)
 
 proc compactQueue(m: Mempool) =
@@ -80,11 +92,19 @@ proc add*(
   let
     effectiveSlot = max(currentSlot, m.lastAddedSlot)
     hash = tx.hash
+    prefix = txReference(hash)
   if hash in m.txs:
     return false
 
-  # If transaction is currently in grace cache, remove it from grace and promote to active txs
-  m.graceCache.del(hash)
+  # One transaction for each prefix; the first one stays. The spec calls a
+  # prefix collision infeasible, and the body root check catches a wrong
+  # resolution.
+  m.byPrefix.withValue(prefix, held):
+    if held[].tx.hash != hash:
+      return false
+
+  # A hash in the grace cache moves back to the active set.
+  discard m.graceCache.pop(hash)
 
   while uint64(m.txs.len) >= m.capacity and m.queue.len > 0:
     # Evict oldest transaction to grace cache when capacity is reached
@@ -96,12 +116,14 @@ proc add*(
   if m.queue.len > int(m.capacity * 2) and m.txs.len < m.queue.len div 2:
     m.compactQueue()
 
-  m.txs[hash] = MempoolItem(
+  let item = MempoolItem(
     tx: tx,
     addedAtSlot: effectiveSlot,
     byteSize: Opt.none(int),
     execGas: Opt.none(Gas),
   )
+  m.txs[hash] = item
+  m.byPrefix[prefix] = item
   m.queue.addLast(hash)
   m.lastAddedSlot = effectiveSlot
   true
@@ -117,6 +139,13 @@ func get*(m: Mempool, hash: Hash32): Result[ValidSignedMantleTx, MempoolError] =
   let item = m.graceCache.peek(hash).valueOr:
     return err(MempoolError.TxNotFound)
   ok(item.tx)
+
+func resolve*(m: Mempool, reference: TxReference): Opt[ValidSignedMantleTx] =
+  ## The local transaction whose hash starts with `reference`, if one exists.
+  # The index covers the active set and the grace cache.
+  m.byPrefix.withValue(reference, item):
+    return Opt.some(item[].tx)
+  Opt.none(ValidSignedMantleTx)
 
 proc pruneExpiredTxs*(m: Mempool, currentSlot: SlotNumber) =
   while m.queue.len > 0:
