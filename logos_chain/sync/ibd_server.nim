@@ -22,7 +22,7 @@ logScope:
 func getTipResponse(consensus: ConsensusState): GetTipResponse =
   GetTipResponse(
     kind: gtrTip,
-    tipData: consensus.canonicalTip,
+    tip: consensus.canonicalTip,
   )
 
 func distinctKnownBlockIds(known: KnownBlocks): seq[BlockId] =
@@ -104,8 +104,8 @@ proc serveGetTipRequest(
   if respInner.len > 0:
     await writeCryptarchiaPrefixedInner(conn, respInner)
   debug "IBD handler: GetTip response ok",
-    tip = sbyteutils.toHex(tipResp.tipData.tip),
-    height = tipResp.tipData.height
+    tip = sbyteutils.toHex(tipResp.tip.id),
+    height = tipResp.tip.height
 
 proc serveDownloadBlocksRequest(
     conn: Connection, consensus: ConsensusState, blockStore: BlockStore, req: DownloadBlocksRequest,

@@ -17,7 +17,7 @@ import
 
 from std/sets import items
 from ../core/crypto/types as crypto_types import isZero
-from ../core/types import BlockId, Header, Tip, blockId, BlockNumber, SlotNumber
+from ../core/types import BlockId, Header, BlockInfo, blockId, BlockNumber, SlotNumber
 
 const
   DensityCacheCapacity = 512
@@ -38,8 +38,8 @@ type
 
   ConsensusState* = ref object
     localTree: LocalTree
-    canonicalTip: Tip
-    latestImmutable: Tip
+    canonicalTip: BlockInfo
+    latestImmutable: BlockInfo
     forkChoiceRule: ForkChoiceRule
     securityParam: uint64
     densitySlotWindow: uint64
@@ -65,10 +65,10 @@ func lcaBlockIdAndHeight*(
 ): Opt[(BlockId, BlockNumber)] =
   cs.localTree.lcaBlockIdAndHeight(a, b)
 
-func canonicalTip*(cs: ConsensusState): Tip =
+func canonicalTip*(cs: ConsensusState): BlockInfo =
   cs.canonicalTip
 
-func latestImmutable*(cs: ConsensusState): Tip =
+func latestImmutable*(cs: ConsensusState): BlockInfo =
   cs.latestImmutable
 
 func forkChoiceRule*(cs: ConsensusState): ForkChoiceRule =
@@ -87,13 +87,13 @@ func canDescendFromImmutable*(cs: ConsensusState, header: Header): bool =
     return false
   if header.slot <= cs.latestImmutable.slot:
     return false
-  if header.parentBlock == cs.canonicalTip.tip or header.parentBlock == cs.latestImmutable.tip:
+  if header.parentBlock == cs.canonicalTip.id or header.parentBlock == cs.latestImmutable.id:
     return true
   let parentHeight = cs.localTree.blockHeight(header.parentBlock).valueOr:
     return true
   if parentHeight + 1'u64 <= cs.latestImmutable.height:
     return false
-  cs.localTree.isAncestor(ancestor = cs.latestImmutable.tip, descendant = header.parentBlock)
+  cs.localTree.isAncestor(ancestor = cs.latestImmutable.id, descendant = header.parentBlock)
 
 func init*(
     T: type ConsensusState,
@@ -105,15 +105,15 @@ func init*(
   doAssert densitySlotWindow > 0, "ConsensusState invariant violated: densitySlotWindow must be > 0"
   let
     gid = blockId(genesisHeader)
-    genesisTip = Tip(tip: gid, slot: genesisHeader.slot, height: 0'u64)
+    genesisInfo = BlockInfo(id: gid, slot: genesisHeader.slot, height: 0'u64)
   ConsensusState(
     localTree: LocalTree.init(genesisHeader),
     forkChoiceRule: forkChoiceRule,
     securityParam: securityParam,
     densitySlotWindow: densitySlotWindow,
     densityCache: DensityCache.init(DensityCacheCapacity),
-    canonicalTip: genesisTip,
-    latestImmutable: genesisTip,
+    canonicalTip: genesisInfo,
+    latestImmutable: genesisInfo,
   )
 
 proc switchToOnline*(cs: ConsensusState) =
@@ -128,10 +128,10 @@ proc tryUpdateLib*(cs: ConsensusState): seq[BlockId] =
       immHeight = tipHeight - cs.securityParam
       oldImmHeight = cs.latestImmutable.height
     if immHeight > oldImmHeight:
-      let newImm = cs.localTree.ancestorAtHeight(cs.canonicalTip.tip, immHeight).valueOr:
+      let newImm = cs.localTree.ancestorAtHeight(cs.canonicalTip.id, immHeight).valueOr:
         raiseAssert "ConsensusState invariant violated: ancestor at immHeight not found on canonical tip branch"
       cs.latestImmutable = newImm
-      return cs.localTree.pruneForks(newImm.tip, oldImmHeight)
+      return cs.localTree.pruneForks(newImm.id, oldImmHeight)
   @[]
 
 proc densityOf(
@@ -193,7 +193,7 @@ proc preferCandidate(
     return candDensity > curDensity
 
 proc setCanonicalTip(cs: ConsensusState, candidateId: BlockId) =
-  cs.canonicalTip = cs.localTree.tipOf(candidateId).valueOr:
+  cs.canonicalTip = cs.localTree.blockInfo(candidateId).valueOr:
     raiseAssert "ConsensusState invariant violated: selected tip missing"
 
 proc tryUpdateTip(
@@ -206,11 +206,11 @@ proc tryUpdateTip(
   # https://github.com/logos-co/logos-lips/blob/663ae35d59d834784dd086cc5f14ec35e8dbecf5/docs/blockchain/raw/cryptarchia-v1-protocol.md#L477
   # Extending the current tip skips fork_choice; in Bootstrap mode, crossing height(LCA) + k -> k + 1
   # via tip extension can make an existing denser tip win under maxvalid-bg (kept spec-literal for now).
-  if parentBlock == cs.canonicalTip.tip:
+  if parentBlock == cs.canonicalTip.id:
     cs.setCanonicalTip(candidateId)
     return
 
-  let startId = cs.canonicalTip.tip
+  let startId = cs.canonicalTip.id
   var bestId =
     if cs.preferCandidate(startId, candidateId): candidateId
     else: startId

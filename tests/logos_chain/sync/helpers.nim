@@ -118,12 +118,12 @@ proc extendChainAfterGenesis*(chain: Chain, extraBlocks: int): BlockId =
     parentId = blockId(blk.header)
   parentId
 
-func exampleGetTipTipFixture*(): Tip =
-  Tip(tip: exampleBlockId(0xAB'u8), slot: SlotNumber(12_345'u64),
+func exampleGetTipFixture*(): BlockInfo =
+  BlockInfo(id: exampleBlockId(0xAB'u8), slot: SlotNumber(12_345'u64),
       height: 999'u64)
 
 proc exampleSerializedGetTipResponseTipWire*(): Opt[seq[byte]] =
-  let resp = GetTipResponse(kind: gtrTip, tipData: exampleGetTipTipFixture())
+  let resp = GetTipResponse(kind: gtrTip, tip: exampleGetTipFixture())
   try:
     let wire = encode(resp, cryptarchiaSyncBincodeConfig)
     if wire.len == 0:

@@ -40,11 +40,11 @@ suite "sync/types (GetTip RequestMessage / response wire)":
 
   test "Fixture GetTipResponse Tip wire matches hex and roundtrips":
     let
-      tip = exampleGetTipTipFixture()
+      tip = exampleGetTipFixture()
       wOpt = exampleSerializedGetTipResponseTipWire()
       wire = wOpt.get
     check:
-      tip.tip[0] == 0xAB'u8 and tip.tip[^1] == 0xAB'u8
+      tip.id[0] == 0xAB'u8 and tip.id[^1] == 0xAB'u8
       tip.slot == SlotNumber(12_345'u64) and tip.height == 999'u64
       byteutils.toHex(wire) ==
         "00000000abababababababababababababababababababababababababababababababab3930000000000000e703000000000000"
@@ -52,7 +52,7 @@ suite "sync/types (GetTip RequestMessage / response wire)":
       Opt.some(decode(wire, GetTipResponse, cryptarchiaSyncBincodeConfig))
     except BincodeError as exc:
       fail exc.msg
-    check d.isSome and d.get.kind == gtrTip and d.get.tipData == tip
+    check d.isSome and d.get.kind == gtrTip and d.get.tip == tip
 
   test "Fixture GetTipResponse Failure wire matches hex and roundtrips":
     let
@@ -71,8 +71,8 @@ suite "sync/types (GetTip RequestMessage / response wire)":
     bid[0] = 7'u8
     bid[31] = 42'u8
     let
-      tip = Tip(tip: bid, slot: SlotNumber(9), height: 123'u64)
-      resp = GetTipResponse(kind: gtrTip, tipData: tip)
+      tip = BlockInfo(id: bid, slot: SlotNumber(9), height: 123'u64)
+      resp = GetTipResponse(kind: gtrTip, tip: tip)
       wire = try:
         encode(resp, cryptarchiaSyncBincodeConfig)
       except BincodeError:
@@ -83,7 +83,7 @@ suite "sync/types (GetTip RequestMessage / response wire)":
         fail exc.msg
     check:
       d.get.kind == gtrTip
-      d.get.tipData == tip
+      d.get.tip == tip
 
   test "Custom GetTip failure response roundtrips":
     let
@@ -245,7 +245,7 @@ suite "sync/types (cryptarchia u32 length-prefixed wire fixtures 1-9)":
 
     let inner2 = try:
       encode(
-        GetTipResponse(kind: gtrTip, tipData: exampleGetTipTipFixture()),
+        GetTipResponse(kind: gtrTip, tip: exampleGetTipFixture()),
         cryptarchiaSyncBincodeConfig)
     except BincodeError:
       fail getCurrentExceptionMsg()

@@ -192,12 +192,12 @@ func pruneStatesBeforeLib(chain: var Chain, newLibId, oldLibId: BlockId) =
 
 proc updateLibAndPrune(chain: var Chain) =
   let
-    oldLibId = chain.consensus.latestImmutable.tip
+    oldLibId = chain.consensus.latestImmutable.id
     prunedBlockIds = chain.consensus.tryUpdateLib()
   for prunedId in prunedBlockIds:
     chain.blockStore.del(prunedId)
     chain.ledger.pruneStateAt(prunedId)
-  let newLibId = chain.consensus.latestImmutable.tip
+  let newLibId = chain.consensus.latestImmutable.id
   if newLibId != oldLibId:
     chain.pruneStatesBeforeLib(newLibId, oldLibId)
     chain.orphanPool.pruneIncompatibleWithImmutable(chain.consensus)
@@ -222,7 +222,7 @@ proc handleTipChange(chain: var Chain, oldTip, newTip: BlockId) =
   ).expect("LCA must exist between active tree tips")
   # 1. readd before remove: if a transaction exists in both branches, readding first allows removing it next.
   # 2. tryUpdateLib after mempool reorg: ensures fork pruning does not delete orphaned blocks before transactions are restored.
-  # 3. Prune fork states and canonical states older than the new immutable block (retaining latestImmutable.tip as anchor).
+  # 3. Prune fork states and canonical states older than the new immutable block (retaining latestImmutable.id as anchor).
   chain.readdBranchTxs(oldTip, lcaId)
   chain.removeBranchTxs(newTip, lcaId)
   # TODO: In Bootstrap mode, LIB advancement and state pruning are suspended to allow
@@ -277,14 +277,14 @@ proc applyValidBlock(
     preparedState = prepareBlockUpdate(validBlk, chain.ledger, headerState).valueOr:
       chain.orphanPool.pruneDescendants(id)
       return err(BlockApplyError(kind: LedgerRejected, ledgerError: error.ledgerError))
-    oldTip = chain.consensus.canonicalTip.tip
+    oldTip = chain.consensus.canonicalTip.id
 
   if not chain.consensus.addHeaderAndTryUpdateTip(validBlk.header, id):
     chain.orphanPool.pruneDescendants(id)
     return err(BlockApplyError(kind: UnviableFork))
   chain.blockStore.put(id, validBlk)
   chain.ledger.commitUpdate(id, preparedState)
-  let newTip = chain.consensus.canonicalTip.tip
+  let newTip = chain.consensus.canonicalTip.id
   chain.handleTipChange(oldTip, newTip)
   chain.mempool.pruneExpiredTxs(curSlot)
   ok()

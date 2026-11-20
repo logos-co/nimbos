@@ -76,8 +76,8 @@ type
     references*: References
     signature*: Ed25519Signature
 
-  Tip* = object
-    tip*: BlockId
+  BlockInfo* = object
+    id*: BlockId
     slot*: SlotNumber
     height*: BlockNumber
 
@@ -93,7 +93,7 @@ deriveBincode(Header)
 deriveBincode(SignedHeader)
 deriveBincode(Block)
 deriveBincode(Proposal)
-deriveBincode(Tip)
+deriveBincode(BlockInfo)
 
 template header*(blk: Block): Header = blk.header
 

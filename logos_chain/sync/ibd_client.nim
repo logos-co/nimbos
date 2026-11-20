@@ -62,8 +62,8 @@ proc sendGetTipRequest*(
       of gtrTip:
         debug "IBD GetTip deserialize ok",
           peer,
-          tip = sbyteutils.toHex(resp.tipData.tip),
-          height = resp.tipData.height
+          tip = sbyteutils.toHex(resp.tip.id),
+          height = resp.tip.height
       of gtrFailure:
         debug "IBD GetTip deserialize ok (peer failure)",
           peer,
@@ -90,8 +90,8 @@ func buildKnownBlocks*(
 ): KnownBlocks =
   let takeCount = min(additionalBlocks.len, MaxKnownAdditionalBlocks)
   KnownBlocks(
-    localTip: consensus.canonicalTip.tip,
-    latestImmutableBlock: consensus.latestImmutable.tip,
+    localTip: consensus.canonicalTip.id,
+    latestImmutableBlock: consensus.latestImmutable.id,
     additionalBlocks: (0 ..< takeCount).mapIt(additionalBlocks[it]),
   )
 
@@ -244,7 +244,7 @@ proc downloadBlocks(
             debug "IBD: GetTip returned failure", peer
             Opt.none(BlockId)
           of gtrTip:
-            let tip = tipOpt.get.tipData.tip
+            let tip = tipOpt.get.tip.id
             info "IBD: GetTip returned success", peer, targetBlock = sbyteutils.toHex(tip)
             Opt.some(tip)
     if effectiveTarget.isNone:

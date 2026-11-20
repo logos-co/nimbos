@@ -249,7 +249,7 @@ suite "chain/orphan_pool":
     check cs.addHeaderAndTryUpdateTip(b2.header, blockId(b2.header))
     # LIB advances to b1 (height 2 - 1 = 1, slot 1)
     discard cs.tryUpdateLib()
-    check cs.latestImmutable.tip == id1
+    check cs.latestImmutable.id == id1
 
     # Orphan o1 has slot 1 <= LIB slot 1 (incompatible)
     let

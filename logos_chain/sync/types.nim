@@ -74,7 +74,7 @@ type
   GetTipResponse* = object
     case kind*: GetTipResponseKind
     of gtrTip:
-      tipData*: Tip
+      tip*: BlockInfo
     of gtrFailure:
       failureMessage*: string
 

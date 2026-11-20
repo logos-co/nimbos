@@ -75,10 +75,10 @@ suite "consensus/local_tree":
       id2 = blockId(b2.header)
     check:
       tree.addHeaderToTree(b1.header, id1)
-      tree.ancestorAtHeight(id1, 0'u64) == Opt.some(Tip(tip: gid, slot: genesis.header.slot, height: 0'u64))
+      tree.ancestorAtHeight(id1, 0'u64) == Opt.some(BlockInfo(id: gid, slot: genesis.header.slot, height: 0'u64))
       tree.addHeaderToTree(b2.header, id2)
-      tree.ancestorAtHeight(id2, 1'u64) == Opt.some(Tip(tip: id1, slot: 1'u64, height: 1'u64))
-      tree.ancestorAtHeight(id2, 0'u64) == Opt.some(Tip(tip: gid, slot: genesis.header.slot, height: 0'u64))
+      tree.ancestorAtHeight(id2, 1'u64) == Opt.some(BlockInfo(id: id1, slot: 1'u64, height: 1'u64))
+      tree.ancestorAtHeight(id2, 0'u64) == Opt.some(BlockInfo(id: gid, slot: genesis.header.slot, height: 0'u64))
 
 suite "consensus/local_tree (lcaBlockIdAndHeight)":
   test "lcaBlockIdAndHeight of genesis with itself is genesis":

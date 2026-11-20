@@ -26,7 +26,7 @@ proc runLbp2pIbdSyncTest(extraBlocks: int) {.async.} =
     genesis = createGenesisBlock(testValidGenesisTx())
     chainBootstrap = initTestChain(genesis)
     tipId = extendChainAfterGenesis(chainBootstrap, extraBlocks)
-  check chainBootstrap.consensus.canonicalTip.tip == tipId
+  check chainBootstrap.consensus.canonicalTip.id == tipId
 
   let
     chainClient = initTestChain(genesis)
@@ -48,7 +48,7 @@ proc runLbp2pIbdSyncTest(extraBlocks: int) {.async.} =
       check:
         waitUntil(peers.dialer.switch.isConnected(peers.listenerPeerId))
         waitUntil(chainClient.consensus.hasBlock(tipId), chronos.milliseconds(waitAttempts * 100))
-        clientSyncer.processor.consensus.canonicalTip.tip == tipId
+        clientSyncer.processor.consensus.canonicalTip.id == tipId
   finally:
     await peers.dialer.stop()
     await peers.listener.stop()
@@ -179,7 +179,7 @@ suite "sync/initial_block_download (GetTip)":
       let tipResp = (await sendGetTipRequest(clientSyncer, server.peerInfo.peerId)).get()
       check:
         tipResp.kind == gtrTip
-        tipResp.tipData == serverChain.consensus.canonicalTip
+        tipResp.tip == serverChain.consensus.canonicalTip
 
 suite "sync/initial_block_download (IBD requester loop)":
   asyncTest "initialBlockDownload with no configured peers completes without raising":
@@ -208,7 +208,7 @@ suite "sync/initial_block_download (IBD requester loop)":
       serverChain = initTestChain(genesis)
     check:
       seedValidBlock(serverChain, b1)
-      serverChain.consensus.canonicalTip.tip == b1Id
+      serverChain.consensus.canonicalTip.id == b1Id
 
     let server = await startQuicTestSwitch()
     try:
@@ -229,12 +229,12 @@ suite "sync/initial_block_download (IBD requester loop)":
       clientChain = initTestChain(genesis)
     check:
       seedValidBlock(serverChain, b1)
-      serverChain.consensus.canonicalTip.tip == b1id
+      serverChain.consensus.canonicalTip.id == b1id
     withSyncPair(serverChain, clientChain):
       await initialBlockDownload(clientSyncer, Opt.some(peerProvider(server.peerInfo.peerId)))
       check:
         clientChain.consensus.hasBlock(b1id)
-        clientSyncer.processor.consensus.canonicalTip.tip == b1id
+        clientSyncer.processor.consensus.canonicalTip.id == b1id
 
   asyncTest "initialBlockDownload continues gracefully when downloaded block is in flight":
     let
@@ -251,7 +251,7 @@ suite "sync/initial_block_download (IBD requester loop)":
     check:
       seedValidBlock(serverChain, b1Valid)
       seedValidBlock(serverChain, b2Valid)
-      serverChain.consensus.canonicalTip.tip == b2id
+      serverChain.consensus.canonicalTip.id == b2id
     withSyncPair(serverChain, clientChain):
       # Queue b1 ahead of time so it is in-flight when IBD processes the downloaded batch
       let fGossip = clientSyncer.processor.addBlock(b1, b1id)
@@ -260,7 +260,7 @@ suite "sync/initial_block_download (IBD requester loop)":
         (await fGossip).isOk
         clientChain.consensus.hasBlock(b1id)
         clientChain.consensus.hasBlock(b2id)
-        clientSyncer.processor.consensus.canonicalTip.tip == b2id
+        clientSyncer.processor.consensus.canonicalTip.id == b2id
 
   asyncTest "initialBlockDownload fails over to secondary peer when primary peer fails":
     let
@@ -272,7 +272,7 @@ suite "sync/initial_block_download (IBD requester loop)":
       clientChain = initTestChain(genesis)
     check:
       seedValidBlock(serverChain2, b1)
-      serverChain2.consensus.canonicalTip.tip == b1id
+      serverChain2.consensus.canonicalTip.id == b1id
 
     # Server 1 has no sync handler and must fail. Server 2 serves b1.
     let
@@ -289,7 +289,7 @@ suite "sync/initial_block_download (IBD requester loop)":
         )
         check:
           clientChain.consensus.hasBlock(b1id)
-          clientSyncer.processor.consensus.canonicalTip.tip == b1id
+          clientSyncer.processor.consensus.canonicalTip.id == b1id
     finally:
       await server1.stop()
       await server2.stop()

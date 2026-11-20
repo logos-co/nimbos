@@ -61,7 +61,7 @@ suite "chain/orphan_resolution":
       applyB2Res.error.kind == BlockApplyErrorKind.OrphanBuffered
       chain.orphanPool.hasOrphan(id2)
       not chain.consensus.hasBlock(id2)
-      chain.consensus.canonicalTip.tip == gid
+      chain.consensus.canonicalTip.id == gid
 
     # Ingesting child B2 again returns OrphanAlreadyBuffered
     let applyB2DupRes = chain.tryApplyBlock(b2)
@@ -76,7 +76,7 @@ suite "chain/orphan_resolution":
       # 3. Both B1 and B2 should now be applied and promoted
       chain.consensus.hasBlock(id1)
       chain.consensus.hasBlock(id2)
-      chain.consensus.canonicalTip.tip == id2
+      chain.consensus.canonicalTip.id == id2
       chain.ledger.state(id1).isSome
       chain.ledger.state(id2).isSome
       chain.orphanPool.len == 0
@@ -107,7 +107,7 @@ suite "chain/orphan_resolution":
       chain.consensus.hasBlock(id2)
       chain.consensus.hasBlock(id3)
       chain.consensus.hasBlock(id4)
-      chain.consensus.canonicalTip.tip == id4
+      chain.consensus.canonicalTip.id == id4
       chain.orphanPool.len == 0
 
   test "structurally invalid block or invalid header is rejected and not buffered":
@@ -183,7 +183,7 @@ suite "chain/orphan_resolution":
     for i in 0 .. MaxOrphans - 1:
       check chain.consensus.hasBlock(blockId(blocks[i].header))
     check:
-      chain.consensus.canonicalTip.tip == blockId(blocks[MaxOrphans - 1].header)
+      chain.consensus.canonicalTip.id == blockId(blocks[MaxOrphans - 1].header)
       chain.orphanPool.len == 1 # only blocks[MaxOrphans + 1] remains
       chain.orphanPool.hasOrphan(blockId(blocks[MaxOrphans + 1].header))
 
@@ -298,7 +298,7 @@ suite "chain/orphan_resolution":
       chain.tryApplyBlock(b2b).isOk
       chain.tryApplyBlock(b3a).isOk
       # With securityParam = 1 and tip height = 3 (b3a), LIB naturally advances to height 2 (b2a)
-      chain.consensus.latestImmutable.tip == id2a
+      chain.consensus.latestImmutable.id == id2a
 
     # Ingest orphan branching off pruned fork b2b with slot <= LIB slot (violates LIB b2a slot feasibility)
     let
@@ -327,7 +327,7 @@ suite "chain/orphan_resolution":
     let b1Res = chain.syncApplyBlock(b1)
     check:
       b1Res.isOk
-      chain.consensus.canonicalTip.tip == b1Id
+      chain.consensus.canonicalTip.id == b1Id
       chain.orphanPool.len == 0
       not chain.consensus.hasBlock(blockId(orphan.header))
 
@@ -345,7 +345,7 @@ suite "chain/orphan_resolution":
       resA1 = chain.tryApplyBlock(a1)
     check:
       resA1.isOk
-      chain.consensus.canonicalTip.tip == blockId(a1.header)
+      chain.consensus.canonicalTip.id == blockId(a1.header)
       chain.mempool.len == 0 # Pruned on block commit
 
     # Branch B: blocks b1 -> b2 -> b3 (heavier/taller branch)
@@ -364,12 +364,12 @@ suite "chain/orphan_resolution":
       chain.orphanPool.len == 2
       # Ingest root b1 -> cascade promotes b2 and b3, triggering a reorg from a1 to b3
       chain.syncApplyBlock(b1).isOk
-      chain.consensus.canonicalTip.tip == id3
+      chain.consensus.canonicalTip.id == id3
       chain.orphanPool.len == 0
       # txA from abandoned branch A is restored to mempool
       chain.mempool.len == 1
       # LIB advanced to b2 (height 3 - securityParam 1 = 2)
-      chain.consensus.latestImmutable.tip == id2
+      chain.consensus.latestImmutable.id == id2
 
   test "orphan pool prunes orphans whose ancestry cannot descend from newly advanced LIB":
     var (chain, genesis, gid) = setupChain(securityParam = 1)
@@ -405,7 +405,7 @@ suite "chain/orphan_resolution":
       chain.tryApplyBlock(a3).isOk
       # Applying a4 advances LIB to a3 (height 4 - 1 = 3), pruning fork f1 (height 1)
       chain.tryApplyBlock(a4).isOk
-      chain.consensus.latestImmutable.tip == idA3
+      chain.consensus.latestImmutable.id == idA3
       # Orphan o2 had slot 3 <= LIB slot 5, so pruneIncompatibleWithImmutable pruned it from orphanPool on LIB update!
       chain.orphanPool.len == 0
 
@@ -455,7 +455,7 @@ suite "chain/orphan_resolution":
       chain.tryApplyBlock(a3).isOk
       chain.tryApplyBlock(a4).isOk
       # LIB advanced to a3 (height 3, slot 5), pruning branch b1
-      chain.consensus.latestImmutable.tip == idA3
+      chain.consensus.latestImmutable.id == idA3
       # b3 (slot 7 > LIB slot 5) was not pruned by LIB slot check alone
       chain.orphanPool.hasOrphan(idB3)
 
@@ -521,7 +521,7 @@ suite "chain/orphan_resolution":
     check:
       promoteRes.isOk
       chain.consensus.hasBlock(id2)
-      chain.consensus.canonicalTip.tip == id2
+      chain.consensus.canonicalTip.id == id2
 
   test "promoted proposal orphan does not require mempool to retain its transactions":
     var (chain, genesis, gid) = setupChain()
@@ -562,7 +562,7 @@ suite "chain/orphan_resolution":
     check:
       promoteRes.isOk
       chain.consensus.hasBlock(id2)
-      chain.consensus.canonicalTip.tip == id2
+      chain.consensus.canonicalTip.id == id2
 
   test "promoted orphan with slot <= parent slot is rejected and pruned upon promotion":
     let

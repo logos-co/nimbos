@@ -47,16 +47,16 @@ suite "consensus/fork_choice (via Chain.tryApplyBlock)":
       chain.tryApplyBlock(a1).isOk
       chain.tryApplyBlock(a2).isOk
       chain.tryApplyBlock(a3).isOk
-      chain.consensus.canonicalTip.tip == idA3
+      chain.consensus.canonicalTip.id == idA3
       # H2 ties A3 on density (2 == 2 in (0, 10]) -> incumbent A3 is preserved
       chain.tryApplyBlock(h1).isOk
       chain.tryApplyBlock(h2).isOk
-      chain.consensus.canonicalTip.tip == idA3
+      chain.consensus.canonicalTip.id == idA3
       # B2 ties A3 in (5, 15] (1 == 1); B3 beats A3 (2 > 1), then tip sweep re-evaluates dormant H2 against B3 (2 > 1 in (0, 10]) -> H2 wins
       chain.tryApplyBlock(b2).isOk
-      chain.consensus.canonicalTip.tip == idA3
+      chain.consensus.canonicalTip.id == idA3
       chain.tryApplyBlock(b3).isOk
-      chain.consensus.canonicalTip.tip == idH2
+      chain.consensus.canonicalTip.id == idH2
 
   test "Online: shallow fork switches tip, advances LIB, and rejects blocks at or below LIB":
     const k = 2'u64
@@ -81,15 +81,15 @@ suite "consensus/fork_choice (via Chain.tryApplyBlock)":
     check:
       chain.tryApplyBlock(b1).isOk
       chain.tryApplyBlock(b2).isOk
-      chain.consensus.canonicalTip.tip == idB2
-      chain.consensus.latestImmutable.tip == gid
+      chain.consensus.canonicalTip.id == idB2
+      chain.consensus.latestImmutable.id == gid
       # Equal-height fork f2 preserves incumbent b2; taller f3 reorganizes tip and advances LIB to f1
       chain.tryApplyBlock(f1).isOk
       chain.tryApplyBlock(f2).isOk
-      chain.consensus.canonicalTip.tip == idB2
+      chain.consensus.canonicalTip.id == idB2
       chain.tryApplyBlock(f3).isOk
-      chain.consensus.canonicalTip.tip == idF3
-      chain.consensus.latestImmutable.tip == idF1
+      chain.consensus.canonicalTip.id == idF3
+      chain.consensus.latestImmutable.id == idF1
       # Abandoned fork (b1, b2) is pruned from consensus, BlockStore, and ledger
       not chain.consensus.hasBlock(idB1)
       not chain.consensus.hasBlock(idB2)
@@ -131,23 +131,23 @@ suite "consensus/fork_choice (via Chain.tryApplyBlock)":
       chain.tryApplyBlock(s2).isOk
       chain.tryApplyBlock(s3).isOk
       chain.tryApplyBlock(s4).isOk
-      chain.consensus.canonicalTip.tip == idS4
+      chain.consensus.canonicalTip.id == idS4
       chain.tryApplyBlock(c1).isOk
       chain.tryApplyBlock(c2).isOk
       chain.tryApplyBlock(c3).isOk
       chain.tryApplyBlock(c4).isOk
-      chain.consensus.canonicalTip.tip == idC4
+      chain.consensus.canonicalTip.id == idC4
       # Zero-density challenger S5 (height 5 > C4 height 4) loses immediately; LIB stays at genesis
       chain.tryApplyBlock(s5).isOk
-      chain.consensus.canonicalTip.tip == idC4
-      chain.consensus.latestImmutable.tip == gid
+      chain.consensus.canonicalTip.id == idC4
+      chain.consensus.latestImmutable.id == gid
       chain.consensus.hasBlock(idS5)
       chain.blockStore.getBlock(idS5).isSome
 
     chain.switchToOnline()
     check:
       # LIB advances to c2 (height 4 - 2 = 2); entire fork S1..S5 (including S5 above tip height) is pruned
-      chain.consensus.latestImmutable.tip == idC2
+      chain.consensus.latestImmutable.id == idC2
       not chain.consensus.hasBlock(idS1)
       not chain.consensus.hasBlock(idS5)
       chain.blockStore.getBlock(idS1).isNone
@@ -162,6 +162,6 @@ suite "consensus/fork_choice (via Chain.tryApplyBlock)":
 
     # Calling switchToOnline again is a no-op
     chain.switchToOnline()
-    check chain.consensus.latestImmutable.tip == idC2
+    check chain.consensus.latestImmutable.id == idC2
 
 {.pop.}

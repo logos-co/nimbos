@@ -52,7 +52,7 @@ suite "fork_choice_lifecycle":
       let lcGrace = ForkChoiceLifecycle.init(bpGrace, tmpDir)
       check:
         bpGrace.consensus.forkChoiceRule == ForkChoiceRule.Online
-        bpGrace.consensus.latestImmutable.tip == id1
+        bpGrace.consensus.latestImmutable.id == id1
         not lcGrace.canProposeBlocks
       lcGrace.onIbdComplete()
       check lcGrace.canProposeBlocks
@@ -111,7 +111,7 @@ suite "fork_choice_lifecycle":
       let saved = loadNodeState(tmpDir).get
       check:
         bp.consensus.forkChoiceRule == ForkChoiceRule.Online
-        saved.libBlockId == bp.consensus.latestImmutable.tip
+        saved.libBlockId == bp.consensus.latestImmutable.id
       await lifecycle.stop()
 
   asyncTest "start and stop manages heartbeat and prolonged bootstrap timers safely in Bootstrap mode":

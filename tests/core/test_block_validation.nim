@@ -90,7 +90,7 @@ proc treeWithLib(genesis: ValidBlock): tuple[cs: ConsensusState, b1, b2: ValidBl
   for blk in [b1, b2, b3]:
     check cs.addHeaderAndTryUpdateTip(blk.header, blockId(blk.header))
     discard cs.tryUpdateLib()
-  check cs.latestImmutable.tip == blockId(b2.header)
+  check cs.latestImmutable.id == blockId(b2.header)
   (cs, b1, b2)
 
 func sampleUncle(value: byte): SignedHeader =

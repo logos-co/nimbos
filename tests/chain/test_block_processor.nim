@@ -42,7 +42,7 @@ suite "chain/block_processor":
         r = await bp.addBlock(b1)
       check:
         r.isOk
-        bp.consensus.canonicalTip.tip == blockId(b1.header)
+        bp.consensus.canonicalTip.id == blockId(b1.header)
         bp.ledger.state(blockId(b1.header)).isSome
 
   asyncTest "addBlock on an applied block completes with AlreadyApplied":
@@ -127,7 +127,7 @@ suite "chain/block_processor":
         (await fBad).error.kind == BlockApplyErrorKind.InvalidStructure
         (await fBad_S).error.kind == BlockApplyErrorKind.InvalidStructure
         (await fGood).isOk
-        bp.consensus.canonicalTip.tip == id1
+        bp.consensus.canonicalTip.id == id1
 
   asyncTest "queue is FIFO":
     withProcessor(chain):
@@ -143,7 +143,7 @@ suite "chain/block_processor":
         (await f1).isOk
         # b2 is promoted asynchronously across event-loop turns
         waitUntil(bp.consensus.hasBlock(blockId(b2.header)))
-        bp.consensus.canonicalTip.tip == blockId(b2.header)
+        bp.consensus.canonicalTip.id == blockId(b2.header)
         (await bp.addBlock(b2)).error.kind == BlockApplyErrorKind.AlreadyApplied
 
   asyncTest "orphan cascade yields cooperatively between each promoted orphan":
@@ -184,7 +184,7 @@ suite "chain/block_processor":
       for b in blocks:
         check bp.consensus.hasBlock(blockId(b.header))
       check:
-        bp.consensus.canonicalTip.tip == lastId
+        bp.consensus.canonicalTip.id == lastId
         chain.orphanPool.len == 0
         # Verify cooperative yielding occurred between orphan promotions
         ticksWhileBusy >= 4
@@ -287,7 +287,7 @@ suite "chain/block_processor":
         r = await bp.addProposal(p1)
       check:
         r.isOk
-        bp.consensus.canonicalTip.tip == blockId(p1.header)
+        bp.consensus.canonicalTip.id == blockId(p1.header)
         bp.ledger.state(blockId(p1.header)).isSome
 
   asyncTest "addProposal on Proposal with missing tx reference fails with MissingReference":
@@ -414,7 +414,7 @@ suite "chain/block_processor":
         bp.checkDeduplication(id, p.signature).isOk
         # 3. Genuine proposal is accepted at gossip gate and applied
         bp.processProposal(p, peer) == ValidationResult.Accept
-        waitUntil(bp.consensus.canonicalTip.tip == id)
+        waitUntil(bp.consensus.canonicalTip.id == id)
 
   asyncTest "processProposal with tampered uncle headers rejects and does not suppress genuine proposal":
     withProcessor(chain):
@@ -434,7 +434,7 @@ suite "chain/block_processor":
         bp.processProposal(pBad, peer) == ValidationResult.Reject
         bp.checkDeduplication(id, p.signature).isOk
         bp.processProposal(p, peer) == ValidationResult.Accept
-        waitUntil(bp.consensus.canonicalTip.tip == id)
+        waitUntil(bp.consensus.canonicalTip.id == id)
 
   asyncTest "addBlock with tampered txs does not suppress a genuine copy":
     withProcessor(chain):
@@ -455,7 +455,7 @@ suite "chain/block_processor":
       let goodFut = bp.addBlock(b, id)
       check:
         (await goodFut).isOk
-        bp.consensus.canonicalTip.tip == id
+        bp.consensus.canonicalTip.id == id
 
   asyncTest "processProposal rejects a tampered copy and accepts the genuine one after it":
     withProcessor(chain):

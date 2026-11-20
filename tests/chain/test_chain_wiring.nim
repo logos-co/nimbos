@@ -131,7 +131,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
     check:
       chain.tryApplyBlock(b1).isOk
       chain.ledger.state(id1).isSome
-      chain.consensus.canonicalTip.tip == id1
+      chain.consensus.canonicalTip.id == id1
     let dup = chain.tryApplyBlock(b1)
     check dup.isErr and dup.error.kind == BlockApplyErrorKind.AlreadyApplied
 
@@ -177,7 +177,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
       id1 = blockId(b1.header)
     check:
       chain.tryApplyBlock(b1).isOk
-      chain.consensus.canonicalTip.tip == id1
+      chain.consensus.canonicalTip.id == id1
       # Immediate removal from active mempool upon block addition
       txHash notin chain.mempool.txs
       chain.mempool.get(txHash).isOk # Retained in graceCache for fork proposals
@@ -189,7 +189,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
     check:
       chain.tryApplyBlock(b2_fork).isOk
       # b2_fork height 1 is not strictly higher than b1 height 1, so tip remains id1
-      chain.consensus.canonicalTip.tip == id1
+      chain.consensus.canonicalTip.id == id1
       txHash notin chain.mempool.txs
 
     # Add b3_fork extending b2_fork -> height 2 > height 1, triggering fork switch!
@@ -198,7 +198,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
       id3_fork = blockId(b3_fork.header)
     check:
       chain.tryApplyBlock(b3_fork).isOk
-      chain.consensus.canonicalTip.tip == id3_fork
+      chain.consensus.canonicalTip.id == id3_fork
       # Fork switch re-added dummyTx from the forked-off branch b1 back into active mempool!
       txHash in chain.mempool.txs
 
@@ -240,7 +240,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
       idA2 = blockId(a2.header)
     check:
       chain.tryApplyBlock(a2).isOk
-      chain.consensus.canonicalTip.tip == idA2
+      chain.consensus.canonicalTip.id == idA2
       # tx1 and tx2 removed from active mempool (retained in graceCache)
       h1 notin chain.mempool.txs
       h2 notin chain.mempool.txs
@@ -262,7 +262,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
       idB3 = blockId(b3.header)
     check:
       chain.tryApplyBlock(b3).isOk
-      chain.consensus.canonicalTip.tip == idB3
+      chain.consensus.canonicalTip.id == idB3
       # Reorg from Branch A to Branch B: tx1 and tx2 restored to active mempool, tx3 removed
       h1 in chain.mempool.txs
       h2 in chain.mempool.txs
@@ -280,7 +280,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
       idA1 = blockId(a1.header)
     check:
       chain.tryApplyBlock(a1).isOk
-      chain.consensus.canonicalTip.tip == idA1
+      chain.consensus.canonicalTip.id == idA1
 
     # Branch B: Genesis -> B1 (slot 2) -> B2 (slot 3) -> B3 (slot 4)
     let
@@ -296,7 +296,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
       idB3 = blockId(b3.header)
     check:
       chain.tryApplyBlock(b3).isOk
-      chain.consensus.canonicalTip.tip == idB3
+      chain.consensus.canonicalTip.id == idB3
 
       # With securityParam = 2 and tip height = 3, LIB advances to B1 (height 3 - 2 = 1).
       # Orphaned Fork A block A1 at height 1 is pruned from both tree and ledger.
@@ -344,7 +344,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
     check:
       chain.tryApplyBlock(blk).isOk
       chain.consensus.hasBlock(blkId)
-      chain.consensus.canonicalTip.tip == blkId
+      chain.consensus.canonicalTip.id == blkId
 
     # Verify that the post-application ledger state has officially transitioned to Epoch 1
     let appliedState = chain.ledger.state(blkId).get()

@@ -32,16 +32,16 @@ func genesisId*(localTree: LocalTree): BlockId =
 func tips*(localTree: LocalTree): lent HashSet[BlockId] =
   localTree.tips
 
-func ancestorAtHeight*(localTree: LocalTree, id: BlockId, targetHeight: BlockNumber): Opt[Tip] =
+func ancestorAtHeight*(localTree: LocalTree, id: BlockId, targetHeight: BlockNumber): Opt[BlockInfo] =
   localTree.blocksById.withValue(id, node):
     var n = node[]
     while n != nil:
       if n.height == targetHeight:
-        return Opt.some(Tip(tip: n.id, slot: n.slot, height: n.height))
+        return Opt.some(BlockInfo(id: n.id, slot: n.slot, height: n.height))
       if n.height < targetHeight:
-        return Opt.none(Tip)
+        return Opt.none(BlockInfo)
       n = n.parent
-  Opt.none(Tip)
+  Opt.none(BlockInfo)
 
 func init*(T: type LocalTree, genesisHeader: Header): LocalTree =
   let
@@ -58,10 +58,10 @@ func blockHeight*(localTree: LocalTree, blockId: BlockId): Opt[BlockNumber] =
     return Opt.some(node.height)
   Opt.none(BlockNumber)
 
-func tipOf*(localTree: LocalTree, blockId: BlockId): Opt[Tip] =
+func blockInfo*(localTree: LocalTree, blockId: BlockId): Opt[BlockInfo] =
   localTree.blocksById.withValue(blockId, node):
-    return Opt.some(Tip(tip: node.id, slot: node.slot, height: node.height))
-  Opt.none(Tip)
+    return Opt.some(BlockInfo(id: node.id, slot: node.slot, height: node.height))
+  Opt.none(BlockInfo)
 
 # TODO: Canonical nodes strictly below LIB currently stay in `blocksById` forever because
 # `ibd_server` walks ancestry back to peer `knownBlocks` and `checkViability` relies on

@@ -149,7 +149,7 @@ proc persist(self: ForkChoiceLifecycle) =
   if self.phase == LifecyclePhase.Online:
     let
       nowUnix = nowWallclockSeconds()
-      libId = self.processor.consensus.latestImmutable.tip
+      libId = self.processor.consensus.latestImmutable.id
     saveNodeState(self.dataDir, nowUnix, libId).isOkOr:
       warn "Failed to persist node state", error
 

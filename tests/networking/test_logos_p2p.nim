@@ -353,7 +353,7 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
         check:
           waitUntil((await peers.dialer.broadcast(topic, sampleProposal)).isOk)
           waitUntil(listenerNode.processor.consensus.hasBlock(blockId(sampleProposal.header)))
-          listenerNode.processor.consensus.canonicalTip.tip == blockId(sampleProposal.header)
+          listenerNode.processor.consensus.canonicalTip.id == blockId(sampleProposal.header)
 
         # Verify reconstructed block content matches proposal
         let reconstructedBlock = listenerNode.processor.blockStore.getBlock(blockId(sampleProposal.header)).get()
@@ -478,7 +478,7 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
           waitUntil(peers.dialer.switch.isConnected(peers.listenerPeerId))
           # 1. Dialer syncs b1 from listener via IBD
           waitUntil(dialerNode.processor.consensus.hasBlock(id1))
-          dialerNode.processor.consensus.canonicalTip.tip == id1
+          dialerNode.processor.consensus.canonicalTip.id == id1
           # 2. Upon IBD completion, syncer callback automatically subscribes to block gossip topic
           waitUntil(dialerNode.network.isSubscribed(blockTopic))
 
@@ -491,7 +491,7 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
         check:
           waitUntil((await peers.listener.broadcast(blockTopic, p2)).isOk)
           waitUntil(dialerNode.processor.consensus.hasBlock(id2))
-          dialerNode.processor.consensus.canonicalTip.tip == id2
+          dialerNode.processor.consensus.canonicalTip.id == id2
       finally:
         await dialerNode.stopTestNode()
         await listenerNode.stopTestNode()
