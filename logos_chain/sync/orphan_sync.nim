@@ -110,7 +110,7 @@ proc fetchParent*(syncer: Syncer, parentId: BlockId) {.async: (raises: [Cancelle
   if syncer.sw != nil:
     debug "Orphan DBR: requesting missing ancestor",
       parentId = toHex(parentId), peer
-    discard await syncer.downloadBlocks(peer, targetBlock = Opt.some(parentId))
+    discard await syncer.downloadBlocks(peer, targetBlock = parentId)
 
   if pool.isMissingParent(parentId):
     debug "Orphan DBR: ancestor still missing", parentId = toHex(parentId)

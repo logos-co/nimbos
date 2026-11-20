@@ -75,9 +75,10 @@ template withProcessor*(chain: Chain, body: untyped) =
 
 template withClientSyncerOn*(sw: Switch, clientChain: Chain, body: untyped) =
   ## Client syncer on the caller's switch, stopped with its processor after `body`.
-  let bp = BlockProcessor.new(clientChain)
-  let clientSyncer {.inject.} =
-    Syncer.init(sw, bp, testChainSyncProtocol, nil)
+  let
+    bp = BlockProcessor.new(clientChain)
+    clientSyncer {.inject.} =
+      Syncer.init(sw, bp, testChainSyncProtocol, nil)
   bp.start()
   clientSyncer.startOrphanSync()
   try:
@@ -86,25 +87,18 @@ template withClientSyncerOn*(sw: Switch, clientChain: Chain, body: untyped) =
     await bp.stop()
     await clientSyncer.stop()
 
-template withClientSyncer*(clientChain: Chain, body: untyped) =
-  ## One switch and a client syncer, stopped after `body`.
-  let client {.inject.} = await startQuicTestSwitch()
-  try:
-    withClientSyncerOn(client, clientChain):
-      body
-  finally:
-    await client.stop()
-
 template withSyncPair*(serverChain, clientChain: Chain, body: untyped) =
   ## A serving switch and a connected client syncer, stopped after `body`.
-  let server {.inject.} = await startQuicTestSwitch()
+  let
+    server {.inject.} = await startQuicTestSwitch()
+    client {.inject.} = await startQuicTestSwitch()
   mountTestServer(server, serverChain)
   try:
-    withClientSyncer(clientChain):
+    withClientSyncerOn(client, clientChain):
       await client.connect(server.peerInfo.peerId, server.peerInfo.addrs, forceDial = true)
       body
   finally:
-    await server.stop()
+    await allFutures(client.stop(), server.stop())
 
 proc extendChainAfterGenesis*(
     tree: LocalTree, genesis: ValidBlock, extraBlocks: int,
