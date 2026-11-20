@@ -5,7 +5,7 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-## Spec: [Cryptarchia Bootstrapping & Synchronization](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/cryptarchia-v1-bootstr-sync.md)
+## Spec: [Cryptarchia Bootstrapping & Synchronization v1.0.2](https://github.com/logos-co/logos-lips/blob/663ae35d59d834784dd086cc5f14ec35e8dbecf5/docs/blockchain/raw/cryptarchia-v1-bootstr-sync.md)
 
 {.push raises: [], gcsafe.}
 
@@ -13,6 +13,7 @@ import
   chronicles,
   chronos,
   results,
+  stew/byteutils,
   ./consensus/consensus_state,
   ./consensus/clock,
   ./chain/block_processor,
@@ -22,7 +23,12 @@ logScope:
   topics = "fork_choice_lifecycle"
 
 type
-  StartupForkChoiceReason* {.pure.} = enum
+  LifecyclePhase {.pure.} = enum
+    InitialBlockDownload
+    ProlongedBootstrap
+    Online
+
+  StartupForkChoiceReason {.pure.} = enum
     ExplicitFlag
     LibAtGenesis
     NoSavedState
@@ -33,19 +39,20 @@ type
   ForkChoiceLifecycle* = ref object
     processor: BlockProcessor
     dataDir: string
+    phase: LifecyclePhase
     prolongedBootstrapDuration: chronos.Duration
     prolongedBootFut: Future[void].Raising([CancelledError])
     heartbeatFut: Future[void].Raising([CancelledError])
 
 const
-  ProlongedBootstrapDuration* = 24.hours
+  ProlongedBootstrapDuration = 24.hours
     ## Spec: T_boot = 24h prolonged bootstrap period before transitioning to Online fork choice.
   OfflineGracePeriodDuration* = 20.minutes
     ## Spec: T_offline = 20m offline grace period to restart without switching to Bootstrap rule.
   HeartbeatInterval = chronos.minutes(1)
 
-# https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/cryptarchia-v1-bootstr-sync.md#setting-the-fork-choice-rule
-func determineStartupForkChoiceRule*(
+# https://github.com/logos-co/logos-lips/blob/663ae35d59d834784dd086cc5f14ec35e8dbecf5/docs/blockchain/raw/cryptarchia-v1-bootstr-sync.md#setting-the-fork-choice-rule
+func determineStartupForkChoiceRule(
     explicitBootstrapFlag: bool,
     isLibAtGenesis: bool,
     lastOnlineTimestampUnix: Opt[uint64],
@@ -70,37 +77,87 @@ func determineStartupForkChoiceRule*(
     return (ForkChoiceRule.Bootstrap, StartupForkChoiceReason.OfflineTooLong)
   (ForkChoiceRule.Online, StartupForkChoiceReason.WithinGrace)
 
-func new*(
-    _: type ForkChoiceLifecycle,
+func inspectSavedState(
+    savedState: Opt[NodeStateRecord], consensus: ConsensusState
+): tuple[lastOnline: Opt[uint64], effectiveLib: BlockId] =
+  # Until persistent block/tree storage is loaded on startup, `consensus` starts at genesis,
+  # so `hasBlock` is false for any non-genesis saved LIB and safely forces Bootstrap on restart.
+  let state = savedState.valueOr:
+    return (Opt.none(uint64), consensus.genesisId)
+  let lib =
+    if state.libBlockId == consensus.genesisId or
+        not consensus.hasBlock(state.libBlockId):
+      consensus.genesisId
+    else:
+      state.libBlockId
+  (Opt.some(state.lastOnlineTimestampUnix), lib)
+
+proc initLifecycle(
     processor: BlockProcessor,
     dataDir: string,
-    prolongedBootstrapDuration = ProlongedBootstrapDuration,
+    explicitBootstrap: bool,
+    prolongedBootstrapDuration: chronos.Duration,
 ): ForkChoiceLifecycle =
+  let
+    savedState = loadNodeState(dataDir)
+    nowUnix = nowWallclockSeconds()
+    (lastOnlineOpt, effectiveLib) = inspectSavedState(savedState, processor.consensus)
+    (startupRule, startupReason) = determineStartupForkChoiceRule(
+      explicitBootstrapFlag = explicitBootstrap,
+      isLibAtGenesis = effectiveLib == processor.consensus.genesisId,
+      lastOnlineTimestampUnix = lastOnlineOpt,
+      currentTimestampUnix = nowUnix,
+    )
+
+  if startupReason == StartupForkChoiceReason.ClockSkew:
+    warn "Clock skew detected; saved node state timestamp is in the future",
+      nowUnix = nowUnix,
+      savedLastOnlineUnix = lastOnlineOpt.valueOr(0'u64)
+
+  info "Determined startup fork choice rule",
+    rule = $startupRule,
+    explicitBootstrap = explicitBootstrap,
+    hasSavedState = savedState.isSome,
+    effectiveLib = toHex(effectiveLib),
+    reason = $startupReason
+
+  if startupRule == ForkChoiceRule.Online:
+    processor.switchToOnline()
+
   ForkChoiceLifecycle(
     processor: processor,
     dataDir: dataDir,
+    phase: LifecyclePhase.InitialBlockDownload,
     prolongedBootstrapDuration: prolongedBootstrapDuration,
   )
+
+proc init*(
+    _: type ForkChoiceLifecycle,
+    processor: BlockProcessor,
+    dataDir: string,
+    explicitBootstrap = false,
+    prolongedBootstrapDuration = ProlongedBootstrapDuration,
+): ForkChoiceLifecycle =
+  initLifecycle(processor, dataDir, explicitBootstrap, prolongedBootstrapDuration)
 
 func canProposeBlocks*(self: ForkChoiceLifecycle): bool =
   ## Spec: [Cryptarchia Bootstrapping & Synchronization - Proposing New Blocks]
   ## A node can start proposing blocks only after the Prolonged Bootstrap Period is complete.
-  ## In other words, the node should not propose blocks before switching to the Online fork choice rule.
-  self.processor.consensus.forkChoiceRule == ForkChoiceRule.Online
+  self.phase == LifecyclePhase.Online
 
 proc persist(self: ForkChoiceLifecycle) =
-  if self.processor.consensus.forkChoiceRule == ForkChoiceRule.Online:
+  if self.phase == LifecyclePhase.Online:
     let
       nowUnix = nowWallclockSeconds()
-      libId = self.processor.consensus.latestImmutableId
+      libId = self.processor.consensus.latestImmutable.tip
     saveNodeState(self.dataDir, nowUnix, libId).isOkOr:
       warn "Failed to persist node state", error
 
 proc switchToOnline(self: ForkChoiceLifecycle) =
-  if self.processor.consensus.forkChoiceRule != ForkChoiceRule.Online:
-    notice "Switching to Online fork choice rule"
-    self.processor.switchToOnline()
-    self.persist()
+  notice "Switching to Online fork choice rule"
+  self.phase = LifecyclePhase.Online
+  self.processor.switchToOnline()
+  self.persist()
 
 proc runProlongedBootstrap(self: ForkChoiceLifecycle): Future[void] {.async: (raises: [CancelledError]).} =
   debug "Fork choice lifecycle entered prolonged bootstrap period",
@@ -112,16 +169,20 @@ proc runProlongedBootstrap(self: ForkChoiceLifecycle): Future[void] {.async: (ra
   finally:
     self.prolongedBootFut = nil
 
-proc onSyncComplete*(self: ForkChoiceLifecycle) =
-  if self.processor.consensus.forkChoiceRule == ForkChoiceRule.Online:
+proc onIbdComplete*(self: ForkChoiceLifecycle) =
+  if self.phase != LifecyclePhase.InitialBlockDownload:
     return
-  if self.prolongedBootFut != nil and not self.prolongedBootFut.finished():
-    return
-  if self.prolongedBootstrapDuration <= chronos.ZeroDuration:
-    debug "Skipping prolonged bootstrap period; switching immediately to Online fork choice rule"
-    self.switchToOnline()
-    return
-  self.prolongedBootFut = self.runProlongedBootstrap()
+  case self.processor.consensus.forkChoiceRule
+  of ForkChoiceRule.Online:
+    self.phase = LifecyclePhase.Online
+    self.persist()
+  of ForkChoiceRule.Bootstrap:
+    if self.prolongedBootstrapDuration <= chronos.ZeroDuration:
+      debug "Skipping prolonged bootstrap period; switching immediately to Online fork choice rule"
+      self.switchToOnline()
+    else:
+      self.phase = LifecyclePhase.ProlongedBootstrap
+      self.prolongedBootFut = self.runProlongedBootstrap()
 
 proc runHeartbeat(self: ForkChoiceLifecycle): Future[void] {.async: (raises: [CancelledError]).} =
   # TODO: Offline-without-stop (system sleep / suspend) will be managed in a follow-up PR.
@@ -134,12 +195,14 @@ proc start*(self: ForkChoiceLifecycle) =
   self.heartbeatFut = self.runHeartbeat()
 
 proc stop*(self: ForkChoiceLifecycle) {.async: (raises: []).} =
-  if self.heartbeatFut != nil:
-    await self.heartbeatFut.cancelAndWait()
-    self.heartbeatFut = nil
+  var futs: seq[FutureBase]
   if self.prolongedBootFut != nil:
-    await self.prolongedBootFut.cancelAndWait()
+    futs.add(self.prolongedBootFut)
     self.prolongedBootFut = nil
+  if self.heartbeatFut != nil:
+    futs.add(self.heartbeatFut)
+    self.heartbeatFut = nil
+  await cancelAndWait(futs)
   self.persist()
 
 {.pop.}

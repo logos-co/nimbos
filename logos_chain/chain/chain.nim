@@ -95,7 +95,6 @@ func init*(
     ledger: Ledger[BlockId],
     slotConfig: SlotConfig,
     densitySlotWindow: uint64,
-    forkChoiceRule: ForkChoiceRule,
     securityParam: uint64 = DefaultSecurityParam,
 ): T =
   let secParam = max(securityParam, DefaultSecurityParam)
@@ -106,7 +105,7 @@ func init*(
       genesisHeader = genesisBlock.header,
       securityParam = secParam,
       densitySlotWindow = densitySlotWindow,
-      forkChoiceRule = forkChoiceRule,
+      forkChoiceRule = ForkChoiceRule.Bootstrap,
     ),
     ledger: ledger,
     mempool: Mempool.init(maxMempoolCapacity(secParam)),
@@ -117,7 +116,6 @@ func init*(
 proc init*(
     T: type Chain,
     settings: DeploymentSettings,
-    forkChoiceRule: ForkChoiceRule = ForkChoiceRule.Bootstrap,
     leaderProofVerifier: LeaderProofVerifier = verifyLeaderProof,
     poqVerifier: ProofOfQuotaVerifier = verifyProofOfQuota,
 ): Result[T, string] =
@@ -147,8 +145,7 @@ proc init*(
       genesisTime: param.genesisTime,
       slotDurationSeconds: uint64(settings.time.slotDuration.seconds)),
     securityParam = uint64(settings.cryptarchia.securityParam),
-    densitySlotWindow = cfg.epochSchedule.basePeriodLength div 4,
-    forkChoiceRule = forkChoiceRule))
+    densitySlotWindow = cfg.epochSchedule.basePeriodLength div 4))
 
 proc currentWallclockSlot*(chain: Chain): SlotNumber =
   ## Slot containing the current system time.
@@ -211,6 +208,8 @@ proc switchToOnline*(chain: var Chain) =
   if chain.consensus.forkChoiceRule == ForkChoiceRule.Online:
     return
   chain.consensus.switchToOnline()
+  # Advances LIB held at genesis during Bootstrap; O(1) no-op on grace-period restarts
+  # once persistent startup reload restores `latestImmutable` (`immHeight == oldImmHeight`).
   chain.updateLibAndPrune()
 
 proc handleTipChange(chain: var Chain, oldTip, newTip: BlockId) =

@@ -93,12 +93,4 @@ proc saveNodeState*(
     return err("Failed to move node state file into place: " & ioErrorMsg(error))
   ok()
 
-func parseSavedNodeState*(
-    savedState: Opt[NodeStateRecord],
-    genesisId: BlockId,
-): tuple[lastOnlineOpt: Opt[uint64], isLibAtGenesis: bool] =
-  let state = savedState.valueOr:
-    return (Opt.none(uint64), true)
-  (Opt.some(state.lastOnlineTimestampUnix), state.libBlockId == genesisId)
-
 {.pop.}

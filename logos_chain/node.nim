@@ -13,10 +13,9 @@ import
   bearssl/rand,
   metrics, metrics/chronos_httpserver,
   stew/byteutils,
-  ./consensus/[clock, consensus_state],
   ./chain/[block_processor, gossip_processor],
-  ./[conf, process_state, node_state, fork_choice_lifecycle],
-  ./core/[types, utils],
+  ./[conf, process_state, fork_choice_lifecycle],
+  ./core/utils,
   ./deployment/deployment_settings,
   ./networking/network,
   ./sync/syncer,
@@ -93,42 +92,8 @@ proc init*(
       path = verificationKeyPath(circuitsDir, Circuit.Poq), err = $error
     return Opt.none(LBNode)
 
-  # TODO: Block storage is currently in-memory only and resets to genesis on startup.
-  # Once persistent block storage is implemented, verify whether the loaded block tree
-  # matches the saved LIB anchor before selecting Online mode, and use the actual
-  # `isLibAtGenesis` status. Until then, force `effectiveLibAtGenesis = true` so the node
-  # always safely starts in Bootstrap mode upon restart.
   let
-    genesisId = blockId(deploymentSettings.cryptarchia.genesisState.header)
-    dataDirStr = string(config.dataDir)
-    savedState = loadNodeState(dataDirStr)
-    nowUnix = nowWallclockSeconds()
-    (lastOnlineOpt, savedLibAtGenesis) = parseSavedNodeState(savedState, genesisId)
-    effectiveLibAtGenesis = true
-    (initialForkChoiceRule, startupReason) = determineStartupForkChoiceRule(
-      explicitBootstrapFlag = config.bootstrap,
-      isLibAtGenesis = effectiveLibAtGenesis,
-      lastOnlineTimestampUnix = lastOnlineOpt,
-      currentTimestampUnix = nowUnix,
-    )
-
-  if startupReason == StartupForkChoiceReason.ClockSkew:
-    warn "Clock skew detected; saved node state timestamp is in the future",
-      nowUnix = nowUnix,
-      savedLastOnlineUnix = lastOnlineOpt.get(0'u64)
-
-  info "Determined startup fork choice rule",
-    rule = $initialForkChoiceRule,
-    explicitBootstrap = config.bootstrap,
-    hasSavedState = savedState.isSome,
-    savedLibAtGenesis = savedLibAtGenesis,
-    effectiveLibAtGenesis = effectiveLibAtGenesis,
-    reason = $startupReason
-
-  let
-    chain = Chain.init(
-      deploymentSettings, forkChoiceRule = initialForkChoiceRule
-    ).valueOr:
+    chain = Chain.init(deploymentSettings).valueOr:
       fatal "Failed to initialize chain", err = error
       return Opt.none(LBNode)
     genesisBlock = chain.genesisBlock
@@ -165,7 +130,11 @@ proc init*(
       error "Failed to initialize node", err = error
       return Opt.none(LBNode)
     processor = BlockProcessor.new(chain)
-    lifecycle = ForkChoiceLifecycle.new(processor, dataDirStr)
+    lifecycle = ForkChoiceLifecycle.init(
+      processor,
+      string(config.dataDir),
+      explicitBootstrap = config.bootstrap,
+    )
 
   var nodeSyncer: Syncer = nil
   if deploymentSettings.network.chainSyncProtocolName.len > 0:
@@ -226,7 +195,7 @@ proc onSlotStart(node: LBNode): Future[bool] {.async: (raises: [CancelledError])
   # Spec: [Cryptarchia Bootstrapping & Synchronization - Proposing New Blocks]
   # A node can start proposing blocks only after the Prolonged Bootstrap Period
   # is complete and the fork choice rule has transitioned to Online:
-  if node.lifecycle != nil and not node.lifecycle.canProposeBlocks:
+  if not node.lifecycle.canProposeBlocks:
     trace "Skipping block proposal during bootstrap period"
     return false
 
@@ -322,7 +291,7 @@ proc initializeNetworking*(node: LBNode) {.async: (raises: [CancelledError]).} =
     let
       onIbdComplete: OnIbdComplete = proc() =
         node.subscribeBlockTopic()
-        node.lifecycle.onSyncComplete()
+        node.lifecycle.onIbdComplete()
       onIbdFailure: OnIbdFailure = proc(reason: string) =
         ProcessState.scheduleStop(cstring(reason))
 
@@ -344,7 +313,7 @@ proc initializeNetworking*(node: LBNode) {.async: (raises: [CancelledError]).} =
       node.syncer.start(onIbdComplete, onIbdFailure)
   else:
     node.subscribeBlockTopic()
-    node.lifecycle.onSyncComplete()
+    node.lifecycle.onIbdComplete()
 type StopFuture = Future[void].Raising([CancelledError])
 
 proc run*(node: LBNode, stopper: StopFuture) {.raises: [CatchableError].} =
