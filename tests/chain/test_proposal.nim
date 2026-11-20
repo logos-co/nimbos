@@ -45,7 +45,6 @@ suite "chain/proposal":
     check:
       count == 1
       # After selection, metrics are cached
-      m.txs[tx1.hash].byteSize.isSome
       m.txs[tx1.hash].execGas.isSome
       m.txs[tx1.hash].byteSize.get == tx1.byteLen
 
@@ -423,7 +422,6 @@ suite "chain/proposal":
       admittedBlk = admissionRes.get()
       isOrphanRes = checkTopology(proposal.header, cs, ledger)
     check:
-      isOrphanRes.isOk
       isOrphanRes.get() == TopologyStatus.ParentPresent
       admittedBlk.header == proposal.header
       admittedBlk.signature == proposal.signature

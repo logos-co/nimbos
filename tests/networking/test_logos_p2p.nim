@@ -279,9 +279,7 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
           waitUntil(listenerNode.processor.mempool.len > 0)
 
         let txItem = listenerNode.processor.mempool.get(sampleTx.hash)
-        check:
-          txItem.isOk
-          txItem.get.tx.ops.len == 1
+        check txItem.get.tx.ops.len == 1
 
         # Duplicate tx sent to processTx should return Ignore and not duplicate in mempool
         let dupRes = listenerNode.processor.processTx(sampleTx.hashed, Opt.some(peers.dialer.switch.peerInfo.peerId))

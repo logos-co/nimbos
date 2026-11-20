@@ -203,7 +203,7 @@ proc tryUpdateTip(
 ) =
   ## Updates the canonical tip according to the active fork choice rule
   ## (Online: Ouroboros Praos; Bootstrap: Ouroboros Genesis).
-  # https://github.com/logos-co/logos-lips/blob/663ae35d59d834784dd086cc5f14ec35e8dbecf5/docs/blockchain/raw/cryptarchia-v1-protocol.md#L477
+  # https://github.com/logos-co/logos-lips/blob/663ae35d59d834784dd086cc5f14ec35e8dbecf5/docs/blockchain/raw/cryptarchia-v1-protocol.md#chain-maintenance
   # Extending the current tip skips fork_choice; in Bootstrap mode, crossing height(LCA) + k -> k + 1
   # via tip extension can make an existing denser tip win under maxvalid-bg (kept spec-literal for now).
   if parentBlock == cs.canonicalTip.id:

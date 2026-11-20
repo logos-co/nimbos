@@ -516,9 +516,7 @@ suite "core/block_validation — multi-tier evaluation order":
 
     # Ingestion skips Tier 3 PoL & tx checks for orphans
     let res = admitWithTopology(blk, cs, ledger)
-    check:
-      res.isOk
-      res.get.isOrphan == true
+    check res.get.isOrphan == true
 
   test "validatePolAndStatelessTransactions consumes validTxs from proposal-admitted block":
     let

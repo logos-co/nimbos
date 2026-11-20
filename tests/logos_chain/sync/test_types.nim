@@ -49,10 +49,10 @@ suite "sync/types (GetTip RequestMessage / response wire)":
       byteutils.toHex(wire) ==
         "00000000abababababababababababababababababababababababababababababababab3930000000000000e703000000000000"
     let d = try:
-      Opt.some(decode(wire, GetTipResponse, cryptarchiaSyncBincodeConfig))
+      decode(wire, GetTipResponse, cryptarchiaSyncBincodeConfig)
     except BincodeError as exc:
       fail exc.msg
-    check d.isSome and d.get.kind == gtrTip and d.get.tip == tip
+    check d.kind == gtrTip and d.tip == tip
 
   test "Fixture GetTipResponse Failure wire matches hex and roundtrips":
     let
@@ -61,10 +61,10 @@ suite "sync/types (GetTip RequestMessage / response wire)":
     check byteutils.toHex(wire) ==
       "0100000018000000000000006578616d706c653a2074697020756e617661696c61626c65"
     let d = try:
-      Opt.some(decode(wire, GetTipResponse, cryptarchiaSyncBincodeConfig))
+      decode(wire, GetTipResponse, cryptarchiaSyncBincodeConfig)
     except BincodeError as exc:
       fail exc.msg
-    check d.isSome and d.get.kind == gtrFailure and d.get.failureMessage == "example: tip unavailable"
+    check d.kind == gtrFailure and d.failureMessage == "example: tip unavailable"
 
   test "Custom Tip response roundtrips":
     var bid: BlockId
@@ -99,7 +99,6 @@ suite "sync/types (GetTip RequestMessage / response wire)":
     check:
       d.get.kind == gtrFailure
       d.get.failureMessage == "no tip for you"
-
 
 suite "sync/types (download RequestMessage / request & response payloads)":
   test "encode / decode DownloadBlocksRequest roundtrip":

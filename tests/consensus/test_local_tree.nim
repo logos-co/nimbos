@@ -11,7 +11,6 @@
 import
   ../testutil,
   ../../logos_chain/core/types,
-  ../../logos_chain/chain/block_validation,
   ../../logos_chain/consensus/local_tree
 
 suite "consensus/local_tree":
