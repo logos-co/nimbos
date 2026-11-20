@@ -397,7 +397,7 @@ suite "chain/proposal":
     let
       genesis = testGenesisBlock()
       gid = blockId(genesis.header)
-      cs = ConsensusState.init(genesis, securityParam = 1'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Bootstrap)
+      cs = ConsensusState.init(genesis.header, securityParam = 1'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Bootstrap)
       ledger = Ledger[BlockId].init(gid, state, testLedgerConfig, mockVerifyLeaderProof)
 
     var pol = default(ProofOfLeadership)

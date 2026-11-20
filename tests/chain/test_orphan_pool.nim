@@ -238,18 +238,18 @@ suite "chain/orphan_pool":
       pool = OrphanPool()
       genesis = testGenesisBlock()
       cs = ConsensusState.init(
-        genesis, securityParam = 1'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Bootstrap
+        genesis.header, securityParam = 1'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Bootstrap
       )
       gid = blockId(genesis.header)
       b1 = mkChildValidBlock(genesis.header, gid, SlotNumber(1))
       id1 = blockId(b1.header)
-    check cs.addBlockAndTryUpdateTip(b1)
+    check cs.addHeaderAndTryUpdateTip(b1.header, id1)
 
     let b2 = mkChildValidBlock(b1.header, id1, SlotNumber(2))
-    check cs.addBlockAndTryUpdateTip(b2)
+    check cs.addHeaderAndTryUpdateTip(b2.header, blockId(b2.header))
     # LIB advances to b1 (height 2 - 1 = 1, slot 1)
     discard cs.tryUpdateLib()
-    check cs.latestImmutableId == id1
+    check cs.latestImmutable.tip == id1
 
     # Orphan o1 has slot 1 <= LIB slot 1 (incompatible)
     let

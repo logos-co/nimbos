@@ -14,7 +14,7 @@ import
   stew/byteutils as byteutils,
   ../../testutil,
   ../../ledger/sdp/test_helpers,
-  ../../../logos_chain/chain/[chain, block_processor, local_tree],
+  ../../../logos_chain/chain/[chain, block_processor],
   ../../../logos_chain/core/types,
   ../../../logos_chain/ledger/ledger,
   ../../../logos_chain/sync/[framing, types, ibd_server, syncer]
@@ -28,7 +28,6 @@ proc initTestChain*(
     securityParam: uint64 = DefaultSecurityParam,
     densitySlotWindow: uint64 = 100'u64,
     genesisTime: uint64 = uint64(max(getTime().toUnix() - 500, 0'i64)),
-    forkChoiceRule: ForkChoiceRule = ForkChoiceRule.Bootstrap,
 ): Chain =
   ## Chain over the genesis block's ledger state (epochs seeded under
   ## `testLedgerConfig`).
@@ -48,8 +47,7 @@ proc initTestChain*(
     Ledger[BlockId].init(gid, state, testLedgerConfig, mockVerifyLeaderProof),
     SlotConfig(genesisTime: genesisTime, slotDurationSeconds: 1),
     densitySlotWindow = densitySlotWindow,
-    securityParam = securityParam,
-    forkChoiceRule = forkChoiceRule)
+    securityParam = securityParam)
 
 proc startTestProcessor(chain: Chain): BlockProcessor =
   let bp = BlockProcessor.new(chain)
@@ -101,16 +99,21 @@ template withSyncPair*(serverChain, clientChain: Chain, body: untyped) =
   finally:
     await server.stop()
 
-proc extendChainAfterGenesis*(
-    tree: LocalTree, genesis: ValidBlock, extraBlocks: int,
-): BlockId =
-  ## Add ``extraBlocks`` descendants on top of ``genesis``; return the tip id.
+proc seedValidBlock*(chain: Chain, blk: ValidBlock): bool =
+  let id = blockId(blk.header)
+  if not chain.consensus.addHeaderAndTryUpdateTip(blk.header, id):
+    return false
+  chain.blockStore.put(id, blk)
+  true
+
+proc extendChainAfterGenesis*(chain: Chain, extraBlocks: int): BlockId =
+  ## Add ``extraBlocks`` descendants on top of ``chain.genesisBlock``; return the tip id.
   var
-    parentHdr = genesis.header
-    parentId = blockId(genesis.header)
+    parentHdr = chain.genesisBlock.header
+    parentId = blockId(parentHdr)
   for slot in 1 .. extraBlocks:
     let blk = childValidBlock(parentHdr, parentId, SlotNumber(slot.uint64), [])
-    check tree.addBlockToTree(blk)
+    check seedValidBlock(chain, blk)
     parentHdr = blk.header
     parentId = blockId(blk.header)
   parentId
@@ -178,16 +181,16 @@ func downloadBlocksResponseEqual*(a, b: DownloadBlocksResponse): bool =
       ra.message == rb.message
 
 proc downloadBlocksResponsesForRequest*(
-    consensus: ConsensusState, req: DownloadBlocksRequest
+    chain: Chain, req: DownloadBlocksRequest
 ): seq[DownloadBlocksResponse] =
-  let sendIds = cappedDownloadPathBlockIds(consensus, req)
+  let sendIds = cappedDownloadPathBlockIds(chain.consensus, req)
   if sendIds.len == 0:
     return @[DownloadBlocksResponse(kind: dbrNoMoreBlocks)]
   var responses = newSeqOfCap[DownloadBlocksResponse](sendIds.len + 1)
   for i in countdown(sendIds.high, 0):
     let
-      blk = consensus.getBlock(sendIds[i]).valueOr:
-        fail "block not in tree"
+      blk = chain.blockStore.getBlock(sendIds[i]).valueOr:
+        fail "block not in store"
       innerWire = try:
         encode(blk, cryptarchiaSyncBincodeConfig)
       except BincodeError:

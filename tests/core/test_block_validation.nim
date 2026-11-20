@@ -64,7 +64,7 @@ func admitWithTopology(
 
 proc validate(genesis: ValidBlock, blk: Block): Result[ValidBlock, BlockValidationError] =
   let
-    cs = ConsensusState.init(genesis, securityParam = 1'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Online)
+    cs = ConsensusState.init(genesis.header, securityParam = 1'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Online)
     state = testGenesisLedgerState()
     ledger = Ledger[BlockId].init(
       blockId(genesis.header), state, testLedgerConfig, mockVerifyLeaderProof
@@ -83,14 +83,14 @@ proc validate(genesis: ValidBlock, blk: Block): Result[ValidBlock, BlockValidati
 proc treeWithLib(genesis: ValidBlock): tuple[cs: ConsensusState, b1, b2: ValidBlock] =
   ## ConsensusState with security parameter 1 holding genesis, b1, b2, b3; the LIB is b2.
   let
-    cs = ConsensusState.init(genesis, securityParam = 1'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Online)
+    cs = ConsensusState.init(genesis.header, securityParam = 1'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Online)
     b1 = mkChildValidBlock(genesis.header, blockId(genesis.header), SlotNumber(1))
     b2 = mkChildValidBlock(b1.header, blockId(b1.header), SlotNumber(2))
     b3 = mkChildValidBlock(b2.header, blockId(b2.header), SlotNumber(3))
   for blk in [b1, b2, b3]:
-    check cs.addBlockAndTryUpdateTip(blk)
+    check cs.addHeaderAndTryUpdateTip(blk.header, blockId(blk.header))
     discard cs.tryUpdateLib()
-  check cs.latestImmutableId == blockId(b2.header)
+  check cs.latestImmutable.tip == blockId(b2.header)
   (cs, b1, b2)
 
 func sampleUncle(value: byte): SignedHeader =
@@ -393,7 +393,7 @@ suite "core/block_validation — multi-tier evaluation order":
       badTx = mkTransferTx(@[note.id, note.id], @[mkNote(100, pkSeed = 2)])
       genesis = testGenesisBlock()
       gid = blockId(genesis.header)
-      cs = ConsensusState.init(genesis, securityParam = 1'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Online)
+      cs = ConsensusState.init(genesis.header, securityParam = 1'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Online)
       state = testGenesisLedgerState()
       ledger = Ledger[BlockId].init(gid, state, testLedgerConfig, failingPolVerifier)
       blk = childBlock(genesis.header, gid, SlotNumber(1), [badTx])
@@ -411,7 +411,7 @@ suite "core/block_validation — multi-tier evaluation order":
       validLightTx = minimalValidSignedTx()
       genesis = testGenesisBlock()
       gid = blockId(genesis.header)
-      cs = ConsensusState.init(genesis, securityParam = 1'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Online)
+      cs = ConsensusState.init(genesis.header, securityParam = 1'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Online)
       state = testGenesisLedgerState()
       ledger = Ledger[BlockId].init(gid, state, testLedgerConfig, mockVerifyLeaderProof)
     var mempool = Mempool.init()
@@ -465,7 +465,7 @@ suite "core/block_validation — multi-tier evaluation order":
     # 4. If Tier 3 runs stateless validation, it calls verifyProofOfClaim -> fails with VerifierNotInitialised.
     #    Because it hits the mempool pointer fast-path, it bypasses stateless validation and succeeds!
     let
-      cs = ConsensusState.init(genesis, securityParam = 1'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Online)
+      cs = ConsensusState.init(genesis.header, securityParam = 1'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Online)
       state = testGenesisLedgerState()
       ledger = Ledger[BlockId].init(gid, state, testLedgerConfig, mockVerifyLeaderProof)
       (admittedBlk, isOrphan) = admitWithTopology(child, cs, ledger).expect("header valid")
@@ -487,7 +487,7 @@ suite "core/block_validation — multi-tier evaluation order":
       sm = minimalHashedSignedTx()
       genesis = testGenesisBlock()
       gid = blockId(genesis.header)
-      cs = ConsensusState.init(genesis, securityParam = 1'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Online)
+      cs = ConsensusState.init(genesis.header, securityParam = 1'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Online)
       blk = childBlock(genesis.header, gid, SlotNumber(1), [sm])
     var state = testGenesisLedgerState()
     # Non-zero base fee causes minimalValidSignedTx with 0 transfer balance to fail fee coverage
@@ -509,7 +509,7 @@ suite "core/block_validation — multi-tier evaluation order":
       note = mkUtxo(value = 100, pkSeed = 1)
       badTx = mkTransferTx(@[note.id, note.id], @[mkNote(100, pkSeed = 2)])
       genesis = testGenesisBlock()
-      cs = ConsensusState.init(genesis, securityParam = 1'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Online)
+      cs = ConsensusState.init(genesis.header, securityParam = 1'u64, densitySlotWindow = 100'u64, forkChoiceRule = ForkChoiceRule.Online)
       state = testGenesisLedgerState()
       ledger = Ledger[BlockId].init(blockId(genesis.header), state, testLedgerConfig, mockVerifyLeaderProof)
       blk = childBlock(genesis.header, orphanParent, SlotNumber(1), [badTx])

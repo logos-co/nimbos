@@ -15,158 +15,117 @@ import
   ./logos_chain/sync/helpers,
   ../logos_chain/fork_choice_lifecycle,
   ../logos_chain/chain/block_processor,
-  ../logos_chain/consensus/consensus_state,
+  ../logos_chain/consensus/[clock, consensus_state],
   ../logos_chain/node_state
 
 suite "fork_choice_lifecycle":
-  test "determineStartupForkChoiceRule logic":
-    const t0 = 1_000_000'u64
-
-    check:
-      # 1. Explicit --bootstrap flag -> Bootstrap
-      determineStartupForkChoiceRule(
-        explicitBootstrapFlag = true,
-        isLibAtGenesis = false,
-        lastOnlineTimestampUnix = Opt.some(t0),
-        currentTimestampUnix = t0 + 100,
-      ) == (ForkChoiceRule.Bootstrap, StartupForkChoiceReason.ExplicitFlag)
-
-      # 2. LIB at Genesis -> Bootstrap
-      determineStartupForkChoiceRule(
-        explicitBootstrapFlag = false,
-        isLibAtGenesis = true,
-        lastOnlineTimestampUnix = Opt.some(t0),
-        currentTimestampUnix = t0 + 100,
-      ) == (ForkChoiceRule.Bootstrap, StartupForkChoiceReason.LibAtGenesis)
-
-      # 3. Missing last online timestamp -> Bootstrap
-      determineStartupForkChoiceRule(
-        explicitBootstrapFlag = false,
-        isLibAtGenesis = false,
-        lastOnlineTimestampUnix = Opt.none(uint64),
-        currentTimestampUnix = t0 + 100,
-      ) == (ForkChoiceRule.Bootstrap, StartupForkChoiceReason.NoSavedState)
-
-      # 4. Restart within 20m grace period -> Online
-      determineStartupForkChoiceRule(
-        explicitBootstrapFlag = false,
-        isLibAtGenesis = false,
-        lastOnlineTimestampUnix = Opt.some(t0),
-        currentTimestampUnix = t0 + uint64(10.minutes.seconds),
-      ) == (ForkChoiceRule.Online, StartupForkChoiceReason.WithinGrace)
-
-      # 5. Exactly at grace period boundary (20m) -> Online
-      determineStartupForkChoiceRule(
-        explicitBootstrapFlag = false,
-        isLibAtGenesis = false,
-        lastOnlineTimestampUnix = Opt.some(t0),
-        currentTimestampUnix = t0 + uint64(OfflineGracePeriodDuration.seconds),
-      ) == (ForkChoiceRule.Online, StartupForkChoiceReason.WithinGrace)
-
-      # 6. Exceeding grace period (>20m) -> Bootstrap
-      determineStartupForkChoiceRule(
-        explicitBootstrapFlag = false,
-        isLibAtGenesis = false,
-        lastOnlineTimestampUnix = Opt.some(t0),
-        currentTimestampUnix = t0 + uint64(OfflineGracePeriodDuration.seconds) + 1,
-      ) == (ForkChoiceRule.Bootstrap, StartupForkChoiceReason.OfflineTooLong)
-
-      # 7. Instantaneous restart -> Online (within grace)
-      determineStartupForkChoiceRule(
-        explicitBootstrapFlag = false,
-        isLibAtGenesis = false,
-        lastOnlineTimestampUnix = Opt.some(t0),
-        currentTimestampUnix = t0,
-      ) == (ForkChoiceRule.Online, StartupForkChoiceReason.WithinGrace)
-
-      # 8. Backwards clock skew does NOT prove node was offline > T_offline -> Online (per spec)
-      determineStartupForkChoiceRule(
-        explicitBootstrapFlag = false,
-        isLibAtGenesis = false,
-        lastOnlineTimestampUnix = Opt.some(t0),
-        currentTimestampUnix = t0 - 100,
-      ) == (ForkChoiceRule.Online, StartupForkChoiceReason.ClockSkew)
-
-  asyncTest "onSyncComplete with ZeroDuration switches immediately to Online and persists":
+  test "restart selects startup rule from saved state, grace period, and tree LIB":
     let
       genesisBlk = testGenesisBlock()
-      chain = initTestChain(genesisBlk, forkChoiceRule = ForkChoiceRule.Bootstrap)
-    withTempDir(tmpDir, "test_lifecycle_zero"):
+      gid = blockId(genesisBlk.header)
+      b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
+      id1 = blockId(b1.header)
+      b2 = childBlock(b1.header, id1, SlotNumber(2), [])
+      nowUnix = nowWallclockSeconds()
+      graceSecs = uint64(OfflineGracePeriodDuration.seconds)
+
+    proc makeLoadedProcessor(): BlockProcessor =
+      var chain = initTestChain(genesisBlk, securityParam = 1'u64)
+      doAssert chain.tryApplyBlock(b1).isOk
+      doAssert chain.tryApplyBlock(b2).isOk
+      BlockProcessor.new(chain)
+
+    withTempDir(tmpDir, "test_lifecycle_restart"):
+      # 1. Fresh dataDir (no saved state) -> Bootstrap
       let
-        bp = BlockProcessor.new(chain)
-        lifecycle = ForkChoiceLifecycle.new(bp, tmpDir, prolongedBootstrapDuration = chronos.ZeroDuration)
+        bpCold = BlockProcessor.new(initTestChain(genesisBlk))
+        lcCold = ForkChoiceLifecycle.init(bpCold, tmpDir)
       check:
-        bp.consensus.forkChoiceRule == ForkChoiceRule.Bootstrap
-        not lifecycle.canProposeBlocks
-      lifecycle.onSyncComplete()
+        not lcCold.canProposeBlocks
+        bpCold.consensus.forkChoiceRule == ForkChoiceRule.Bootstrap
 
-      let saved = loadNodeState(tmpDir).get
+      # 2. Within 20m grace + matching non-genesis LIB in tree -> Online, gated until onIbdComplete
+      let bpGrace = makeLoadedProcessor()
       check:
-        bp.consensus.forkChoiceRule == ForkChoiceRule.Online
-        lifecycle.canProposeBlocks
-        saved.libBlockId == bp.consensus.latestImmutableId
+        bpGrace.consensus.forkChoiceRule == ForkChoiceRule.Bootstrap
+        saveNodeState(tmpDir, nowUnix - 60, id1).isOk
+      let lcGrace = ForkChoiceLifecycle.init(bpGrace, tmpDir)
+      check:
+        bpGrace.consensus.forkChoiceRule == ForkChoiceRule.Online
+        bpGrace.consensus.latestImmutable.tip == id1
+        not lcGrace.canProposeBlocks
+      lcGrace.onIbdComplete()
+      check lcGrace.canProposeBlocks
 
-  asyncTest "onSyncComplete with non-zero duration transitions after timer expires":
+      # 3. Future timestamp (clock skew) -> Online
+      let bpSkew = makeLoadedProcessor()
+      check saveNodeState(tmpDir, nowUnix + 300, id1).isOk
+      discard ForkChoiceLifecycle.init(bpSkew, tmpDir)
+      check bpSkew.consensus.forkChoiceRule == ForkChoiceRule.Online
+
+      # 4. Explicit --bootstrap overrides within-grace state -> Bootstrap
+      let bpExplicit = makeLoadedProcessor()
+      check saveNodeState(tmpDir, nowUnix, id1).isOk
+      discard ForkChoiceLifecycle.init(bpExplicit, tmpDir, explicitBootstrap = true)
+      check bpExplicit.consensus.forkChoiceRule == ForkChoiceRule.Bootstrap
+
+      # 5. Offline longer than 20m -> Bootstrap
+      let bpStale = makeLoadedProcessor()
+      check saveNodeState(tmpDir, nowUnix - graceSecs - 10, id1).isOk
+      discard ForkChoiceLifecycle.init(bpStale, tmpDir)
+      check bpStale.consensus.forkChoiceRule == ForkChoiceRule.Bootstrap
+
+      # 6. Saved LIB at genesis -> Bootstrap
+      let bpGenLib = makeLoadedProcessor()
+      check saveNodeState(tmpDir, nowUnix, gid).isOk
+      discard ForkChoiceLifecycle.init(bpGenLib, tmpDir)
+      check bpGenLib.consensus.forkChoiceRule == ForkChoiceRule.Bootstrap
+
+      # 7. Saved non-genesis LIB absent from in-memory genesis tree -> Bootstrap
+      let bpReset = BlockProcessor.new(initTestChain(genesisBlk))
+      check saveNodeState(tmpDir, nowUnix, id1).isOk
+      discard ForkChoiceLifecycle.init(bpReset, tmpDir)
+      check bpReset.consensus.forkChoiceRule == ForkChoiceRule.Bootstrap
+
+  asyncTest "onIbdComplete with non-zero duration transitions after timer expires":
     let
       genesisBlk = testGenesisBlock()
-      chain = initTestChain(genesisBlk, forkChoiceRule = ForkChoiceRule.Bootstrap)
+      chain = initTestChain(genesisBlk)
     withTempDir(tmpDir, "test_lifecycle_timer"):
       let
         bp = BlockProcessor.new(chain)
-        lifecycle = ForkChoiceLifecycle.new(bp, tmpDir, prolongedBootstrapDuration = chronos.milliseconds(50))
+        lifecycle = ForkChoiceLifecycle.init(bp, tmpDir, prolongedBootstrapDuration = chronos.milliseconds(50))
 
       check:
         bp.consensus.forkChoiceRule == ForkChoiceRule.Bootstrap
         not lifecycle.canProposeBlocks
-      lifecycle.onSyncComplete()
+      lifecycle.onIbdComplete()
 
       # Before duration expires, still in Bootstrap
       check:
         bp.consensus.forkChoiceRule == ForkChoiceRule.Bootstrap
         not lifecycle.canProposeBlocks
+        loadNodeState(tmpDir).isNone
+        waitUntil(lifecycle.canProposeBlocks, timeout = chronos.seconds(1))
 
-      check waitUntil(lifecycle.canProposeBlocks, timeout = chronos.seconds(1))
       let saved = loadNodeState(tmpDir).get
       check:
         bp.consensus.forkChoiceRule == ForkChoiceRule.Online
-        saved.libBlockId == bp.consensus.latestImmutableId
-
-  asyncTest "persist writes node state only in Online mode":
-    let genesisBlk = testGenesisBlock()
-    withTempDir(tmpDir, "test_lifecycle_persist"):
-      block:
-        let
-          chainBoot = initTestChain(genesisBlk, forkChoiceRule = ForkChoiceRule.Bootstrap)
-          bp = BlockProcessor.new(chainBoot)
-          lifecycle = ForkChoiceLifecycle.new(bp, tmpDir)
-        check not lifecycle.canProposeBlocks
-        await lifecycle.stop()
-        # In Bootstrap mode, persist on stop does nothing
-        check loadNodeState(tmpDir).isNone
-
-      block:
-        let
-          chainOnline = initTestChain(genesisBlk, forkChoiceRule = ForkChoiceRule.Online)
-          bp = BlockProcessor.new(chainOnline)
-          lifecycle = ForkChoiceLifecycle.new(bp, tmpDir)
-        check lifecycle.canProposeBlocks
-        await lifecycle.stop()
-        # In Online mode, stop persists node_state.json
-        let saved = loadNodeState(tmpDir).get
-        check saved.libBlockId == bp.consensus.latestImmutableId
+        saved.libBlockId == bp.consensus.latestImmutable.tip
+      await lifecycle.stop()
 
   asyncTest "start and stop manages heartbeat and prolonged bootstrap timers safely in Bootstrap mode":
     let
       genesisBlk = testGenesisBlock()
-      chain = initTestChain(genesisBlk, forkChoiceRule = ForkChoiceRule.Bootstrap)
+      chain = initTestChain(genesisBlk)
     withTempDir(tmpDir, "test_lifecycle_stop"):
       let
         bp = BlockProcessor.new(chain)
-        lifecycle = ForkChoiceLifecycle.new(bp, tmpDir, prolongedBootstrapDuration = ProlongedBootstrapDuration)
+        lifecycle = ForkChoiceLifecycle.init(bp, tmpDir)
       lifecycle.start()
       check not lifecycle.canProposeBlocks
 
-      lifecycle.onSyncComplete()
+      lifecycle.onIbdComplete()
       check not lifecycle.canProposeBlocks
 
       await lifecycle.stop()
@@ -176,19 +135,5 @@ suite "fork_choice_lifecycle":
         not lifecycle.canProposeBlocks
         # Persist in Bootstrap mode does not write state
         loadNodeState(tmpDir).isNone
-
-  asyncTest "start and stop in Online mode runs heartbeat and persists on stop":
-    let
-      genesisBlk = testGenesisBlock()
-      chain = initTestChain(genesisBlk, forkChoiceRule = ForkChoiceRule.Online)
-    withTempDir(tmpDir, "test_lifecycle_stop_online"):
-      let
-        bp = BlockProcessor.new(chain)
-        lifecycle = ForkChoiceLifecycle.new(bp, tmpDir)
-      check lifecycle.canProposeBlocks
-      lifecycle.start()
-
-      await lifecycle.stop()
-      check loadNodeState(tmpDir).get.libBlockId == bp.consensus.latestImmutableId
 
 {.pop.}

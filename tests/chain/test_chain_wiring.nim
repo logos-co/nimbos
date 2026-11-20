@@ -41,9 +41,8 @@ func parseGenesis(ds: DeploymentSettings):
   (validTx, param)
 
 proc initZeroFeeChain(ds: DeploymentSettings): Chain =
-  var chain = Chain.init(
-    ds, forkChoiceRule = ForkChoiceRule.Online, mockVerifyLeaderProof
-  ).expect("chain init")
+  var chain = Chain.init(ds, mockVerifyLeaderProof).expect("chain init")
+  chain.switchToOnline()
   chain.slotConfig.genesisTime = uint64(getTime().toUnix() - 100)
   let gid = blockId(chain.genesisBlock.header)
   var s = chain.ledger.state(gid).get()
@@ -106,9 +105,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
 
   test "Chain.init wires ledger, epoch state and clock from settings":
     let
-      chain = Chain.init(
-        ds, forkChoiceRule = ForkChoiceRule.Online, mockVerifyLeaderProof
-      ).valueOr:
+      chain = Chain.init(ds, mockVerifyLeaderProof).valueOr:
         check false
         return
       genesisState = chain.ledger.state(
@@ -124,9 +121,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
       chain.currentWallclockSlot() > 0 # devnet genesis lies in the past
 
   test "tryApplyBlock ingests a child of genesis end-to-end":
-    var chain = Chain.init(
-      ds, forkChoiceRule = ForkChoiceRule.Online, mockVerifyLeaderProof
-    ).valueOr:
+    var chain = Chain.init(ds, mockVerifyLeaderProof).valueOr:
       check false
       return
     let
@@ -141,9 +136,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
     check dup.isErr and dup.error.kind == BlockApplyErrorKind.AlreadyApplied
 
   test "tryApplyBlock rejects a slot beyond the wallclock":
-    var chain = Chain.init(
-      ds, forkChoiceRule = ForkChoiceRule.Online, mockVerifyLeaderProof
-    ).valueOr:
+    var chain = Chain.init(ds, mockVerifyLeaderProof).valueOr:
       check false
       return
     let
@@ -360,9 +353,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
       appliedState.epochs.nextEpoch.epoch == 2
 
   test "tryApplyBlock rejects statelessly invalid transaction with detailed error":
-    var chain = Chain.init(
-      ds, forkChoiceRule = ForkChoiceRule.Online, mockVerifyLeaderProof
-    ).valueOr:
+    var chain = Chain.init(ds, mockVerifyLeaderProof).valueOr:
       check false
       return
     let

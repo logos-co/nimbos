@@ -13,7 +13,7 @@ import
   libp2p/switch,
   ../../../logos_chain/networking/network,
   ../../../logos_chain/core/types,
-  ../../../logos_chain/chain/local_tree,
+  ../../../logos_chain/chain/chain,
   ../../../logos_chain/sync/[types, ibd_client, ibd_server, syncer],
   ./helpers,
   ../../testutil
@@ -25,8 +25,7 @@ proc runLbp2pIbdSyncTest(extraBlocks: int) {.async.} =
   let
     genesis = createGenesisBlock(testValidGenesisTx())
     chainBootstrap = initTestChain(genesis)
-    tipId = extendChainAfterGenesis(chainBootstrap.consensus.localTree, genesis, extraBlocks)
-  chainBootstrap.consensus.tryUpdateTip(tipId)
+    tipId = extendChainAfterGenesis(chainBootstrap, extraBlocks)
   check chainBootstrap.consensus.canonicalTip.tip == tipId
 
   let
@@ -89,11 +88,11 @@ suite "sync/initial_block_download (download blocks)":
       sm = minimalValidSignedTx()
       genesis = createGenesisBlock(testValidGenesisTx())
       gid = blockId(genesis.header)
-      cs = ConsensusState.init(genesis, securityParam = 1, densitySlotWindow = 100, forkChoiceRule = ForkChoiceRule.Bootstrap)
+      cs = ConsensusState.init(genesis.header, securityParam = 1, densitySlotWindow = 100, forkChoiceRule = ForkChoiceRule.Bootstrap)
       b1 = childValidBlock(genesis.header, gid, SlotNumber(1), [sm])
-    check cs.localTree.addBlockToTree(b1)
-    let
       b1id = blockId(b1.header)
+    check cs.addHeaderAndTryUpdateTip(b1.header, b1id)
+    let
       req = DownloadBlocksRequest(
         targetBlock: b1id,
         knownBlocks: KnownBlocks(
@@ -110,8 +109,8 @@ suite "sync/initial_block_download (download blocks)":
     let
       genesis = createGenesisBlock(testValidGenesisTx())
       gid = blockId(genesis.header)
-      cs = ConsensusState.init(genesis, securityParam = 1, densitySlotWindow = 100, forkChoiceRule = ForkChoiceRule.Bootstrap)
-      tipId = extendChainAfterGenesis(cs.localTree, genesis, MaxRequestBlocks + 5)
+      serverChain = initTestChain(genesis, securityParam = 1, densitySlotWindow = 100)
+      tipId = extendChainAfterGenesis(serverChain, MaxRequestBlocks + 5)
       req = DownloadBlocksRequest(
         targetBlock: tipId,
         knownBlocks: KnownBlocks(
@@ -119,7 +118,7 @@ suite "sync/initial_block_download (download blocks)":
           latestImmutableBlock: gid,
         ),
       )
-      sendIds = cappedDownloadPathBlockIds(cs, req)
+      sendIds = cappedDownloadPathBlockIds(serverChain.consensus, req)
     check:
       sendIds.len == MaxRequestBlocks
       sendIds[0] != tipId
@@ -129,9 +128,9 @@ suite "sync/initial_block_download (download blocks)":
       sm = minimalValidSignedTx()
       genesis = createGenesisBlock(testValidGenesisTx())
       gid = blockId(genesis.header)
-      cs = ConsensusState.init(genesis, securityParam = 1, densitySlotWindow = 100, forkChoiceRule = ForkChoiceRule.Bootstrap)
+      serverChain = initTestChain(genesis, securityParam = 1, densitySlotWindow = 100)
       b1 = childValidBlock(genesis.header, gid, SlotNumber(1), [sm])
-    check cs.localTree.addBlockToTree(b1)
+    check seedValidBlock(serverChain, b1)
     let
       req = DownloadBlocksRequest(
         targetBlock: blockId(b1.header),
@@ -140,7 +139,7 @@ suite "sync/initial_block_download (download blocks)":
           latestImmutableBlock: blockId(genesis.header),
         ),
       )
-      msgs = downloadBlocksResponsesForRequest(cs, req)
+      msgs = downloadBlocksResponsesForRequest(serverChain, req)
       blks = decodeBlocksFromDownloadResponses(msgs).get()
     check:
       blks.len == 1
@@ -153,7 +152,7 @@ suite "sync/initial_block_download (download blocks)":
       gid = blockId(genesis.header)
       b1 = childValidBlock(genesis.header, gid, SlotNumber(1), [sm])
       serverChain = initTestChain(genesis)
-    check serverChain.consensus.addBlockAndTryUpdateTip(b1)
+    check seedValidBlock(serverChain, b1)
     let
       b1id = blockId(b1.header)
       clientChain = initTestChain(genesis)
@@ -164,7 +163,7 @@ suite "sync/initial_block_download (download blocks)":
         blks = (await sendDownloadBlocksRequest(
           clientSyncer, server.peerInfo.peerId, req)).get()
         expectedBlks = decodeBlocksFromDownloadResponses(
-          downloadBlocksResponsesForRequest(serverChain.consensus, req)).get()
+          downloadBlocksResponsesForRequest(serverChain, req)).get()
       check:
         blks.len == expectedBlks.len
         blks.len == 1
@@ -208,7 +207,7 @@ suite "sync/initial_block_download (IBD requester loop)":
       b1Id = blockId(b1.header)
       serverChain = initTestChain(genesis)
     check:
-      serverChain.consensus.addBlockAndTryUpdateTip(b1)
+      seedValidBlock(serverChain, b1)
       serverChain.consensus.canonicalTip.tip == b1Id
 
     let server = await startQuicTestSwitch()
@@ -229,7 +228,7 @@ suite "sync/initial_block_download (IBD requester loop)":
       serverChain = initTestChain(genesis)
       clientChain = initTestChain(genesis)
     check:
-      serverChain.consensus.addBlockAndTryUpdateTip(b1)
+      seedValidBlock(serverChain, b1)
       serverChain.consensus.canonicalTip.tip == b1id
     withSyncPair(serverChain, clientChain):
       await initialBlockDownload(clientSyncer, Opt.some(peerProvider(server.peerInfo.peerId)))
@@ -250,8 +249,8 @@ suite "sync/initial_block_download (IBD requester loop)":
       serverChain = initTestChain(genesis)
       clientChain = initTestChain(genesis)
     check:
-      serverChain.consensus.addBlockAndTryUpdateTip(b1Valid)
-      serverChain.consensus.addBlockAndTryUpdateTip(b2Valid)
+      seedValidBlock(serverChain, b1Valid)
+      seedValidBlock(serverChain, b2Valid)
       serverChain.consensus.canonicalTip.tip == b2id
     withSyncPair(serverChain, clientChain):
       # Queue b1 ahead of time so it is in-flight when IBD processes the downloaded batch
@@ -272,7 +271,7 @@ suite "sync/initial_block_download (IBD requester loop)":
       serverChain2 = initTestChain(genesis)
       clientChain = initTestChain(genesis)
     check:
-      serverChain2.consensus.addBlockAndTryUpdateTip(b1)
+      seedValidBlock(serverChain2, b1)
       serverChain2.consensus.canonicalTip.tip == b1id
 
     # Server 1 has no sync handler and must fail. Server 2 serves b1.

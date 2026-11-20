@@ -244,15 +244,15 @@ proc initTestLBNode(
     config: LBNodeConf(dataDirFlag: some(OutDir(dataDir))),
     deploymentSettings: ds,
     processor: bp,
-    lifecycle: ForkChoiceLifecycle.new(bp, dataDir, prolongedBootstrapDuration = chronos.ZeroDuration),
+    lifecycle: ForkChoiceLifecycle.init(bp, dataDir, prolongedBootstrapDuration = chronos.ZeroDuration),
     shutdownEvent: newAsyncEvent()
   )
 
 proc stopTestNode(node: LBNode) {.async.} =
   if node.syncer != nil:
     await node.syncer.stop()
-  await node.processor.stop()
   await node.lifecycle.stop()
+  await node.processor.stop()
 
 suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
   asyncTest "GossipSub: subscribes, broadcasts, and ingests transactions":
@@ -356,7 +356,7 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
           listenerNode.processor.consensus.canonicalTip.tip == blockId(sampleProposal.header)
 
         # Verify reconstructed block content matches proposal
-        let reconstructedBlock = listenerNode.processor.consensus.getBlock(blockId(sampleProposal.header)).get()
+        let reconstructedBlock = listenerNode.processor.blockStore.getBlock(blockId(sampleProposal.header)).get()
         check:
           reconstructedBlock.header == sampleProposal.header
           reconstructedBlock.signature == sampleProposal.signature

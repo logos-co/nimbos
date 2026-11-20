@@ -23,8 +23,8 @@ proc setupChain(
   let
     genesis = createGenesisBlock(testValidGenesisTx())
     gid = blockId(genesis.header)
-  var c = initTestChain(
-    genesis, securityParam = securityParam, forkChoiceRule = ForkChoiceRule.Online)
+  var c = initTestChain(genesis, securityParam = securityParam)
+  c.switchToOnline()
   c.slotConfig.genesisTime = uint64(getTime().toUnix() - 500)
   var s = c.ledger.state(gid).get()
   s.feeMarket.executionBaseFee = 0
@@ -298,7 +298,7 @@ suite "chain/orphan_resolution":
       chain.tryApplyBlock(b2b).isOk
       chain.tryApplyBlock(b3a).isOk
       # With securityParam = 1 and tip height = 3 (b3a), LIB naturally advances to height 2 (b2a)
-      chain.consensus.latestImmutableId == id2a
+      chain.consensus.latestImmutable.tip == id2a
 
     # Ingest orphan branching off pruned fork b2b with slot <= LIB slot (violates LIB b2a slot feasibility)
     let
@@ -369,7 +369,7 @@ suite "chain/orphan_resolution":
       # txA from abandoned branch A is restored to mempool
       chain.mempool.len == 1
       # LIB advanced to b2 (height 3 - securityParam 1 = 2)
-      chain.consensus.latestImmutableId == id2
+      chain.consensus.latestImmutable.tip == id2
 
   test "orphan pool prunes orphans whose ancestry cannot descend from newly advanced LIB":
     var (chain, genesis, gid) = setupChain(securityParam = 1)
@@ -405,7 +405,7 @@ suite "chain/orphan_resolution":
       chain.tryApplyBlock(a3).isOk
       # Applying a4 advances LIB to a3 (height 4 - 1 = 3), pruning fork f1 (height 1)
       chain.tryApplyBlock(a4).isOk
-      chain.consensus.latestImmutableId == idA3
+      chain.consensus.latestImmutable.tip == idA3
       # Orphan o2 had slot 3 <= LIB slot 5, so pruneIncompatibleWithImmutable pruned it from orphanPool on LIB update!
       chain.orphanPool.len == 0
 
@@ -455,7 +455,7 @@ suite "chain/orphan_resolution":
       chain.tryApplyBlock(a3).isOk
       chain.tryApplyBlock(a4).isOk
       # LIB advanced to a3 (height 3, slot 5), pruning branch b1
-      chain.consensus.latestImmutableId == idA3
+      chain.consensus.latestImmutable.tip == idA3
       # b3 (slot 7 > LIB slot 5) was not pruned by LIB slot check alone
       chain.orphanPool.hasOrphan(idB3)
 

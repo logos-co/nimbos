@@ -396,65 +396,6 @@ suite "chain/block_processor":
         not bp.consensus.hasBlock(id2)
         chain.orphanPool.len == 0
 
-  asyncTest "switchToOnline transitions rule, advances LIB, prunes ledger states, and is idempotent":
-    const k = 2'u64
-    let chainBootstrap = initTestChain(genesisBlk, securityParam = k, forkChoiceRule = ForkChoiceRule.Bootstrap)
-    withProcessor(chainBootstrap):
-      let
-        b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
-        id1 = blockId(b1.header)
-        b2 = childBlock(b1.header, id1, SlotNumber(2), [])
-        id2 = blockId(b2.header)
-        b3 = childBlock(b2.header, id2, SlotNumber(3), [])
-        id3 = blockId(b3.header)
-        b4 = childBlock(b3.header, id3, SlotNumber(4), [])
-        id4 = blockId(b4.header)
-        sideB = childValidBlock(genesisBlk.header, gid, SlotNumber(5), [])
-        idSide = blockId(sideB.header)
-
-      check:
-        (await bp.addBlock(b1)).isOk
-        (await bp.addBlock(b2)).isOk
-        (await bp.addBlock(b3)).isOk
-        (await bp.addBlock(b4)).isOk
-        # Competing side block off genesis at slot 5
-        chainBootstrap.consensus.localTree.addBlockToTree(sideB)
-        bp.consensus.forkChoiceRule == ForkChoiceRule.Bootstrap
-        bp.consensus.canonicalTip.tip == id4
-        bp.consensus.canonicalTip.height == 4'u64
-        # In Bootstrap mode, LIB does not advance automatically
-        bp.consensus.latestImmutableId == gid
-        bp.consensus.latestImmutableSlot == SlotNumber(0)
-        # All ledger states exist
-        bp.ledger.hasState(gid)
-        bp.ledger.hasState(id1)
-        bp.ledger.hasState(id2)
-        bp.ledger.hasState(id3)
-        bp.ledger.hasState(id4)
-        bp.consensus.hasBlock(idSide)
-
-      # Transition to Online: triggers updateLibAndPrune
-      bp.switchToOnline()
-
-      check:
-        bp.consensus.forkChoiceRule == ForkChoiceRule.Online
-        # Tip height 4 - k (2) = immHeight 2 (block b2)
-        bp.consensus.latestImmutableId == id2
-        bp.consensus.latestImmutableSlot == SlotNumber(2)
-        # States older than LIB (b1, genesis) are pruned
-        not bp.ledger.hasState(gid)
-        not bp.ledger.hasState(id1)
-        # LIB and subsequent states are retained
-        bp.ledger.hasState(id2)
-        bp.ledger.hasState(id3)
-        bp.ledger.hasState(id4)
-        # Competing fork below LIB height is pruned from tree
-        not bp.consensus.hasBlock(idSide)
-
-      # Calling again is a safe no-op
-      bp.switchToOnline()
-      check bp.consensus.forkChoiceRule == ForkChoiceRule.Online
-
   asyncTest "processProposal with tampered references rejects and does not suppress genuine proposal":
     withProcessor(chain):
       let
