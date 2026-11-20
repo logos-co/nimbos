@@ -234,14 +234,14 @@ proc checkViability(
   if chain.orphanPool.isRejected(id):
     return err(BlockApplyError(kind: AlreadyRejected))
   if chain.orphanPool.isRejected(hdr.parentBlock):
-    chain.orphanPool.reject(id)
+    chain.orphanPool.reject(id, remember = true)
     return err(BlockApplyError(kind: InvalidAncestor))
   if chain.orphanPool.hasOrphan(id):
     return err(BlockApplyError(kind: OrphanAlreadyBuffered))
   # Slots increase along a chain, so a block at or before the LIB slot cannot
   # descend from the LIB. Holds without the parent, which pruning may remove.
   if hdr.slot <= chain.localTree.latestImmutableSlot():
-    chain.orphanPool.reject(id)
+    chain.orphanPool.reject(id, remember = true)
     return err(BlockApplyError(kind: UnviableFork))
   if hdr.slot > curSlot:
     return err(BlockApplyError(kind: FutureSlot))
@@ -338,7 +338,7 @@ proc applyValidBlock(
     oldTip = chain.localTree.localTipId()
 
   if not chain.localTree.addBlockToTree(validBlk):
-    chain.orphanPool.reject(id)
+    chain.orphanPool.reject(id, remember = true)
     return err(BlockApplyError(kind: UnviableFork))
   chain.ledger.commitUpdate(id, preparedState)
   let newTip = chain.localTree.localTipId()
@@ -359,10 +359,10 @@ proc applyAdmittedBlock(
   # signature and proof checks. A bad uncle fails before the transaction
   # checks, whose cost grows with the block.
   let headerState = validatePol(admittedBlk, chain.ledger).valueOr:
-    chain.orphanPool.reject(id)
+    chain.orphanPool.reject(id, shouldRemember(error.ledgerError))
     return err(toBlockApplyError(error))
   validateUncles(admittedBlk, chain.localTree, chain.ledger).isOkOr:
-    chain.orphanPool.reject(id)
+    chain.orphanPool.reject(id, remember = true)
     return err(BlockApplyError(kind: UncleRejected, uncleError: error))
   let validBlk = validateStatelessTransactions(admittedBlk, chain.mempool).valueOr:
     chain.orphanPool.reject(id, shouldRemember(error.statelessError))
@@ -416,10 +416,10 @@ proc tryApplyPromotedOrphan*(
     hdr = header(admittedBlk)
     id = ?chain.checkViability(hdr, curSlot)
     status = checkTopology(hdr, chain.localTree, chain.ledger).valueOr:
-      chain.orphanPool.reject(id)
+      chain.orphanPool.reject(id, remember = true)
       return err(error)
   if status == TopologyStatus.Orphan:
-    chain.orphanPool.reject(id)
+    chain.orphanPool.reject(id, remember = true)
     return err(BlockApplyError(kind: UnviableFork))
 
   chain.applyAdmittedBlock(admittedBlk, id, curSlot)
@@ -433,7 +433,7 @@ proc tryApplyBlock*(
     curSlot = chain.currentWallclockSlot()
     id = ?chain.checkViability(blk.header, curSlot)
     status = checkTopology(blk.header, chain.localTree, chain.ledger).valueOr:
-      chain.orphanPool.reject(id)
+      chain.orphanPool.reject(id, remember = true)
       return err(error)
     admittedBlk = admitBlock(blk).valueOr:
       return err(toBlockApplyError(error))
@@ -453,7 +453,7 @@ proc tryApplyProposalBlock*(
     curSlot = chain.currentWallclockSlot()
     id = ?chain.checkViability(admittedBlk.header, curSlot)
     status = checkTopology(admittedBlk.header, chain.localTree, chain.ledger).valueOr:
-      chain.orphanPool.reject(id)
+      chain.orphanPool.reject(id, remember = true)
       return err(error)
 
   chain.admitOrBuffer(status, admittedBlk, id, curSlot)

@@ -44,7 +44,7 @@ func isMissingParent*(pool: OrphanPool, id: BlockId): bool =
 func isRejected*(pool: OrphanPool, id: BlockId): bool =
   pool.rejected.get(id).isSome
 
-proc reject*(pool: OrphanPool, rootId: BlockId, remember = true) =
+proc reject*(pool: OrphanPool, rootId: BlockId, remember: bool) =
   ## Removes `rootId` (if buffered) and all descendant subtrees waiting on it,
   ## and records `rootId` and its descendants in `rejected` when `remember` is true.
   ## Time: O(M), where M is the number of descendant nodes | Space: O(M) for BFS queue
@@ -111,7 +111,7 @@ proc pruneIncompatibleWithImmutable*(pool: OrphanPool, localTree: LocalTree) =
       invalidIds.add(id)
 
   for id in invalidIds:
-    pool.reject(id)
+    pool.reject(id, remember = true)
 
   # reject deletes from byBlockId and byParentId but leaves stale entries in arrivalOrder
   # (to avoid O(N) deque removals). Compact eagerly after bulk LIB pruning to keep arrivalOrder clean.

@@ -561,16 +561,14 @@ suite "chain/block_processor":
       let
         b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
         id1 = blockId(b1.header)
-        b2 = childBlock(b1.header, id1, SlotNumber(2), [])
-        id2 = blockId(b2.header)
-        p2 = Proposal(header: b2.header, references: default(References), signature: b2.signature)
-        b3 = childBlock(b2.header, id2, SlotNumber(3), [])
+        p2 = childProposal(b1.header, id1, SlotNumber(2), [])
+        id2 = blockId(p2.header)
+        b3 = childBlock(p2.header, id2, SlotNumber(3), [])
         id3 = blockId(b3.header)
-        b4 = childBlock(b3.header, id3, SlotNumber(4), [])
-        p4 = Proposal(header: b4.header, references: default(References), signature: b4.signature)
+        p4 = childProposal(b3.header, id3, SlotNumber(4), [])
         peer = getRandomPeerId()
 
-      bp.orphanPool.reject(id1)
+      bp.orphanPool.reject(id1, remember = true)
       check:
         bp.orphanPool.addOrphan(admitBlock(b3).get())
         bp.orphanPool.len == 1

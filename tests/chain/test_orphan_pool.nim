@@ -71,7 +71,7 @@ suite "chain/orphan_pool":
     check pool.addOrphan(child2)
     check pool.len == 2
 
-    pool.reject(c1Id)
+    pool.reject(c1Id, remember = true)
     check pool.len == 1
     check not pool.hasOrphan(c1Id)
 
@@ -184,7 +184,7 @@ suite "chain/orphan_pool":
     check pool.len == 4
 
     # Remove one sibling explicitly
-    pool.reject(b1Id)
+    pool.reject(b1Id, remember = true)
     check pool.len == 3
     check not pool.hasOrphan(b1Id)
     check pool.hasOrphan(b2Id)
@@ -277,7 +277,7 @@ suite "chain/orphan_pool":
       pool.len == 4
 
     # Reject rootId (purges c1 -> d1 -> d2 and remembers them)
-    pool.reject(rootId)
+    pool.reject(rootId, remember = true)
     check:
       pool.len == 1
       not pool.hasOrphan(c1Id)
@@ -303,7 +303,7 @@ suite "chain/orphan_pool":
     check pool.len == 2
 
     # Remove b1 directly
-    pool.reject(b1Id)
+    pool.reject(b1Id, remember = true)
     check pool.len == 1
 
     # Compacting queue purges b1 from arrivalOrder
