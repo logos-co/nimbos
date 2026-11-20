@@ -26,7 +26,6 @@ proc processProposal*(
     id = blockId(proposal.header)
     idHex = toHex(id)
 
-  # 1. Scalar slot checks (~2-20 ns)
   if proposal.header.slot <= bp.localTree.latestImmutableSlot():
     debug "GossipSub ignored proposal at or behind immutable slot",
       blockId = idHex, src
@@ -38,10 +37,17 @@ proc processProposal*(
       blockId = idHex, blockSlot = proposal.header.slot, wallclockSlot = nowSlot, src
     return ValidationResult.Ignore
 
-  # 2. Ingestion deduplication (in-flight, localTree, orphanPool) (~20-40 ns)
+  # Only accepted copies are in flight, applied or buffered.
   if bp.checkDeduplication(id, proposal.signature).isErr:
     trace "GossipSub ignored duplicate proposal", blockId = idHex, src
     return ValidationResult.Ignore
+
+  # A header that breaks these rules is invalid for each node, on any parent,
+  # so the check runs before the topology check. `admitProposal` does the
+  # check again, so that each admitted block has it.
+  if not headerRulesHold(proposal.header):
+    debug "GossipSub rejected proposal: invalid header", blockId = idHex, src
+    return ValidationResult.Reject
 
   if bp.orphanPool.isRejected(id):
     debug "GossipSub ignored proposal: block was rejected",
@@ -54,18 +60,39 @@ proc processProposal*(
       blockId = idHex, src
     return ValidationResult.Ignore
 
-  # 3. Binding of the reference list (~µs, mempool-free)
-  if not proposal.bodyMatchesHeader:
-    debug "GossipSub rejected proposal: references do not match body root",
-      blockId = idHex, src
-    return ValidationResult.Reject
-
-  if proposal.hasMissingReference(bp.mempool):
-    debug "GossipSub cannot accept proposal: missing tx in mempool",
-      blockId = idHex, src
+  # The topology check runs before admission, so a proposal that cannot be
+  # applied costs no signature check.
+  checkTopology(proposal.header, bp.localTree, bp.ledger).isOkOr:
+    # A slot not after the parent slot is invalid for each node. An unviable
+    # fork depends on the local view.
+    if error.kind == BlockApplyErrorKind.InvalidStructure:
+      debug "GossipSub rejected proposal: slot not after the parent slot",
+        blockId = idHex, src
+      return ValidationResult.Reject
+    debug "GossipSub ignored proposal on an unviable fork", blockId = idHex, src
     return ValidationResult.Ignore
 
-  discard bp.addProposal(proposal, id)
+  # The checks that need no chain state run here, so the verdict covers all
+  # of them and apply does not read the mempool again.
+  let admittedBlk = admitProposal(proposal, bp.mempool).valueOr:
+    case error
+    of ProposalValidationError.UnresolvedReference:
+      debug "GossipSub cannot accept proposal: unresolved reference",
+        blockId = idHex, src
+      return ValidationResult.Ignore
+    # A body root mismatch is a Reject: the lists are not signed, and a
+    # missing transaction is an Ignore through `UnresolvedReference`. An
+    # Ignore here lets a peer send changed copies at no cost. A prefix
+    # collision can also fail here; the spec calls it infeasible.
+    of ProposalValidationError.InvalidHeader,
+        ProposalValidationError.InvalidSignature,
+        ProposalValidationError.BodyRootMismatch,
+        ProposalValidationError.InvalidStructure:
+      debug "GossipSub rejected proposal",
+        blockId = idHex, error = $error, src
+      return ValidationResult.Reject
+
+  discard bp.addProposalBlock(admittedBlk, id)
 
   debug "GossipSub accepted proposal into block queue",
     blockId = idHex, slot = proposal.header.slot, src

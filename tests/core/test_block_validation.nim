@@ -22,34 +22,6 @@ import
 from ../../logos_chain/core/mantle/primitives import MaxBlockTxs, SlotNumber
 from ../ledger/test_helpers import testLedgerConfig, testGenesisLedgerState
 
-const
-  inscribeOpFraming = 165
-    ## Opcode, ChannelId, the u32 inscription length, Parent, Signer and the
-    ## 64-byte Ed25519 proof — everything but the inscription itself.
-  inscribeTxFraming = 1 + 2 * inscribeOpFraming
-    ## OpCount plus two inscribe ops.
-
-func inscribe(size: int, signer: Ed25519PublicKey): Op =
-  createChannelInscribeOp(ChannelInscribePayload(
-    channelId: default(ChannelId),
-    inscription: newSeq[byte](size),
-    parent: default(Parent),
-    signer: signer,
-  ))
-
-proc mkSizedTx(bytes: int): HashedSignedMantleTx =
-  ## Two-inscription transaction padded to encode to exactly `bytes`. Two ops
-  ## keep each inscription under MaxOperationDataSize at MaxBlockSize.
-  doAssert bytes >= inscribeTxFraming
-  let
-    padding = bytes - inscribeTxFraming
-    first = padding div 2
-    signer = testTxKeyPair.pubkey
-    tx = MantleTx(ops: @[inscribe(first, signer), inscribe(padding - first, signer)])
-    txHash = mantleTxHash(tx).get
-    proof = OpProof(kind: opfChannelInscribe, ed25519SigProof: sign(testTxKeyPair.seckey, txHash))
-  mkHashedSignedTx(SignedMantleTx(tx: tx, opProofs: @[proof, proof]), txHash)
-
 func admitWithTopology(
     blk: Block,
     tree: LocalTree,
@@ -500,46 +472,15 @@ suite "core/block_validation — multi-tier evaluation order":
     check res.isOk
     check res.get.isOrphan == true
 
-  test "validateStatelessTransactions consumes validTxs from proposal-admitted block":
+  test "bodyMatchesHeader rejects a block whose transactions or uncles do not match":
     let
       validTx = minimalValidSignedTx()
       genesis = testGenesisBlock()
       gid = blockId(genesis.header)
-      proposal = childProposal(genesis.header, gid, SlotNumber(1), [validTx])
-      admitted = admitProposal(proposal, @[validTx]).expect("valid proposal")
-
-    check admitted.validTxs.len == 1
-    let validBlk = validateStatelessTransactions(admitted, nil).expect("stateless txs")
-    check:
-      validBlk.txs.len == 1
-      admitted.validTxs.len == 0
-
-  test "bodyMatchesHeader unit tests for Proposal and Block":
-    let
-      validTx = minimalValidSignedTx()
-      genesis = testGenesisBlock()
-      gid = blockId(genesis.header)
-      proposal = childProposal(genesis.header, gid, SlotNumber(1), [validTx])
       blk = childBlock(genesis.header, gid, SlotNumber(1), [validTx.hashed])
 
-    # Genuine proposal & block match
-    check proposal.bodyMatchesHeader == true
+    # Genuine block matches
     check blk.bodyMatchesHeader == true
-
-    # Proposal with modified reference fails
-    var badRefProp = proposal
-    badRefProp.references[0][0] = badRefProp.references[0][0] xor 0xff'u8
-    check badRefProp.bodyMatchesHeader == false
-
-    # Proposal with dropped reference (early zero) fails
-    var droppedRefProp = proposal
-    droppedRefProp.references[0] = default(Hash32)
-    check droppedRefProp.bodyMatchesHeader == false
-
-    # Proposal with modified uncle fails
-    var badUncleProp = proposal
-    badUncleProp.uncleHeaders = UncleHeaders(@[sampleUncle(0x11'u8)])
-    check badUncleProp.bodyMatchesHeader == false
 
     # Block with modified transaction hash fails
     var badTxBlk = blk

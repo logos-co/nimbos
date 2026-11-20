@@ -11,6 +11,7 @@ import
   std/algorithm,
   bearssl/rand,
   libp2p/[crypto/ed25519/ed25519, multiaddress],
+  stew/byteutils,
   ../../../logos_chain/core/types,
   ../../../logos_chain/core/mantle/
     [blend_activity, primitives, operations, proofs, utxo],
@@ -141,6 +142,15 @@ proc mkEdKeyPair*(rng: ref HmacDrbgContext): EdKeyPair =
   ## Random Ed25519 keypair. Caller provides the rng so all keypairs minted
   ## within a single test share one source and remain reproducible-by-order.
   EdKeyPair.random(newBearSslRng(rng))
+
+const SmallOrderForgery* = (
+  # Key A = identity, R = base point B, S = 1. Then [S]B = R + [k]A for every
+  # k, so libp2p `verify` accepts this signature for every message.
+  key: EdPublicKey(data: hexToByteArray[32](
+    "0100000000000000000000000000000000000000000000000000000000000000")),
+  signature: EdSignature(data: hexToByteArray[64](
+    "5866666666666666666666666666666666666666666666666666666666666666" &
+    "0100000000000000000000000000000000000000000000000000000000000000")))
 
 func mkChannelId*(seed: byte): ChannelId =
   var c: ChannelId

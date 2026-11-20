@@ -233,6 +233,27 @@ suite "core/mantle/tx_validation — stateless invariants":
     let r = validateMantleTxStateless(mkHashedSignedTx(badTx, txHash))
     check r.error == StatelessLedgerError.InvalidProof
 
+    # The validation rejects a forgery under a small-order provider key.
+    let
+      forgedBody = MantleTx(ops: @[createSdpDeclareOp(DeclarationMessage(
+        serviceType: ServiceType.bn,
+        locators: @[validLoc],
+        providerId: SmallOrderForgery.key,
+        zkId: mkZkPubKey(1),
+        lockedNoteId: mkUtxo(100, 1).id,
+      ))])
+      forgedTx = SignedMantleTx(
+        tx: forgedBody,
+        opProofs: @[OpProof(
+          kind: opfSdpDeclare,
+          declarationProof: ZkAndEd25519SigsProof(
+            ed25519Sig: SmallOrderForgery.signature, zkSig: default(ZkSigProof)),
+        )],
+      )
+    check validateMantleTxStateless(
+      mkHashedSignedTx(forgedTx, mantleTxHash(forgedBody).get)).error ==
+        StatelessLedgerError.InvalidProof
+
   test "ChannelInscribe: verifies Ed25519 signer signature":
     let op = createChannelInscribeOp(ChannelInscribePayload(
       channelId: mkChannelId(1),
@@ -255,6 +276,23 @@ suite "core/mantle/tx_validation — stateless invariants":
     )
     let r = validateMantleTxStateless(mkHashedSignedTx(badTx, txHash))
     check r.error == StatelessLedgerError.InvalidProof
+
+    # The validation rejects a forgery under a small-order signer key.
+    let
+      forgedBody = MantleTx(ops: @[createChannelInscribeOp(ChannelInscribePayload(
+        channelId: mkChannelId(1),
+        inscription: @[1'u8, 2, 3],
+        parent: default(Hash32),
+        signer: SmallOrderForgery.key,
+      ))])
+      forgedTx = SignedMantleTx(
+        tx: forgedBody,
+        opProofs: @[OpProof(
+          kind: opfChannelInscribe, ed25519SigProof: SmallOrderForgery.signature)],
+      )
+    check validateMantleTxStateless(
+      mkHashedSignedTx(forgedTx, mantleTxHash(forgedBody).get)).error ==
+        StatelessLedgerError.InvalidProof
 
   test "Structural: rejects ops / opProofs length mismatch":
     let u = mkUtxo(100, 1)

@@ -213,6 +213,14 @@ suite "chain/uncle_validation":
     let a = carrier(s.blocks[2], 4, [su])
     check s.verdict(a).error == UncleError.InvalidSignature
 
+  test "rejects a signature under a small-order leader key":
+    let s = scene()
+    var su = signedHeader(forkBlock(s.blocks[0].header, 2))
+    su.header.proofOfLeadership.leaderKey = SmallOrderForgery.key
+    su.signature = SmallOrderForgery.signature
+    let a = carrier(s.blocks[2], 4, [su])
+    check s.verdict(a).error == UncleError.InvalidSignature
+
   test "rejects a failing proof":
     let s = scene(verifier = rejectSlotFive)
     let
@@ -281,7 +289,7 @@ suite "chain/uncle_validation":
       orphanRes = s.chain.tryApplyBlock(a)
       parentRes = s.chain.tryApplyBlock(b3)
       children = s.chain.orphanPool.takeChildren(blockId(b3.header))
-      res = s.chain.tryApplyAdmittedBlock(children[0])
+      res = s.chain.tryApplyPromotedOrphan(children[0])
     check:
       orphanRes.error.kind == BlockApplyErrorKind.OrphanBuffered
       parentRes.isOk

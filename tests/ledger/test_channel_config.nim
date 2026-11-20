@@ -188,6 +188,22 @@ suite "MantleState.tryApplyChannelConfig — existing channel":
       r = m.tryApplyChannelConfig(op, proof, txHash, blockSlot = 0'u64)
     check r.error == InvalidTxProof
 
+  test "a small-order accredited key cannot sign a config → InvalidTxProof":
+    let
+      cid = mkChannelId(15)
+      m = seedMantle(cid, [SmallOrderForgery.key])
+      op = ChannelConfigPayload(
+        channel: cid, parent: m.channels.getOrDefault(cid).configTipHash,
+        keys: @[SmallOrderForgery.key],
+        configurationThreshold: 1, transferThreshold: 1,
+      )
+      proof = ChannelMultiSigProof(
+        signatures: @[SmallOrderForgery.signature],
+        indexes: @[ChannelKeyIndex(0)],
+      )
+      r = m.tryApplyChannelConfig(op, proof, mkTxHash(), blockSlot = 0'u64)
+    check r.error == InvalidTxProof
+
   test "config with a parent that is not the config tip → InvalidParent":
     let
       rng = HmacDrbgContext.new()

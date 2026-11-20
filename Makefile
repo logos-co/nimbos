@@ -13,7 +13,7 @@ BUILD_SYSTEM_DIR := vendor/nimbus-build-system
 # `make NIM_COMMIT=<ref>` still wins; an explicitly empty value falls back to
 # this baseline rather than to the submodule's checkout.
 ifeq ($(NIM_COMMIT),)
-override NIM_COMMIT := v2.4.0
+override NIM_COMMIT := v2.4.2
 endif
 # build_nim.sh reads it from the environment
 export NIM_COMMIT
