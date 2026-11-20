@@ -253,14 +253,78 @@ func shouldRemember(err: LedgerError): bool =
   ## `BlockId` commits to `tx.ops` via `bodyRoot`, not `tx.opProofs`.
   ## A peer can tamper with `opProofs` on a valid block to trigger proof or
   ## fee-overflow errors (`mandatory_fees` sizes `opProofs` before `tryApplyTx`
-  ## checks them), so don't blacklist `BlockId` on those. Every other error
+  ## checks them), and local verifier/config wiring errors say nothing about
+  ## the block itself, so don't blacklist `BlockId` on those. Every other error
   ## comes from `tx.ops` or parent state, which `BlockId` does commit to.
-  err notin {
-    LedgerError.PermanentInvalidTxProof,
-    LedgerError.InvalidTxProof,
-    LedgerError.ThresholdUnmet,
-    LedgerError.GasOverflow,
-  }
+  case err
+  of LedgerError.PermanentInvalidTxProof,
+      LedgerError.InvalidTxProof,
+      LedgerError.ThresholdUnmet,
+      LedgerError.GasOverflow,
+      LedgerError.VerifierNotInitialised,
+      LedgerError.UnsupportedLotteryF:
+    false
+  of LedgerError.ParentNotFound,
+      LedgerError.InvalidNote,
+      LedgerError.LockedNote,
+      LedgerError.InvalidProofOfLeadership,
+      LedgerError.BalanceOutOfRange,
+      LedgerError.UnsupportedOp,
+      LedgerError.InsufficientBalance,
+      LedgerError.TooMuchExecutionGas,
+      LedgerError.DuplicateDeclaration,
+      LedgerError.DuplicateProviderOrZkId,
+      LedgerError.LockedNoteNotFound,
+      LedgerError.InsufficientStake,
+      LedgerError.LockedNoteServiceConflict,
+      LedgerError.MissingServiceParameters,
+      LedgerError.MinStakeNotFound,
+      LedgerError.DeclarationNotFound,
+      LedgerError.AlreadyWithdrawn,
+      LedgerError.InvalidNonce,
+      LedgerError.LockedNoteIdMismatch,
+      LedgerError.DeclarationNotInLockedNote,
+      LedgerError.TargetEpochNotSet,
+      LedgerError.InvalidEpoch,
+      LedgerError.UnknownProvider,
+      LedgerError.HammingDistanceTooLarge,
+      LedgerError.DuplicateActiveMessage,
+      LedgerError.ChannelNotFound,
+      LedgerError.InvalidParent,
+      LedgerError.UnauthorizedSigner,
+      LedgerError.ChannelNoteSpend,
+      LedgerError.AlreadyChannelNote,
+      LedgerError.NotAChannelNote,
+      LedgerError.UnbalancedTransfer,
+      LedgerError.DuplicatedVoucherNullifier,
+      LedgerError.RewardsRootMismatch,
+      LedgerError.InvalidSlot,
+      LedgerError.TotalStakeOverflow:
+    true
+
+func shouldRemember(err: StatelessLedgerError): bool =
+  ## Same `BlockId` rule for stateless tx checks: `InvalidProof` touches
+  ## `tx.opProofs` and `VerifierNotInitialised` is local VK state; all other
+  ## variants inspect `tx.ops`, which `BlockId` commits to.
+  case err
+  of StatelessLedgerError.InvalidProof,
+      StatelessLedgerError.VerifierNotInitialised:
+    false
+  of StatelessLedgerError.DoubleSpend,
+      StatelessLedgerError.ZeroValueNote,
+      StatelessLedgerError.UnsupportedOp,
+      StatelessLedgerError.EmptyLocators,
+      StatelessLedgerError.TooManyLocators,
+      StatelessLedgerError.InvalidLocator,
+      StatelessLedgerError.InvalidChannelConfig,
+      StatelessLedgerError.EmptyInputs,
+      StatelessLedgerError.GenesisShape,
+      StatelessLedgerError.GenesisInscription,
+      StatelessLedgerError.GenesisInputs,
+      StatelessLedgerError.TooManyOps,
+      StatelessLedgerError.TooManyOutputs,
+      StatelessLedgerError.OperationDataExceeded:
+    true
 
 proc applyValidBlock(
     chain: var Chain,
@@ -303,7 +367,7 @@ proc applyAdmittedBlock(
     chain.orphanPool.reject(id)
     return err(BlockApplyError(kind: UncleRejected, uncleError: error))
   let validBlk = validateStatelessTransactions(admittedBlk, chain.mempool).valueOr:
-    chain.orphanPool.reject(id, remember = error.statelessError != StatelessLedgerError.InvalidProof)
+    chain.orphanPool.reject(id, shouldRemember(error.statelessError))
     return err(toBlockApplyError(error))
   chain.applyValidBlock(validBlk, headerState, id, curSlot)
 

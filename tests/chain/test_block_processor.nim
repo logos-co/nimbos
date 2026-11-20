@@ -488,7 +488,7 @@ suite "chain/block_processor":
       # Gossip accepts genuine copy
       check bp.processProposal(p, peer) == ValidationResult.Accept
 
-  asyncTest "processProposal rejects proposal building on rejected parent and prunes waiting descendants":
+  asyncTest "processProposal ignores rejected proposal or parent and prunes waiting descendants":
     withProcessor(chain):
       let
         b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
@@ -506,11 +506,12 @@ suite "chain/block_processor":
       check:
         bp.orphanPool.addOrphan(admitBlock(b3).get())
         bp.orphanPool.len == 1
-        bp.processProposal(p2, peer) == ValidationResult.Reject
+        bp.processProposal(p2, peer) == ValidationResult.Ignore
         bp.orphanPool.len == 0
         bp.orphanPool.isRejected(id2)
         bp.orphanPool.isRejected(id3)
-        bp.processProposal(p4, peer) == ValidationResult.Reject
+        bp.processProposal(p2, peer) == ValidationResult.Ignore
+        bp.processProposal(p4, peer) == ValidationResult.Ignore
         bp.orphanPool.isRejected(blockId(p4.header))
 
 {.pop.}

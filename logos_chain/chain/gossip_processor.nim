@@ -44,15 +44,15 @@ proc processProposal*(
     return ValidationResult.Ignore
 
   if bp.orphanPool.isRejected(id):
-    debug "GossipSub rejected proposal: block was rejected",
+    debug "GossipSub ignored proposal: block was rejected",
       blockId = idHex, src
-    return ValidationResult.Reject
+    return ValidationResult.Ignore
 
   if bp.orphanPool.isRejected(proposal.header.parentBlock):
     bp.orphanPool.reject(id)
-    debug "GossipSub rejected proposal: parent was rejected",
+    debug "GossipSub ignored proposal: parent was rejected",
       blockId = idHex, src
-    return ValidationResult.Reject
+    return ValidationResult.Ignore
 
   # 3. Binding of the reference list (~µs, mempool-free)
   if not proposal.bodyMatchesHeader:
