@@ -149,31 +149,6 @@ suite "consensus/local_tree (lcaBlockIdAndHeight)":
       lcaBlockIdAndHeight(tree, gid, unknown).isNone
       lcaBlockIdAndHeight(tree, unknown, gid).isNone
 
-  test "pruneForks prunes side-branch nodes below finality height":
-    let
-      genesis = testGenesisBlock()
-      gid = blockId(genesis.header)
-      tree = LocalTree.init(genesis.header)
-      b1 = mkChildValidBlock(genesis.header, gid, 1'u64)
-      id1 = blockId(b1.header)
-    check tree.addHeaderToTree(b1.header, id1)
-    let
-      sideB = mkChildValidBlock(genesis.header, gid, 2'u64)
-      idSide = blockId(sideB.header)
-    check tree.addHeaderToTree(sideB.header, idSide)
-
-    # Advance immutable block to b1 by adding b2 (height 2)
-    let b2 = mkChildValidBlock(b1.header, id1, 3'u64)
-    check tree.addHeaderToTree(b2.header, blockId(b2.header))
-    let pruned = tree.pruneForks(id1, oldImmHeight = 0'u64)
-    check idSide in pruned
-
-    # sideB is height 1, not ancestor of b2 -> pruned!
-    check:
-      not tree.hasBlock(idSide)
-      tree.hasBlock(gid)
-      tree.hasBlock(id1)
-
   test "pruneForks handles linear fast-path, cascades upward orphan pruning, and terminates early":
     let
       genesis = testGenesisBlock()
@@ -237,66 +212,6 @@ suite "consensus/local_tree (lcaBlockIdAndHeight)":
     # Canonical blocks at all heights are intact
     for id in [gid, id1, id2, id3, id4, id5]:
       check tree.hasBlock(id)
-
-  test "pruneForks prunes dead forks taller than canonical tip (Bootstrap / Online / single-block heights)":
-    let
-      genesis = testGenesisBlock()
-      gid = blockId(genesis.header)
-      tree = LocalTree.init(genesis.header)
-
-      # Canonical chain up to height 3 (tip is b3)
-      b1 = mkChildValidBlock(genesis.header, gid, slot = 2'u64)
-      id1 = blockId(b1.header)
-      b2 = mkChildValidBlock(b1.header, id1, slot = 4'u64)
-      id2 = blockId(b2.header)
-      b3 = mkChildValidBlock(b2.header, id2, slot = 6'u64)
-      id3 = blockId(b3.header)
-
-    check:
-      tree.addHeaderToTree(b1.header, id1)
-      tree.addHeaderToTree(b2.header, id2)
-      tree.addHeaderToTree(b3.header, id3)
-
-    # Competing dead fork branching off b1 (height 1) extends up to height 5:
-    # Heights 4 and 5 exist ONLY on the dead fork (unfinalizedIdsByHeight.len == 1, above canonical tipHeight = 3)
-    let
-      f2 = mkChildValidBlock(b1.header, id1, slot = 10'u64)
-      idF2 = blockId(f2.header)
-      f3 = mkChildValidBlock(f2.header, idF2, slot = 20'u64)
-      idF3 = blockId(f3.header)
-      f4 = mkChildValidBlock(f3.header, idF3, slot = 30'u64)
-      idF4 = blockId(f4.header)
-      f5 = mkChildValidBlock(f4.header, idF4, slot = 40'u64)
-      idF5 = blockId(f5.header)
-
-    check:
-      tree.addHeaderToTree(f2.header, idF2)
-      tree.addHeaderToTree(f3.header, idF3)
-      tree.addHeaderToTree(f4.header, idF4)
-      tree.addHeaderToTree(f5.header, idF5)
-      tree.hasBlock(idF2)
-      tree.hasBlock(idF3)
-      tree.hasBlock(idF4)
-      tree.hasBlock(idF5)
-
-    # LIB advances to b2 (height 2)
-    let pruned = tree.pruneForks(id2, oldImmHeight = 0'u64)
-
-    # All blocks on the dead fork must be pruned, including f4 and f5 above canonical tip height
-    check:
-      idF2 in pruned
-      idF3 in pruned
-      idF4 in pruned
-      idF5 in pruned
-      not tree.hasBlock(idF2)
-      not tree.hasBlock(idF3)
-      not tree.hasBlock(idF4)
-      not tree.hasBlock(idF5)
-      # Canonical chain blocks remain intact
-      tree.hasBlock(gid)
-      tree.hasBlock(id1)
-      tree.hasBlock(id2)
-      tree.hasBlock(id3)
 
 suite "consensus/local_tree (countChainDensity)":
   test "counts only blocks within the half-open window (lcaSlot, lcaSlot + densitySlotWindow]":

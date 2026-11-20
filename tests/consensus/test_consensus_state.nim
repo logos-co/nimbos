@@ -99,6 +99,31 @@ suite "consensus/fork_choice (via Chain.tryApplyBlock)":
       chain.tryApplyBlock(belowLibParent).error.kind == BlockApplyErrorKind.UnviableFork
       chain.tryApplyBlock(atLibSlot).error.kind == BlockApplyErrorKind.UnviableFork
 
+  test "Online: ConsensusState rejects taller and denser deep fork beyond securityParam":
+    let
+      cs = ConsensusState.init(
+        genesis.header,
+        securityParam = 1'u64,
+        densitySlotWindow = 10'u64,
+        forkChoiceRule = ForkChoiceRule.Online,
+      )
+      b1 = childBlock(genesis.header, gid, SlotNumber(20), [])
+      idB1 = blockId(b1.header)
+      b2 = childBlock(b1.header, idB1, SlotNumber(21), [])
+      idB2 = blockId(b2.header)
+      # Diverges from genesis by 2 > k = 1, beating b2 on both height (3 > 2) and density (3 > 0)
+      f1 = childBlock(genesis.header, gid, SlotNumber(1), [])
+      f2 = childBlock(f1.header, blockId(f1.header), SlotNumber(2), [])
+      f3 = childBlock(f2.header, blockId(f2.header), SlotNumber(3), [])
+    check:
+      cs.addHeaderAndTryUpdateTip(b1.header, idB1)
+      cs.addHeaderAndTryUpdateTip(b2.header, idB2)
+      cs.canonicalTip.id == idB2
+      cs.addHeaderAndTryUpdateTip(f1.header, blockId(f1.header))
+      cs.addHeaderAndTryUpdateTip(f2.header, blockId(f2.header))
+      cs.addHeaderAndTryUpdateTip(f3.header, blockId(f3.header))
+      cs.canonicalTip.id == idB2
+
   test "LIB moves only after switchToOnline and prunes taller dead forks":
     const
       k = 2'u64

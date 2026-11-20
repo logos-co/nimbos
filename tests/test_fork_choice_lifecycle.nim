@@ -11,12 +11,13 @@
 import
   chronos/unittest2/asynctests,
   results,
-  ./testutil,
   ./logos_chain/sync/helpers,
+  ../logos_chain/conf,
   ../logos_chain/fork_choice_lifecycle,
   ../logos_chain/chain/block_processor,
   ../logos_chain/consensus/[clock, consensus_state],
   ../logos_chain/node_state
+import ./testutil except fail
 
 suite "fork_choice_lifecycle":
   test "restart selects startup rule from saved state, grace period, and tree LIB":
@@ -63,10 +64,22 @@ suite "fork_choice_lifecycle":
       discard ForkChoiceLifecycle.init(bpSkew, tmpDir)
       check bpSkew.consensus.forkChoiceRule == ForkChoiceRule.Online
 
-      # 4. Explicit --bootstrap overrides within-grace state -> Bootstrap
-      let bpExplicit = makeLoadedProcessor()
-      check saveNodeState(tmpDir, nowUnix, id1).isOk
-      discard ForkChoiceLifecycle.init(bpExplicit, tmpDir, explicitBootstrap = true)
+      # 4. Explicit --bootstrap CLI flag overrides within-grace state -> Bootstrap
+      let
+        defaultConf = LBNodeConf.loadWithBanners(
+          "", "", [], environment = ["--circuits-dir=" & tmpDir]
+        ).get
+        bootstrapConf = LBNodeConf.loadWithBanners(
+          "", "", [], environment = ["--circuits-dir=" & tmpDir, "--bootstrap"]
+        ).get
+        bpExplicit = makeLoadedProcessor()
+      check:
+        not defaultConf.bootstrap
+        bootstrapConf.bootstrap
+        saveNodeState(tmpDir, nowUnix, id1).isOk
+      discard ForkChoiceLifecycle.init(
+        bpExplicit, tmpDir, explicitBootstrap = bootstrapConf.bootstrap
+      )
       check bpExplicit.consensus.forkChoiceRule == ForkChoiceRule.Bootstrap
 
       # 5. Offline longer than 20m -> Bootstrap

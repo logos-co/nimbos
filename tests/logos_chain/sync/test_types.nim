@@ -66,40 +66,6 @@ suite "sync/types (GetTip RequestMessage / response wire)":
       fail exc.msg
     check d.kind == gtrFailure and d.failureMessage == "example: tip unavailable"
 
-  test "Custom Tip response roundtrips":
-    var bid: BlockId
-    bid[0] = 7'u8
-    bid[31] = 42'u8
-    let
-      tip = BlockInfo(id: bid, slot: SlotNumber(9), height: 123'u64)
-      resp = GetTipResponse(kind: gtrTip, tip: tip)
-      wire = try:
-        encode(resp, cryptarchiaSyncBincodeConfig)
-      except BincodeError:
-        fail getCurrentExceptionMsg()
-      d = try:
-        Opt.some(decode(wire, GetTipResponse, cryptarchiaSyncBincodeConfig))
-      except BincodeError as exc:
-        fail exc.msg
-    check:
-      d.get.kind == gtrTip
-      d.get.tip == tip
-
-  test "Custom GetTip failure response roundtrips":
-    let
-      resp = GetTipResponse(kind: gtrFailure, failureMessage: "no tip for you")
-      wire = try:
-        encode(resp, cryptarchiaSyncBincodeConfig)
-      except BincodeError:
-        fail getCurrentExceptionMsg()
-      d = try:
-        Opt.some(decode(wire, GetTipResponse, cryptarchiaSyncBincodeConfig))
-      except BincodeError as exc:
-        fail exc.msg
-    check:
-      d.get.kind == gtrFailure
-      d.get.failureMessage == "no tip for you"
-
 suite "sync/types (download RequestMessage / request & response payloads)":
   test "encode / decode DownloadBlocksRequest roundtrip":
     let
