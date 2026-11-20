@@ -245,6 +245,10 @@ func validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
     "cryptarchia.slot_activation_coeff.numerator must be > 0")
   need(ds.cryptarchia.slotActivationCoeff.den > 0,
     "cryptarchia.slot_activation_coeff.denominator must be > 0")
+  need(
+    uint64(ds.cryptarchia.securityParam) <= uint64.high div ds.cryptarchia.slotActivationCoeff.den,
+    "cryptarchia: security_param * slot_activation_coeff denominator overflows uint64"
+  )
   need(isSupportedLotteryF(ds.cryptarchia.slotActivationCoeff),
     "cryptarchia.slot_activation_coeff must have pinned lottery constants")
   need(ds.cryptarchia.learningRate.num > 0, "cryptarchia.learning_rate must be > 0")
@@ -259,7 +263,7 @@ func validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
   need(ds.network.chainSyncProtocolName.len > 0, "empty network.chain_sync_protocol_name")
   # Sub-second durations would truncate to a zero slot length; the spec pins
   # slot length at 1 second:
-  # https://github.com/logos-co/logos-lips/blob/d064449307d28a76b3555dc7b5064d15ee19d7f5/docs/blockchain/raw/cryptarchia-v1-protocol.md#constants
+  # https://github.com/logos-co/logos-lips/blob/663ae35d59d834784dd086cc5f14ec35e8dbecf5/docs/blockchain/raw/cryptarchia-v1-protocol.md#constants
   need(ds.time.slotDuration >= 1.seconds, "time.slot_duration must be at least 1s")
   need(ds.mempool.pubsubTopic.len > 0, "empty mempool.pubsub_topic")
   need(ds.cryptarchia.gossipsubProtocol.len > 0, "empty cryptarchia.gossipsub_protocol")

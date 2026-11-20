@@ -434,8 +434,9 @@ mempool:
   pubsub_topic: /a/mem
 """
     let r = parseDeploymentSettings(badYaml)
-    check r.isErr
-    check "block_root was renamed to body_root" in r.error
+    check:
+      r.isErr
+      "block_root was renamed to body_root" in r.error
 
   test "parseDeploymentSettings: genesis block with a non-empty uncle list":
     let badYaml = deploymentSettingsBlendBlock & """
@@ -450,8 +451,9 @@ mempool:
   pubsub_topic: /a/mem
 """
     let r = parseDeploymentSettings(badYaml)
-    check r.isErr
-    check "uncle_headers must be an empty sequence" in r.error
+    check:
+      r.isErr
+      "uncle_headers must be an empty sequence" in r.error
 
   test "validateDeploymentSettings: zero cryptarchia slot coeff denominator":
     let badYaml = deploymentSettingsBlendBlock & """
@@ -593,8 +595,9 @@ mempool:
       return
     ds.cryptarchia.genesisState.header.bodyRoot = default(Hash32)
     let v = validateDeploymentSettings(ds)
-    check v.isErr
-    check "genesis_block.header does not match header derived from genesis mantle_tx" in v.error
+    check:
+      v.isErr
+      "genesis_block.header does not match header derived from genesis mantle_tx" in v.error
 
   test "validateDeploymentSettings: mismatched genesis header slot":
     var ds = parseDeploymentSettings(minimalValidYaml).valueOr:
@@ -602,14 +605,26 @@ mempool:
       return
     ds.cryptarchia.genesisState.header.slot = 1
     let v = validateDeploymentSettings(ds)
-    check v.isErr
-    check "genesis_block.header does not match header derived from genesis mantle_tx" in v.error
+    check:
+      v.isErr
+      "genesis_block.header does not match header derived from genesis mantle_tx" in v.error
 
   test "parseDeploymentSettings: invalid genesis transaction rejected eagerly":
     # Empty ops in genesis mantle tx
-    let badYaml = minimalValidYaml.replace("opcode: 0", "opcode: 99")
-    let p = parseDeploymentSettings(badYaml)
-    check p.isErr
-    check "unsupported opcode" in p.error
+    let
+      badYaml = minimalValidYaml.replace("opcode: 0", "opcode: 99")
+      p = parseDeploymentSettings(badYaml)
+    check:
+      p.isErr
+      "unsupported opcode" in p.error
+
+  test "validateDeploymentSettings: security_param * slot_activation_coeff denominator overflow":
+    var ds = parseDeploymentSettings(minimalValidYaml).get()
+    ds.cryptarchia.securityParam = 2
+    ds.cryptarchia.slotActivationCoeff.den = uint64.high
+    let v = validateDeploymentSettings(ds)
+    check:
+      v.isErr
+      "overflows uint64" in v.error
 
 {.pop.}

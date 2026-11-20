@@ -26,7 +26,8 @@ proc processProposal*(
     id = blockId(proposal.header)
     idHex = toHex(id)
 
-  if proposal.header.slot <= bp.localTree.latestImmutableSlot():
+  # 1. Scalar slot checks (~2-20 ns)
+  if proposal.header.slot <= bp.consensus.latestImmutable.slot:
     debug "GossipSub ignored proposal at or behind immutable slot",
       blockId = idHex, src
     return ValidationResult.Ignore
@@ -51,7 +52,7 @@ proc processProposal*(
 
   # The topology check runs before admission, so a proposal that cannot be
   # applied costs no signature check.
-  checkTopology(proposal.header, bp.localTree, bp.ledger).isOkOr:
+  checkTopology(proposal.header, bp.consensus, bp.ledger).isOkOr:
     # A slot not after the parent slot is invalid for each node. An unviable
     # fork depends on the local view.
     if error.kind == BlockApplyErrorKind.InvalidStructure:

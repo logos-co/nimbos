@@ -10,9 +10,7 @@
 
 import
   std/sequtils,
-  chronos,
   chronos/unittest2/asynctests,
-  unittest2,
   results,
   libp2p/protocols/pubsub/pubsub,
   ../testutil,
@@ -56,7 +54,7 @@ suite "chain/block_processor":
         r = await bp.addBlock(b1)
       check:
         r.isOk
-        bp.localTree.localTipId == blockId(b1.header)
+        bp.consensus.canonicalTip.id == blockId(b1.header)
         bp.ledger.state(blockId(b1.header)).isSome
 
   asyncTest "addBlock on an applied block completes with AlreadyApplied":
@@ -120,15 +118,17 @@ suite "chain/block_processor":
     sigR.data[10] = sigR.data[10] xor 0xaa'u8
     sigS.data[42] = sigS.data[42] xor 0x55'u8
 
-    let keyBase = inFlightKey(id1, b1.signature)
-    let keyR = inFlightKey(id1, sigR)
-    let keyS = inFlightKey(id1, sigS)
-    let keyId2 = inFlightKey(id2, b1.signature)
+    let
+      keyBase = inFlightKey(id1, b1.signature)
+      keyR = inFlightKey(id1, sigR)
+      keyS = inFlightKey(id1, sigS)
+      keyId2 = inFlightKey(id2, b1.signature)
 
-    check keyBase != keyR
-    check keyBase != keyS
-    check keyR != keyS
-    check keyBase != keyId2
+    check:
+      keyBase != keyR
+      keyBase != keyS
+      keyR != keyS
+      keyBase != keyId2
 
   asyncTest "addBlock with different signatures for the same header do not lock each other out":
     withProcessor(chain):
@@ -140,21 +140,23 @@ suite "chain/block_processor":
       # 2. Tamper S-half (byte index >= 32)
       var badB1_S = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
       badB1_S.signature.data[45] = badB1_S.signature.data[45] xor 0xff'u8
-      let fBad_S = bp.addBlock(badB1_S)
-
-      # 3. Legitimate block with valid signature is queued without InFlight collision
-      let goodB1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
-      let id1 = blockId(goodB1.header)
-      check bp.checkDeduplication(id1, badB1.signature).error == BlockApplyErrorKind.InFlight
-      check bp.checkDeduplication(id1, badB1_S.signature).error == BlockApplyErrorKind.InFlight
-      check bp.checkDeduplication(id1, goodB1.signature).isOk
+      let
+        fBad_S = bp.addBlock(badB1_S)
+        # 3. Legitimate block with valid signature is queued without InFlight collision
+        goodB1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
+        id1 = blockId(goodB1.header)
+      check:
+        bp.checkDeduplication(id1, badB1.signature).error == BlockApplyErrorKind.InFlight
+        bp.checkDeduplication(id1, badB1_S.signature).error == BlockApplyErrorKind.InFlight
+        bp.checkDeduplication(id1, goodB1.signature).isOk
 
       let fGood = bp.addBlock(goodB1)
 
-      check (await fBad).error.kind == BlockApplyErrorKind.InvalidStructure
-      check (await fBad_S).error.kind == BlockApplyErrorKind.InvalidStructure
-      check (await fGood).isOk
-      check bp.localTree.localTipId == id1
+      check:
+        (await fBad).error.kind == BlockApplyErrorKind.InvalidStructure
+        (await fBad_S).error.kind == BlockApplyErrorKind.InvalidStructure
+        (await fGood).isOk
+        bp.consensus.canonicalTip.id == id1
 
   asyncTest "queue is FIFO":
     withProcessor(chain):
@@ -163,14 +165,15 @@ suite "chain/block_processor":
         b2 = childBlock(b1.header, blockId(b1.header), SlotNumber(2), [])
         f2 = bp.addBlock(b2)
         f1 = bp.addBlock(b1)
-      check not f1.finished
-      check not f2.finished
-      check (await f2).error.kind == BlockApplyErrorKind.OrphanBuffered
-      check (await f1).isOk
-      # b2 is promoted asynchronously across event-loop turns
-      check waitUntil(bp.localTree.hasBlock(blockId(b2.header)))
-      check bp.localTree.localTipId == blockId(b2.header)
-      check (await bp.addBlock(b2)).error.kind == BlockApplyErrorKind.AlreadyApplied
+      check:
+        not f1.finished
+        not f2.finished
+        (await f2).error.kind == BlockApplyErrorKind.OrphanBuffered
+        (await f1).isOk
+        # b2 is promoted asynchronously across event-loop turns
+        waitUntil(bp.consensus.hasBlock(blockId(b2.header)))
+        bp.consensus.canonicalTip.id == blockId(b2.header)
+        (await bp.addBlock(b2)).error.kind == BlockApplyErrorKind.AlreadyApplied
 
   asyncTest "orphan cascade yields cooperatively between each promoted orphan":
     withProcessor(chain):
@@ -196,7 +199,7 @@ suite "chain/block_processor":
       proc ticker() {.async: (raises: [CancelledError]).} =
         while true:
           await sleepAsync(0.milliseconds)
-          if not bp.localTree.hasBlock(lastId):
+          if not bp.consensus.hasBlock(lastId):
             inc ticksWhileBusy
       let tickerFut = ticker()
 
@@ -204,15 +207,16 @@ suite "chain/block_processor":
       check (await bp.addBlock(blocks[0])).isOk
 
       # Wait for all orphans to be promoted
-      check waitUntil(bp.localTree.hasBlock(lastId))
+      check waitUntil(bp.consensus.hasBlock(lastId))
 
       await tickerFut.cancelAndWait()
       for b in blocks:
-        check bp.localTree.hasBlock(blockId(b.header))
-      check bp.localTree.localTipId == lastId
-      check chain.orphanPool.len == 0
-      # Verify cooperative yielding occurred between orphan promotions
-      check ticksWhileBusy >= 4
+        check bp.consensus.hasBlock(blockId(b.header))
+      check:
+        bp.consensus.canonicalTip.id == lastId
+        chain.orphanPool.len == 0
+        # Verify cooperative yielding occurred between orphan promotions
+        ticksWhileBusy >= 4
 
   asyncTest "failing promoted orphan prunes waiting descendants asynchronously":
     withProcessor(chain):
@@ -228,21 +232,19 @@ suite "chain/block_processor":
         id4 = blockId(b4.header)
 
       # Buffer b4, b3, b2 as orphans
-      check (await bp.addBlock(b4)).error.kind == BlockApplyErrorKind.OrphanBuffered
-      check (await bp.addBlock(b3)).error.kind == BlockApplyErrorKind.OrphanBuffered
-      check (await bp.addBlock(b2)).error.kind == BlockApplyErrorKind.OrphanBuffered
-      check chain.orphanPool.len == 3
-
-      # Ingest parent b1 -> triggers promotion of b2 which fails and prunes b3, b4
-      check (await bp.addBlock(b1)).isOk
-
-      # Allow event loop to process the promoted orphan failure and prune descendants
-      check waitUntil(chain.orphanPool.len == 0)
-
-      check bp.localTree.hasBlock(id1)
-      check not bp.localTree.hasBlock(id2)
-      check not bp.localTree.hasBlock(id3)
-      check not bp.localTree.hasBlock(id4)
+      check:
+        (await bp.addBlock(b4)).error.kind == BlockApplyErrorKind.OrphanBuffered
+        (await bp.addBlock(b3)).error.kind == BlockApplyErrorKind.OrphanBuffered
+        (await bp.addBlock(b2)).error.kind == BlockApplyErrorKind.OrphanBuffered
+        chain.orphanPool.len == 3
+        # Ingest parent b1 -> triggers promotion of b2 which fails and prunes b3, b4
+        (await bp.addBlock(b1)).isOk
+        # Allow event loop to process the promoted orphan failure and prune descendants
+        waitUntil(chain.orphanPool.len == 0)
+        bp.consensus.hasBlock(id1)
+        not bp.consensus.hasBlock(id2)
+        not bp.consensus.hasBlock(id3)
+        not bp.consensus.hasBlock(id4)
 
   asyncTest "loop yields to other tasks between blocks":
     withProcessor(chain):
@@ -273,8 +275,9 @@ suite "chain/block_processor":
 
       await allFutures(futs)
       await tickerFut.cancelAndWait()
-      check futs.allIt(it.read().isOk)
-      check ticksWhileBusy >= blocks.len - 1
+      check:
+        futs.allIt(it.read().isOk)
+        ticksWhileBusy >= blocks.len - 1
 
   asyncTest "a rejected block does not stall the loop":
     withProcessor(chain):
@@ -284,8 +287,9 @@ suite "chain/block_processor":
         orphan = childBlock(genesisBlk.header, fakeParentId, SlotNumber(1), [])
         b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
       discard bp.addBlock(orphan)
-      check (await bp.addBlock(b1)).isOk
-      check not bp.localTree.hasBlock(blockId(orphan.header))
+      check:
+        (await bp.addBlock(b1)).isOk
+        not bp.consensus.hasBlock(blockId(orphan.header))
 
   asyncTest "error kinds: OrphanBuffered and InvalidStructure":
     withProcessor(chain):
@@ -297,11 +301,12 @@ suite "chain/block_processor":
         # Same slot as its parent, but above the LIB slot so the fork gate
         # does not fire first.
         stale = childBlock(b1.header, blockId(b1.header), SlotNumber(1), [])
-      check (await bp.addBlock(orphan)).error.kind ==
-        BlockApplyErrorKind.OrphanBuffered
-      check (await bp.addBlock(b1)).isOk
-      check (await bp.addBlock(stale)).error.kind ==
-        BlockApplyErrorKind.InvalidStructure
+      check:
+        (await bp.addBlock(orphan)).error.kind ==
+          BlockApplyErrorKind.OrphanBuffered
+        (await bp.addBlock(b1)).isOk
+        (await bp.addBlock(stale)).error.kind ==
+          BlockApplyErrorKind.InvalidStructure
 
   asyncTest "addProposalBlock applies an admitted child of genesis":
     withProcessor(chain):
@@ -309,9 +314,10 @@ suite "chain/block_processor":
         b1 = childValidBlock(genesisBlk.header, gid, SlotNumber(1), [])
         p1 = Proposal(header: b1.header, references: default(References), signature: b1.signature)
         r = await bp.addProposalBlock(p1)
-      check r.isOk
-      check bp.localTree.localTipId == blockId(p1.header)
-      check bp.ledger.state(blockId(p1.header)).isSome
+      check:
+        r.isOk
+        bp.consensus.canonicalTip.id == blockId(p1.header)
+        bp.ledger.state(blockId(p1.header)).isSome
 
   asyncTest "processProposal ignores an unresolved reference without taking an in-flight slot":
     # Guard: the only test that maps an unresolved reference to Ignore.
@@ -340,7 +346,7 @@ suite "chain/block_processor":
       bp.mempool.remove(tx.hash, moveToGrace = false)
       check:
         (await bp.addProposalBlock(admittedBlk, id)).isOk
-        bp.localTree.localTipId == id
+        bp.consensus.canonicalTip.id == id
 
   asyncTest "processProposal rejects a body over MaxBlockSize":
     withProcessor(chain):
@@ -378,24 +384,23 @@ suite "chain/block_processor":
         id2 = blockId(b2.header)
         b3 = childBlock(b2.header, id2, SlotNumber(3), [])
         id3 = blockId(b3.header)
-
-      # Queue b2 and b3 as orphans
-      let f3 = bp.addBlock(b3)
-      let f2 = bp.addBlock(b2)
-      check (await f3).error.kind == BlockApplyErrorKind.OrphanBuffered
-      check (await f2).error.kind == BlockApplyErrorKind.OrphanBuffered
+        # Queue b2 and b3 as orphans
+        f3 = bp.addBlock(b3)
+        f2 = bp.addBlock(b2)
+      check:
+        (await f3).error.kind == BlockApplyErrorKind.OrphanBuffered
+        (await f2).error.kind == BlockApplyErrorKind.OrphanBuffered
 
       # Ingest root b1
       let f1 = bp.addBlock(b1)
-      check (await f1).isOk
-
-      # Both b2 and b3 are promoted and applied
-      check waitUntil(bp.localTree.hasBlock(id3))
-
-      check bp.localTree.hasBlock(id1)
-      check bp.localTree.hasBlock(id2)
-      check bp.localTree.hasBlock(id3)
-      check chain.orphanPool.len == 0
+      check:
+        (await f1).isOk
+        # Both b2 and b3 are promoted and applied
+        waitUntil(bp.consensus.hasBlock(id3))
+        bp.consensus.hasBlock(id1)
+        bp.consensus.hasBlock(id2)
+        bp.consensus.hasBlock(id3)
+        chain.orphanPool.len == 0
 
   asyncTest "promoted orphan supersedes pending raw incoming block in queue and fulfills its future":
     withProcessor(chain):
@@ -404,31 +409,30 @@ suite "chain/block_processor":
         id1 = blockId(b1.header)
         b2 = childBlock(b1.header, id1, SlotNumber(2), [])
         id2 = blockId(b2.header)
-
-      # 1. Queue b1 first (it sits at front of queue)
-      let f1 = bp.addBlock(b1)
-
-      # 2. Queue raw b2 next (it sits behind b1 in queue as RawIncoming)
-      let fRawB2 = bp.addBlock(b2)
+        # 1. Queue b1 first (it sits at front of queue)
+        f1 = bp.addBlock(b1)
+        # 2. Queue raw b2 next (it sits behind b1 in queue as RawIncoming)
+        fRawB2 = bp.addBlock(b2)
       check not fRawB2.finished
 
       # 3. Buffer admitted copy of b2 in orphanPool before b1 finishes processing
-      let status = checkTopology(b2.header, bp.localTree, bp.ledger).get()
-      let admittedB2 = admitBlock(b2).get()
-      check status == TopologyStatus.Orphan
-      check chain.orphanPool.addOrphan(admittedB2)
-
-      # 4. Awaiting f1 allows event loop to process b1, which promotes admittedB2 from orphanPool.
-      # The promoted orphan supersedes the queued raw b2, steals fRawB2, and applies.
-      check (await f1).isOk
+      let
+        status = checkTopology(b2.header, bp.consensus, bp.ledger).get()
+        admittedB2 = admitBlock(b2).get()
+      check:
+        status == TopologyStatus.Orphan
+        chain.orphanPool.addOrphan(admittedB2)
+        # 4. Awaiting f1 allows event loop to process b1, which promotes admittedB2 from orphanPool.
+        # The promoted orphan supersedes the queued raw b2, steals fRawB2, and applies.
+        (await f1).isOk
 
       # 5. The stolen caller future fRawB2 completes with ok()
       let resRawB2 = await fRawB2
-      check resRawB2.isOk
-
-      check bp.localTree.hasBlock(id1)
-      check bp.localTree.hasBlock(id2)
-      check chain.orphanPool.len == 0
+      check:
+        resRawB2.isOk
+        bp.consensus.hasBlock(id1)
+        bp.consensus.hasBlock(id2)
+        chain.orphanPool.len == 0
 
   asyncTest "promoted orphan failing validation completes stolen caller future with error":
     withProcessor(chain):
@@ -438,23 +442,24 @@ suite "chain/block_processor":
         # b2 has slot 2 == parent b1 slot 2 -> passes Tiers 0-2 (isOrphan), but fails Tier 3 on promotion
         b2 = childBlock(b1.header, id1, SlotNumber(2), [])
         id2 = blockId(b2.header)
-
-      let f1 = bp.addBlock(b1)
-      let fRawB2 = bp.addBlock(b2)
+        f1 = bp.addBlock(b1)
+        fRawB2 = bp.addBlock(b2)
       check not fRawB2.finished
 
-      let status = checkTopology(b2.header, bp.localTree, bp.ledger).get()
-      let admittedB2 = admitBlock(b2).get()
-      check status == TopologyStatus.Orphan
-      check chain.orphanPool.addOrphan(admittedB2)
-
-      check (await f1).isOk
+      let
+        status = checkTopology(b2.header, bp.consensus, bp.ledger).get()
+        admittedB2 = admitBlock(b2).get()
+      check:
+        status == TopologyStatus.Orphan
+        chain.orphanPool.addOrphan(admittedB2)
+        (await f1).isOk
 
       # Promoted b2 fails validation and completes the stolen future fRawB2 with an error
       let resRawB2 = await fRawB2
-      check resRawB2.isErr
-      check not bp.localTree.hasBlock(id2)
-      check chain.orphanPool.len == 0
+      check:
+        resRawB2.isErr
+        not bp.consensus.hasBlock(id2)
+        chain.orphanPool.len == 0
 
   asyncTest "processProposal with tampered references rejects and does not suppress genuine proposal":
     withProcessor(chain):
@@ -470,15 +475,13 @@ suite "chain/block_processor":
       pBad.references = References(@[txReference(sm.hash)])
 
       # 1. pBad is rejected immediately at gossip gate
-      check bp.processProposal(pBad, peer) == ValidationResult.Reject
-
-      # 2. In-flight / dedup table was not polluted
-      check bp.checkDeduplication(id, p.signature).isOk
-
-      # 3. Genuine proposal is accepted at gossip gate and applied
-      check bp.processProposal(p, peer) == ValidationResult.Accept
-      await sleepAsync(50.millis)
-      check bp.localTree.localTipId == id
+      check:
+        bp.processProposal(pBad, peer) == ValidationResult.Reject
+        # 2. In-flight / dedup table was not polluted
+        bp.checkDeduplication(id, p.signature).isOk
+        # 3. Genuine proposal is accepted at gossip gate and applied
+        bp.processProposal(p, peer) == ValidationResult.Accept
+        waitUntil(bp.consensus.canonicalTip.id == id)
 
   asyncTest "processProposal with tampered uncle headers rejects and does not suppress genuine proposal":
     withProcessor(chain):
@@ -488,17 +491,17 @@ suite "chain/block_processor":
         id = blockId(p.header)
         peer = getRandomPeerId()
 
-      var pBad = p
-      var uHdr: Header
+      var
+        pBad = p
+        uHdr: Header
       uHdr.bedrockVersion = ExpectedBedrockVersion
       pBad.uncleHeaders = UncleHeaders(@[SignedHeader(header: uHdr, signature: default(Ed25519Signature))])
 
-      check bp.processProposal(pBad, peer) == ValidationResult.Reject
-      check bp.checkDeduplication(id, p.signature).isOk
-
-      check bp.processProposal(p, peer) == ValidationResult.Accept
-      await sleepAsync(50.millis)
-      check bp.localTree.localTipId == id
+      check:
+        bp.processProposal(pBad, peer) == ValidationResult.Reject
+        bp.checkDeduplication(id, p.signature).isOk
+        bp.processProposal(p, peer) == ValidationResult.Accept
+        waitUntil(bp.consensus.canonicalTip.id == id)
 
   asyncTest "addBlock with tampered txs does not suppress a genuine copy":
     withProcessor(chain):
@@ -510,15 +513,16 @@ suite "chain/block_processor":
       bBad.txs = BlockTxs(@[minimalHashedSignedTx()])
 
       let badFut = bp.addBlock(bBad, id)
-      check badFut.completed
-      check badFut.value.isErr
-      check badFut.value.error.kind == BlockApplyErrorKind.InvalidStructure
-
-      check bp.checkDeduplication(id, b.signature).isOk
+      check:
+        badFut.completed
+        badFut.value.isErr
+        badFut.value.error.kind == BlockApplyErrorKind.InvalidStructure
+        bp.checkDeduplication(id, b.signature).isOk
 
       let goodFut = bp.addBlock(b, id)
-      check (await goodFut).isOk
-      check bp.localTree.localTipId == id
+      check:
+        (await goodFut).isOk
+        bp.consensus.canonicalTip.id == id
 
   asyncTest "processProposal rejects a slot that is not after the parent slot":
     withProcessor(chain):
@@ -533,6 +537,7 @@ suite "chain/block_processor":
     # Guard: the topology check runs before the signature check. The signature
     # is bad, so without that order the verdict would be Reject.
     withProcessor(chain):
+      bp.switchToOnline()
       let
         a1 = childBlock(genesisBlk.header, gid, SlotNumber(2), [])
         idA1 = blockId(a1.header)
@@ -541,7 +546,7 @@ suite "chain/block_processor":
         a4 = childBlock(a3.header, blockId(a3.header), SlotNumber(6), [])
       for blk in [a1, a2, a3, a4]:
         check (await bp.addBlock(blk)).isOk
-      check bp.localTree.latestImmutableBlockId == blockId(a3.header)
+      check bp.consensus.latestImmutable.id == blockId(a3.header)
 
       # A child of a1 forks below the immutable block a3.
       var p = childProposal(a1.header, idA1, SlotNumber(7), [])

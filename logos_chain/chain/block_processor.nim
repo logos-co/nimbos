@@ -74,8 +74,11 @@ func new*(T: type BlockProcessor, chain: sink Chain): T =
     orphanEvent: newAsyncEvent(),
   )
 
-func localTree*(bp: BlockProcessor): LocalTree =
-  bp.chain.localTree
+func consensus*(bp: BlockProcessor): ConsensusState =
+  bp.chain.consensus
+
+func blockStore*(bp: BlockProcessor): BlockStore =
+  bp.chain.blockStore
 
 func orphanPool*(bp: BlockProcessor): OrphanPool =
   bp.chain.orphanPool
@@ -89,6 +92,11 @@ func mempool*(bp: BlockProcessor): Mempool =
 proc currentWallclockSlot*(bp: BlockProcessor): SlotNumber =
   bp.chain.currentWallclockSlot()
 
+proc switchToOnline*(bp: BlockProcessor) =
+  ## Transitions the underlying chain from Bootstrap to Online fork choice rule.
+  ## Once online, LIB advancement becomes active and canonical states older than LIB are pruned.
+  bp.chain.switchToOnline()
+
 func running*(bp: BlockProcessor): bool =
   bp.loopFut != nil and not bp.loopFut.finished
 
@@ -98,7 +106,7 @@ func checkDeduplication*(
   let key = inFlightKey(id, sig)
   if key in bp.inFlight:
     return err(BlockApplyErrorKind.InFlight)
-  if bp.chain.localTree.hasBlock(id):
+  if bp.consensus.hasBlock(id):
     return err(BlockApplyErrorKind.AlreadyApplied)
   if bp.chain.orphanPool.hasOrphan(id):
     return err(BlockApplyErrorKind.OrphanAlreadyBuffered)

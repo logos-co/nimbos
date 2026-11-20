@@ -5,6 +5,8 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to these terms.
 
+## Spec: [Cryptarchia Bootstrapping & Synchronization v1.0.2](https://github.com/logos-co/logos-lips/blob/663ae35d59d834784dd086cc5f14ec35e8dbecf5/docs/blockchain/raw/cryptarchia-v1-bootstr-sync.md)
+
 {.push raises: [], gcsafe.}
 
 import
