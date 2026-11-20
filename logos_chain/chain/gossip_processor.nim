@@ -49,6 +49,17 @@ proc processProposal*(
     debug "GossipSub rejected proposal: invalid header", blockId = idHex, src
     return ValidationResult.Reject
 
+  if bp.orphanPool.isRejected(id):
+    debug "GossipSub ignored proposal: block was rejected",
+      blockId = idHex, src
+    return ValidationResult.Ignore
+
+  if bp.orphanPool.isRejected(proposal.header.parentBlock):
+    bp.orphanPool.reject(id, remember = true)
+    debug "GossipSub ignored proposal: parent was rejected",
+      blockId = idHex, src
+    return ValidationResult.Ignore
+
   # The topology check runs before admission, so a proposal that cannot be
   # applied costs no signature check.
   checkTopology(proposal.header, bp.localTree, bp.ledger).isOkOr:
