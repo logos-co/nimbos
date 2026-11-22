@@ -16,8 +16,6 @@ import
   ../chain/block_processor,
   ./[framing, syncer_types, types]
 
-from ../chain/local_tree import
-  LocalTree, localTipId, latestImmutableBlockId, hasBlock
 from ../core/types import Block, BlockId, blockId, header
 from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
 
@@ -63,8 +61,8 @@ proc sendGetTipRequest*(
       of gtrTip:
         debug "IBD GetTip deserialize ok",
           peer,
-          tip = sbyteutils.toHex(resp.tipData.tip),
-          height = resp.tipData.height
+          tip = sbyteutils.toHex(resp.tip.id),
+          height = resp.tip.height
       of gtrFailure:
         debug "IBD GetTip deserialize ok (peer failure)",
           peer,
@@ -86,13 +84,13 @@ proc sendGetTipRequest*(
 const MaxKnownAdditionalBlocks = 5
 
 func buildKnownBlocks*(
-    localTree: LocalTree,
+    consensus: ConsensusState,
     additionalBlocks: openArray[BlockId],
 ): KnownBlocks =
   let takeCount = min(additionalBlocks.len, MaxKnownAdditionalBlocks)
   KnownBlocks(
-    localTip: localTipId(localTree),
-    latestImmutableBlock: latestImmutableBlockId(localTree),
+    localTip: consensus.canonicalTip.id,
+    latestImmutableBlock: consensus.latestImmutable.id,
     additionalBlocks: @(additionalBlocks.toOpenArray(0, takeCount - 1)),
   )
 
@@ -226,11 +224,11 @@ proc downloadBlocks*(
         debug "IBD: GetTip returned failure", peer
         return false
       of gtrTip:
-        let tip = tipResp.tipData.tip
+        let tip = tipResp.tip.id
         info "IBD: GetTip returned success", peer, targetBlock = sbyteutils.toHex(tip)
         tip
 
-    if hasBlock(syncer.localTree, target):
+    if syncer.consensus.hasBlock(target):
       debug "Sync: target already local", peer, targetBlock = sbyteutils.toHex(target)
       return true
 
@@ -239,7 +237,7 @@ proc downloadBlocks*(
       .valueOr(@[])
     let downloadReq = DownloadBlocksRequest(
       targetBlock: target,
-      knownBlocks: buildKnownBlocks(syncer.localTree, additionalKnown),
+      knownBlocks: buildKnownBlocks(syncer.consensus, additionalKnown),
     )
     let blocks = (await sendDownloadBlocksRequest(
       syncer,

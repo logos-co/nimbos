@@ -15,7 +15,7 @@ import
   results,
   libp2p/peerid,
   ../../../logos_chain/core/types,
-  ../../../logos_chain/chain/[chain, block_processor, local_tree],
+  ../../../logos_chain/chain/[chain, block_processor],
   ../../../logos_chain/sync/[syncer, orphan_sync],
   ./helpers,
   ../../testutil
@@ -113,7 +113,7 @@ suite "sync/orphan_sync (end-to-end orphan resolution via DBR)":
 
     check:
       serverChain.tryApplyBlock(b1).isOk
-      serverChain.localTree.localTipId == b1id
+      serverChain.consensus.canonicalTip.id == b1id
 
     withSyncPair(serverChain, clientChain):
       clientSyncer.peerProvider = proc(): seq[PeerId] =
@@ -127,8 +127,8 @@ suite "sync/orphan_sync (end-to-end orphan resolution via DBR)":
       check:
         res.error.kind == BlockApplyErrorKind.OrphanBuffered
         # Client orphanSync automatically sends DBR for B1, applies B1, and promotes B2
-        waitUntil(clientChain.localTree.hasBlock(b2id), 5.seconds)
-        clientChain.localTree.localTipId == b2id
-        clientChain.localTree.hasBlock(b1id)
+        waitUntil(clientChain.consensus.hasBlock(b2id), 5.seconds)
+        clientChain.consensus.canonicalTip.id == b2id
+        clientChain.consensus.hasBlock(b1id)
 
 {.pop.}

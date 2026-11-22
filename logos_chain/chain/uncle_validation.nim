@@ -11,11 +11,10 @@
 {.push raises: [], gcsafe.}
 
 import
-  ./local_tree,
+  ../consensus/consensus_state,
   ../ledger/ledger
 
 from ../core/types import BlockId, MaxUncles, blockId, verify_signature, asSeq
-from ../core/crypto/types import isZero
 from ./block_validation import AdmittedBlock, header, uncleHeaders
 
 type UncleError* {.pure.} = enum
@@ -28,7 +27,7 @@ type UncleError* {.pure.} = enum
 
 proc validateUncles*(
     blk: AdmittedBlock,
-    localTree: LocalTree,
+    consensus: ConsensusState,
     ledger: Ledger[BlockId],
 ): Result[void, UncleError] =
   ## Step 10: every carried uncle satisfies `valid_uncle` on the chain of `blk`.
@@ -57,18 +56,17 @@ proc validateUncles*(
   while true:
     # Fork pruning never removes a canonical ancestor, so a missing header
     # is a defensive stop only.
-    let hdr = localTree.fetchHeader(current).valueOr:
+    let curSlot = consensus.slotOf(current).valueOr:
       break
-    if hdr.slot < windowStart:
+    if curSlot < windowStart:
       break
     for i in 0 ..< uncles.len:
       if current == uncleIds[i]:
         return err(OnChain)
       if current == uncles[i].header.parentBlock:
-        parentSlots[i] = Opt.some(hdr.slot)
-    if hdr.parentBlock.isZero:
+        parentSlots[i] = Opt.some(curSlot)
+    current = consensus.parentOf(current).valueOr:
       break
-    current = hdr.parentBlock
 
   for i in 0 ..< uncles.len:
     let parentSlot = parentSlots[i].valueOr:

@@ -5,14 +5,14 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-## Spec: [Cryptarchia Bootstrapping & Synchronization](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/cryptarchia-v1-bootstr-sync.md#overview)
+## Spec: [Cryptarchia Bootstrapping & Synchronization v1.0.2](https://github.com/logos-co/logos-lips/blob/663ae35d59d834784dd086cc5f14ec35e8dbecf5/docs/blockchain/raw/cryptarchia-v1-bootstr-sync.md#overview)
 
 {.push raises: [], gcsafe.}
 
 import
   std/[deques, tables],
   ../core/types,
-  ./local_tree,
+  ../consensus/consensus_state,
   ./block_validation
 
 type
@@ -92,7 +92,7 @@ func compactQueue*(pool: OrphanPool) =
       newOrder.addLast(id)
   pool.arrivalOrder = move(newOrder)
 
-proc pruneIncompatibleWithImmutable*(pool: OrphanPool, localTree: LocalTree) =
+proc pruneIncompatibleWithImmutable*(pool: OrphanPool, consensus: ConsensusState) =
   ## Evicts orphans (and their descendant subtrees) that cannot possibly
   ## descend from the latest immutable block in localTree.
   ## Time: O(N * D) worst case where N is pool size and D is tree depth | Space: O(I) where I <= N
@@ -101,7 +101,7 @@ proc pruneIncompatibleWithImmutable*(pool: OrphanPool, localTree: LocalTree) =
 
   var invalidIds: seq[BlockId]
   for id, blk in pool.byBlockId:
-    if not localTree.canDescendFromImmutable(blk.header):
+    if not consensus.canDescendFromImmutable(blk.header):
       invalidIds.add(id)
 
   for id in invalidIds:
