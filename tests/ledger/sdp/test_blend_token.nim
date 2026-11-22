@@ -20,7 +20,7 @@ func mkToken(seed: byte = 1): BlendingToken =
       selectionRandomness: frFromBytesLE([seed, 7'u8]).get)
     keyBytes: array[32, byte]
   keyBytes[0] = seed
-  doAssert token.signingKey.init(keyBytes)
+  token.signingKey = Ed25519PublicKey(data: keyBytes)
   token
 
 suite "ledger/sdp/blend_token":

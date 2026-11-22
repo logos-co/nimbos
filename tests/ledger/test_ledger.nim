@@ -61,9 +61,7 @@ const
 proc mkProvider(seed: byte): ProviderId =
   var bytes: array[EdPublicKeySize, byte]
   bytes[0] = seed
-  var key: ProviderId
-  doAssert key.init(bytes)
-  key
+  ProviderId(data: bytes)
 
 proc mkState(utxos: openArray[Utxo]): LedgerState =
   ## Epoch-seeded genesis-style state under `testLedgerConfig` (zero nonce);

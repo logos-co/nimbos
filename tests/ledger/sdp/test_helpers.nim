@@ -103,15 +103,13 @@ proc mkActivity*(
       proofOfSelection: rho)
     keyBytes: array[32, byte]
   keyBytes[0] = keySeed
-  doAssert proof.signingKey.init(keyBytes)
+  proof.signingKey = Ed25519PublicKey(data: keyBytes)
   proof
 
 func mkProvider*(seed: byte): ProviderId =
   var bytes: array[EdPublicKeySize, byte]
   bytes[0] = seed
-  var key: ProviderId
-  doAssert key.init(bytes)
-  key
+  ProviderId(data: bytes)
 
 proc installTestDeclaration*(
     registry: var SdpRegistry,

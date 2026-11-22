@@ -267,11 +267,7 @@ func byteLen*(proofs: openArray[OpProof]): int =
   total
 
 func readEd25519Signature(data: openArray[byte], pos: var int): Result[Ed25519Signature, DecodingError] =
-  var sig: Ed25519Signature
-  let raw = ?readFixed[EdSignatureSize](data, pos)
-  if not sig.init(raw):
-    return err(DecodingError.InvalidSignature)
-  ok(sig)
+  ok(Ed25519Signature(data: ?readFixed[EdSignatureSize](data, pos)))
 
 func readIndexedSignature(
     data: openArray[byte], pos: var int

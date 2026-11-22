@@ -17,7 +17,7 @@ import
   chronos, chronicles, chronicles/chronos_tools, metrics, results,
   stew/[byteutils, io2],
   libp2p/[peerinfo, multiaddress, builders],
-  libp2p/protocols/connectivity/autonatv2/[server, service],
+  libp2p/protocols/connectivity/autonatv2/server,
   libp2p/protocols/pubsub/[gossipsub, rpc/message],
   libp2p/stream/connection,
 
@@ -1005,11 +1005,7 @@ proc newSwitch(
     .withAutonatV2Server(
       AutonatV2Config.new(allowPrivateAddresses = config.autonatAllowPrivateAddresses)
     )
-    # Do not probe on PeerEventKind.Joined: bootstrap dials complete before the
-    # peer-pool handshake finishes, and concurrent dial-back attempts fail (QUIC
-    # EDialError).
-    .withNAT(autonatConfig(AutonatV2, v2ServiceConfig =
-      Opt.some(AutonatV2ServiceConfig.new(askNewConnectedPeers = false))))
+    .withNAT(autonatConfig(AutonatV2))
     .build()
   except LPError as exc:
     err(exc.msg)

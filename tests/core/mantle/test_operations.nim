@@ -34,9 +34,7 @@ suite "core/mantle/operations":
   func mkSigner(seed: byte): Signer =
     var bytes: array[EdPublicKeySize, byte]
     bytes[0] = seed
-    var key: Signer
-    doAssert key.init(bytes)
-    key
+    Signer(data: bytes)
 
   test "Mantle opcode constants match expected wire values":
     check:

@@ -31,7 +31,7 @@ func parseBootstrapAddress*(address: string):
     return err("Bootstrap address must be a libp2p multiaddr")
 
   let (peerId, baseAddr) = parseFullAddress(trimmed).valueOr:
-    return err("Invalid bootstrap multiaddr: " & error)
+    return err("Invalid bootstrap multiaddr: " & $error)
 
   if not baseAddr.contains(UdpCodec).get(false):
     return err("Bootstrap multiaddr must include /udp")

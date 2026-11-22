@@ -21,9 +21,7 @@ suite "core/mantle/operations — declarationId":
   func mkProvider(seed: byte): ProviderId =
     var bytes: array[EdPublicKeySize, byte]
     bytes[0] = seed
-    var key: ProviderId
-    doAssert key.init(bytes)
-    key
+    ProviderId(data: bytes)
 
   func seedZkId(seed: byte): ZkId =
     var bytes: array[32, byte]

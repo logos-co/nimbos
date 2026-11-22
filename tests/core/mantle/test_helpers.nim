@@ -169,7 +169,7 @@ func mkActivityProof*(seed: byte = 1): ActivityProof =
       proofOfSelection: frFromBytesLE([seed, 2'u8]).get)
     keyBytes: array[32, byte]
   keyBytes[0] = seed
-  doAssert proof.signingKey.init(keyBytes)
+  proof.signingKey = Ed25519PublicKey(data: keyBytes)
   for i in 0 ..< proof.proofOfQuota.proof.len:
     proof.proofOfQuota.proof[i] = byte((i + int(seed)) mod 256)
   proof
