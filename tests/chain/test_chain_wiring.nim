@@ -68,8 +68,8 @@ suite "chain/epoch wiring (devnet deployment settings)":
       cfg.uncleWindowSlots == 240 # W = 12 blocks at f = 1/20
 
   test "ledgerConfig derives the PoW reward parameters":
-    # The values of Proof of Work 1.1.0, Parameters: k = 2160, f = 1/30,
-    # phases 3/3/4. N_b = 10 * 2160 = 21_600.
+    # These are the values of Proof of Work 1.1.0, Parameters: k = 2160,
+    # f = 1/30, phases 3/3/4. N_b = 10 * 2160 = 21_600.
     var spec = ds
     spec.cryptarchia.securityParam = 2160
     spec.cryptarchia.slotActivationCoeff = NonNegativeRatio(num: 1, den: 30)

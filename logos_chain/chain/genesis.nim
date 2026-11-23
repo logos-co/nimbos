@@ -7,7 +7,6 @@
 
 ## Genesis block construction from a signed genesis mantle transaction.
 ## Spec: [Bedrock Genesis Block v1.2.1](https://github.com/logos-co/logos-lips/blob/6b84187f0ae37a0e8c28c32d3bb1e6f619cec147/docs/blockchain/raw/bedrock-genesis-block.md)
-## The "Initial Proof of Work Reward Pool" section is not implemented.
 
 {.push raises: [], gcsafe.}
 

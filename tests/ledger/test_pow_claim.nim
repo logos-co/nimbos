@@ -17,9 +17,9 @@ import
   ../../logos_chain/ledger/ledger,
   ../../logos_chain/utils/hash_trie_map,
   ../zk/zksign_helpers,
-  ./sdp/test_helpers,
+  ./sdp/test_helpers as sdp_test_helpers,
   ./test_helpers,
-  ../core/mantle/test_helpers,
+  ../core/mantle/test_helpers as mantle_test_helpers,
   ../testutil
 
 const
@@ -36,7 +36,7 @@ const
   change = 8_000'u64
   genesisNonce = default(FieldElement)
 
-# The key of the zksign fixture proof.
+# The zksign fixture proof signs for this key.
 let fixtureKey = mkRealZkPubKey(1)
 
 proc mkState(cfg: LedgerConfig = testLedgerConfig): LedgerState =
@@ -58,7 +58,7 @@ func anchorIds(
     let ticket = puzzleTicket(ClaimPowRewardPayload(
       epochNonce: nonce, blockHash: id, publicKey: publicKey))
     if ticket.satisfies(target) == satisfying:
-      ids.add id
+      ids.add(id)
     inc n
   ids
 
@@ -186,7 +186,7 @@ suite "ledger/pow claim":
       s2.pow.rewardPool == 0'u64
       third.error == PowRewardUnavailable
 
-  test "tryApplyTx rejects a block outside the window":
+  test "tryApplyTx rejects a claim on a block outside the window":
     let
       anchor = anchorId()
       tx = claimTx(mkClaim(anchor, fixtureKey))

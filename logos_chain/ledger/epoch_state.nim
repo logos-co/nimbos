@@ -169,9 +169,10 @@ func rotate(
       else:
         EpochState(epoch: newEpoch, nonce: t.nonce, agedUtxoRoot: latestRoot)
   var next = t
-  # The nonce of epoch newEpoch - 1. After one epoch without a block it is
-  # the nonce that `nextEpoch` froze. After more such epochs, that epoch
-  # started after the last block, so its nonce is the running nonce.
+  # This value is the nonce of epoch newEpoch - 1. After one epoch without
+  # a block it is the nonce that `nextEpoch` froze. After more such epochs,
+  # that epoch started after the last block, so its nonce is the running
+  # nonce.
   # `advanceEpochs` updates `nextEpoch` before this call.
   next.previousNonce =
     if newEpoch == t.activeEpoch.epoch + 1:

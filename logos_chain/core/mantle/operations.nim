@@ -315,9 +315,10 @@ func encodeLeaderClaim*(value: LeaderClaimPayload): array[96, byte] =
   res
 
 const
-  ClaimBlockHashOffset = sizeof(FieldElement)
-  ClaimPublicKeyOffset = ClaimBlockHashOffset + sizeof(Hash32)
-  ClaimPowRewardLen = ClaimPublicKeyOffset + sizeof(ZkPublicKey)
+  ClaimPowRewardBlockHashOffset = sizeof(FieldElement)
+  ClaimPowRewardPublicKeyOffset =
+    ClaimPowRewardBlockHashOffset + sizeof(Hash32)
+  ClaimPowRewardLen = ClaimPowRewardPublicKeyOffset + sizeof(ZkPublicKey)
 
 static: doAssert ClaimPowRewardLen == 96
 
@@ -325,12 +326,14 @@ func encodeClaimPowReward*(value: ClaimPowRewardPayload): array[ClaimPowRewardLe
   ## ClaimPowReward = EpochNonce || BlockHash || PublicKey
   var res {.noinit.}: array[ClaimPowRewardLen, byte]
   assign(
-    res.toOpenArray(0, ClaimBlockHashOffset - 1), encodeFieldElement(value.epochNonce))
+    res.toOpenArray(0, ClaimPowRewardBlockHashOffset - 1),
+    encodeFieldElement(value.epochNonce))
   assign(
-    res.toOpenArray(ClaimBlockHashOffset, ClaimPublicKeyOffset - 1),
+    res.toOpenArray(
+      ClaimPowRewardBlockHashOffset, ClaimPowRewardPublicKeyOffset - 1),
     encodeHash32(value.blockHash))
   assign(
-    res.toOpenArray(ClaimPublicKeyOffset, ClaimPowRewardLen - 1),
+    res.toOpenArray(ClaimPowRewardPublicKeyOffset, ClaimPowRewardLen - 1),
     encodeZkPublicKey(value.publicKey))
   res
 

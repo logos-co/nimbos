@@ -31,11 +31,12 @@ type PowState* = object
 
 func compute_epoch_pow_reward(
     pool: TokenValue, cfg: PowRewardConfig): TokenValue =
-  # The reward per claim for one epoch: a fixed fraction of the pool.
+  ## Returns the reward per claim for one epoch, a fixed fraction of the pool.
   # The quotient is above the pool only when `rateNum` is above the full
-  # divisor. A reward above the pool fails check 1 for each claim. So the
-  # saturated value changes a result only for a pool of exactly
-  # high(uint64). The spec gives no result for a quotient above uint64.
+  # divisor. A reward above the pool fails step 1 of the CLAIM_POW_REWARD
+  # validation for each claim. So the saturated value changes a result only
+  # for a pool of exactly high(uint64). The spec gives no result for a
+  # quotient above uint64.
   let reward = pool.u256 * cfg.rateNum.u256 div cfg.rateDenominator
   if reward > high(uint64).u256:
     high(uint64)
@@ -58,17 +59,15 @@ func feeShare*(fees: GasCost, cfg: PowRewardConfig): GasCost =
 func addPendingRefill*(
     s: sink PowState, refill: GasCost): Result[PowState, LedgerError] =
   ## Adds one block's fee share to the open epoch's refill.
-  if s.pendingRefill > high(uint64) - refill:
+  s.pendingRefill = s.pendingRefill.checkedAdd(refill).valueOr:
     return err(BalanceOutOfRange)
-  s.pendingRefill += refill
   ok(s)
 
 func startEpoch*(
     s: sink PowState, cfg: PowRewardConfig): Result[PowState, LedgerError] =
   ## Moves the refill into the pool and recomputes the reward per claim.
-  if s.rewardPool > high(uint64) - s.pendingRefill:
+  s.rewardPool = s.rewardPool.checkedAdd(s.pendingRefill).valueOr:
     return err(BalanceOutOfRange)
-  s.rewardPool += s.pendingRefill
   s.pendingRefill = 0
   s.epochReward = compute_epoch_pow_reward(s.rewardPool, cfg)
   ok(s)
@@ -77,7 +76,7 @@ func compute_new_reward_difficulty*(
     claimsInBlock: uint64, currentTarget: UInt256,
     cfg: PowRewardConfig): UInt256 =
   ## The reward threshold for the next block, from this block's claim count.
-  # 512-bit integers. `target * current * precision` is below
+  # The integers have 512 bits. `target * current * precision` is below
   # 2^64 * 2^254 * 2^64 = 2^382, and `demand` is below 2^129. So no value
   # overflows.
   template precision: untyped = cfg.emaSmoothingPrecision
@@ -109,13 +108,13 @@ proc tryApplyClaim*(
     currentNonce, previousNonce: FieldElement,
     cfg: PowRewardConfig): Result[PowState, LedgerError] =
   ## Validates one claim and records its ticket and its payout.
-  # Check 1 reads the pool as the earlier claims of the block left it.
+  # The steps are those of the CLAIM_POW_REWARD validation, in order.
+  # Step 1 reads the pool as the earlier claims of the block left it.
   if s.epochReward == 0 or s.rewardPool < s.epochReward:
     return err(PowRewardUnavailable)
   let anchorSlot = s.blockSlots.get(claim.blockHash).valueOr:
     return err(PowBlockOutsideWindow)
-  # The block builder can see an anchor after its slot, when it uses the
-  # tip state.
+  # Step 2 requires 0 <= current_slot - block.slot <= WINDOW.
   if slot < anchorSlot or slot - anchorSlot > cfg.window:
     return err(PowBlockOutsideWindow)
   if claim.epochNonce != currentNonce and claim.epochNonce != previousNonce:
@@ -127,7 +126,7 @@ proc tryApplyClaim*(
     return err(PowTicketClaimed)
   ?verifyZkSig(proof, txHash, [claim.publicKey])
   s.nullifiers = s.nullifiers.insert(ticket, anchorSlot)
-  # Check 1 guarantees that this subtraction does not wrap.
+  # Step 1 guarantees that this subtraction does not wrap.
   s.rewardPool -= s.epochReward
   s.claimsInBlock += 1
   ok(s)
@@ -137,17 +136,17 @@ func closeBlock*(
     cfg: PowRewardConfig): PowState =
   ## Records the applied block, drops entries outside the window, retargets.
   s.blockSlots = s.blockSlots.insert(blockId, slot)
-  # An entry outside the window fails check 2 also without the removal.
+  # An entry outside the window fails step 2 also without the removal.
   # The removal only bounds the memory.
   var
     expiredBlocks: seq[Hash32]
     expiredTickets: seq[FieldElement]
   for (id, anchorSlot) in s.blockSlots.pairs:
     if slot - anchorSlot > cfg.window:
-      expiredBlocks.add id
+      expiredBlocks.add(id)
   for (ticket, anchorSlot) in s.nullifiers.pairs:
     if slot - anchorSlot > cfg.window:
-      expiredTickets.add ticket
+      expiredTickets.add(ticket)
   for id in expiredBlocks:
     s.blockSlots = s.blockSlots.remove(id)
   for ticket in expiredTickets:

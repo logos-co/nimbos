@@ -699,9 +699,11 @@ mempool:
     var full = spec
     full.cryptarchia.powReward.powShare = 100
     check validateDeploymentSettings(full).isOk
-    # Without smoothing the floor is 1: max(1, ceil(0 / 10)).
-    var noSmoothing = spec.cryptarchia.powReward
-    noSmoothing.emaSmoothingFactor = 0
+
+  test "rewardTargetFloor is 1 without smoothing":
+    # max(1, ceil(0 / 10)) = 1.
+    let noSmoothing = PowRewardSettings(
+      emaSmoothingFactor: 0, emaSmoothingPrecision: 10)
     check noSmoothing.rewardTargetFloor == 1'u64
 
 {.pop.}

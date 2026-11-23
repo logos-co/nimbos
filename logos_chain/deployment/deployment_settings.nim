@@ -319,8 +319,10 @@ func validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
   # https://github.com/logos-co/logos-lips/blob/760f5ee6f27cdb0b7b4d2fc1c79a49831dfcba6a/docs/blockchain/raw/proof-of-work.md#parameters
   need(reward.emaSmoothingFactor < reward.emaSmoothingPrecision,
     "cryptarchia.pow_config.reward.ema_smoothing_factor must be < ema_smoothing_precision")
-  need(reward.shareDen > 0, "cryptarchia.pow_config.reward.share_den is a divisor and must be > 0")
-  need(reward.rateDen > 0, "cryptarchia.pow_config.reward.rate_den is a divisor and must be > 0")
+  need(reward.shareDen > 0,
+    "cryptarchia.pow_config.reward.share_den is a divisor and must be > 0")
+  need(reward.rateDen > 0,
+    "cryptarchia.pow_config.reward.rate_den is a divisor and must be > 0")
   need(reward.targetClaimsPerBlock > 0,
     "cryptarchia.pow_config.reward.target_claims_per_block is a divisor and must be > 0")
   # The pool takes at most the full fee, so the net fee is not negative.
@@ -330,7 +332,8 @@ func validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
   # and at most p - 1.
   let cap = reward.rewardTargetCap
   need(cap > reward.rewardTargetFloor.u256 and cap <= Bn254POrder - 1.u256,
-    "cryptarchia.pow_config.reward.minimum_difficulty must give a cap above the floor and at most p - 1")
+    "cryptarchia.pow_config.reward.minimum_difficulty must give a cap " &
+      "above the floor and at most p - 1")
   need(ds.network.kademliaProtocolName.len > 0, "empty network.kademlia_protocol_name")
   need(ds.network.identifyProtocolName.len > 0, "empty network.identify_protocol_name")
   need(ds.network.chainSyncProtocolName.len > 0, "empty network.chain_sync_protocol_name")

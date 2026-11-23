@@ -91,14 +91,13 @@ proc fromUtxos*(
 proc fromGenesis*(
     _: typedesc[LedgerState],
     tx: ValidGenesisMantleTx,
-    blockId: Hash32,
+    blockId: BlockId,
     nonce: FieldElement,
     sdp: sink SdpRegistry,
     cfg: LedgerConfig,
 ): Result[LedgerState, LedgerError] =
   ## Genesis state: each op is validated against the state the previous op left.
   ## `tx` carries the stateless checks; no proof is verified, no fee charged.
-  ## `blockId` is the id of the genesis block.
   const
     genesisEpoch: EpochNumber = 0
     genesisSlot: SlotNumber = 0
@@ -110,7 +109,8 @@ proc fromGenesis*(
       sdp: sdp,
       mantleLedger: MantleState.init(),
       feeMarket: FeeMarket.init(),
-      # The pool seed, the reward per claim and the reward threshold at genesis:
+      # Genesis sets the pool seed, the reward per claim and the reward
+      # threshold:
       # https://github.com/logos-co/logos-lips/blob/6b84187f0ae37a0e8c28c32d3bb1e6f619cec147/docs/blockchain/raw/bedrock-genesis-block.md#mantle-ledger-initialization
       pow: PowState.init(cfg.pow))
     total = 0'u64
@@ -164,8 +164,9 @@ func advanceEpochAndMarket*(
     for _ in prevEpoch ..< s.epochs.activeEpoch.epoch:
       s.feeMarket = s.feeMarket.updateStorageMarket()
     s.cryptarchiaLedger.leader = ?s.cryptarchiaLedger.leader.addEpochVouchers()
-    # One refill for each crossing, also over skipped epochs. Skipped epochs
-    # have no blocks, so the refill belongs to the last epoch with blocks.
+    # Each crossing gives one refill, also when it skips epochs. Skipped
+    # epochs have no blocks, so the refill belongs to the last epoch with
+    # blocks.
     s.pow = ?s.pow.startEpoch(cfg.pow)
     # Rewards distribute before withdrawal removal, so a withdrawn
     # provider still collects its final reward:
@@ -423,13 +424,12 @@ proc tryApplyTxns*(
     state: sink LedgerState,
     txs: openArray[ValidSignedMantleTx],
     slot: SlotNumber,
-    blockId: Hash32,
+    blockId: BlockId,
     cfg: LedgerConfig,
     verifyPoq: ProofOfQuotaVerifier,
 ): Result[LedgerState, LedgerError] =
   ## Applies a block's transactions in order under the state's active epoch;
   ## each tx's transfer surplus must cover its total gas cost.
-  ## `blockId` is the id of the block. It enters the PoW window at the close.
   var
     s = state
     blockExecutionGas = Gas(0)
@@ -529,7 +529,7 @@ func pruneStateAt*[Id](l: var Ledger[Id], id: Id) =
 proc prepareUpdate*[Id](
     l: Ledger[Id],
     slot: SlotNumber,
-    blockId: Hash32,
+    blockId: BlockId,
     headerState: sink LedgerState,
     txs: openArray[ValidSignedMantleTx],
 ): Result[LedgerState, LedgerError] =

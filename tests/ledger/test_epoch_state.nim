@@ -94,7 +94,7 @@ suite "ledger/epoch_state":
   test "the previous nonce follows the rotation rule":
     # Epoch length 100, nonce snapshot at slot 60 of each epoch. The block at
     # 70 comes after the snapshot, so the nonce of epoch 1 stays n1 and the
-    # running nonce is n2. That makes rows 2 and 3 differ.
+    # running nonce is n2. Thus the last two checks expect different nonces.
     let
       g = fe(7)
       t1 = genesisEpochTracker(g, fe(9), 1000, testLedgerConfig).expect(

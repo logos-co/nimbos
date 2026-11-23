@@ -813,10 +813,11 @@ suite "PoW reward pool":
       unshared.feeWindow.summedFees == u128(1_000)
 
   test "the epoch boundary moves the refill into the pool":
-    let s1 = mkState([mkUtxo()]).creditBlockRewards(
-      GasCost(1_000), GasCost(0), testLedgerConfig).expect("credited")
-    let next = s1.tryApplyHeader(100'u64, mkProof(), [], testLedgerConfig)
-      .expect("epoch 1")
+    let
+      s1 = mkState([mkUtxo()]).creditBlockRewards(
+        GasCost(1_000), GasCost(0), testLedgerConfig).expect("credited")
+      next = s1.tryApplyHeader(100'u64, mkProof(), [], testLedgerConfig)
+        .expect("epoch 1")
     check:
       next.pow.rewardPool == 1_000_100'u64
       next.pow.pendingRefill == 0'u64
