@@ -16,8 +16,8 @@ import
 from std/algorithm import fill
 
 # ChannelMultiSigProof = SignatureCount *(SignerIndex Ed25519Signature),
-# Mantle Transaction Encoding 1.9.0:
-# https://github.com/logos-co/logos-lips/blob/4deef612ce1ae1776167daf8779d4abae953201b/docs/blockchain/raw/mantle-transaction-encoding.md
+# Mantle Transaction Encoding 1.11.0:
+# https://github.com/logos-co/logos-lips/blob/6b84187f0ae37a0e8c28c32d3bb1e6f619cec147/docs/blockchain/raw/mantle-transaction-encoding.md
 # The spec has no vector for this structure. These bytes come from an
 # external encoder, not from this one, so do not regenerate them from
 # `encodeChannelMultiSigProof`.

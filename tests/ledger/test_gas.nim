@@ -234,7 +234,7 @@ suite "gas: tx execution gas and block limit":
     let
       vtx = mkValidTx(mkHashedSignedTx(tx, txHash))
       r = s.tryApplyTx(
-        vtx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
+        vtx, epoch = EpochNumber(0), slot = 0'u64, cfg = testLedgerConfig, verifyPoq = acceptAllPoq)
     check r.isOk
     let mf = s.mandatory_fees(vtx)
     check:
@@ -270,7 +270,7 @@ suite "gas: tx execution gas and block limit":
       vtx = mkValidTx(mkHashedSignedTx(tx, txHash))
     var s = mkState(@[])
     let r = s.tryApplyTx(
-      vtx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
+      vtx, epoch = EpochNumber(0), slot = 0'u64, cfg = testLedgerConfig, verifyPoq = acceptAllPoq)
     check r.isOk
     # 0 for the JIT config, plus 2 × 59 for the 2-of-2 config.
     check txExecutionGas(vtx).get == Gas(118)
@@ -296,13 +296,15 @@ suite "gas: fee enforcement via committed transfer fixture":
     accept.feeMarket.executionBaseFee = 0
     accept.feeMarket.storageGasPrice = 0
     check accept.tryApplyTxns(
-      [mkFixtureTransferTx(input)], slot = 0'u64, verifyPoq = acceptAllPoq).isOk
+      [mkFixtureTransferTx(input)], slot = 0'u64, blockId = default(Hash32),
+      cfg = testLedgerConfig, verifyPoq = acceptAllPoq).isOk
 
     var reject = mkState([input])
     reject.feeMarket.executionBaseFee = 0
     reject.feeMarket.storageGasPrice = 1 # storage cost > zero surplus
     let r = reject.tryApplyTxns(
-      [mkFixtureTransferTx(input)], slot = 0'u64, verifyPoq = acceptAllPoq)
+      [mkFixtureTransferTx(input)], slot = 0'u64, blockId = default(Hash32),
+      cfg = testLedgerConfig, verifyPoq = acceptAllPoq)
     check r.error == InsufficientBalance
 
   test "prices come from ledger state, not the transaction":
@@ -313,13 +315,15 @@ suite "gas: fee enforcement via committed transfer fixture":
     sOk.feeMarket.executionBaseFee = 0
     sOk.feeMarket.storageGasPrice = 0
     check sOk.tryApplyTxns(
-      [mkFixtureTransferTx(input)], slot = 0'u64, verifyPoq = acceptAllPoq).isOk
+      [mkFixtureTransferTx(input)], slot = 0'u64, blockId = default(Hash32),
+      cfg = testLedgerConfig, verifyPoq = acceptAllPoq).isOk
 
     var sBad = mkState([input])
     sBad.feeMarket.executionBaseFee = 10
     sBad.feeMarket.storageGasPrice = 0
     let r = sBad.tryApplyTxns(
-      [mkFixtureTransferTx(input)], slot = 0'u64, verifyPoq = acceptAllPoq)
+      [mkFixtureTransferTx(input)], slot = 0'u64, blockId = default(Hash32),
+      cfg = testLedgerConfig, verifyPoq = acceptAllPoq)
     check r.error == InsufficientBalance
 
 suite "gas: fee comparison width":
@@ -345,7 +349,8 @@ suite "gas: storage accumulation and epoch rotation":
       tx = mkInscribeTx(rng, mkChannelId(1))
       encodedLen = Gas(tx.byteLen)
     s = s.tryApplyTxns(
-      [tx], slot = 1'u64, verifyPoq = acceptAllPoq).expect("applied")
+      [tx], slot = 1'u64, blockId = default(Hash32),
+      cfg = testLedgerConfig, verifyPoq = acceptAllPoq).expect("applied")
     check s.feeMarket.storageGasConsumedInEpoch == encodedLen
 
     s = s.tryApplyHeader(100, sentinelProof(), [], testLedgerConfig).expect("rotation")
@@ -377,6 +382,17 @@ suite "gas: storage accumulation and epoch rotation":
       )
       expectedCost = (mf.executionGas * 2) + (mf.storageGas * 3)
     check mf.totalCost == expectedCost
+
+  test "mandatory_fees prices a claim at 590 execution gas and its bytes":
+    # 590 * 2 + 226 * 3. The 226 bytes are the op count (1), the opcode (1),
+    # EpochNonce, BlockHash and PublicKey (3 * 32) and the ZkSignature (128).
+    let tx = mkValidTx(SignedMantleTx(
+      tx: MantleTx(ops: @[defaultOpForOpcode(OpClaimPowReward).get]),
+      opProofs: @[defaultOpProofForOpcode(OpClaimPowReward).get]))
+    var s = mkState(@[])
+    s.feeMarket.executionBaseFee = 2
+    s.feeMarket.storageGasPrice = 3
+    check s.mandatory_fees(tx).get.totalCost == GasCost(1_858)
 
   test "advanceEpochAndMarket rotates storage market and advances epoch without proof":
     var s = mkState(@[])

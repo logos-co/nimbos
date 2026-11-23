@@ -450,6 +450,8 @@ func parseGenesisOpProof(
     ok(OpProof(kind: opfSdpActive, sdpActiveProof: ? parseZkSigNode(node, path)))
   of opfLeaderClaim:
     ok(OpProof(kind: opfLeaderClaim, proofOfClaimProof: ? parseZkSigNode(node, path)))
+  of opfClaimPowReward:
+    ok(OpProof(kind: opfClaimPowReward, claimPowRewardProof: ? parseZkSigNode(node, path)))
   of opfChannelInscribe:
     let
       edSigNode = yamlGetPathNode(node, ["ed25519_sig"])

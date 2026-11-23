@@ -8,7 +8,7 @@
 ## In-memory transaction pool for Mantle transactions.
 ## Transactions are stored in insertion order and dynamically evaluated against
 ## active LedgerState base fee rates during block proposal construction.
-## Spec: [Execution Market — Block Construction](https://github.com/logos-co/logos-lips/blob/4deef612ce1ae1776167daf8779d4abae953201b/docs/blockchain/raw/execution-market.md#block-builder-mechanism-block-construction)
+## Spec: [Execution Market — Block Construction](https://github.com/logos-co/logos-lips/blob/760f5ee6f27cdb0b7b4d2fc1c79a49831dfcba6a/docs/blockchain/raw/execution-market.md#block-builder-mechanism-block-construction)
 
 {.push raises: [], gcsafe.}
 

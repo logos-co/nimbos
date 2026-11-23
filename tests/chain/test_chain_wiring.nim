@@ -19,6 +19,7 @@ import
   std/[os, strutils, tables, times],
   results,
   stew/[byteutils, io2],
+  stint,
   ../testutil,
   ../../logos_chain/chain/chain,
   ../../logos_chain/deployment/deployment_settings,
@@ -66,6 +67,28 @@ suite "chain/epoch wiring (devnet deployment settings)":
       cfg.learningRateFixed == 500 # fixedPoint(0.5)
       cfg.uncleWindowSlots == 240 # W = 12 blocks at f = 1/20
 
+  test "ledgerConfig derives the PoW reward parameters":
+    # The values of Proof of Work 1.1.0, Parameters: k = 2160, f = 1/30,
+    # phases 3/3/4. N_b = 10 * 2160 = 21_600.
+    var spec = ds
+    spec.cryptarchia.securityParam = 2160
+    spec.cryptarchia.slotActivationCoeff = NonNegativeRatio(num: 1, den: 30)
+    spec.cryptarchia.epochConfig.epochStakeDistributionStabilization = 3
+    spec.cryptarchia.epochConfig.epochPeriodNonceBuffer = 3
+    spec.cryptarchia.epochConfig.epochPeriodNonceStabilization = 4
+    spec.cryptarchia.powReward = PowRewardSettings(
+      genesisPool: 50_000_000, minimumDifficulty: 26, emaSmoothingFactor: 9,
+      emaSmoothingPrecision: 10, targetClaimsPerBlock: 10, rateNum: 1,
+      rateDen: 200, powShare: 10, shareDen: 100, slotWindow: 300)
+    # The BN254 scalar field modulus divided by 2^26, computed by hand.
+    const specCap = UInt256.fromHex(
+      "0xc19139cb84c680a6e14116da06056174a0cfa121e6e5c2450f87d64fc")
+    let cfg = ledgerConfig(spec)
+    check:
+      cfg.pow.rateDenominator == 43_200_000.u256 # 200 * 10 * 21_600
+      cfg.pow.rewardTargetFloor == stuint(9, 512)
+      cfg.pow.rewardTargetCap == specCap
+
   test "cryptarchiaParameter decodes the devnet ceremony values":
     let
       (_, param) = parseGenesis(ds)
@@ -82,7 +105,7 @@ suite "chain/epoch wiring (devnet deployment settings)":
       (validTx, param) = parseGenesis(ds)
       cfg = ledgerConfig(ds)
       state = LedgerState.fromGenesis(
-        validTx, param.epochNonce,
+        validTx, blockId(createGenesisHeader(validTx)), param.epochNonce,
         SdpRegistry.init(
           ds.cryptarchia.sdpConfig,
           blendRewardsParams(ds, cfg.epochSchedule.epochLength)), cfg).valueOr:

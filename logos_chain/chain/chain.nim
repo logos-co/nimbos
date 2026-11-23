@@ -12,6 +12,7 @@
 import
   chronicles,
   results,
+  stint,
   ../core/types,
   ../consensus/[clock, consensus_state],
   ../deployment/deployment_settings,
@@ -80,20 +81,40 @@ func isRecoverable*(kind: BlockApplyErrorKind): bool =
 func ledgerConfig*(settings: DeploymentSettings): LedgerConfig =
   ## Epoch-machinery configuration from validated deployment settings
   ## (schedule arithmetic requires positive `security_param`, phases, `f`).
-  let c = settings.cryptarchia
-  LedgerConfig(
-    epochSchedule: EpochSchedule(
+  let
+    c = settings.cryptarchia
+    reward = c.powReward
+    schedule = EpochSchedule(
       basePeriodLength:
         slotsForBlocks(uint64(c.securityParam), c.slotActivationCoeff),
       stakeDistributionStabilization:
         uint64(c.epochConfig.epochStakeDistributionStabilization),
       nonceBuffer: uint64(c.epochConfig.epochPeriodNonceBuffer),
-      nonceStabilization: uint64(c.epochConfig.epochPeriodNonceStabilization)),
+      nonceStabilization: uint64(c.epochConfig.epochPeriodNonceStabilization))
+    # Each supported `f` is 1 / den. So N_b is the phase sum times
+    # `security_param`, which is 3 or more, and the reward divisor is not zero.
+    expectedBlocksPerEpoch = blocksForSlots(schedule.epochLength, c.slotActivationCoeff)
+  LedgerConfig(
+    epochSchedule: schedule,
     slotActivationCoeff: c.slotActivationCoeff,
     learningRateFixed: fixedPoint(c.learningRate),
     faucetPk: Opt.some(c.genesisState.faucetZkPublicKey),
     uncleWindowSlots:
-      slotsForBlocks(uint64(c.uncleReferenceWindowInBlock), c.slotActivationCoeff))
+      slotsForBlocks(uint64(c.uncleReferenceWindowInBlock), c.slotActivationCoeff),
+    pow: PowRewardConfig(
+      genesisPool: reward.genesisPool,
+      rateNum: reward.rateNum,
+      # Three uint64 factors need at most 192 bits.
+      rateDenominator: reward.rateDen.u256 * reward.targetClaimsPerBlock.u256 *
+        expectedBlocksPerEpoch.u256,
+      powShare: reward.powShare,
+      shareDen: reward.shareDen,
+      rewardTargetCap: reward.rewardTargetCap,
+      rewardTargetFloor: stuint(reward.rewardTargetFloor, 512),
+      emaSmoothingFactor: stuint(reward.emaSmoothingFactor, 512),
+      emaSmoothingPrecision: stuint(reward.emaSmoothingPrecision, 512),
+      targetClaimsPerBlock: stuint(reward.targetClaimsPerBlock, 512),
+      window: reward.slotWindow))
 
 func init*(
     T: type Chain,
@@ -140,7 +161,8 @@ proc init*(
       settings.cryptarchia.sdpConfig,
       blendRewardsParams(settings, cfg.epochSchedule.epochLength))
     genesisState = LedgerState.fromGenesis(
-        validGenesisTx, param.epochNonce, sdp, cfg).valueOr:
+        validGenesisTx, blockId(genesisBlock.header), param.epochNonce, sdp,
+        cfg).valueOr:
       return err("chain: failed to build the genesis state: " & $error)
   ok(T.init(
     genesisBlock,

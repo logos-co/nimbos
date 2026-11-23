@@ -28,6 +28,7 @@ type
     opfSdpActive
     opfLeaderClaim
     opfChannelConfig
+    opfClaimPowReward
 
   Ed25519SigProof* = Ed25519Signature
   ZkSigProof* = ZkSignature
@@ -59,6 +60,7 @@ type
     of opfChannelTransfer: channelTransferOpProof*: ChannelMultiSigProof
     of opfLeaderClaim: proofOfClaimProof*: ProofOfClaimProof
     of opfChannelConfig: channelConfigOpProof*: ChannelMultiSigProof
+    of opfClaimPowReward: claimPowRewardProof*: ZkSigProof
 
 func `==`*(a, b: ChannelMultiSigProof): bool {.raises: [].} =
   if a.signatures.len != b.signatures.len or a.indexes.len != b.indexes.len:
@@ -85,6 +87,7 @@ func `==`*(a, b: OpProof): bool {.raises: [].} =
   of opfChannelTransfer: a.channelTransferOpProof == b.channelTransferOpProof
   of opfLeaderClaim: a.proofOfClaimProof == b.proofOfClaimProof
   of opfChannelConfig: a.channelConfigOpProof == b.channelConfigOpProof
+  of opfClaimPowReward: a.claimPowRewardProof == b.claimPowRewardProof
 
 func sameOpProofs*(a, b: openArray[OpProof]): bool {.raises: [].} =
   if a.len != b.len:
@@ -132,6 +135,8 @@ func defaultOpProofForOpcode*(opcode: Opcode): Result[OpProof, EncodingError] =
       kind: opfChannelConfig,
       channelConfigOpProof: ChannelMultiSigProof(signatures: @[], indexes: @[]),
     ))
+  of OpClaimPowReward:
+    ok(OpProof(kind: opfClaimPowReward, claimPowRewardProof: DefaultZkSignature))
   else:
     err(EncodingError.UnsupportedOpcode)
 
@@ -147,6 +152,7 @@ func expectedOpProofKindForOpcode*(opcode: Opcode): Result[OpProofKind, Encoding
   of OpSdpActive: ok(opfSdpActive)
   of OpLeaderClaim: ok(opfLeaderClaim)
   of OpChannelConfig: ok(opfChannelConfig)
+  of OpClaimPowReward: ok(opfClaimPowReward)
   else:
     err(EncodingError.UnsupportedOpcode)
 
@@ -206,7 +212,7 @@ func encodeOpProof*(proof: OpProof): Result[seq[byte], EncodingError] =
   ##   ProofOfClaimProof
   ##
   ## Op kinds that share a proof type:
-  ## - opfChannelDeposit: ZkSigProof
+  ## - opfChannelDeposit, opfClaimPowReward: ZkSigProof
   ## - opfChannelTransfer, opfChannelConfig: ChannelMultiSigProof
   case proof.kind
   of opfChannelInscribe:
@@ -237,13 +243,16 @@ func encodeOpProof*(proof: OpProof): Result[seq[byte], EncodingError] =
     )
   of opfChannelDeposit:
     ok(@(encodeZkSigProof(proof.channelDepositProof)))
+  of opfClaimPowReward:
+    ok(@(encodeZkSigProof(proof.claimPowRewardProof)))
 
 func byteLen(proof: OpProof): int =
   ## Exact wire byte length of an OpProof without allocating buffers.
   case proof.kind
   of opfChannelInscribe:
     sizeof(Ed25519Signature)
-  of opfTransfer, opfChannelDeposit, opfSdpWithdraw, opfSdpActive:
+  of opfTransfer, opfChannelDeposit, opfSdpWithdraw, opfSdpActive,
+      opfClaimPowReward:
     sizeof(ZkSignature)
   of opfSdpDeclare:
     sizeof(ZkSignature) + sizeof(Ed25519Signature)
@@ -344,6 +353,9 @@ func readOpProof*(data: openArray[byte], pos: var int, kind: OpProofKind): Resul
   of opfChannelDeposit:
     let proof = ?readFixed[128](data, pos)
     ok(OpProof(kind: opfChannelDeposit, channelDepositProof: proof))
+  of opfClaimPowReward:
+    let proof = ?readFixed[128](data, pos)
+    ok(OpProof(kind: opfClaimPowReward, claimPowRewardProof: proof))
 
 # TODO (perf): `encodeOpsProofs` allocates separate `seq[byte]` buffers for each proof and concatenates
 # them with `res.add`. Optimize by streaming proof fields directly into an `OutputStreamHandle`

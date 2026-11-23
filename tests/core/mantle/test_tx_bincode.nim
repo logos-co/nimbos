@@ -24,6 +24,7 @@ const allOpcodes = [
   OpSdpActive,
   OpLeaderClaim,
   OpChannelConfig,
+  OpClaimPowReward,
 ]
 
 proc checkOpProofEqual(a, b: OpProof) =
@@ -53,6 +54,8 @@ proc checkOpProofEqual(a, b: OpProof) =
     check a.sdpActiveProof == b.sdpActiveProof
   of opfLeaderClaim:
     check a.proofOfClaimProof == b.proofOfClaimProof
+  of opfClaimPowReward:
+    check a.claimPowRewardProof == b.claimPowRewardProof
   of opfChannelConfig:
     check:
       a.channelConfigOpProof.signatures == b.channelConfigOpProof.signatures
@@ -92,6 +95,8 @@ proc checkOpEqual(a, b: Op) =
     check a.payload.leaderClaim == b.payload.leaderClaim
   of ChannelConfig:
     check a.payload.channelConfig == b.payload.channelConfig
+  of ClaimPowReward:
+    check a.payload.claimPowReward == b.payload.claimPowReward
 
 proc checkSignedMantleTxEqual(a, b: SignedMantleTx) =
   check:

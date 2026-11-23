@@ -202,6 +202,7 @@ suite "core/mantle/operations":
       OpSdpActive,
       OpLeaderClaim,
       OpChannelConfig,
+      OpClaimPowReward,
     ]
     for opcode in opcodes:
       let op = defaultOpForOpcode(opcode).get
@@ -222,6 +223,7 @@ suite "core/mantle/operations":
       OpSdpActive,
       OpLeaderClaim,
       OpChannelConfig,
+      OpClaimPowReward,
     ]
     for opcode in opcodes:
       let proof = defaultOpProofForOpcode(opcode).get
@@ -340,7 +342,7 @@ suite "core/mantle/operations":
     check cfg.configurationThreshold == 12
     check cfg.transferThreshold == 13
 
-  test "readOp and readOpPayload roundtrip all 10 operation variants":
+  test "readOp and readOpPayload roundtrip all 11 operation variants":
     let
       # 1. Transfer
       opTransfer = createTransferOp(TransferPayload(
@@ -406,10 +408,17 @@ suite "core/mantle/operations":
         configurationThreshold: 1,
         transferThreshold: 1,
       ))
+      # 11. ClaimPowReward
+      opClaimPowReward = createClaimPowRewardOp(ClaimPowRewardPayload(
+        epochNonce: default(FieldElement),
+        blockHash: default(Hash32),
+        publicKey: default(ZkPublicKey),
+      ))
 
       allOps = [
         opTransfer, opInscribe, opDeposit, opWithdraw, opChannelTransfer,
         opSdpDeclare, opSdpWithdraw, opSdpActive, opLeaderClaim, opChannelConfig,
+        opClaimPowReward,
       ]
 
     for op in allOps:

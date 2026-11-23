@@ -6,7 +6,7 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## Genesis block construction from a signed genesis mantle transaction.
-## Spec: [Bedrock Genesis Block v1.2.0](https://github.com/logos-co/logos-lips/blob/4deef612ce1ae1776167daf8779d4abae953201b/docs/blockchain/raw/bedrock-genesis-block.md)
+## Spec: [Bedrock Genesis Block v1.2.1](https://github.com/logos-co/logos-lips/blob/6b84187f0ae37a0e8c28c32d3bb1e6f619cec147/docs/blockchain/raw/bedrock-genesis-block.md)
 ## The "Initial Proof of Work Reward Pool" section is not implemented.
 
 {.push raises: [], gcsafe.}
@@ -27,7 +27,7 @@ type
     header*: Header
     blockSignature*: Ed25519Signature
 
-  # https://github.com/logos-co/logos-lips/blob/4deef612ce1ae1776167daf8779d4abae953201b/docs/blockchain/raw/bedrock-genesis-block.md#cryptarchia-parameters
+  # https://github.com/logos-co/logos-lips/blob/6b84187f0ae37a0e8c28c32d3bb1e6f619cec147/docs/blockchain/raw/bedrock-genesis-block.md#cryptarchia-parameters
   CryptarchiaParameter* = object
     ## Consensus parameters inscribed into the genesis block.
     chainId*: string

@@ -62,6 +62,11 @@ type
     voucherNullifier*: VoucherNullifier
     publicKey*: PublicKey
 
+  ClaimPowRewardPayload* = object
+    epochNonce*: FieldElement
+    blockHash*: Hash32
+    publicKey*: ZkPublicKey
+
   ChannelConfigPayload* = object
     channel*: ChannelId
     parent*: Parent
@@ -82,6 +87,7 @@ type
     SdpActive
     LeaderClaim
     ChannelConfig
+    ClaimPowReward
 
   OpPayload* = object
     case kind*: OpPayloadTag
@@ -95,6 +101,7 @@ type
     of SdpActive: sdpActive*: ActiveMessage
     of LeaderClaim: leaderClaim*: LeaderClaimPayload
     of ChannelConfig: channelConfig*: ChannelConfigPayload
+    of ClaimPowReward: claimPowReward*: ClaimPowRewardPayload
 
   Op* = object
     opcode*: Opcode
@@ -148,6 +155,12 @@ func createChannelConfigOp*(payload: ChannelConfigPayload): Op =
     payload: OpPayload(kind: ChannelConfig, channelConfig: payload),
   )
 
+func createClaimPowRewardOp*(payload: ClaimPowRewardPayload): Op =
+  Op(
+    opcode: OpClaimPowReward,
+    payload: OpPayload(kind: ClaimPowReward, claimPowReward: payload),
+  )
+
 func opPayloadToOpcode*(p: OpPayload): Opcode =
   case p.kind
   of Transfer: OpTransfer
@@ -160,13 +173,14 @@ func opPayloadToOpcode*(p: OpPayload): Opcode =
   of SdpActive: OpSdpActive
   of LeaderClaim: OpLeaderClaim
   of ChannelConfig: OpChannelConfig
+  of ClaimPowReward: OpClaimPowReward
 
 func isSupportedOpcode*(opcode: Opcode): bool =
   ## True when opcode is part of the currently supported Mantle operation set.
   case opcode
   of OpTransfer, OpChannelInscribe, OpChannelDeposit, OpChannelWithdraw,
      OpChannelTransfer, OpSdpDeclare, OpSdpWithdraw, OpSdpActive, OpLeaderClaim,
-     OpChannelConfig:
+     OpChannelConfig, OpClaimPowReward:
     true
   else:
     false
@@ -238,6 +252,12 @@ func defaultOpForOpcode*(opcode: Opcode): Result[Op, EncodingError] =
       configurationThreshold: default(ConfigurationThreshold),
       transferThreshold: default(TransferThreshold),
     )))
+  of OpClaimPowReward:
+    ok(createClaimPowRewardOp(ClaimPowRewardPayload(
+      epochNonce: default(FieldElement),
+      blockHash: default(Hash32),
+      publicKey: default(ZkPublicKey),
+    )))
   else:
     err(EncodingError.UnsupportedOpcode)
 
@@ -292,6 +312,26 @@ func encodeLeaderClaim*(value: LeaderClaimPayload): array[96, byte] =
   res[0 ..< 32] = encodeRewardsRoot(value.rewardsRoot)
   res[32 ..< 64] = encodeVoucherNullifier(value.voucherNullifier)
   res[64 ..< 96] = encodePublicKey(value.publicKey)
+  res
+
+const
+  ClaimBlockHashOffset = sizeof(FieldElement)
+  ClaimPublicKeyOffset = ClaimBlockHashOffset + sizeof(Hash32)
+  ClaimPowRewardLen = ClaimPublicKeyOffset + sizeof(ZkPublicKey)
+
+static: doAssert ClaimPowRewardLen == 96
+
+func encodeClaimPowReward*(value: ClaimPowRewardPayload): array[ClaimPowRewardLen, byte] =
+  ## ClaimPowReward = EpochNonce || BlockHash || PublicKey
+  var res {.noinit.}: array[ClaimPowRewardLen, byte]
+  assign(
+    res.toOpenArray(0, ClaimBlockHashOffset - 1), encodeFieldElement(value.epochNonce))
+  assign(
+    res.toOpenArray(ClaimBlockHashOffset, ClaimPublicKeyOffset - 1),
+    encodeHash32(value.blockHash))
+  assign(
+    res.toOpenArray(ClaimPublicKeyOffset, ClaimPowRewardLen - 1),
+    encodeZkPublicKey(value.publicKey))
   res
 
 func encodeChannelWithdraw*(value: ChannelWithdrawPayload): Result[seq[byte], EncodingError] =
@@ -354,7 +394,8 @@ func encodeOpPayload(payload: OpPayload): Result[seq[byte], EncodingError] =
   ##             SDPWithdraw /
   ##             SDPActive /
   ##             LeaderClaim /
-  ##             ChannelConfig
+  ##             ChannelConfig /
+  ##             ClaimPowReward
   case payload.kind
   of Transfer:
     encodeTransfer(payload.transfer)
@@ -376,6 +417,8 @@ func encodeOpPayload(payload: OpPayload): Result[seq[byte], EncodingError] =
     ok(@(encodeLeaderClaim(payload.leaderClaim)))
   of ChannelConfig:
     encodeChannelConfig(payload.channelConfig)
+  of ClaimPowReward:
+    ok(@(encodeClaimPowReward(payload.claimPowReward)))
 
 # TODO (perf): `encodeOp` and `encodeOps` allocate separate `seq[byte]` buffers for each op and payload,
 # concatenating them with `res.add`. Optimize by accepting an `OutputStreamHandle` (faststreams)
@@ -435,6 +478,8 @@ func byteLen*(payload: OpPayload): int =
     SdpActiveLen
   of LeaderClaim:
     sizeof(RewardsRoot) + sizeof(VoucherNullifier) + sizeof(ZkPublicKey)
+  of ClaimPowReward:
+    ClaimPowRewardLen
 
 func byteLen*(op: Op): int =
   ## Exact wire byte length of an Op: Opcode (1B) || OpPayload.
@@ -497,6 +542,15 @@ func readLeaderClaim(data: openArray[byte], pos: var int): Result[LeaderClaimPay
     voucherNullifier: voucherNullifier,
     publicKey: publicKey,
   ))
+
+func readClaimPowReward(
+    data: openArray[byte], pos: var int): Result[ClaimPowRewardPayload, DecodingError] =
+  let
+    epochNonce = ?decodeFieldElementAt(data, pos)
+    blockHash = ?readFixed[32](data, pos)
+    publicKey = ?decodeFieldElementAt(data, pos)
+  ok(ClaimPowRewardPayload(
+    epochNonce: epochNonce, blockHash: blockHash, publicKey: publicKey))
 
 func readChannelWithdraw(data: openArray[byte], pos: var int): Result[ChannelWithdrawPayload, DecodingError] =
   let
@@ -577,6 +631,8 @@ func readOpPayload*(data: openArray[byte], pos: var int, opcode: Opcode): Result
     ok(OpPayload(kind: LeaderClaim, leaderClaim: ?readLeaderClaim(data, pos)))
   of OpChannelConfig:
     ok(OpPayload(kind: ChannelConfig, channelConfig: ?readChannelConfig(data, pos)))
+  of OpClaimPowReward:
+    ok(OpPayload(kind: ClaimPowReward, claimPowReward: ?readClaimPowReward(data, pos)))
   else:
     err(DecodingError.UnsupportedOpcode)
 
