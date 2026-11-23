@@ -79,9 +79,7 @@ const OneOfEachPayloadHex =
 func mkProvider(seed: byte): ProviderId =
   var bytes: array[EdPublicKeySize, byte]
   bytes[0] = seed
-  var key: ProviderId
-  doAssert key.init(bytes)
-  key
+  ProviderId(data: bytes)
 
 func filledHash32(b: byte): Hash32 =
   ## The spec's test vectors use channel ids whose every byte repeats.

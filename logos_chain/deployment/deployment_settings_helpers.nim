@@ -11,7 +11,7 @@ import
   std/[math, strutils],
   chronos,
   results,
-  stew/byteutils,
+  stew/[assign2, byteutils],
   yaml/[dom, loading],
   libp2p/multiaddress,
   ../chain/genesis,
@@ -185,19 +185,25 @@ func parseUIntNode(node: YamlNode, path: string): Result[uint64, string] =
 func parseEd25519PublicKeyNode(node: YamlNode, path: string): Result[Ed25519PublicKey, string] =
   if node.kind != yScalar:
     return err("deployment-settings: expected Ed25519 public key scalar at " & path)
-  let pk = EdPublicKey.init(node.content).valueOr:
+  var pk: Ed25519PublicKey
+  try:
+    hexToByteArrayStrict(node.content, pk.data)
+  except ValueError:
     return err("deployment-settings: invalid Ed25519 public key at " & path)
   ok(pk)
 
 func parseEd25519SignatureNode(node: YamlNode, path: string): Result[Ed25519Signature, string] =
+  var sig: Ed25519Signature
   if node.kind == yScalar:
-    let sig = EdSignature.init(node.content).valueOr:
+    try:
+      hexToByteArrayStrict(node.content, sig.data)
+    except ValueError:
       return err("deployment-settings: invalid Ed25519 signature at " & path)
     return ok(sig)
-  let
-    bytes = ? parseByteSeqNode(node, path)
-    sig = EdSignature.init(bytes).valueOr:
-      return err("deployment-settings: invalid Ed25519 signature bytes at " & path)
+  let bytes = ? parseByteSeqNode(node, path)
+  if bytes.len != EdSignatureSize:
+    return err("deployment-settings: invalid Ed25519 signature bytes at " & path)
+  assign(sig.data, bytes)
   ok(sig)
 
 func parseBedrockVersionScalar(node: YamlNode, path: string): Result[uint8, string] =
@@ -405,7 +411,7 @@ func parseGenesisOpPayload(
         return err("deployment-settings: locator must be scalar at " & path & ".locators[" & $i & "]")
       let locator = MultiAddress.init(n.content).valueOr:
         return err("deployment-settings: invalid multiaddr at " &
-          path & ".locators[" & $i & "]: " & error)
+          path & ".locators[" & $i & "]: " & $error)
       locators.add(locator)
     ok(createSdpDeclareOp(DeclarationMessage(
       serviceType: serviceType,

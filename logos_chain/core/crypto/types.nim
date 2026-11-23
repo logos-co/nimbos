@@ -25,7 +25,7 @@ export hasher
 export
   ed25519.EdPublicKey, ed25519.EdPrivateKey, ed25519.EdSignature,
   ed25519.EdPublicKeySize, ed25519.EdSignatureSize,
-  ed25519.init, ed25519.toBytes, ed25519.sign,
+  ed25519.toBytes, ed25519.sign,
   ed25519.`==`, ed25519.`$`
 
 type
@@ -52,7 +52,6 @@ type
     TrailingBytes
     BufferExceeded
     InvalidFieldElement
-    InvalidSignature
     InvalidServiceType
     LocatorLengthExceeded
     InvalidLocator

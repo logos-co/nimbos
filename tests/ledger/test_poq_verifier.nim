@@ -49,8 +49,7 @@ proc loadFixture(tag: string): PoqFixture =
   # The signing key is the little-endian bytes of the two 16-byte halves.
   keyBytes[0 ..< 16] = encodeFieldElement(signals[6]).toOpenArray(0, 15)
   keyBytes[16 ..< 32] = encodeFieldElement(signals[7]).toOpenArray(0, 15)
-  var signingKey: Ed25519PublicKey
-  doAssert signingKey.init(keyBytes)
+  let signingKey = Ed25519PublicKey(data: keyBytes)
   PoqFixture(
     proofOfQuota: ProofOfQuota(
       keyNullifier: frFromBytesLE(bin.toOpenArray(0, 31)).expect("canonical"),
@@ -96,8 +95,7 @@ suite "ledger/poq_verifier — verifyProofOfQuota":
   test "rejects a wrong signing key — the key halves are bound":
     var keyBytes: array[32, byte]
     keyBytes[0] = 0xC8
-    var wrongKey: Ed25519PublicKey
-    check wrongKey.init(keyBytes)
+    let wrongKey = Ed25519PublicKey(data: keyBytes)
     let r = verifyProofOfQuota(fixture.proofOfQuota, wrongKey, fixture.public)
     check not r.get
 

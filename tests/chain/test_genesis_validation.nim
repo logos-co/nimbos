@@ -155,10 +155,9 @@ suite "chain/genesis validation: stage 1 (stateless)":
       raw: array[32, byte]
       tx = testGenesisSignedTx()
     raw[0] = 1
-    check:
-      tx.tx.ops[1].payload.channelInscribe.signer.init(raw)
-      validateGenesisTxStateless(tx).error ==
-        StatelessLedgerError.GenesisInscription
+    tx.tx.ops[1].payload.channelInscribe.signer = Ed25519PublicKey(data: raw)
+    check validateGenesisTxStateless(tx).error ==
+      StatelessLedgerError.GenesisInscription
 
   test "rejects an opcode that disagrees with its payload":
     var tx = testGenesisSignedTx()

@@ -43,7 +43,7 @@ proc kadDiscoveryLookupWalk*(
 ) {.async: (raises: [CancelledError]).} =
   if isNil(kad) or isNil(rng) or not kad.hasRoutingPeers():
     return
-  let targetKey = rng.generateBytes(32)
+  let targetKey = Key.fromBytes(rng.generateBytes(32))
   debug "Kad discovery findNode lookup walk"
   discard await kad.findNode(targetKey)
 

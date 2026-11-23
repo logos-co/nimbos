@@ -359,6 +359,7 @@ func announcedAddress(uri: Uri, defaultPort: Port): Result[MultiAddress, string]
     port = if uri.port.len > 0: uri.port else: $defaultPort
 
   MultiAddress.init("/" & proto & "/" & uri.hostname & "/udp/" & port & "/quic-v1")
+    .mapErr(proc(e: LPResultError): string = $e)
 
 func announcedAddresses*(
     advertisedAddresses: seq[Uri],

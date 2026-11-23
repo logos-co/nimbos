@@ -27,8 +27,8 @@ const
 # Reconstruct the wire-format `ProofOfLeadership` from the canonical Groth16
 # inputs. Inverts what verifyLeaderProof does internally: entropyContribution
 # Fr → 32 LE bytes; (leaderPk1, leaderPk2) Fr halves → 16 bytes each → 32-byte
-# Ed25519 raw key. libp2p `EdPublicKey.init` is length-only (no curve
-# validation), so synthetic key bytes are accepted.
+# Ed25519 raw key. The key is built from its bytes, with no curve validation,
+# so synthetic key bytes are accepted.
 func reconstructPol(
     proofBytes: array[ProofBytesLen, byte],
     inputs: seq[FieldElement],
@@ -40,8 +40,7 @@ func reconstructPol(
   var pkRaw: array[32, byte]
   for i in 0 ..< 16: pkRaw[i] = pk1Bytes[i]
   for i in 0 ..< 16: pkRaw[16 + i] = pk2Bytes[i]
-  var leaderKey: Ed25519PublicKey
-  doAssert leaderKey.init(pkRaw)
+  let leaderKey = Ed25519PublicKey(data: pkRaw)
   ProofOfLeadership(
     proof: proofBytes,
     entropyContribution: inputs[0].toBytes(),
@@ -133,7 +132,7 @@ suite "ledger/pol_verifier":
       badPol = polProof
       raw: array[32, byte]
     raw[0] = 0x42  # arbitrary non-zero, non-fixture key bytes
-    discard badPol.leaderKey.init(raw)
+    badPol.leaderKey = Ed25519PublicKey(data: raw)
     let r = verifyLeaderProof(badPol, public)
     check r.isOk and not r.get
 
