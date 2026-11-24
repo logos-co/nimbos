@@ -688,6 +688,7 @@ mempool:
         message in v.error
     rejects(emaSmoothingFactor, 10, "ema_smoothing_factor must be < ema_smoothing_precision")
     rejects(powShare, 101, "pow_share must be <= share_den")
+    rejects(rateNum, 201, "rate_num must be <= rate_den")
     # A shift of 0 gives the cap p, above p - 1.
     rejects(minimumDifficulty, 0, "cap above the floor and at most p - 1")
     # p shr 251 is 6, at or below the floor of 9.
@@ -695,9 +696,10 @@ mempool:
     rejects(shareDen, 0, "share_den is a divisor")
     rejects(rateDen, 0, "rate_den is a divisor")
     rejects(targetClaimsPerBlock, 0, "target_claims_per_block is a divisor")
-    # The full fee as the share is valid.
+    # The full fee as the share and the full pool as the rate are valid.
     var full = spec
     full.cryptarchia.powReward.powShare = 100
+    full.cryptarchia.powReward.rateNum = 200
     check validateDeploymentSettings(full).isOk
 
   test "rewardTargetFloor is 1 without smoothing":

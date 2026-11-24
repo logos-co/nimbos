@@ -325,6 +325,12 @@ func validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
     "cryptarchia.pow_config.reward.rate_den is a divisor and must be > 0")
   need(reward.targetClaimsPerBlock > 0,
     "cryptarchia.pow_config.reward.target_claims_per_block is a divisor and must be > 0")
+  # Proof of Work 1.1.1, Parameters, a proposed revision:
+  # "EPOCH_POW_DISTRIBUTION_RATE_NUM must be at most
+  # EPOCH_POW_DISTRIBUTION_RATE_DEN". The reward is then at most the pool.
+  # https://github.com/logos-co/logos-lips/blob/9659f156b38a3532f68349da1299791725f9f16d/docs/blockchain/raw/proof-of-work.md#parameters
+  need(reward.rateNum <= reward.rateDen,
+    "cryptarchia.pow_config.reward.rate_num must be <= rate_den")
   # The pool takes at most the full fee, so the net fee is not negative.
   need(reward.powShare <= reward.shareDen,
     "cryptarchia.pow_config.reward.pow_share must be <= share_den")

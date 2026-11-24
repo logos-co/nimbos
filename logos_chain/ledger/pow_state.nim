@@ -32,16 +32,10 @@ type PowState* = object
 func compute_epoch_pow_reward(
     pool: TokenValue, cfg: PowRewardConfig): TokenValue =
   ## Returns the reward per claim for one epoch, a fixed fraction of the pool.
-  # The quotient is above the pool only when `rateNum` is above the full
-  # divisor. A reward above the pool fails step 1 of the CLAIM_POW_REWARD
-  # validation for each claim. So the saturated value changes a result only
-  # for a pool of exactly high(uint64). The spec gives no result for a
-  # quotient above uint64.
-  let reward = pool.u256 * cfg.rateNum.u256 div cfg.rateDenominator
-  if reward > high(uint64).u256:
-    high(uint64)
-  else:
-    reward.truncate(uint64)
+  # Config load guarantees `rate_num <= rate_den`, and the other factors of
+  # the divisor are 1 or more. So the reward is at most the pool and fits
+  # uint64.
+  (pool.u256 * cfg.rateNum.u256 div cfg.rateDenominator).truncate(uint64)
 
 func init*(_: typedesc[PowState], cfg: PowRewardConfig): PowState =
   ## The genesis state: the seeded pool and the reward derived from it.
