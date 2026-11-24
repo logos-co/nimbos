@@ -112,7 +112,7 @@ proc tryApplyTransfer*(
 func insertMintedUtxos*(
     s: sink CryptarchiaState, minted: openArray[Utxo]
 ): CryptarchiaState =
-  ## Inserts header-minted reward notes into the live UTXO set, in order.
+  ## Inserts minted reward notes into the live UTXO set, in order.
   for u in minted:
     s.utxos = s.utxos.insert(u.id, u).store
   s

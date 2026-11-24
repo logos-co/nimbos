@@ -7,7 +7,7 @@
 
 ## Bedrock block proposal construction and transaction selection.
 ## Spec: [Block Construction, Validation and Execution v1.3.0](https://github.com/logos-co/logos-lips/blob/663ae35d59d834784dd086cc5f14ec35e8dbecf5/docs/blockchain/raw/bedrock-v1.1-block-construction.md)
-## Spec: [Execution Market v1.1.0](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/execution-market.md)
+## Spec: [Execution Market v1.2.0](https://github.com/logos-co/logos-lips/blob/760f5ee6f27cdb0b7b4d2fc1c79a49831dfcba6a/docs/blockchain/raw/execution-market.md)
 
 {.push raises: [], gcsafe.}
 
@@ -33,7 +33,7 @@ proc selectProposalReferences*(
 ): seq[Hash32] =
   ## Selects the hashes to reference, in block order, within the count,
   ## execution-gas and byte budgets.
-  ## Spec: [Execution Market — Block Construction](https://github.com/logos-co/logos-lips/blob/435a6f183a92b871473d80a720b427f70cbf1b68/docs/blockchain/raw/execution-market.md#block-builder-mechanism-block-construction)
+  ## Spec: [Execution Market — Block Construction](https://github.com/logos-co/logos-lips/blob/760f5ee6f27cdb0b7b4d2fc1c79a49831dfcba6a/docs/blockchain/raw/execution-market.md#block-builder-mechanism-block-construction)
   var
     refs = newSeqOfCap[Hash32](maxTxs)
     workingLedger = tipLedgerState.advanceEpochAndMarket(currentSlot, cfg).valueOr:
@@ -79,7 +79,8 @@ proc selectProposalReferences*(
         continue
 
       var candidate = workingLedger
-      let balance = candidate.tryApplyTx(item.tx, epoch, currentSlot, verifyPoq).valueOr:
+      let balance = candidate.tryApplyTx(
+          item.tx, epoch, currentSlot, cfg, verifyPoq).valueOr:
         if error == LedgerError.PermanentInvalidTxProof:
           toEvict.add(hash)
         continue

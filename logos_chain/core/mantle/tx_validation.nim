@@ -125,8 +125,9 @@ proc validateMantleTxStateless*(
       ?validateLocators(op.payload.sdpDeclare)
       hasSigCrypto = true
 
-    of SdpWithdraw, SdpActive:
-      discard # No stateless-only invariants for SdpWithdraw / SdpActive
+    of SdpWithdraw, SdpActive, ClaimPowReward:
+      # No stateless-only invariants. The ledger verifies the ZkSignature.
+      discard
 
     of LeaderClaim:
       hasHeavyZk = true

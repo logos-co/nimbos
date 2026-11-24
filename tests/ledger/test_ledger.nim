@@ -46,7 +46,7 @@ proc prepareUpdateWithHeader[Id](
     return err(ParentNotFound)
   let afterHeader =
     ?parent.tryApplyHeader(slot, proof, [], l.config, l.leaderProofVerifier)
-  l.prepareUpdate(slot, afterHeader, txs)
+  l.prepareUpdate(slot, default(Hash32), afterHeader, txs)
 
 from ./test_helpers import testLedgerConfig
 
@@ -176,7 +176,7 @@ suite "tryApplyTx — channel ops":
     var
       s0 = mkChannelState([note], cid, kp.pubkey, [note])
       r = s0.tryApplyTx(
-        vtx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
+        vtx, epoch = EpochNumber(0), slot = 0'u64, cfg = testLedgerConfig, verifyPoq = acceptAllPoq)
     check r.isOk
     let balance = r.get
     # Bridged funds never enter or leave the UTXO set, so a channel op can
@@ -210,7 +210,7 @@ suite "tryApplyTx — channel ops":
     var
       s0 = mkChannelState([note], cid, kp.pubkey, [note])
       r = s0.tryApplyTx(
-        vtx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
+        vtx, epoch = EpochNumber(0), slot = 0'u64, cfg = testLedgerConfig, verifyPoq = acceptAllPoq)
     check r.isOk
     let
       balance = r.get
@@ -232,7 +232,7 @@ suite "tryApplyTx — channel ops":
       s0 = mkChannelState([note], cid, kp.pubkey, [note])
       tx = mkValidTransferTx([note.id], [mkNote(100, pkSeed = 2)])
       r = s0.tryApplyTx(
-        tx, epoch = EpochNumber(0), slot = 0'u64, verifyPoq = acceptAllPoq)
+        tx, epoch = EpochNumber(0), slot = 0'u64, cfg = testLedgerConfig, verifyPoq = acceptAllPoq)
     check r.error == ChannelNoteSpend
 
 suite "Ledger[Id] map ops":
@@ -305,7 +305,7 @@ suite "tryApplyTx — happy path (Rust-generated fixture)":
       s0 = mkState([input])
       r = s0.tryApplyTx(
         mkFixtureTransferTx(input), epoch = EpochNumber(0), slot = 0'u64,
-        verifyPoq = acceptAllPoq)
+        cfg = testLedgerConfig, verifyPoq = acceptAllPoq)
     check r.isOk
 
     let balance = r.get
@@ -331,7 +331,7 @@ suite "tryApplyTx — happy path (Rust-generated fixture)":
     let prevEpochs = s0.epochs
     let r = s0.tryApplyTx(
       mkFixtureTransferTx(input), epoch = EpochNumber(0), slot = 0'u64,
-      verifyPoq = acceptAllPoq)
+      cfg = testLedgerConfig, verifyPoq = acceptAllPoq)
     check r.isOk
     check s0.epochs == prevEpochs
     check declarationId(declaration).get in s0.sdp.state.declarations
@@ -695,7 +695,8 @@ suite "block rewards — per-block leader crediting":
     var s = mkState([mkUtxo()])
     s = s.tryApplyHeader(1'u64, mkProof(), [], testLedgerConfig).expect("header")
     s = s.tryApplyTxns(
-      [], slot = 1'u64, verifyPoq = acceptAllPoq).expect("txns")
+      [], slot = 1'u64, blockId = default(Hash32),
+      cfg = testLedgerConfig, verifyPoq = acceptAllPoq).expect("txns")
     check s.cryptarchiaLedger.leader.leadersRewards == 0
     s = s.tryApplyHeader(100'u64, mkProof(), [], testLedgerConfig).expect("rotation")
     check s.cryptarchiaLedger.leader.leadersRewards == emission
@@ -704,24 +705,27 @@ suite "block rewards — per-block leader crediting":
     var s = mkState([mkUtxo()])
     check s.blockNumber == 0'u64
     s = s.tryApplyTxns(
-      [], slot = 1'u64, verifyPoq = acceptAllPoq).expect("block 1")
+      [], slot = 1'u64, blockId = default(Hash32),
+      cfg = testLedgerConfig, verifyPoq = acceptAllPoq).expect("block 1")
     s = s.tryApplyTxns(
-      [], slot = 2'u64, verifyPoq = acceptAllPoq).expect("block 2")
+      [], slot = 2'u64, blockId = default(Hash32),
+      cfg = testLedgerConfig, verifyPoq = acceptAllPoq).expect("block 2")
     check:
       s.blockNumber == 2'u64
       s.feeWindow.summedFees == u128(0)
 
-  test "burned fees enter the window and tips top up the leader share":
+  test "pooled fees enter the window and tips top up the leader share":
     # No in-tree transfer fixture carries a surplus, so the fee split is
-    # driven through the block-closing step directly.
+    # driven through the block-closing step directly. The window holds the
+    # fee net of the 10% PoW share: 700 - 70 = 630.
     let
       s0 = mkState([mkUtxo()])
       s1 = s0.creditBlockRewards(
-        totalFeeBurned = GasCost(700), totalFeeTip = GasCost(250)
-      ).expect("credited")
+        totalFeeCollected = GasCost(700), totalFeeTip = GasCost(250),
+        cfg = testLedgerConfig).expect("credited")
     check:
       s1.blockNumber == 1'u64
-      s1.feeWindow.summedFees == u128(700)
+      s1.feeWindow.summedFees == u128(630)
       s1.cryptarchiaLedger.leader.leadersRewards == 0
     let rolled = s1.tryApplyHeader(100'u64, mkProof(), [], testLedgerConfig)
       .expect("rotation")
@@ -731,12 +735,14 @@ suite "block rewards — per-block leader crediting":
     var s = mkState([mkUtxo()])
     s = s.tryApplyHeader(1'u64, mkProof(), [], testLedgerConfig).expect("header")
     s = s.tryApplyTxns(
-      [], slot = 1'u64, verifyPoq = acceptAllPoq).expect("txns")
+      [], slot = 1'u64, blockId = default(Hash32),
+      cfg = testLedgerConfig, verifyPoq = acceptAllPoq).expect("txns")
     # The rotation rolls epoch 0's pending pool; the rotating block's own
     # reward is credited afterwards, so it belongs to epoch 1.
     s = s.tryApplyHeader(100'u64, mkProof(), [], testLedgerConfig).expect("rotation")
     s = s.tryApplyTxns(
-      [], slot = 100'u64, verifyPoq = acceptAllPoq).expect("txns")
+      [], slot = 100'u64, blockId = default(Hash32),
+      cfg = testLedgerConfig, verifyPoq = acceptAllPoq).expect("txns")
     check s.cryptarchiaLedger.leader.leadersRewards == emission
     s = s.tryApplyHeader(200'u64, mkProof(), [], testLedgerConfig).expect("rotation")
     check s.cryptarchiaLedger.leader.leadersRewards == 2 * emission
@@ -744,14 +750,14 @@ suite "block rewards — per-block leader crediting":
   test "each block accrues the blend share as epoch income":
     # The same fixtures emit a blend share of 57 (60% against leader's 38).
     var s = mkState([mkUtxo()])
-    s = s.creditBlockRewards(GasCost(0), GasCost(0)).expect("credited")
+    s = s.creditBlockRewards(GasCost(0), GasCost(0), testLedgerConfig).expect("credited")
     check s.sdp.blendRewards.epochIncome == 57
-    s = s.creditBlockRewards(GasCost(0), GasCost(0)).expect("credited")
+    s = s.creditBlockRewards(GasCost(0), GasCost(0), testLedgerConfig).expect("credited")
     check s.sdp.blendRewards.epochIncome == 114
 
   test "a rotation without blend providers mints nothing, resets income":
     var s = mkState([mkUtxo()])
-    s = s.creditBlockRewards(GasCost(0), GasCost(0)).expect("credited")
+    s = s.creditBlockRewards(GasCost(0), GasCost(0), testLedgerConfig).expect("credited")
     let utxosBefore = s.latestUtxos.len
     s = s.tryApplyHeader(100'u64, mkProof(), [], testLedgerConfig).expect("rotation")
     check s.latestUtxos.len == utxosBefore
@@ -763,5 +769,64 @@ suite "block rewards — per-block leader crediting":
     check toLedgerError(EncodingError.LengthExceeded) == LedgerError.PermanentInvalidTxProof
     check toLedgerError(EncodingError.ProofCountMismatch) == LedgerError.PermanentInvalidTxProof
     check toLedgerError(EncodingError.MultiSigCountExceeded) == LedgerError.PermanentInvalidTxProof
+
+suite "PoW reward pool":
+  # testLedgerConfig.pow: a pool of 1_000_000, a rate divisor of 100
+  # (1 * 10 * N_b with N_b = 10) and a share of 10/100.
+
+  test "fromGenesis seeds the PoW pool and the reward per claim":
+    let s = LedgerState.fromGenesis(
+      testValidGenesisTx(), default(Hash32), default(FieldElement),
+      testSdpRegistry(), testLedgerConfig).expect("genesis state")
+    check:
+      s.pow.rewardPool == 1_000_000'u64
+      s.pow.epochReward == 10_000'u64 # 1_000_000 * 1 div 100
+      s.pow.pendingRefill == 0'u64
+
+  test "creditBlockRewards diverts the PoW share and pools the net fee":
+    # The stake equals STAKE_TARGET + FEE_AVG_NUMERATOR * 900. So with a
+    # pooled fee of 900 the interpolation weight is 0 and each share is the
+    # pooled fee times 4/10 or 6/10. With the full fee of 1_000 pooled, the
+    # shares are 396 and 595.
+    let
+      s0 = mkState([mkUtxo(value = 3_009_460_800'u64, pkSeed = 1)])
+      s1 = s0.creditBlockRewards(GasCost(1_000), GasCost(0), testLedgerConfig)
+        .expect("credited")
+    check:
+      s1.pow.pendingRefill == 100'u64
+      s1.feeWindow.summedFees == u128(900)
+      s1.sdp.blendRewards.epochIncome == 540'u64
+    let rolled = s1.tryApplyHeader(100'u64, mkProof(), [], testLedgerConfig)
+      .expect("rotation")
+    check rolled.cryptarchiaLedger.leader.leadersRewards == 360'u64
+    # 19 * 10 div 100 = 1: the share rounds down, and it adds to the 100.
+    let second = s1.creditBlockRewards(GasCost(19), GasCost(0), testLedgerConfig)
+      .expect("credited")
+    check second.pow.pendingRefill == 101'u64
+    # A share of 0 switches the refill off. The full fee is pooled.
+    var noShare = testLedgerConfig
+    noShare.pow.powShare = 0
+    let unshared = s0.creditBlockRewards(GasCost(1_000), GasCost(0), noShare)
+      .expect("credited")
+    check:
+      unshared.pow.pendingRefill == 0'u64
+      unshared.feeWindow.summedFees == u128(1_000)
+
+  test "the epoch boundary moves the refill into the pool":
+    let
+      s1 = mkState([mkUtxo()]).creditBlockRewards(
+        GasCost(1_000), GasCost(0), testLedgerConfig).expect("credited")
+      next = s1.tryApplyHeader(100'u64, mkProof(), [], testLedgerConfig)
+        .expect("epoch 1")
+    check:
+      next.pow.rewardPool == 1_000_100'u64
+      next.pow.pendingRefill == 0'u64
+      next.pow.epochReward == 10_001'u64 # 1_000_100 div 100
+    # A jump over two blockless epochs adds the refill one time only.
+    let jumped = s1.tryApplyHeader(300'u64, mkProof(), [], testLedgerConfig)
+      .expect("epoch 3")
+    check:
+      jumped.epochs.activeEpoch.epoch == 3
+      jumped.pow.rewardPool == 1_000_100'u64
 
 {.pop.}

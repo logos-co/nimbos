@@ -83,6 +83,8 @@ import
   ./ledger/test_poq_verifier,
   ./ledger/test_blend_difficulty,
   ./ledger/test_leader_claim,
+  ./ledger/test_pow_state,
+  ./ledger/test_pow_claim,
   ./logos_chain/sync/test_framing,
   ./logos_chain/sync/test_types,
   ./logos_chain/sync/test_ibd,

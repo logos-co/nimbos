@@ -12,6 +12,7 @@
 import
   std/sequtils,
   stew/endians2,
+  stint,
   libp2p/crypto/ed25519/ed25519,
   ../../logos_chain/core/mantle/[primitives, proofs, utxo],
   ../../logos_chain/ledger/[mantle_state, stake_inference, types],
@@ -19,7 +20,9 @@ import
 
 from ../../logos_chain/core/crypto/types import ZkPublicKey
 from ../../logos_chain/ledger/ledger import fromGenesis, LedgerState
+from ../../logos_chain/zk/pol_lottery import Bn254POrder
 from ./sdp/test_helpers import testSdpRegistry
+from ../../logos_chain/core/types import blockId, createGenesisHeader
 from ../testutil import testValidGenesisTx
 
 const
@@ -35,7 +38,21 @@ const
     slotActivationCoeff: NonNegativeRatio(num: 1, den: 10),
     learningRateFixed: fixedPoint(NonNegativeRatio(num: 1, den: 1)),
     faucetPk: Opt.none(ZkPublicKey),
-    uncleWindowSlots: 20) # keeps the uncle window inside the 60-slot test phases
+    uncleWindowSlots: 20, # keeps the uncle window inside the 60-slot test phases
+    # N_b = 100 * 1 div 10 = 10. The reward per claim at genesis is
+    # 1_000_000 * 1 div (1 * 10 * 10) = 10_000.
+    pow: PowRewardConfig(
+      genesisPool: 1_000_000,
+      rateNum: 1,
+      rateDenominator: 100.u256,
+      powShare: 10,
+      shareDen: 100,
+      rewardTargetCap: Bn254POrder shr 1, # about half of all tickets pass
+      rewardTargetFloor: stuint(9, 512), # max(1, ceil(9 / (10 - 9)))
+      emaSmoothingFactor: stuint(9, 512),
+      emaSmoothingPrecision: stuint(10, 512),
+      targetClaimsPerBlock: stuint(10, 512),
+      window: 50)) # shorter than the 100-slot test epoch
 
 func fe*(n: uint64): FieldElement =
   ## Small-integer field element for test vectors.
@@ -84,7 +101,8 @@ proc testGenesisLedgerState*(): LedgerState =
   {.gcsafe.}:
     if not hasDefaultGenesisLedgerStateCache:
       defaultGenesisLedgerStateCache = LedgerState.fromGenesis(
-        testValidGenesisTx(), default(FieldElement), testSdpRegistry(), testLedgerConfig
+        testValidGenesisTx(), blockId(createGenesisHeader(testValidGenesisTx())),
+        default(FieldElement), testSdpRegistry(), testLedgerConfig
       ).expect("genesis state")
       hasDefaultGenesisLedgerStateCache = true
     defaultGenesisLedgerStateCache

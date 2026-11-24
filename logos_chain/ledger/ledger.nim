@@ -14,16 +14,17 @@ import
   std/tables,
   ./[
     balance, types, cryptarchia_state, channel_state, mantle_state,
-    poq_verifier, epoch_state, fee_market, block_rewards,
+    poq_verifier, epoch_state, fee_market, block_rewards, pow_state,
   ],
   ./sdp/[registry, ops],
   ../core/mantle/gas,
-  ../core/types
+  ../core/types,
+  ../utils/hash_trie_map
 
 from ../core/crypto/types import ZkPublicKey
 export
   types, balance, cryptarchia_state, channel_state, mantle_state, epoch_state, registry,
-  poq_verifier, fee_market, block_rewards, gas
+  poq_verifier, fee_market, block_rewards, gas, pow_state
 
 type
   LedgerState* = object
@@ -42,6 +43,7 @@ type
     feeMarket*: FeeMarket
     blockNumber*: uint64 ## applied-block count; genesis state = 0
     feeWindow*: FeeWindow
+    pow*: PowState
 
   Ledger*[Id] = object
     states: Table[Id, LedgerState]
@@ -77,7 +79,8 @@ proc fromUtxos*(
       cryptarchiaLedger: CryptarchiaState.init(utxos),
       sdp: sdp,
       mantleLedger: MantleState.init(),
-      feeMarket: FeeMarket.init())
+      feeMarket: FeeMarket.init(),
+      pow: PowState.init(cfg.pow))
     total = 0'u64
   for u in utxos:
     ?total.addStake(u.note, cfg.faucetPk)
@@ -88,6 +91,7 @@ proc fromUtxos*(
 proc fromGenesis*(
     _: typedesc[LedgerState],
     tx: ValidGenesisMantleTx,
+    blockId: BlockId,
     nonce: FieldElement,
     sdp: sink SdpRegistry,
     cfg: LedgerConfig,
@@ -104,7 +108,11 @@ proc fromGenesis*(
       cryptarchiaLedger: CryptarchiaState.init(),
       sdp: sdp,
       mantleLedger: MantleState.init(),
-      feeMarket: FeeMarket.init())
+      feeMarket: FeeMarket.init(),
+      # Genesis sets the pool seed, the reward per claim and the reward
+      # threshold:
+      # https://github.com/logos-co/logos-lips/blob/6b84187f0ae37a0e8c28c32d3bb1e6f619cec147/docs/blockchain/raw/bedrock-genesis-block.md#mantle-ledger-initialization
+      pow: PowState.init(cfg.pow))
     total = 0'u64
   let r = ?s.cryptarchiaLedger.applyTransferState(
     s.sdp.state.lockedNotes, s.mantleLedger.channelNotes, transfer)
@@ -128,6 +136,9 @@ proc fromGenesis*(
   # Epochs 0 and 1 read the registry snapshot taken at genesis:
   # https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/bedrock-service-declaration-protocol.md#snapshots
   s.sdp = onEpochStarted(s.sdp, genesisEpoch)
+  # The genesis block is canonical, so a claim in the first window can
+  # refer to it.
+  s.pow.blockSlots = s.pow.blockSlots.insert(blockId, genesisSlot)
   ok(s)
 
 func advanceEpochAndMarket*(
@@ -153,6 +164,10 @@ func advanceEpochAndMarket*(
     for _ in prevEpoch ..< s.epochs.activeEpoch.epoch:
       s.feeMarket = s.feeMarket.updateStorageMarket()
     s.cryptarchiaLedger.leader = ?s.cryptarchiaLedger.leader.addEpochVouchers()
+    # Each crossing gives one refill, also when it skips epochs. Skipped
+    # epochs have no blocks, so the refill belongs to the last epoch with
+    # blocks.
+    s.pow = ?s.pow.startEpoch(cfg.pow)
     # Rewards distribute before withdrawal removal, so a withdrawn
     # provider still collects its final reward:
     # https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md#sdp-epoch-finalization
@@ -240,6 +255,7 @@ proc tryApplyTx*(
     tx: ValidSignedMantleTx,
     epoch: EpochNumber,
     slot: SlotNumber,
+    cfg: LedgerConfig,
     verifyPoq: ProofOfQuotaVerifier,
 ): Result[Balance, LedgerError] =
   ## Applies one transaction in-place; the returned balance is the Transfer-only
@@ -320,6 +336,18 @@ proc tryApplyTx*(
       s.cryptarchiaLedger = ?s.cryptarchiaLedger.tryApplyLeaderClaim(
         op.payload.leaderClaim,
       )
+    of ClaimPowReward:
+      # The claim adds nothing to the balance. Its note is in the UTXO set
+      # immediately, so a later Transfer of the same transaction can spend it
+      # and pay the fee.
+      template claim: untyped = op.payload.claimPowReward
+      let reward = s.pow.epochReward
+      s.pow = ?s.pow.tryApplyClaim(
+        claim, proof.claimPowRewardProof, tx.hash, slot,
+        s.epochs.activeEpoch.nonce, s.epochs.previousNonce, cfg.pow)
+      s.cryptarchiaLedger = s.cryptarchiaLedger.insertMintedUtxos([Utxo(
+        opId: opId(claim), outputIndex: 0,
+        note: Note(value: reward, zkPublicKey: claim.publicKey))])
   ok(balance)
 
 func txExecutionGas*(
@@ -362,30 +390,42 @@ func mandatory_fees*(
   s.mandatory_fees(execGas, txByteLen)
 
 func creditBlockRewards*(
-    state: sink LedgerState, totalFeeBurned, totalFeeTip: GasCost
+    state: sink LedgerState, totalFeeCollected, totalFeeTip: GasCost,
+    cfg: LedgerConfig,
 ): Result[LedgerState, LedgerError] =
-  ## Closes one block: records its burned fees and credits the leader pool.
+  ## Closes one block: diverts the PoW share of its fees, records the net
+  ## fee and credits the leader pool.
   # The window write comes first: the sum the emission formula sees includes
-  # this block's own burned total.
+  # this block's own net fee.
   var s = state
   s.blockNumber += 1
-  s.feeWindow.update(s.blockNumber, totalFeeBurned)
+  # The pool takes a share of the collected fees. The rest is pooled for the
+  # block rewards:
+  # https://github.com/logos-co/logos-lips/blob/760f5ee6f27cdb0b7b4d2fc1c79a49831dfcba6a/docs/blockchain/raw/overview-cryptoeconomics.md#proof-of-work-reward-pool
+  let
+    refill = feeShare(totalFeeCollected, cfg.pow)
+    # `refill` is at most `totalFeeCollected`, so this cannot wrap.
+    pooled = totalFeeCollected - refill
+  s.feeWindow.update(s.blockNumber, pooled)
   let
     (blendShare, leaderShare) = block_reward(
       s.epochs.activeEpoch.totalStake,
       s.feeWindow.summedFees,
-      totalFeeBurned)
+      pooled)
     leaderReward = leaderShare.checkedAdd(totalFeeTip).valueOr:
       return err(GasOverflow)
   s.sdp.blendRewards = ?s.sdp.blendRewards.addIncome(blendShare)
   s.cryptarchiaLedger.leader =
     s.cryptarchiaLedger.leader.addPendingRewards(leaderReward)
+  s.pow = ?s.pow.addPendingRefill(refill)
   ok(s)
 
 proc tryApplyTxns*(
     state: sink LedgerState,
     txs: openArray[ValidSignedMantleTx],
     slot: SlotNumber,
+    blockId: BlockId,
+    cfg: LedgerConfig,
     verifyPoq: ProofOfQuotaVerifier,
 ): Result[LedgerState, LedgerError] =
   ## Applies a block's transactions in order under the state's active epoch;
@@ -393,17 +433,17 @@ proc tryApplyTxns*(
   var
     s = state
     blockExecutionGas = Gas(0)
-    totalFeeBurned = GasCost(0)
+    totalFeeCollected = GasCost(0)
     totalFeeTip = GasCost(0)
   # The state, not the caller, is the source of truth for the epoch.
   let epoch = s.epochs.activeEpoch.epoch
   for tx in txs:
     let
       (totalCost, execGas, storageGas) = ?s.mandatory_fees(tx)
-      txBalance = ?s.tryApplyTx(tx, epoch, slot, verifyPoq)
+      txBalance = ?s.tryApplyTx(tx, epoch, slot, cfg, verifyPoq)
     if not txBalance.covers(totalCost):
       return err(InsufficientBalance)
-    totalFeeBurned = totalFeeBurned.checkedAdd(totalCost).valueOr:
+    totalFeeCollected = totalFeeCollected.checkedAdd(totalCost).valueOr:
       return err(GasOverflow)
     # tx_priority_tip = checked_uint64(tx_balance - tx_mandatory_fee): only
     # the difference is narrowed — a wide balance with a small tip stays valid.
@@ -418,10 +458,13 @@ proc tryApplyTxns*(
     s.feeMarket.storageGasConsumedInEpoch =
       s.feeMarket.storageGasConsumedInEpoch.checkedAdd(storageGas).valueOr:
         return err(GasOverflow)
-  s = ?s.creditBlockRewards(totalFeeBurned, totalFeeTip)
+  s = ?s.creditBlockRewards(totalFeeCollected, totalFeeTip, cfg)
   s.feeMarket = s.feeMarket.updateExecutionMarket(blockExecutionGas)
   # Per-epoch load counter driving the Blend difficulty retarget.
   s.epochs = s.epochs.recordBlockTxs(uint64(txs.len))
+  # The block is not in the window while its own claims run. A claim cannot
+  # name the block that holds it: that hash is not known at signing time.
+  s.pow = s.pow.closeBlock(blockId, slot, cfg.pow)
   ok(s)
 
 func init*[Id](
@@ -486,10 +529,11 @@ func pruneStateAt*[Id](l: var Ledger[Id], id: Id) =
 proc prepareUpdate*[Id](
     l: Ledger[Id],
     slot: SlotNumber,
+    blockId: BlockId,
     headerState: sink LedgerState,
     txs: openArray[ValidSignedMantleTx],
 ): Result[LedgerState, LedgerError] =
   ## Applies transactions to a pre-validated headerState.
-  headerState.tryApplyTxns(txs, slot, l.poqVerifier)
+  headerState.tryApplyTxns(txs, slot, blockId, l.config, l.poqVerifier)
 
 {.pop.}

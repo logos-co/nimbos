@@ -16,12 +16,13 @@ import
   std/strutils,
   confutils/defs,
   stew/io2,
+  stint,
   yaml/dom,
   ./deployment_settings_helpers
 
 from ../core/mantle/primitives import EpochNumber, NumberOfEpochs
 from ../core/types import createGenesisHeader
-from ../zk/pol_lottery import isSupportedLotteryF
+from ../zk/pol_lottery import Bn254POrder, isSupportedLotteryF
 
 export
   dom,
@@ -78,6 +79,18 @@ type
     bn*: BnServiceParams
     minStake*: MinStake
 
+  PowRewardSettings* = object
+    genesisPool*: uint64 ## POW_REWARD_POOL_GENESIS
+    minimumDifficulty*: uint32 ## n in REWARD_TARGET_CAP = p // 2**n
+    emaSmoothingFactor*: uint64 ## F
+    emaSmoothingPrecision*: uint64 ## P
+    targetClaimsPerBlock*: uint64
+    rateNum*: uint64
+    rateDen*: uint64
+    powShare*: uint64
+    shareDen*: uint64
+    slotWindow*: uint64 ## WINDOW, in slots
+
   CryptarchiaDeploymentSettings = object
     epochConfig*: EpochConfig
     securityParam*: int
@@ -85,6 +98,7 @@ type
     slotActivationCoeff*: NonNegativeRatio ## f — exact rational, no float
     learningRate*: NonNegativeRatio ## beta — parsed exactly from the decimal scalar
     sdpConfig*: SdpConfig
+    powReward*: PowRewardSettings
     gossipsubProtocol*: string
     genesisState*: GenesisState
 
@@ -135,12 +149,37 @@ func validateDeploymentSettingsStructure(root: YamlNode): Result[void, string] =
   needPath(["cryptarchia", "sdp_config", "service_params", "BN", "epoch"])
   needPath(["cryptarchia", "sdp_config", "min_stake", "threshold"])
   needPath(["cryptarchia", "sdp_config", "min_stake", "epoch"])
+  needPath(["cryptarchia", "pow_config", "reward", "genesis_pool"])
+  needPath(["cryptarchia", "pow_config", "reward", "minimum_difficulty"])
+  needPath(["cryptarchia", "pow_config", "reward", "ema_smoothing_factor"])
+  needPath(["cryptarchia", "pow_config", "reward", "ema_smoothing_precision"])
+  needPath(["cryptarchia", "pow_config", "reward", "target_claims_per_block"])
+  needPath(["cryptarchia", "pow_config", "reward", "rate_num"])
+  needPath(["cryptarchia", "pow_config", "reward", "rate_den"])
+  needPath(["cryptarchia", "pow_config", "reward", "pow_share"])
+  needPath(["cryptarchia", "pow_config", "reward", "share_den"])
+  needPath(["cryptarchia", "pow_config", "reward", "slot_window"])
   needPath(["cryptarchia", "gossipsub_protocol"])
   needPath(["cryptarchia", "faucet_pk"])
   ? validateCryptarchiaGenesisYaml(root)
   needPath(["time", "slot_duration"])
   needPath(["mempool", "pubsub_topic"])
   ok()
+
+func powRewardSettingsFromYaml(root: YamlNode): Result[PowRewardSettings, string] =
+  template path(key: string): untyped =
+    ["cryptarchia", "pow_config", "reward", key]
+  ok(PowRewardSettings(
+    genesisPool: ? reqUInt64(root, path("genesis_pool")),
+    minimumDifficulty: ? reqUInt32(root, path("minimum_difficulty")),
+    emaSmoothingFactor: ? reqUInt64(root, path("ema_smoothing_factor")),
+    emaSmoothingPrecision: ? reqUInt64(root, path("ema_smoothing_precision")),
+    targetClaimsPerBlock: ? reqUInt64(root, path("target_claims_per_block")),
+    rateNum: ? reqUInt64(root, path("rate_num")),
+    rateDen: ? reqUInt64(root, path("rate_den")),
+    powShare: ? reqUInt64(root, path("pow_share")),
+    shareDen: ? reqUInt64(root, path("share_den")),
+    slotWindow: ? reqUInt64(root, path("slot_window"))))
 
 func deploymentSettingsFromYaml(root: YamlNode): Result[DeploymentSettings, string] =
   let parsedGenesis = ? parseDeploymentGenesisState(root)
@@ -201,6 +240,7 @@ func deploymentSettingsFromYaml(root: YamlNode): Result[DeploymentSettings, stri
           epoch: ? reqUInt32(root, ["cryptarchia", "sdp_config", "min_stake", "epoch"]),
         )
       ),
+      powReward: ? powRewardSettingsFromYaml(root),
       gossipsubProtocol: ? reqScalar(root, ["cryptarchia", "gossipsub_protocol"]),
       genesisState: parsedGenesis
     ),
@@ -211,6 +251,22 @@ func deploymentSettingsFromYaml(root: YamlNode): Result[DeploymentSettings, stri
       pubsubTopic: ? reqScalar(root, ["mempool", "pubsub_topic"])
     )
   ))
+
+func rewardTargetCap*(settings: PowRewardSettings): UInt256 =
+  ## `REWARD_TARGET_CAP`: the field modulus shifted right by `minimum_difficulty`.
+  if settings.minimumDifficulty >= 256:
+    0.u256
+  else:
+    Bn254POrder shr int(settings.minimumDifficulty)
+
+func rewardTargetFloor*(settings: PowRewardSettings): uint64 =
+  ## `REWARD_TARGET_FLOOR`: max(1, ceil(F / (P - F))). Requires `F < P`.
+  # ceil(F / d) is (F + d - 1) div d. With d = P - F the dividend is P - 1,
+  # so no sum can overflow.
+  let
+    f = settings.emaSmoothingFactor
+    p = settings.emaSmoothingPrecision
+  max(1'u64, (p - 1) div (p - f))
 
 proc parseDeploymentSettings*(text: string): Result[DeploymentSettings, string] =
   let root = ? parseDeploymentSettingsYaml(text)
@@ -258,6 +314,32 @@ func validateDeploymentSettings*(ds: DeploymentSettings): Result[void, string] =
     "cryptarchia.sdp_config.service_params.BN.inactivity_period must be >= 2")
   need(ds.cryptarchia.sdpConfig.minStake.threshold > 0,
     "cryptarchia.sdp_config.min_stake.threshold must be > 0")
+  template reward: untyped = ds.cryptarchia.powReward
+  # Proof of Work, Parameters: "F < P". P - F is a divisor of the floor.
+  # https://github.com/logos-co/logos-lips/blob/760f5ee6f27cdb0b7b4d2fc1c79a49831dfcba6a/docs/blockchain/raw/proof-of-work.md#parameters
+  need(reward.emaSmoothingFactor < reward.emaSmoothingPrecision,
+    "cryptarchia.pow_config.reward.ema_smoothing_factor must be < ema_smoothing_precision")
+  need(reward.shareDen > 0,
+    "cryptarchia.pow_config.reward.share_den is a divisor and must be > 0")
+  need(reward.rateDen > 0,
+    "cryptarchia.pow_config.reward.rate_den is a divisor and must be > 0")
+  need(reward.targetClaimsPerBlock > 0,
+    "cryptarchia.pow_config.reward.target_claims_per_block is a divisor and must be > 0")
+  # Proof of Work 1.1.1, Parameters, a proposed revision:
+  # "EPOCH_POW_DISTRIBUTION_RATE_NUM must be at most
+  # EPOCH_POW_DISTRIBUTION_RATE_DEN". The reward is then at most the pool.
+  # https://github.com/logos-co/logos-lips/blob/9659f156b38a3532f68349da1299791725f9f16d/docs/blockchain/raw/proof-of-work.md#parameters
+  need(reward.rateNum <= reward.rateDen,
+    "cryptarchia.pow_config.reward.rate_num must be <= rate_den")
+  # The pool takes at most the full fee, so the net fee is not negative.
+  need(reward.powShare <= reward.shareDen,
+    "cryptarchia.pow_config.reward.pow_share must be <= share_den")
+  # Proof of Work, Parameters: REWARD_TARGET_CAP is above REWARD_TARGET_FLOOR
+  # and at most p - 1.
+  let cap = reward.rewardTargetCap
+  need(cap > reward.rewardTargetFloor.u256 and cap <= Bn254POrder - 1.u256,
+    "cryptarchia.pow_config.reward.minimum_difficulty must give a cap " &
+      "above the floor and at most p - 1")
   need(ds.network.kademliaProtocolName.len > 0, "empty network.kademlia_protocol_name")
   need(ds.network.identifyProtocolName.len > 0, "empty network.identify_protocol_name")
   need(ds.network.chainSyncProtocolName.len > 0, "empty network.chain_sync_protocol_name")

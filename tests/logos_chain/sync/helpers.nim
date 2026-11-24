@@ -45,7 +45,7 @@ proc initTestChain*(
       else:
         let validTx = mkValidGenesisTx(genesis.txs[0].hashed)
         LedgerState.fromGenesis(
-            validTx, default(FieldElement), testSdpRegistry(),
+            validTx, gid, default(FieldElement), testSdpRegistry(),
             config).valueOr:
           raiseAssert "initTestChain: genesis state: " & $error
   Chain.init(

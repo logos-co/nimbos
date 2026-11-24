@@ -14,6 +14,7 @@
 
 import
   results,
+  stint,
   ../core/types,
   ../consensus/clock,
   ./pol_verifier
@@ -66,10 +67,32 @@ type
     UnsupportedLotteryF ## no lottery constants registered for the configured `f`
     InvalidSlot ## header slot is not strictly greater than the parent state's
     TotalStakeOverflow ## genesis stake sum exceeds uint64
+    # Proof of work (CLAIM_POW_REWARD), one variant for each validation step
+    PowRewardUnavailable ## the reward per claim is zero or above the pool
+    PowBlockOutsideWindow ## the claimed block is unknown or outside the window
+    PowEpochNonceMismatch ## the nonce is not the current or the previous epoch nonce
+    PowTicketAboveTarget ## the ticket is not below the reward threshold
+    PowTicketClaimed ## the ticket was claimed before
 
   LeaderProofVerifier* = proc(
     proof: ProofOfLeadership, public: LeaderPublic
   ): Result[bool, PolLoadError] {.gcsafe, raises: [].}
+  PowRewardConfig* = object
+    ## Proof-of-work reward parameters, derived from the deployment settings.
+    genesisPool*: TokenValue
+    rateNum*: uint64
+    rateDenominator*: UInt256 ## rate_den * target_claims_per_block * N_b
+    powShare*: uint64
+    shareDen*: uint64
+    rewardTargetCap*: UInt256
+    # The retarget runs in 512 bits. These values have that width, so each
+    # block does not convert them again.
+    rewardTargetFloor*: StUint[512]
+    emaSmoothingFactor*: StUint[512]
+    emaSmoothingPrecision*: StUint[512]
+    targetClaimsPerBlock*: StUint[512]
+    window*: uint64 ## acceptance window, in slots
+
   LedgerConfig* = object
     ## Chain configuration. Remaining fields land with the modules that
     ## need them (SDP).
@@ -78,6 +101,7 @@ type
     learningRateFixed*: uint64 ## fixedPoint(beta) — stake-inference input
     faucetPk*: Opt[ZkPublicKey] ## excluded from the genesis total-stake sum
     uncleWindowSlots*: uint64 ## ⌊W / f⌋, the uncle reference window in slots
+    pow*: PowRewardConfig
 
 func toLedgerError*(err: EncodingError): LedgerError =
   case err

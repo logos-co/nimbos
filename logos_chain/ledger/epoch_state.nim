@@ -101,6 +101,7 @@ type EpochTracker* = object
   lastAppliedSlot*: SlotNumber
   activeEpoch*: EpochState ## governs the current epoch's lottery
   nextEpoch*: EpochState ## being chased/frozen for epoch + 1
+  previousNonce*: FieldElement ## η of the epoch before the active epoch
   blockDensity*: BlockDensity
   txDensity*: TxDensity ## per-epoch load feeding the Blend difficulty
 
@@ -114,11 +115,14 @@ proc genesisEpochTracker*(
   let epoch0 = ?genesisEpochState(0, nonce, root, totalStake, cfg.slotActivationCoeff)
   var epoch1 = epoch0
   epoch1.epoch = 1
+  # Epoch 0 has no earlier epoch. The genesis nonce as the previous nonce
+  # makes a claim in epoch 0 accept one nonce only.
   ok(EpochTracker(
     nonce: nonce,
     lastAppliedSlot: 0,
     activeEpoch: epoch0,
     nextEpoch: epoch1,
+    previousNonce: nonce,
     blockDensity: BlockDensity.init(0, cfg.epochSchedule)))
 
 func rotate(
@@ -165,6 +169,18 @@ func rotate(
       else:
         EpochState(epoch: newEpoch, nonce: t.nonce, agedUtxoRoot: latestRoot)
   var next = t
+  # This value is the nonce of epoch newEpoch - 1. After one epoch without
+  # a block it is the nonce that `nextEpoch` froze. After more such epochs,
+  # that epoch started after the last block, so its nonce is the running
+  # nonce.
+  # `advanceEpochs` updates `nextEpoch` before this call.
+  next.previousNonce =
+    if newEpoch == t.activeEpoch.epoch + 1:
+      t.activeEpoch.nonce
+    elif newEpoch == t.activeEpoch.epoch + 2:
+      t.nextEpoch.nonce
+    else:
+      t.nonce
   next.activeEpoch = promoted.withLottery(stake, values)
   next.activeEpoch.powBlendDifficulty = promotedDifficulty
   next.nextEpoch = EpochState(

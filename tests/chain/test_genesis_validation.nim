@@ -66,7 +66,8 @@ proc twoNoteGenesis(
 proc genesisState(
     tx: ValidGenesisMantleTx, cfg = testLedgerConfig
 ): Result[LedgerState, LedgerError] =
-  LedgerState.fromGenesis(tx, default(FieldElement), testSdpRegistry(), cfg)
+  LedgerState.fromGenesis(
+    tx, default(Hash32), default(FieldElement), testSdpRegistry(), cfg)
 
 suite "chain/genesis validation: stage 1 (stateless)":
   test "accepts Transfer + Inscribe":

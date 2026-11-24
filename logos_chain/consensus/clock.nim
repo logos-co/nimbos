@@ -40,6 +40,14 @@ func slotsForBlocks*(blocks: uint64, f: NonNegativeRatio): uint64 =
   doAssert f.num > 0 and f.den > 0
   blocks * f.den div f.num
 
+func blocksForSlots*(slots: uint64, f: NonNegativeRatio): uint64 =
+  ## ⌊slots·f⌋, the expected blocks in `slots` slots at rate `f`.
+  # The first term counts the whole multiples of `f.den`. The second term
+  # counts the remainder. This form is exact, and its products stay small for
+  # each supported `f`.
+  doAssert f.den > 0
+  slots div f.den * f.num + slots mod f.den * f.num div f.den
+
 func epochLength*(s: EpochSchedule): uint64 =
   (s.stakeDistributionStabilization + s.nonceBuffer + s.nonceStabilization) *
     s.basePeriodLength

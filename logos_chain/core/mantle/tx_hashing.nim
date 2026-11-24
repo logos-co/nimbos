@@ -151,6 +151,10 @@ func opId*(op: LeaderClaimPayload): Hash32 =
   ## op_id = Blake2b-256("OPERATION_ID_V1" || encode_op_bytes(op))
   blake2b256Hash(OperationIdV1DomainTag, encodeLeaderClaim(op))
 
+func opId*(op: ClaimPowRewardPayload): Hash32 =
+  ## op_id = Blake2b-256("OPERATION_ID_V1" || encode_op_bytes(op))
+  blake2b256Hash(OperationIdV1DomainTag, encodeClaimPowReward(op))
+
 when defined(unittest) or defined(test):
   func createHashedSignedMantleTxForTest*(
       signedTx: sink SignedMantleTx,

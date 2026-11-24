@@ -26,7 +26,7 @@ export StatelessLedgerError
 
 from ../core/types import
   Block, BlockTxs, Proposal, body_root, ExpectedBedrockVersion,
-  MaxBlockSize, MaxUncles, asSeq, len, header, BlockId,
+  MaxBlockSize, MaxUncles, asSeq, len, header, BlockId, blockId,
   Header, UncleHeaders, encode, MaxBlockTxs,
   createGenesisHeader, verify_signature
 from ../core/mantle/tx_hashing import
@@ -300,7 +300,7 @@ proc prepareBlockUpdate*(
 ): Result[LedgerState, BlockValidationError] =
   ## Executes state transitions via `ledger.prepareUpdate` on a validated block.
   var prepared = ledger.prepareUpdate(
-    blk.header.slot, headerState, blk.txs
+    blk.header.slot, blockId(blk.header), headerState, blk.txs
   ).valueOr:
     return err(BlockValidationError(
       kind: BlockValidationErrorKind.TransactionsRejected,

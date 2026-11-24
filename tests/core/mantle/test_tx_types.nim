@@ -163,6 +163,14 @@ suite "core/mantle/tx_types":
               rewardsRoot: default(RewardsRoot), voucherNullifier: default(VoucherNullifier), publicKey: default(ZkPublicKey)))]),
             opProofs: @[OpProof(kind: opfLeaderClaim, proofOfClaimProof: DefaultCompressedGroth16Proof)])
 
+          # 11. ClaimPowReward
+          txClaimPowReward = SignedMantleTx(
+            tx: MantleTx(ops: @[createClaimPowRewardOp(ClaimPowRewardPayload(
+              epochNonce: default(FieldElement), blockHash: default(Hash32),
+              publicKey: default(ZkPublicKey)))]),
+            opProofs: @[OpProof(
+              kind: opfClaimPowReward, claimPowRewardProof: DefaultZkSignature)])
+
           # Multi-op combo
           txMultiOp = SignedMantleTx(
             tx: MantleTx(ops: @[
@@ -182,12 +190,12 @@ suite "core/mantle/tx_types":
           txDepositEmpty, txDepositPopulated,
           txWithdraw, txChannelTransfer, txChannelConfig,
           txSdpDeclare, txSdpWithdraw, txSdpActive, txLeaderClaim,
-          txMultiOp,
+          txClaimPowReward, txMultiOp,
         ]
         hasSampleTxsCache = true
       sampleTxsCache
 
-  test "byteLen parity across all 10 operation and proof variants":
+  test "byteLen parity across all 11 operation and proof variants":
     let allTxs = sampleTxs()
     for tx in allTxs:
       let enc = encodeSignedMantleTx(tx).get

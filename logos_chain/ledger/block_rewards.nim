@@ -5,9 +5,9 @@
 #   * Apache v2 license (license terms in the root directory or at https://www.apache.org/licenses/LICENSE-2.0).
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
-## Per-block reward emission: the burned-fee look-back window and the
+## Per-block reward emission: the pooled-fee look-back window and the
 ## leader/blend split of one block's emission.
-## Spec: [Block Rewards](https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/block-rewards.md)
+## Spec: [Block Rewards](https://github.com/logos-co/logos-lips/blob/760f5ee6f27cdb0b7b4d2fc1c79a49831dfcba6a/docs/blockchain/raw/block-rewards.md)
 
 {.push raises: [], gcsafe.}
 
@@ -18,10 +18,10 @@ import
 
 const
   # Parameter values:
-  # https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/block-rewards.md#parametrization
-  WINDOW_SIZE = 120 ## blocks of burned fees the emission formula looks back over
+  # https://github.com/logos-co/logos-lips/blob/760f5ee6f27cdb0b7b4d2fc1c79a49831dfcba6a/docs/blockchain/raw/block-rewards.md#parametrization
+  WINDOW_SIZE = 120 ## blocks of pooled fees the emission formula looks back over
   # Names verbatim from the spec's integer formulation:
-  # https://github.com/logos-co/logos-lips/blob/709cf7f1662affa6efa094e2fb066e9b530b5aaa/docs/blockchain/raw/block-rewards.md#float-precision-for-implementation
+  # https://github.com/logos-co/logos-lips/blob/760f5ee6f27cdb0b7b4d2fc1c79a49831dfcba6a/docs/blockchain/raw/block-rewards.md#float-precision-for-implementation
   A_SCALE = u128(120_000_000)
   FEE_AVG_NUMERATOR = u128(10_512)
   # Not one fraction: the numerator scales the inflation branch, the
@@ -34,21 +34,21 @@ const
   SHARE_DENOMINATOR = u128(10)
 
 type FeeWindow* = object
-  ## Burned fees of the last `WINDOW_SIZE` applied blocks, keyed
-  ## `blockNumber mod WINDOW_SIZE`; zero-initialised at genesis.
+  ## Fees net of the PoW share, of the last `WINDOW_SIZE` applied blocks,
+  ## keyed `blockNumber mod WINDOW_SIZE`; zero-initialised at genesis.
   entries: array[WINDOW_SIZE, GasCost]
 
-func update*(w: var FeeWindow, blockNumber: uint64, burned: GasCost) =
-  ## Records `burned` in `blockNumber`'s slot, evicting the entry 120 blocks back.
-  w.entries[blockNumber mod WINDOW_SIZE] = burned
+func update*(w: var FeeWindow, blockNumber: uint64, pooled: GasCost) =
+  ## Records `pooled` in `blockNumber`'s slot, evicting the entry 120 blocks back.
+  w.entries[blockNumber mod WINDOW_SIZE] = pooled
 
 func summedFees*(w: FeeWindow): UInt128 =
-  ## Burned fees summed over the whole window.
+  ## Pooled fees summed over the whole window.
   # 120 * uint64.high needs 71 bits — the sum is only ever consumed in u128.
   w.entries.foldl(a + u128(b), u128(0))
 
 func block_reward*(
-    totalStake: uint64, sumFees: UInt128, lastBurnedFee: GasCost
+    totalStake: uint64, sumFees: UInt128, lastPooledFee: GasCost
 ): tuple[blend: Value, leader: Value] =
   ## Emission for one block, split 40/60; the caller adds tips to the leader share.
   let
@@ -64,10 +64,10 @@ func block_reward*(
     # Interpolates between pure inflation (a = A_SCALE) and pure fee
     # recycling (a = 0).
     rewardNumerator = INFLATION_NUMERATOR * a +
-      INFLATION_DENOMINATOR * (A_SCALE - a) * u128(lastBurnedFee)
+      INFLATION_DENOMINATOR * (A_SCALE - a) * u128(lastPooledFee)
   const shareDenominator = INFLATION_DENOMINATOR * A_SCALE * SHARE_DENOMINATOR
   # rewardNumerator caps at INFLATION_DENOMINATOR * A_SCALE * uint64.high
-  # (a = 0, the whole u64 range burned), so a share fraction below one keeps
+  # (a = 0, the whole u64 range pooled), so a share fraction below one keeps
   # each share inside uint64: the truncations cannot drop bits.
   static:
     doAssert LEADER_SHARE_NUMERATOR < SHARE_DENOMINATOR

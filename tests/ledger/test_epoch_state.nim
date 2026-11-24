@@ -91,4 +91,27 @@ suite "ledger/epoch_state":
       t.advanceEpochs(5, fe(9), testLedgerConfig).error == InvalidSlot
       t.advanceEpochs(3, fe(9), testLedgerConfig).error == InvalidSlot
 
+  test "the previous nonce follows the rotation rule":
+    # Epoch length 100, nonce snapshot at slot 60 of each epoch. The block at
+    # 70 comes after the snapshot, so the nonce of epoch 1 stays n1 and the
+    # running nonce is n2. Thus the last two checks expect different nonces.
+    let
+      g = fe(7)
+      t1 = genesisEpochTracker(g, fe(9), 1000, testLedgerConfig).expect(
+        "supported f").advanceEpochs(10, fe(9), testLedgerConfig).expect(
+          "slot 10").recordBlock(10, fe(3), [])
+      n1 = t1.nonce
+      t2 = t1.advanceEpochs(70, fe(9), testLedgerConfig).expect(
+        "slot 70").recordBlock(70, fe(4), [])
+      n2 = t2.nonce
+    check:
+      n1 != g
+      n2 != n1
+      t2.advanceEpochs(105, fe(9), testLedgerConfig).expect(
+        "epoch 1").previousNonce == g
+      t2.advanceEpochs(205, fe(9), testLedgerConfig).expect(
+        "epoch 2").previousNonce == n1
+      t2.advanceEpochs(305, fe(9), testLedgerConfig).expect(
+        "epoch 3").previousNonce == n2
+
 {.pop.}

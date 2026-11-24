@@ -34,7 +34,7 @@ const
   EXECUTION_SDP_WITHDRAW_GAS = Gas(590)
   EXECUTION_SDP_ACTIVE_GAS = Gas(590)
   EXECUTION_LEADER_CLAIM_GAS = Gas(580)
-  # EXECUTION_CLAIM_POW_REWARD_GAS: no CLAIM_POW_REWARD opcode yet.
+  EXECUTION_CLAIM_POW_REWARD_GAS = Gas(590)
 
   # execution-market.md G_max: 3,200,000 execution gas (1s at 80% of a
   # min-spec CPU) minus the 6,540 reserved for batch-verification init.
@@ -62,5 +62,6 @@ func execution_gas*(op: Op, multisigThreshold: uint16): Gas =
   of SdpWithdraw: EXECUTION_SDP_WITHDRAW_GAS
   of SdpActive: EXECUTION_SDP_ACTIVE_GAS
   of LeaderClaim: EXECUTION_LEADER_CLAIM_GAS
+  of ClaimPowReward: EXECUTION_CLAIM_POW_REWARD_GAS
 
 {.pop.}

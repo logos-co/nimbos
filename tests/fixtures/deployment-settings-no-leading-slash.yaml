@@ -36,6 +36,18 @@ cryptarchia:
     min_stake:
       threshold: 1
       epoch: 0
+  pow_config:
+    reward:
+      genesis_pool: 50000000
+      minimum_difficulty: 19
+      ema_smoothing_factor: 9
+      ema_smoothing_precision: 10
+      target_claims_per_block: 1
+      rate_num: 1
+      rate_den: 10
+      pow_share: 10
+      share_den: 100
+      slot_window: 200
   gossipsub_protocol: /logos/cryptarchia/1.0.0
   genesis_block:
     header:

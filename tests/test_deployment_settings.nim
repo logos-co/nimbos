@@ -98,6 +98,18 @@ cryptarchia:
     min_stake:
       threshold: 1
       epoch: 0
+  pow_config:
+    reward:
+      genesis_pool: 50000000
+      minimum_difficulty: 19
+      ema_smoothing_factor: 9
+      ema_smoothing_precision: 10
+      target_claims_per_block: 1
+      rate_num: 1
+      rate_den: 10
+      pow_share: 10
+      share_den: 100
+      slot_window: 200
   gossipsub_protocol: /a/cryp
 """ & deploymentGenesisBlockMin & """
   faucet_pk: '0000000000000000000000000000000000000000000000000000000000000001'
@@ -175,6 +187,18 @@ cryptarchia:
     min_stake:
       threshold: 1
       epoch: 0
+  pow_config:
+    reward:
+      genesis_pool: 50000000
+      minimum_difficulty: 19
+      ema_smoothing_factor: 9
+      ema_smoothing_precision: 10
+      target_claims_per_block: 1
+      rate_num: 1
+      rate_den: 10
+      pow_share: 10
+      share_den: 100
+      slot_window: 200
   gossipsub_protocol:
     - /a/cryp
 """ & deploymentGenesisBlockMin & """
@@ -626,5 +650,62 @@ mempool:
     check:
       v.isErr
       "overflows uint64" in v.error
+
+  test "parseDeploymentSettings reads pow_config.reward":
+    let ds = parseDeploymentSettings(minimalValidYaml).valueOr:
+      check false
+      return
+    template reward: untyped = ds.cryptarchia.powReward
+    check:
+      reward.genesisPool == 50_000_000'u64
+      reward.slotWindow == 200'u64
+    let
+      powStart = minimalValidYaml.find("  pow_config:")
+      powEnd = minimalValidYaml.find("  gossipsub_protocol:")
+      noPow = parseDeploymentSettings(
+        minimalValidYaml[0 ..< powStart] & minimalValidYaml[powEnd .. ^1])
+    check:
+      noPow.isErr
+      "missing or invalid path: cryptarchia.pow_config.reward.genesis_pool" in
+        noPow.error
+
+  test "validateDeploymentSettings rejects PoW values that break the reward arithmetic":
+    var spec = parseDeploymentSettings(minimalValidYaml).valueOr:
+      check false
+      return
+    # The values of Proof of Work 1.1.0, Parameters.
+    spec.cryptarchia.powReward = PowRewardSettings(
+      genesisPool: 50_000_000, minimumDifficulty: 26, emaSmoothingFactor: 9,
+      emaSmoothingPrecision: 10, targetClaimsPerBlock: 10, rateNum: 1,
+      rateDen: 200, powShare: 10, shareDen: 100, slotWindow: 300)
+    check validateDeploymentSettings(spec).isOk
+    template rejects(field, value: untyped, message: string) =
+      var ds = spec
+      ds.cryptarchia.powReward.field = value
+      let v = validateDeploymentSettings(ds)
+      check:
+        v.isErr
+        message in v.error
+    rejects(emaSmoothingFactor, 10, "ema_smoothing_factor must be < ema_smoothing_precision")
+    rejects(powShare, 101, "pow_share must be <= share_den")
+    rejects(rateNum, 201, "rate_num must be <= rate_den")
+    # A shift of 0 gives the cap p, above p - 1.
+    rejects(minimumDifficulty, 0, "cap above the floor and at most p - 1")
+    # p shr 251 is 6, at or below the floor of 9.
+    rejects(minimumDifficulty, 251, "cap above the floor and at most p - 1")
+    rejects(shareDen, 0, "share_den is a divisor")
+    rejects(rateDen, 0, "rate_den is a divisor")
+    rejects(targetClaimsPerBlock, 0, "target_claims_per_block is a divisor")
+    # The full fee as the share and the full pool as the rate are valid.
+    var full = spec
+    full.cryptarchia.powReward.powShare = 100
+    full.cryptarchia.powReward.rateNum = 200
+    check validateDeploymentSettings(full).isOk
+
+  test "rewardTargetFloor is 1 without smoothing":
+    # max(1, ceil(0 / 10)) = 1.
+    let noSmoothing = PowRewardSettings(
+      emaSmoothingFactor: 0, emaSmoothingPrecision: 10)
+    check noSmoothing.rewardTargetFloor == 1'u64
 
 {.pop.}
