@@ -73,12 +73,14 @@ template withProcessor*(chain: Chain, body: untyped) =
   finally:
     await bp.stop()
 
-template withClientSyncerOn*(sw: Switch, clientChain: Chain, body: untyped) =
+template withClientSyncerOn*(
+    sw: Switch, clientChain: Chain, peerProvider: PeerProvider, body: untyped
+) =
   ## Client syncer on the caller's switch, stopped with its processor after `body`.
   let
     bp = BlockProcessor.new(clientChain)
     clientSyncer {.inject.} =
-      Syncer.init(sw, bp, testChainSyncProtocol, nil)
+      Syncer.init(sw, bp, testChainSyncProtocol, peerProvider)
   bp.start()
   clientSyncer.startOrphanSync()
   try:
@@ -87,27 +89,41 @@ template withClientSyncerOn*(sw: Switch, clientChain: Chain, body: untyped) =
     await bp.stop()
     await clientSyncer.stop()
 
+template withSwitches*(body: untyped) =
+  ## Scope that tracks switches started via `startSwitch()` and stops them concurrently.
+  var switches: seq[Switch]
+  template startSwitch(): Switch {.inject.} =
+    let sw = await startQuicTestSwitch()
+    switches.add(sw)
+    sw
+  try:
+    body
+  finally:
+    await allFutures(switches.mapIt(it.stop()))
+
 template withSyncPair*(serverChain, clientChain: Chain, body: untyped) =
   ## A serving switch and a connected client syncer, stopped after `body`.
-  let
-    server {.inject.} = await startQuicTestSwitch()
-    client {.inject.} = await startQuicTestSwitch()
-  mountTestServer(server, serverChain)
-  try:
-    withClientSyncerOn(client, clientChain):
+  withSwitches:
+    let
+      server {.inject.} = startSwitch()
+      client {.inject.} = startSwitch()
+    mountTestServer(server, serverChain)
+    withClientSyncerOn(
+      client,
+      clientChain,
+      proc(): seq[PeerId] = @[server.peerInfo.peerId],
+    ):
       await client.connect(server.peerInfo.peerId, server.peerInfo.addrs, forceDial = true)
       body
-  finally:
-    await allFutures(client.stop(), server.stop())
 
 proc extendChainAfterGenesis*(
-    tree: LocalTree, genesis: ValidBlock, extraBlocks: int,
+    tree: LocalTree, genesis: ValidBlock, extraBlocks: int, startSlot = 1,
 ): BlockId =
   ## Add ``extraBlocks`` descendants on top of ``genesis``; return the tip id.
   var
     parentHdr = genesis.header
     parentId = blockId(genesis.header)
-  for slot in 1 .. extraBlocks:
+  for slot in startSlot ..< startSlot + extraBlocks:
     let blk = childValidBlock(parentHdr, parentId, SlotNumber(slot.uint64), [])
     check tree.addBlockToTree(blk)
     parentHdr = blk.header
@@ -148,12 +164,6 @@ func downloadBlocksRequestEqual*(a, b: DownloadBlocksRequest): bool =
   a.knownBlocks.latestImmutableBlock == b.knownBlocks.latestImmutableBlock and
   a.knownBlocks.additionalBlocks == b.knownBlocks.additionalBlocks
 
-func blockDownloadWireEqual*(a, b: Block): bool =
-  a.header == b.header and a.signature == b.signature and a.txs.len ==
-      b.txs.len and
-  (0 ..< a.txs.len).allIt(encodeSignedMantleTx(a.txs[it]) ==
-      encodeSignedMantleTx(b.txs[it]))
-
 func downloadBlocksResponseEqual*(a, b: DownloadBlocksResponse): bool =
   if a.kind != b.kind:
     return false
@@ -175,27 +185,6 @@ func downloadBlocksResponseEqual*(a, b: DownloadBlocksResponse): bool =
       true
     of burUnknown:
       ra.message == rb.message
-
-proc downloadBlocksResponsesForRequest*(
-    tree: LocalTree, req: DownloadBlocksRequest
-): seq[DownloadBlocksResponse] =
-  let sendIds = cappedDownloadPathBlockIds(tree, req)
-  if sendIds.len == 0:
-    return @[DownloadBlocksResponse(kind: dbrNoMoreBlocks)]
-  var responses = newSeqOfCap[DownloadBlocksResponse](sendIds.len + 1)
-  for i in countdown(sendIds.high, 0):
-    let
-      blk = tree.getBlock(sendIds[i]).valueOr:
-        fail "block not in tree"
-      innerWire = try:
-        encode(blk, cryptarchiaSyncBincodeConfig)
-      except BincodeError:
-        fail getCurrentExceptionMsg()
-    check innerWire.len > 0 and innerWire.len <= MaxBlockSize
-    responses.add DownloadBlocksResponse(kind: dbrBlock,
-        downloadedBlock: innerWire)
-  responses.add DownloadBlocksResponse(kind: dbrNoMoreBlocks)
-  responses
 
 proc u32LengthPrefixedHex*(inner: seq[byte]): string =
   try:

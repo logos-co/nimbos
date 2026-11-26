@@ -409,7 +409,12 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
     pendingProto.started = true
     peers.listener.switch.mount(pendingProto)
 
-    dialerNode.syncer = Syncer.init(peers.dialer.switch, dialerNode.processor, testChainSyncProtocol, nil)
+    dialerNode.syncer = Syncer.init(
+      peers.dialer.switch,
+      dialerNode.processor,
+      testChainSyncProtocol,
+      proc(): seq[PeerId] = dialerNode.network.connectedPeerIds(),
+    )
 
     try:
       await listenerNode.initializeNetworking()
@@ -458,7 +463,12 @@ suite "P2P stack — GossipSub topics (Logos Chain wire topics)":
     check (await listenerNode.processor.addBlock(b1, id1)).isOk
     mountCryptarchiaSyncHandler(Syncer.init(peers.listener.switch, listenerNode.processor, testChainSyncProtocol, nil))
 
-    dialerNode.syncer = Syncer.init(peers.dialer.switch, dialerNode.processor, testChainSyncProtocol, nil)
+    dialerNode.syncer = Syncer.init(
+      peers.dialer.switch,
+      dialerNode.processor,
+      testChainSyncProtocol,
+      proc(): seq[PeerId] = dialerNode.network.connectedPeerIds(),
+    )
 
     try:
       await listenerNode.initializeNetworking()

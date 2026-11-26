@@ -24,12 +24,6 @@ from ../chain/block_validation import encode, header
 logScope:
   topics = "cryptarchia_sync"
 
-func getTipResponseFromLocalTree(localTree: LocalTree): GetTipResponse =
-  GetTipResponse(
-    kind: gtrTip,
-    tipData: localTree.localTip(),
-  )
-
 func distinctKnownBlockIds(known: KnownBlocks): seq[BlockId] =
   var ids = newSeqOfCap[BlockId](2 + known.additionalBlocks.len)
   for id in [known.localTip, known.latestImmutableBlock]:
@@ -105,7 +99,7 @@ proc serveGetTipRequest(
       if ibdInProgress:
         GetTipResponse(kind: gtrFailure, failureMessage: "initial block download in progress")
       else:
-        getTipResponseFromLocalTree(localTree)
+        GetTipResponse(kind: gtrTip, tipData: localTree.localTip())
     respInner = try:
       encode(tipResp, cryptarchiaSyncBincodeConfig)
     except BincodeError:
@@ -168,10 +162,7 @@ proc serveDownloadBlocksRequest(
     let
       blk = localTree.getBlock(sendIds[i]).valueOr:
         debug "Sync handler: block load failed", blockId = sbyteutils.toHex(sendIds[i])
-        await writeResp(DownloadBlocksResponse(
-          kind: dbrFailure,
-          blocksUnavailableReason: BlocksUnavailableReason(
-            kind: burUnknown, message: "block load failed")))
+        await writeResp(failureResp("block load failed"))
         debug "Sync handler: download failure response ok",
           targetBlock = sbyteutils.toHex(req.targetBlock)
         return
@@ -181,10 +172,7 @@ proc serveDownloadBlocksRequest(
         @[]
     if innerWire.len == 0:
       debug "Sync handler: block encode failed", blockId = sbyteutils.toHex(sendIds[i])
-      await writeResp(DownloadBlocksResponse(
-        kind: dbrFailure,
-        blocksUnavailableReason: BlocksUnavailableReason(
-          kind: burUnknown, message: "block encode failed")))
+      await writeResp(failureResp("block encode failed"))
       debug "Sync handler: download failure response ok",
         targetBlock = sbyteutils.toHex(req.targetBlock)
       return
