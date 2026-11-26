@@ -8,10 +8,9 @@
 {.push raises: [], gcsafe.}
 
 import
-  ../chain/local_tree,
   ../core/types,
   bincode
-export local_tree.Tip, types
+export types
 
 const
   MaxRequestBlocks* = 128
@@ -78,7 +77,7 @@ type
   GetTipResponse* = object
     case kind*: GetTipResponseKind
     of gtrTip:
-      tipData*: Tip
+      tip*: BlockInfo
     of gtrFailure:
       failureMessage*: string
 

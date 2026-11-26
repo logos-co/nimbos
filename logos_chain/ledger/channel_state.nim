@@ -12,7 +12,6 @@
 import
   std/sequtils,
   intops,
-  libp2p/crypto/ed25519/ed25519,
   ./[channel_notes, cryptarchia_state, zksig_verify],
   ../core/[utils],
   ../core/crypto/hashing,
@@ -110,7 +109,7 @@ func verifyChannelMultiSig(
   for i, idx in proof.indexes:
     if int(idx) >= keys.len:
       return err(InvalidTxProof)
-    if not verify(proof.signatures[i], txHash, keys[idx]):
+    if not verifyStrict(proof.signatures[i], txHash, keys[idx]):
       return err(InvalidTxProof)
   ok()
 

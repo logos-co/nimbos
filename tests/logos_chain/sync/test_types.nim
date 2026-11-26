@@ -14,7 +14,6 @@ import
   bincode,
   ../../testutil,
   ../../../logos_chain/core/types,
-  ../../../logos_chain/chain/local_tree,
   ../../../logos_chain/deployment/deployment_settings,
   ../../../logos_chain/sync/[types, sync_client],
   ./helpers
@@ -32,89 +31,40 @@ suite "sync/types (GetTip RequestMessage / response wire)":
     check:
       body.len == 4
       body == @[1'u8, 0'u8, 0'u8, 0'u8]
+      byteutils.toHex(body) == "01000000"
     let m = try:
       Opt.some(decode(body, RequestMessage, cryptarchiaSyncBincodeConfig))
     except BincodeError as exc:
       fail exc.msg
     check m.get.kind == rmGetTip
 
-  test "encode(GetTip RequestMessage) inner bincode hex":
-    let body =
-      try:
-        encode(RequestMessage(kind: rmGetTip), cryptarchiaSyncBincodeConfig)
-      except BincodeError:
-        fail getCurrentExceptionMsg()
-    check byteutils.toHex(body) == "01000000"
-
-  test "Example GetTipResponse Tip wire (tip=[0xAB;32], slot=12345, height=999)":
-    let wOpt = exampleSerializedGetTipResponseTipWire()
-    check byteutils.toHex(wOpt.get) ==
-      "00000000abababababababababababababababababababababababababababababababab3930000000000000e703000000000000"
-
-  test "Example GetTipResponse Failure wire (example: tip unavailable)":
-    let wOpt = exampleSerializedGetTipResponseFailureWire("example: tip unavailable")
-    check byteutils.toHex(wOpt.get) ==
-      "0100000018000000000000006578616d706c653a2074697020756e617661696c61626c65"
-
-  test "Tip response roundtrips (success variant)":
-    var bid: BlockId
-    bid[0] = 7'u8
-    bid[31] = 42'u8
+  test "Fixture GetTipResponse Tip wire matches hex and roundtrips":
     let
-      tip = Tip(tip: bid, slot: SlotNumber(9), height: 123'u64)
-      resp = GetTipResponse(kind: gtrTip, tipData: tip)
-      wire = try:
-        encode(resp, cryptarchiaSyncBincodeConfig)
-      except BincodeError:
-        fail getCurrentExceptionMsg()
-      d = try:
-        Opt.some(decode(wire, GetTipResponse, cryptarchiaSyncBincodeConfig))
-      except BincodeError as exc:
-        fail exc.msg
+      tip = exampleGetTipFixture()
+      wOpt = exampleSerializedGetTipResponseTipWire()
+      wire = wOpt.get
     check:
-      d.get.kind == gtrTip
-      d.get.tipData == tip
-
-  test "GetTip failure response roundtrips":
-    let
-      resp = GetTipResponse(kind: gtrFailure, failureMessage: "no tip for you")
-      wire = try:
-        encode(resp, cryptarchiaSyncBincodeConfig)
-      except BincodeError:
-        fail getCurrentExceptionMsg()
-      d = try:
-        Opt.some(decode(wire, GetTipResponse, cryptarchiaSyncBincodeConfig))
-      except BincodeError as exc:
-        fail exc.msg
-    check:
-      d.get.kind == gtrFailure
-      d.get.failureMessage == "no tip for you"
-
-  test "Fixture GetTipResponse Tip wire roundtrips":
-    let tip = exampleGetTipTipFixture()
-    check:
-      tip.tip[0] == 0xAB'u8 and tip.tip[^1] == 0xAB'u8
+      tip.id[0] == 0xAB'u8 and tip.id[^1] == 0xAB'u8
       tip.slot == SlotNumber(12_345'u64) and tip.height == 999'u64
-    let
-      wire = exampleSerializedGetTipResponseTipWire().get
-      d = try:
-        Opt.some(decode(wire, GetTipResponse, cryptarchiaSyncBincodeConfig))
-      except BincodeError as exc:
-        fail exc.msg
-    check:
-      d.get.kind == gtrTip
-      d.get.tipData == tip
+      byteutils.toHex(wire) ==
+        "00000000abababababababababababababababababababababababababababababababab3930000000000000e703000000000000"
+    let d = try:
+      decode(wire, GetTipResponse, cryptarchiaSyncBincodeConfig)
+    except BincodeError as exc:
+      fail exc.msg
+    check d.kind == gtrTip and d.tip == tip
 
-  test "Example GetTipResponse Failure wire roundtrips":
+  test "Fixture GetTipResponse Failure wire matches hex and roundtrips":
     let
-      wire = exampleSerializedGetTipResponseFailureWire("example: tip unavailable").get
-      d = try:
-        Opt.some(decode(wire, GetTipResponse, cryptarchiaSyncBincodeConfig))
-      except BincodeError as exc:
-        fail exc.msg
-    check:
-      d.get.kind == gtrFailure
-      d.get.failureMessage == "example: tip unavailable"
+      wOpt = exampleSerializedGetTipResponseFailureWire("example: tip unavailable")
+      wire = wOpt.get
+    check byteutils.toHex(wire) ==
+      "0100000018000000000000006578616d706c653a2074697020756e617661696c61626c65"
+    let d = try:
+      decode(wire, GetTipResponse, cryptarchiaSyncBincodeConfig)
+    except BincodeError as exc:
+      fail exc.msg
+    check d.kind == gtrFailure and d.failureMessage == "example: tip unavailable"
 
 suite "sync/types (download RequestMessage / request & response payloads)":
   test "encode / decode DownloadBlocksRequest roundtrip":
@@ -122,8 +72,7 @@ suite "sync/types (download RequestMessage / request & response payloads)":
       validGenesisTx = testValidGenesisTx()
       genesis = createGenesisBlock(validGenesisTx)
       gid = blockId(genesis.header)
-      tree = newLocalTree(genesis, 1'u64)
-      req = DownloadBlocksRequest(targetBlock: gid, knownBlocks: buildKnownBlocks(tree, []))
+      req = DownloadBlocksRequest(targetBlock: gid, knownBlocks: KnownBlocks(localTip: gid, latestImmutableBlock: gid))
       inner = try:
         encode(req, cryptarchiaSyncBincodeConfig)
       except BincodeError:
@@ -140,8 +89,7 @@ suite "sync/types (download RequestMessage / request & response payloads)":
       validGenesisTx = testValidGenesisTx()
       genesis = createGenesisBlock(validGenesisTx)
       gid = blockId(genesis.header)
-      tree = newLocalTree(genesis, 1'u64)
-      req = DownloadBlocksRequest(targetBlock: gid, knownBlocks: buildKnownBlocks(tree, []))
+      req = DownloadBlocksRequest(targetBlock: gid, knownBlocks: KnownBlocks(localTip: gid, latestImmutableBlock: gid))
       wire = try:
         encode(
           RequestMessage(kind: rmDownloadBlocksRequest, downloadBlocksRequest: req),
@@ -260,7 +208,7 @@ suite "sync/types (cryptarchia u32 length-prefixed wire fixtures 1-9)":
 
     let inner2 = try:
       encode(
-        GetTipResponse(kind: gtrTip, tipData: exampleGetTipTipFixture()),
+        GetTipResponse(kind: gtrTip, tip: exampleGetTipFixture()),
         cryptarchiaSyncBincodeConfig)
     except BincodeError:
       fail getCurrentExceptionMsg()

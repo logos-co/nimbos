@@ -17,8 +17,6 @@ import
   ../chain/block_processor,
   ./[framing, syncer_types, types]
 
-from ../chain/local_tree import
-  LocalTree, localTipId, latestImmutableBlockId, hasBlock
 from ../core/types import Block, BlockId, blockId
 from libp2p/crypto/ed25519/ed25519 import EdPublicKeySize, toBytes
 
@@ -74,8 +72,8 @@ proc requestTip(
       of gtrTip:
         debug "IBD GetTip deserialize ok",
           peer,
-          tip = sbyteutils.toHex(resp.tipData.tip),
-          height = resp.tipData.height
+          tip = sbyteutils.toHex(resp.tip.id),
+          height = resp.tip.height
       of gtrFailure:
         debug "IBD GetTip deserialize ok (peer failure)",
           peer,
@@ -112,17 +110,6 @@ proc sendGetTipRequest*(
     await cancelAndWait(fut)
     raise exc
 
-func buildKnownBlocks*(
-    localTree: LocalTree,
-    additionalBlocks: openArray[BlockId],
-): KnownBlocks =
-  let takeCount = min(additionalBlocks.len, MaxKnownAdditionalBlocks)
-  KnownBlocks(
-    localTip: localTipId(localTree),
-    latestImmutableBlock: latestImmutableBlockId(localTree),
-    additionalBlocks: @(additionalBlocks.toOpenArray(0, takeCount - 1)),
-  )
-
 func decodeSyncBlock*(wire: openArray[byte]): Result[Block, string] =
   # Decodes a sync-wire block; `UncleHeaders` and `BlockTxs` bound both lists.
   try:
@@ -132,11 +119,14 @@ func decodeSyncBlock*(wire: openArray[byte]): Result[Block, string] =
 
 proc encodeDownloadReq(
     peer: PeerId,
-    localTree: LocalTree,
+    consensus: ConsensusState,
     targetBlock: BlockId,
     latestDownloadedId: Opt[BlockId],
 ): Opt[seq[byte]] =
-  var knownBlocks = buildKnownBlocks(localTree, [])
+  var knownBlocks = KnownBlocks(
+    localTip: consensus.canonicalTip.id,
+    latestImmutableBlock: consensus.latestImmutable.id,
+  )
   for id in latestDownloadedId:
     knownBlocks.additionalBlocks.add(id)
   debug "Sync download blocks request",
@@ -172,7 +162,7 @@ proc openDownloadStream(
   if timeout <= ZeroDuration:
     debug "Sync download timed out", peer, timeout
     return Opt.none(Connection)
-  let wireReq = encodeDownloadReq(peer, syncer.localTree, targetBlock, latestDownloadedId).valueOr:
+  let wireReq = encodeDownloadReq(peer, syncer.consensus, targetBlock, latestDownloadedId).valueOr:
     return Opt.none(Connection)
   var conn: Connection
   try:
@@ -251,7 +241,7 @@ proc downloadBlocks*(
     targetBlock = sbyteutils.toHex(targetBlock)
 
   while true:
-    if hasBlock(syncer.localTree, targetBlock):
+    if syncer.consensus.hasBlock(targetBlock):
       debug "Sync: target already local", peer, targetBlock = sbyteutils.toHex(targetBlock)
       return (true, latestDownloadedId)
 
@@ -354,12 +344,12 @@ proc queryTrustedTipsOnce(
     of gtrFailure:
       debug "IBD: GetTip returned failure", peer, reason = resp.failureMessage
     of gtrTip:
-      let tip = resp.tipData.tip
+      let tip = resp.tip.id
       info "IBD: GetTip returned success",
         peer,
         targetBlock = sbyteutils.toHex(tip),
-        height = resp.tipData.height,
-        slot = resp.tipData.slot
+        height = resp.tip.height,
+        slot = resp.tip.slot
       if tip notin tips:
         tips.add(tip)
   tips
@@ -401,7 +391,7 @@ proc initialBlockDownload*(
       warn "IBD failed: no trusted peer provided a valid tip"
       raise newException(IBDFailure, "Initial block download failed: no trusted peer provided a valid tip")
 
-    let unsyncedTips = tips.filterIt(not hasBlock(syncer.localTree, it))
+    let unsyncedTips = tips.filterIt(not syncer.consensus.hasBlock(it))
     if unsyncedTips.len == 0:
       return
 

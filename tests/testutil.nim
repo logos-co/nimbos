@@ -8,11 +8,11 @@
 {.push raises: [].}
 
 import
-  std/[sequtils, times],
+  std/[os, sequtils, times],
   bearssl/rand,
   libp2p/builders,
   libp2p/crypto/ed25519/ed25519,
-  stew/[byteutils, endians2],
+  stew/[byteutils, endians2, io2],
   testutils/markdown_reports,
   unittest2,
   ../logos_chain/conf,
@@ -27,7 +27,7 @@ from ../logos_chain/core/mantle/primitives import SlotNumber
 from std/algorithm import SortOrder, sort, fill
 from std/strformat import `&`
 
-export unittest2, test_helpers, tx_hashing, createGenesisBlock, ValidBlock, AdmittedBlock
+export unittest2, test_helpers, tx_hashing, createGenesisBlock, ValidBlock, AdmittedBlock, header
 
 ## Record ``msg`` and mark the current test as failed (unittest2 ``fail()`` is no-arg).
 template fail*(msg: string) =
@@ -35,6 +35,21 @@ template fail*(msg: string) =
   fail()
   # ``unittest2.fail()`` may return when ``abortOnError`` is off; do not fall through.
   raiseAssert msg
+
+template withTempDir*(dirVar: untyped, prefix: string, body: untyped): untyped =
+  let dirVar = os.getTempDir() / (prefix & "_" & $os.getCurrentProcessId())
+  try:
+    os.removeDir(dirVar)
+  except CatchableError:
+    discard
+  check io2.createPath(dirVar, 0o700).isOk
+  try:
+    body
+  finally:
+    try:
+      os.removeDir(dirVar)
+    except CatchableError:
+      discard
 
 type TestDuration = tuple[duration: float, label: string]
 
@@ -47,7 +62,7 @@ type TimingCollector = ref object of OutputFormatter
 func toFloatSeconds(duration: times.Duration): float =
   duration.inNanoseconds().float / 1_000_000_000.0
 
-method testEnded*(formatter: TimingCollector, testResult: TestResult) =
+method testEnded(formatter: TimingCollector, testResult: TestResult) =
   {.gcsafe.}: # Lie!
     status.mgetOrPut(testResult.suiteName)[
       testResult.testName
@@ -323,6 +338,34 @@ proc hashedSignedTxWithOps*(opsCount: int, txIndex: int): HashedSignedMantleTx =
 
   createHashedSignedMantleTxForTest(SignedMantleTx(tx: mtx, opProofs: proofs), txHash)
 
+const
+  inscribeOpFraming = 165
+    ## Opcode, ChannelId, the u32 inscription length, Parent, Signer and the
+    ## 64-byte Ed25519 proof — everything but the inscription itself.
+  inscribeTxFraming = 1 + 2 * inscribeOpFraming
+    ## OpCount plus two inscribe ops.
+
+func inscribe(size: int, signer: Ed25519PublicKey): Op =
+  createChannelInscribeOp(ChannelInscribePayload(
+    channelId: default(ChannelId),
+    inscription: newSeq[byte](size),
+    parent: default(Parent),
+    signer: signer,
+  ))
+
+proc mkSizedTx*(bytes: int): HashedSignedMantleTx =
+  ## Two-inscription transaction padded to encode to exactly `bytes`. Two ops
+  ## keep each inscription under MaxOperationDataSize at MaxBlockSize.
+  doAssert bytes >= inscribeTxFraming
+  let
+    padding = bytes - inscribeTxFraming
+    first = padding div 2
+    signer = testTxKeyPair.pubkey
+    tx = MantleTx(ops: @[inscribe(first, signer), inscribe(padding - first, signer)])
+    txHash = mantleTxHash(tx).get
+    proof = OpProof(kind: opfChannelInscribe, ed25519SigProof: sign(testTxKeyPair.seckey, txHash))
+  mkHashedSignedTx(SignedMantleTx(tx: tx, opProofs: @[proof, proof]), txHash)
+
 proc validSignedTxWithOps*(opsCount: int, txIndex: int): ValidSignedMantleTx =
   createValidTxForTest(hashedSignedTxWithOps(opsCount, txIndex))
 
@@ -473,10 +516,7 @@ func childProposal*(
       proofOfLeadership = proofOfLeadership,
     )
     sig = signHeader(keyPair.seckey, h)
-  var refs: References
-  for i, tx in txs:
-    refs[i] = tx.hash
-  initProposal(h, [], refs, sig)
+  initProposal(h, [], txs.mapIt(txReference(it.hash)), sig)
 
 func initGenesisBlock*(validGenesisTx: ValidGenesisMantleTx): Block =
   initBlock(
@@ -497,7 +537,7 @@ proc testGenesisBlock*(): ValidBlock =
       hasDefaultGenesisBlockCache = true
     defaultGenesisBlockCache
 
-type BootstrapPeers* = object
+type BootstrapPeers = object
   listener*, dialer*: LBP2PNode
   listenerPeerId*: PeerId
 

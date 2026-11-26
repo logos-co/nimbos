@@ -11,7 +11,6 @@
 
 import
   stew/assign2,
-  libp2p/crypto/ed25519/ed25519,
   ./[primitives, opcodes, blend_activity],
   ../crypto/types
 export primitives, opcodes

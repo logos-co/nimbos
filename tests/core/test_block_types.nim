@@ -130,22 +130,6 @@ suite "core/types":
       h = initHeader(1'u8, default(BlockId), SlotNumber(10), [], [hx], pol)
     check h.bodyRoot == body_root([], hx)
 
-  test "initProposal accepts References directly":
-    var refs: References
-    let hx = mkTxHash(1)
-    refs[0] = hx
-
-    let
-      pol = ProofOfLeadership(
-        leaderVoucher: default(RewardVoucher),
-        entropyContribution: default(ZkHash),
-        proof: DefaultCompressedGroth16Proof,
-        leaderKey: default(Ed25519PublicKey),
-      )
-      h = initHeader(1'u8, default(BlockId), SlotNumber(10), [], [hx], pol)
-      prop = initProposal(h, [], refs, DefaultEd25519Signature)
-    check prop.references[0] == hx
-
   test "binary layout equivalence of transaction types":
     static:
       doAssert sizeof(typeof(default(HashedSignedMantleTx)[])) == sizeof(typeof(default(ValidSignedMantleTx).hashed[]))

@@ -41,9 +41,7 @@ type
     case kind: BlockEntryKind
     of BlockEntryKind.SyncIncoming:
       blk: Block
-    of BlockEntryKind.GossipIncoming:
-      proposal: Proposal
-    of BlockEntryKind.PromotedOrphan:
+    of BlockEntryKind.GossipIncoming, BlockEntryKind.PromotedOrphan:
       admittedBlk: AdmittedBlock
 
   BlockProcessor* = ref object
@@ -61,7 +59,7 @@ template inFlightKey*(id: BlockId, sig: Ed25519Signature): InFlightKey =
   ## with junk signatures cannot lock out valid blocks.
   ##
   ## Invariant: This key is collision-free across differing bodies only because
-  ## every inserted entry (addBlock, addProposal, enqueueOrphanBlock) has its
+  ## every inserted entry (addBlock, addProposalBlock, enqueueOrphanBlock) has its
   ## body bound to header.bodyRoot before taking an in-flight slot. Two copies
   ## with the same (blockId, signature) therefore commit to the exact same body bytes.
   var res {.noinit.}: InFlightKey
@@ -76,8 +74,11 @@ func new*(T: type BlockProcessor, chain: sink Chain): T =
     orphanEvent: newAsyncEvent(),
   )
 
-func localTree*(bp: BlockProcessor): LocalTree =
-  bp.chain.localTree
+func consensus*(bp: BlockProcessor): ConsensusState =
+  bp.chain.consensus
+
+func blockStore*(bp: BlockProcessor): BlockStore =
+  bp.chain.blockStore
 
 func orphanPool*(bp: BlockProcessor): OrphanPool =
   bp.chain.orphanPool
@@ -91,6 +92,11 @@ func mempool*(bp: BlockProcessor): Mempool =
 proc currentWallclockSlot*(bp: BlockProcessor): SlotNumber =
   bp.chain.currentWallclockSlot()
 
+proc switchToOnline*(bp: BlockProcessor) =
+  ## Transitions the underlying chain from Bootstrap to Online fork choice rule.
+  ## Once online, LIB advancement becomes active and canonical states older than LIB are pruned.
+  bp.chain.switchToOnline()
+
 func running*(bp: BlockProcessor): bool =
   bp.loopFut != nil and not bp.loopFut.finished
 
@@ -100,7 +106,7 @@ func checkDeduplication*(
   let key = inFlightKey(id, sig)
   if key in bp.inFlight:
     return err(BlockApplyErrorKind.InFlight)
-  if bp.chain.localTree.hasBlock(id):
+  if bp.consensus.hasBlock(id):
     return err(BlockApplyErrorKind.AlreadyApplied)
   if bp.chain.orphanPool.hasOrphan(id):
     return err(BlockApplyErrorKind.OrphanAlreadyBuffered)
@@ -149,17 +155,17 @@ proc addBlock*(
     id, sig,
   )
 
-proc addProposal*(
+proc addProposalBlock*(
     bp: BlockProcessor,
-    proposal: Proposal,
+    admittedBlk: AdmittedBlock,
     id: BlockId,
 ): BlockApplyFuture =
-  ## Queue `proposal` from gossip. The future completes with the apply result, or is cancelled
-  ## when the loop is not running. Cancelling it does not dequeue the proposal.
-  ## Caller must ensure `proposal.bodyMatchesHeader` before calling (verified at gossip gate).
-  let sig = proposal.signature
+  ## Queue a proposal from gossip that `admitProposal` admitted. The future completes with the
+  ## apply result, or is cancelled when the loop is not running. Cancelling it does not dequeue
+  ## the proposal.
+  let sig = admittedBlk.signature
   bp.enqueueIncoming(
-    BlockEntry(kind: BlockEntryKind.GossipIncoming, proposal: proposal),
+    BlockEntry(kind: BlockEntryKind.GossipIncoming, admittedBlk: admittedBlk),
     id, sig,
   )
 
@@ -196,10 +202,7 @@ proc processBlock(bp: BlockProcessor, entry: BlockEntry) =
     of BlockEntryKind.SyncIncoming:
       let i = blockId(header(entry.blk))
       (i, inFlightKey(i, entry.blk.signature))
-    of BlockEntryKind.GossipIncoming:
-      let i = blockId(entry.proposal.header)
-      (i, inFlightKey(i, entry.proposal.signature))
-    of BlockEntryKind.PromotedOrphan:
+    of BlockEntryKind.GossipIncoming, BlockEntryKind.PromotedOrphan:
       let i = blockId(header(entry.admittedBlk))
       (i, inFlightKey(i, entry.admittedBlk.signature))
   defer:
@@ -209,8 +212,8 @@ proc processBlock(bp: BlockProcessor, entry: BlockEntry) =
     startTick = Moment.now()
     res = case entry.kind
       of BlockEntryKind.SyncIncoming: bp.chain.tryApplyBlock(entry.blk)
-      of BlockEntryKind.GossipIncoming: bp.chain.tryApplyProposal(entry.proposal)
-      of BlockEntryKind.PromotedOrphan: bp.chain.tryApplyAdmittedBlock(entry.admittedBlk)
+      of BlockEntryKind.GossipIncoming: bp.chain.tryApplyProposalBlock(entry.admittedBlk)
+      of BlockEntryKind.PromotedOrphan: bp.chain.tryApplyPromotedOrphan(entry.admittedBlk)
     applyDur = Moment.now() - startTick
     queueDur = startTick - entry.queueTick
 
@@ -222,7 +225,7 @@ proc processBlock(bp: BlockProcessor, entry: BlockEntry) =
         src = "Sync", queueDur, applyDur, err = error.kind
     of BlockEntryKind.GossipIncoming:
       debug "Proposal rejected",
-        id = toHex(id), slot = entry.proposal.header.slot,
+        id = toHex(id), slot = header(entry.admittedBlk).slot,
         src = "Gossip", queueDur, applyDur, err = error.kind
     of BlockEntryKind.PromotedOrphan:
       debug "Promoted orphan rejected",
@@ -249,7 +252,7 @@ proc processBlock(bp: BlockProcessor, entry: BlockEntry) =
       src = "Sync", queueDur, applyDur
   of BlockEntryKind.GossipIncoming:
     debug "Proposal applied",
-      id = toHex(id), slot = entry.proposal.header.slot,
+      id = toHex(id), slot = header(entry.admittedBlk).slot,
       src = "Gossip", queueDur, applyDur
   of BlockEntryKind.PromotedOrphan:
     debug "Promoted orphan applied",

@@ -36,7 +36,7 @@ type
     peerProvider*: PeerProvider
     orphans*: OrphanSync
 
-template localTree*(syncer: Syncer): LocalTree = syncer.processor.localTree
+template consensus*(syncer: Syncer): ConsensusState = syncer.processor.consensus
 template orphanPool*(syncer: Syncer): OrphanPool = syncer.processor.orphanPool
 
 {.pop.}

@@ -14,7 +14,7 @@ import
   stew/byteutils as byteutils,
   ../../testutil,
   ../../ledger/sdp/test_helpers,
-  ../../../logos_chain/chain/[chain, block_processor, local_tree],
+  ../../../logos_chain/chain/[chain, block_processor],
   ../../../logos_chain/core/types,
   ../../../logos_chain/ledger/ledger,
   ../../../logos_chain/sync/[framing, types, sync_server, syncer]
@@ -26,6 +26,7 @@ const testChainSyncProtocol* = "/logos-blockchain-testnet-v0.1.2/chainsync/1.0.0
 proc initTestChain*(
     genesis: ValidBlock,
     securityParam: uint64 = DefaultSecurityParam,
+    densitySlotWindow: uint64 = 100'u64,
     genesisTime: uint64 = uint64(max(getTime().toUnix() - 500, 0'i64)),
     verifier: LeaderProofVerifier = mockVerifyLeaderProof,
     uncleWindowSlots: uint64 = testLedgerConfig.uncleWindowSlots,
@@ -51,6 +52,7 @@ proc initTestChain*(
     genesis,
     Ledger[BlockId].init(gid, state, config, verifier),
     SlotConfig(genesisTime: genesisTime, slotDurationSeconds: 1),
+    densitySlotWindow = densitySlotWindow,
     securityParam = securityParam)
 
 proc startTestProcessor(chain: Chain): BlockProcessor =
@@ -116,26 +118,33 @@ template withSyncPair*(serverChain, clientChain: Chain, body: untyped) =
       await client.connect(server.peerInfo.peerId, server.peerInfo.addrs, forceDial = true)
       body
 
+proc seedValidBlock*(chain: Chain, blk: ValidBlock): bool =
+  let id = blockId(blk.header)
+  if not chain.consensus.addHeaderAndTryUpdateTip(blk.header, id):
+    return false
+  chain.blockStore.put(id, blk)
+  true
+
 proc extendChainAfterGenesis*(
-    tree: LocalTree, genesis: ValidBlock, extraBlocks: int, startSlot = 1,
+    chain: Chain, extraBlocks: int, startSlot = 1,
 ): BlockId =
-  ## Add ``extraBlocks`` descendants on top of ``genesis``; return the tip id.
+  ## Add ``extraBlocks`` descendants on top of ``chain.genesisBlock``; return the tip id.
   var
-    parentHdr = genesis.header
-    parentId = blockId(genesis.header)
+    parentHdr = chain.genesisBlock.header
+    parentId = blockId(parentHdr)
   for slot in startSlot ..< startSlot + extraBlocks:
     let blk = childValidBlock(parentHdr, parentId, SlotNumber(slot.uint64), [])
-    check tree.addBlockToTree(blk)
+    check seedValidBlock(chain, blk)
     parentHdr = blk.header
     parentId = blockId(blk.header)
   parentId
 
-func exampleGetTipTipFixture*(): Tip =
-  Tip(tip: exampleBlockId(0xAB'u8), slot: SlotNumber(12_345'u64),
+func exampleGetTipFixture*(): BlockInfo =
+  BlockInfo(id: exampleBlockId(0xAB'u8), slot: SlotNumber(12_345'u64),
       height: 999'u64)
 
 proc exampleSerializedGetTipResponseTipWire*(): Opt[seq[byte]] =
-  let resp = GetTipResponse(kind: gtrTip, tipData: exampleGetTipTipFixture())
+  let resp = GetTipResponse(kind: gtrTip, tip: exampleGetTipFixture())
   try:
     let wire = encode(resp, cryptarchiaSyncBincodeConfig)
     if wire.len == 0:

@@ -187,4 +187,51 @@ suite "mempool":
     check m.graceCache.peek(vtx1.hash).isSome
     check m.getKnownValid(vtx1.hashed).isSome
 
+  test "resolve follows a transaction through the grace cache and eviction":
+    # Guard: every prefix index update in `add` and `remove`.
+    var m = Mempool.init(capacity = 1)
+    let
+      tx1 = mkValidTxWithOps(1, 1)
+      tx2 = mkValidTxWithOps(1, 2)
+      tx3 = mkValidTxWithOps(1, 3)
+
+    check m.add(tx1, SlotNumber(1))
+    check m.add(tx2, SlotNumber(1)) # tx1 moves to the grace cache
+    check m.resolve(txReference(tx1.hash)).get().hash == tx1.hash
+
+    # A promotion keeps the prefix resolvable.
+    check m.add(tx1, SlotNumber(1))
+    check m.resolve(txReference(tx1.hash)).get().hash == tx1.hash
+
+    # tx1 moves to the grace cache again, and the cache evicts tx2.
+    check m.add(tx3, SlotNumber(1))
+    check m.resolve(txReference(tx2.hash)).isNone
+
+    m.remove(tx3.hash, moveToGrace = false)
+    check m.resolve(txReference(tx3.hash)).isNone
+
+  test "add keeps the first of two transactions with the same prefix":
+    var
+      m = Mempool.init()
+      hash1 = Hash32.default
+      hash2 = Hash32.default
+    hash1[^1] = 1
+    hash2[^1] = 2
+    let
+      first = mkValidTx(mkHashedSignedTx(mkValidTxWithOps(1, 1).hashed.signedTx, hash1))
+      second = mkValidTx(mkHashedSignedTx(mkValidTxWithOps(1, 2).hashed.signedTx, hash2))
+      reference = txReference(hash1)
+    check:
+      reference == txReference(hash2)
+      m.add(first, SlotNumber(1))
+      not m.add(second, SlotNumber(1))
+      hash2 notin m
+      m.resolve(reference).get().hash == hash1
+
+    # The prefix becomes free when the first transaction leaves.
+    m.remove(hash1, moveToGrace = false)
+    check:
+      m.add(second, SlotNumber(1))
+      m.resolve(reference).get().hash == hash2
+
 {.pop.}
