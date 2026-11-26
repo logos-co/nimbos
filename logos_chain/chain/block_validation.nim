@@ -8,8 +8,8 @@
 ## Stateless structural checks of Bedrock block header and body. The stateful
 ## half (parent linkage, slot ordering, wallclock bound, leader proof verification
 ## called during `tryApplyHeader` in `ledger.nim`) is owned by the `Chain.tryApplyBlock`
-## composition: ledger `prepareUpdate` plus `LocalTree.addBlockToTree`.
-## Spec: [Block Construction, Validation and Execution v1.3.0](https://github.com/logos-co/logos-lips/blob/4deef612ce1ae1776167daf8779d4abae953201b/docs/blockchain/raw/bedrock-v1.1-block-construction.md)
+## composition: ledger `prepareUpdate` plus `ConsensusState.addHeaderAndTryUpdateTip`.
+## Spec: [Block Construction, Validation and Execution v1.3.0](https://github.com/logos-co/logos-lips/blob/663ae35d59d834784dd086cc5f14ec35e8dbecf5/docs/blockchain/raw/bedrock-v1.1-block-construction.md)
 
 {.push raises: [], gcsafe.}
 

@@ -63,6 +63,7 @@ proc scene(
       genesis: genesis,
       blocks: newSeqOfCap[Block](slots.len))
     parent = initGenesisBlock(validGenesisTx)
+  s.chain.switchToOnline()
   for slot in slots:
     let blk = carrier(parent, slot, [])
     check s.chain.tryApplyBlock(blk).isOk
@@ -71,7 +72,7 @@ proc scene(
   s
 
 proc verdict(s: Scene, blk: Block): Result[void, UncleError] =
-  validateUncles(createAdmittedBlockForTest(blk), s.chain.localTree, s.chain.ledger)
+  validateUncles(createAdmittedBlockForTest(blk), s.chain.consensus, s.chain.ledger)
 
 func committedState(s: Scene, blk: Block): LedgerState =
   s.chain.ledger.state(blockId(blk.header)).expect("state of an applied block")
@@ -203,8 +204,8 @@ suite "chain/uncle_validation":
     check:
       res.error.kind == BlockApplyErrorKind.UncleRejected
       res.error.uncleError == UncleError.OnChain
-      not s.chain.localTree.hasBlock(blockId(a.header))
-      s.chain.localTree.localTipId == blockId(b3.header)
+      not s.chain.consensus.hasBlock(blockId(a.header))
+      s.chain.consensus.canonicalTip.id == blockId(b3.header)
 
   test "rejects a tampered signature":
     let s = scene()
@@ -237,7 +238,7 @@ suite "chain/uncle_validation":
       u = forkBlock(b2.header, 3)
       a = carrier(s.blocks[2], 4, [signedHeader(u)])
     check:
-      s.chain.localTree.latestImmutableBlockId() == blockId(b2.header)
+      s.chain.consensus.latestImmutable.id == blockId(b2.header)
       s.verdict(a).isOk
 
   test "rejects an uncle whose parent state was pruned":
@@ -250,7 +251,7 @@ suite "chain/uncle_validation":
       u = forkBlock(b1.header, 2)
       a = carrier(s.blocks[2], 4, [signedHeader(u)])
     check:
-      s.chain.localTree.hasBlock(blockId(b1.header))
+      s.chain.consensus.hasBlock(blockId(b1.header))
       s.chain.ledger.state(blockId(b1.header)).isNone
       s.verdict(a).error == UncleError.ParentNotOnChain
 
@@ -295,6 +296,6 @@ suite "chain/uncle_validation":
       parentRes.isOk
       res.error.kind == BlockApplyErrorKind.UncleRejected
       res.error.uncleError == UncleError.OnChain
-      not s.chain.localTree.hasBlock(blockId(a.header))
+      not s.chain.consensus.hasBlock(blockId(a.header))
 
 {.pop.}
