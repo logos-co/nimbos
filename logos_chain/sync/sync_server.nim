@@ -19,12 +19,6 @@ import
 logScope:
   topics = "cryptarchia_sync"
 
-func getTipResponse(consensus: ConsensusState): GetTipResponse =
-  GetTipResponse(
-    kind: gtrTip,
-    tip: consensus.canonicalTip,
-  )
-
 func distinctKnownBlockIds(known: KnownBlocks): seq[BlockId] =
   var ids = newSeqOfCap[BlockId](2 + known.additionalBlocks.len)
   for id in [known.localTip, known.latestImmutableBlock]:
@@ -91,11 +85,15 @@ func cappedDownloadPathBlockIds*(
   sendIds
 
 proc serveGetTipRequest(
-    conn: Connection, consensus: ConsensusState,
+    conn: Connection, consensus: ConsensusState, ibdInProgress: bool,
 ) {.async: (raises: [BincodeError, LPStreamError, CancelledError]).} =
   debug "Sync handler: GetTip request"
   let
-    tipResp = getTipResponse(consensus)
+    tipResp =
+      if ibdInProgress:
+        GetTipResponse(kind: gtrFailure, failureMessage: "initial block download in progress")
+      else:
+        GetTipResponse(kind: gtrTip, tip: consensus.canonicalTip)
     respInner = try:
       encode(tipResp, cryptarchiaSyncBincodeConfig)
     except BincodeError:
@@ -103,12 +101,23 @@ proc serveGetTipRequest(
       return
   if respInner.len > 0:
     await writeCryptarchiaPrefixedInner(conn, respInner)
-  debug "Sync handler: GetTip response ok",
-    tip = sbyteutils.toHex(tipResp.tip.id),
-    height = tipResp.tip.height
+  if tipResp.kind == gtrTip:
+    debug "Sync handler: GetTip response ok",
+      tip = sbyteutils.toHex(tipResp.tip.id),
+      height = tipResp.tip.height
+
+func failureResp(msg: string): DownloadBlocksResponse =
+  DownloadBlocksResponse(
+    kind: dbrFailure,
+    blocksUnavailableReason: BlocksUnavailableReason(kind: burUnknown, message: msg),
+  )
 
 proc serveDownloadBlocksRequest(
-    conn: Connection, consensus: ConsensusState, blockStore: BlockStore, req: DownloadBlocksRequest,
+    conn: Connection,
+    consensus: ConsensusState,
+    blockStore: BlockStore,
+    req: DownloadBlocksRequest,
+    ibdInProgress: bool,
 ) {.async: (raises: [BincodeError, LPStreamError, CancelledError]).} =
   proc writeResp(msg: DownloadBlocksResponse) {.async: (raises: [BincodeError, LPStreamError, CancelledError]).} =
     let innerBytes = try:
@@ -120,6 +129,12 @@ proc serveDownloadBlocksRequest(
 
   debug "Sync handler: download blocks request",
     targetBlock = sbyteutils.toHex(req.targetBlock)
+  if ibdInProgress:
+    await writeResp(failureResp("initial block download in progress"))
+    return
+  if req.knownBlocks.additionalBlocks.len > MaxKnownAdditionalBlocks:
+    await writeResp(failureResp("too many additional known blocks"))
+    return
   if not consensus.hasBlock(req.targetBlock):
     debug "Sync handler: target block not found",
       targetBlock = sbyteutils.toHex(req.targetBlock)
@@ -145,10 +160,7 @@ proc serveDownloadBlocksRequest(
     let
       blk = blockStore.getBlock(sendIds[i]).valueOr:
         debug "Sync handler: block load failed", blockId = sbyteutils.toHex(sendIds[i])
-        await writeResp(DownloadBlocksResponse(
-          kind: dbrFailure,
-          blocksUnavailableReason: BlocksUnavailableReason(
-            kind: burUnknown, message: "block load failed")))
+        await writeResp(failureResp("block load failed"))
         debug "Sync handler: download failure response ok",
           targetBlock = sbyteutils.toHex(req.targetBlock)
         return
@@ -158,10 +170,7 @@ proc serveDownloadBlocksRequest(
         @[]
     if innerWire.len == 0:
       debug "Sync handler: block encode failed", blockId = sbyteutils.toHex(sendIds[i])
-      await writeResp(DownloadBlocksResponse(
-        kind: dbrFailure,
-        blocksUnavailableReason: BlocksUnavailableReason(
-          kind: burUnknown, message: "block encode failed")))
+      await writeResp(failureResp("block encode failed"))
       debug "Sync handler: download failure response ok",
         targetBlock = sbyteutils.toHex(req.targetBlock)
       return
@@ -174,20 +183,22 @@ proc serveDownloadBlocksRequest(
 proc dispatchCryptarchiaSyncRequest(
     syncer: Syncer, conn: Connection, inner: seq[byte],
 ) {.async: (raises: [BincodeError, LPStreamError, CancelledError]).} =
-  let reqMsg = try:
-    decode(inner, RequestMessage, cryptarchiaSyncBincodeConfig)
-  except BincodeError:
-    debug "Sync handler: request decode failed"
-    return
+  let
+    reqMsg = try:
+      decode(inner, RequestMessage, cryptarchiaSyncBincodeConfig)
+    except BincodeError:
+      debug "Sync handler: request decode failed"
+      return
+    ibdInProgress = syncer.ibdFut != nil and not syncer.ibdFut.finished
   case reqMsg.kind
   of rmGetTip:
-    await serveGetTipRequest(conn, syncer.processor.consensus)
+    await serveGetTipRequest(conn, syncer.consensus, ibdInProgress)
   of rmDownloadBlocksRequest:
     debug "Sync handler: download request decode ok",
       targetBlock = sbyteutils.toHex(reqMsg.downloadBlocksRequest.targetBlock)
     await serveDownloadBlocksRequest(
-      conn, syncer.processor.consensus, syncer.processor.blockStore,
-      reqMsg.downloadBlocksRequest)
+      conn, syncer.consensus, syncer.processor.blockStore,
+      reqMsg.downloadBlocksRequest, ibdInProgress)
 
 proc mountCryptarchiaSyncHandler*(syncer: Syncer) {.raises: [LPError].} =
   proc handle(conn: Connection, proto: string) {.async: (raises: [CancelledError]).} =

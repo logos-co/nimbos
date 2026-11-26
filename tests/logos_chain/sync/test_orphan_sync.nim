@@ -116,9 +116,6 @@ suite "sync/orphan_sync (end-to-end orphan resolution via DBR)":
       serverChain.consensus.canonicalTip.id == b1id
 
     withSyncPair(serverChain, clientChain):
-      clientSyncer.peerProvider = proc(): seq[PeerId] =
-        @[server.peerInfo.peerId]
-
       # Deliver orphan B2 to client processor (as if received over GossipSub)
       let
         p2 = Proposal(header: b2.header, references: default(References), signature: b2.signature)

@@ -12,8 +12,11 @@ import
   bincode
 export types
 
-const MaxRequestBlocks* = 128
-  ## Maximum blocks served per ``DownloadBlocksRequest`` (DoS limit).
+const
+  MaxRequestBlocks* = 128
+    ## Maximum blocks served per ``DownloadBlocksRequest`` (DoS limit).
+  MaxKnownAdditionalBlocks* = 5
+    ## Maximum entries allowed in ``KnownBlocks.additionalBlocks``.
 
 type
   KnownBlocks* = object
