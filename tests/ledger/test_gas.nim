@@ -9,7 +9,6 @@
 {.used.}
 
 import
-  std/[os, strutils],
   unittest2,
   bearssl/rand,
   libp2p/crypto/ed25519/ed25519,
@@ -20,12 +19,6 @@ import
   ./sdp/test_helpers,
   ./test_helpers,
   ../core/mantle/test_helpers
-
-const
-  testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
-  zksignFixtureDir = testsDir / "../fixtures/zksign"
-  zksignFixtureVk = zksignFixtureDir / "verification_key.json"
-  transferProofPath = zksignFixtureDir / "proof.json"
 
 func sentinelProof(): ProofOfLeadership =
   # All-default fields form the genesis sentinel, which bypasses leader-proof
@@ -42,7 +35,7 @@ proc mkFixtureTransferTx(input: Utxo): ValidSignedMantleTx =
   ## (input pk mkRealZkPubKey(1), value 100; one output of value 100).
   var stx = mkSignedTransferTx(
     [input.id], [Note(value: 100, zkPublicKey: default(ZkPublicKey))])
-  stx.opProofs[0].transferProof = loadProof(transferProofPath)
+  stx.opProofs[0].transferProof = loadProof(zksignFixtureProof)
   mkValidTx(stx)
 
 func mkInscribeTx(

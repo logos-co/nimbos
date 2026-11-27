@@ -9,20 +9,13 @@
 {.used.}
 
 import
-  std/[os, sets, strutils],
+  std/sets,
   unittest2,
   ../../logos_chain/ledger/[cryptarchia_state, mantle_state],
   ../../logos_chain/core/mantle/[operations, proofs, tx_hashing],
   ../../logos_chain/zk/zksign,
   ../zk/zksign_helpers,
   ../core/mantle/test_helpers
-
-const
-  testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
-  zksignFixtureDir = testsDir / "../fixtures/zksign"
-  fixtureVk = zksignFixtureDir / "verification_key.json"
-  fixtureProof = zksignFixtureDir / "proof.json"
-  fixturePublic = zksignFixtureDir / "public.json"
 
 proc mkChanStore(cid: ChannelId): ChannelStore =
   HashTrieMap[ChannelId, ChannelState].init().insert(
@@ -184,7 +177,7 @@ suite "MantleState.tryApplyChannelDeposit — verify wrapper (fixture-driven)":
     check r.error == VerifierNotInitialised
 
   test "bad signature → PermanentInvalidTxProof":
-    check installZksignVk(fixtureVk)
+    check installZksignVk(zksignFixtureVk)
     let
       cid = mkChannelId(13)
       m = mkMantle(cid)
@@ -199,10 +192,10 @@ suite "MantleState.tryApplyChannelDeposit — verify wrapper (fixture-driven)":
     check r.error == PermanentInvalidTxProof
 
   test "happy: real proof + matching pks + matching msg → state advances":
-    check installZksignVk(fixtureVk)
+    check installZksignVk(zksignFixtureVk)
     let
-      sig = loadProof(fixtureProof)
-      txHash = loadTxHash(fixturePublic)
+      sig = loadProof(zksignFixtureProof)
+      txHash = loadTxHash(zksignFixturePublic)
       cid = mkChannelId(9)
       m = mkMantle(cid)
       input = mkUtxoWithPk(mkRealZkPubKey(1), value = 100)

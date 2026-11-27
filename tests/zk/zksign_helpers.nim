@@ -11,11 +11,18 @@
 {.push raises: [].}
 
 import
+  std/os,
   stew/io2,
   ../../logos_chain/core/crypto/types,
   ../../logos_chain/core/mantle/proofs,
   ../../logos_chain/zk/zksign,
   ./snarkjs_helpers
+
+const
+  zksignFixtureDir = currentSourcePath.parentDir.parentDir / "fixtures" / "zksign"
+  zksignFixtureVk* = zksignFixtureDir / "verification_key.json"
+  zksignFixtureProof* = zksignFixtureDir / "proof.json"
+  zksignFixturePublic* = zksignFixtureDir / "public.json"
 
 proc installZksignVk*(vkPath: string): bool =
   ## Reset + reinstall the zksign VK singleton from a snarkjs

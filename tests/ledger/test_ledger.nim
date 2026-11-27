@@ -53,10 +53,6 @@ from ./test_helpers import testLedgerConfig
 const
   testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
   fixtureVk = testsDir / "../fixtures/pol/verification_key.json"
-  zksignFixtureDir = testsDir / "../fixtures/zksign"
-  zksignFixtureVk = zksignFixtureDir / "verification_key.json"
-  transferProofPath = zksignFixtureDir / "proof.json"
-  transferPublicPath = zksignFixtureDir / "public.json"
 
 proc mkProvider(seed: byte): ProviderId =
   var bytes: array[EdPublicKeySize, byte]
@@ -76,7 +72,7 @@ proc mkFixtureTransferTx(input: Utxo): ValidSignedMantleTx =
   ## The exact tx shape the committed zksign fixture proof was generated for.
   var stx = mkSignedTransferTx(
     [input.id], [Note(value: 100, zkPublicKey: default(ZkPublicKey))])
-  stx.opProofs[0].transferProof = loadProof(transferProofPath)
+  stx.opProofs[0].transferProof = loadProof(zksignFixtureProof)
   mkValidTx(stx)
 
 suite "LedgerState constructors and reads":
@@ -642,8 +638,8 @@ suite "ledger — sdp withdrawal through the epoch boundary":
         nonce: nonce(0, 5),
         metadata: mkActivity(findRho(indexA, 2), epoch = 2, keySeed = 3))
     s.sdp = tryApplySdpActive(
-      s.sdp, report, loadProof(transferProofPath),
-      loadTxHash(transferPublicPath), 3, acceptAllPoq).expect(
+      s.sdp, report, loadProof(zksignFixtureProof),
+      loadTxHash(zksignFixturePublic), 3, acceptAllPoq).expect(
         "report at withdraw_at")
 
     # Epoch 4: the boundary pays A for epoch 2. Then it removes A and

@@ -9,19 +9,11 @@
 {.used.}
 
 import
-  std/[os, strutils],
   unittest2,
   ../test_helpers,
   ../../../zk/zksign_helpers
 
 from ../../../core/mantle/test_helpers import mkRealZkPubKey
-
-const
-  testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
-  zksignFixtureDir = testsDir / "../../../fixtures/zksign"
-  zksignFixtureVk = zksignFixtureDir / "verification_key.json"
-  zksignFixtureProof = zksignFixtureDir / "proof.json"
-  zksignFixturePublic = zksignFixtureDir / "public.json"
 
 type BlendTarget = object
   registry: SdpRegistry
