@@ -29,7 +29,7 @@ const
   MaxSdpLocators* = 8
   MaxLocatorMultiaddrBytes* = 329
   # MAX_OPERATION_DATA_SIZE, Mantle Transaction Encoding v1.11.0:
-  # https://github.com/logos-co/logos-lips/blob/6b84187f0ae37a0e8c28c32d3bb1e6f619cec147/docs/blockchain/raw/mantle-transaction-encoding.md
+  # https://github.com/logos-co/logos-lips/blob/bd1ca2c881ae94606d4ab23af1255fd922e85dd6/docs/blockchain/raw/mantle-transaction-encoding.md
   MaxOperationDataSize* = 1_835_008
   ReferencePrefixLength = 16
 

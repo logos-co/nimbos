@@ -7,7 +7,7 @@
 
 ## Blend service activity metadata carried by SDP Active operations.
 ## Spec: [Blend Protocol v1.6.1](https://github.com/logos-co/logos-lips/blob/949faa9563027de366514247a2a62b0de2f8c45f/docs/blockchain/raw/blend-protocol.md)
-## Spec: [Mantle Transaction Encoding v1.11.0](https://github.com/logos-co/logos-lips/blob/6b84187f0ae37a0e8c28c32d3bb1e6f619cec147/docs/blockchain/raw/mantle-transaction-encoding.md)
+## Spec: [Mantle Transaction Encoding v1.11.0](https://github.com/logos-co/logos-lips/blob/bd1ca2c881ae94606d4ab23af1255fd922e85dd6/docs/blockchain/raw/mantle-transaction-encoding.md)
 
 {.push raises: [], gcsafe.}
 

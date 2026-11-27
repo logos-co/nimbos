@@ -188,8 +188,8 @@ suite "core/mantle/tx_hashing — op_id spec vectors":
       "fb9af7fb1384fff51780ec8c5afbcba76449ab7603484f797df3a472e48826c1"
 
   test "SDP_WITHDRAW payload and op_id match the spec vector":
-    # Vector from the Operation Id table of the Mantle Specification v1.18.0:
-    # https://github.com/logos-co/logos-lips/blob/6b84187f0ae37a0e8c28c32d3bb1e6f619cec147/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md#operation-id
+    # Vector from the Operation Id table of the Mantle Specification v1.19.0:
+    # https://github.com/logos-co/logos-lips/blob/bd1ca2c881ae94606d4ab23af1255fd922e85dd6/docs/blockchain/raw/bedrock-v1.1-mantle-specification.md#operation-id
     # A decoder that expects a note ID after the nonce fails this.
     let
       payload = hexToSeqByte(
