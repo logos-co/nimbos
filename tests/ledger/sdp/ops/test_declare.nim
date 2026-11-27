@@ -30,40 +30,44 @@ suite "ledger/sdp/ops/declare":
       registry = testSdpRegistry()
     check execDeclare(registry, declaration, store, 1).isErr
 
-  test "tryApplySdpDeclare rejects duplicate declaration_id":
-    let utxo = mkUtxo(value = 200, pkSeed = 2)
-    var store = UtxoStore.init()
-    store = store.insert(utxo.id, utxo).store
-    let declaration = DeclarationMessage(
-      serviceType: ServiceType.bn,
-      locators: @[mkLocator(30303)],
-      providerId: mkProvider(1),
-      lockedNoteId: utxo.id,
-      zkId: utxo.note.zkPublicKey,
-    )
-    var registry = testSdpRegistry()
-    discard installTestDeclaration(registry, declaration, 1)
-    check execDeclare(registry, declaration, store, 2).isErr
-
   test "tryApplySdpDeclare rejects missing locked note and insufficient stake":
-    let utxo = mkUtxo(value = 50, pkSeed = 3)
+    let utxo = mkUtxo(value = 99, pkSeed = 3)
     var store = UtxoStore.init()
     store = store.insert(utxo.id, utxo).store
-    let declaration = DeclarationMessage(
-      serviceType: ServiceType.bn,
-      locators: @[mkLocator(30303)],
-      providerId: mkProvider(1),
-      lockedNoteId: utxo.id,
-      zkId: utxo.note.zkPublicKey,
-    )
     let
+      declaration = DeclarationMessage(
+        serviceType: ServiceType.bn,
+        locators: @[mkLocator(30303)],
+        providerId: mkProvider(1),
+        lockedNoteId: utxo.id,
+        zkId: utxo.note.zkPublicKey,
+      )
       registry = testSdpRegistry()
       registryCopy = registry
-    check execDeclare(registryCopy, declaration, store, 1).isErr
+      lowStake = execDeclare(registryCopy, declaration, store, 1)
+    check lowStake.error == InsufficientStake
 
     var missingNote = declaration
     missingNote.lockedNoteId = frFromBytesLE([byte(99)]).get
-    check execDeclare(registry, missingNote, store, 1).isErr
+    let noNote = execDeclare(registry, missingNote, store, 1)
+    check noNote.error == LockedNoteNotFound
+
+  test "validateSdpDeclareState accepts a note exactly at the threshold":
+    # Pins `>=`: a strict comparison against the threshold fails this.
+    let utxo = mkUtxo(value = 100, pkSeed = 3)
+    var store = UtxoStore.init()
+    store = store.insert(utxo.id, utxo).store
+    let
+      declaration = DeclarationMessage(
+        serviceType: ServiceType.bn,
+        locators: @[mkLocator(30303)],
+        providerId: mkProvider(1),
+        lockedNoteId: utxo.id,
+        zkId: mkZkPubKey(9),
+      )
+      notePk = validateSdpDeclareState(
+        declaration, 100, store, ChannelNotes.init(), SdpState.init())
+    check notePk.get == utxo.note.zkPublicKey
 
   test "tryApplySdpDeclare rejects a channel note as collateral":
     let utxo = mkUtxo(value = 200, pkSeed = 7)
@@ -81,22 +85,46 @@ suite "ledger/sdp/ops/declare":
         .registerChannelNote(utxo.id, mkChannelId(1)).expect("fresh note")
       registry = testSdpRegistry()
       declareResult = execDeclare(registry, declaration, store, 1, channelNotes)
-    check:
-      declareResult.isErr
-      declareResult.error == ChannelNoteSpend
+    check declareResult.error == ChannelNoteSpend
 
-  test "tryApplySdpDeclare stores declaration":
+  test "applySdpDeclare stores the created lifecycle nonce":
+    # Fails if declare stores a nonce outside the `created` lifecycle.
     let
-      seeded = seedDeclaration(pkSeed = 4, declareEpoch = 10)
-      info = getDeclaration(seeded.registry.state, seeded.declId).get()
+      utxo = mkUtxo(value = 200, pkSeed = 4)
+      declaration = DeclarationMessage(
+        serviceType: ServiceType.bn,
+        locators: @[mkLocator(30303)],
+        providerId: mkProvider(4),
+        lockedNoteId: utxo.id,
+        zkId: utxo.note.zkPublicKey,
+      )
+      registry = applySdpDeclare(testSdpRegistry(), declaration, 10).expect(
+        "test SDP config has parameters for the service")
+      info = getDeclaration(registry.state, declarationId(declaration)).get()
     check:
-      info.created == 10'u64
+      info.created == 10'u32
       info.active.isNone
       info.withdrawAt.isNone
-      info.nonce == 0'u64
-      getLockedNote(seeded.registry.state, seeded.declaration.lockedNoteId).isSome
+      info.nonce == nonce(10, 0)
+      getLockedNote(registry.state, utxo.id).isSome
 
-  test "tryApplySdpDeclare rejects duplicate providerId or zkId for the same service":
+  test "tryApplySdpDeclare rejects a zk_id already bound in the service":
+    # Fails if the declaration ID holds the provider or the locators.
+    let
+      seeded = seedDeclaration(pkSeed = 4, declareEpoch = 10)
+      utxo = mkUtxo(value = 200, pkSeed = 8)
+      store = seeded.store.insert(utxo.id, utxo).store
+      declaration2 = DeclarationMessage(
+        serviceType: ServiceType.bn,
+        locators: @[mkLocator(30304)],
+        providerId: mkProvider(8),
+        lockedNoteId: utxo.id,
+        zkId: seeded.declaration.zkId,
+      )
+      declareResult = execDeclare(seeded.registry, declaration2, store, 11)
+    check declareResult.error == DuplicateDeclaration
+
+  test "tryApplySdpDeclare rejects a provider_id already bound in the service":
     let
       seeded = seedDeclaration(pkSeed = 4, declareEpoch = 10)
       utxo = mkUtxo(value = 200, pkSeed = 8)
@@ -109,8 +137,6 @@ suite "ledger/sdp/ops/declare":
         zkId: utxo.note.zkPublicKey,
       )
       declareResult = execDeclare(seeded.registry, declaration2, store, 1)
-    check:
-      declareResult.isErr
-      declareResult.error == DuplicateProviderOrZkId
+    check declareResult.error == DuplicateProviderId
 
 {.pop.}

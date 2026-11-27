@@ -9,7 +9,7 @@
 {.used.}
 
 import
-  std/[os, strutils, tables],
+  std/tables,
   results,
   libp2p/crypto/ed25519/ed25519,
   ../../logos_chain/chain/chain,
@@ -20,10 +20,6 @@ import
   ../ledger/[sdp/test_helpers, test_helpers],
   ../zk/zksign_helpers,
   ../testutil
-
-const
-  testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
-  zksignFixtureVk = testsDir / "../fixtures/zksign/verification_key.json"
 
 suite "chain/proposal":
   test "selectTxsForProposal lazily caches byteSize and execGas":

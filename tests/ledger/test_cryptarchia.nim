@@ -9,20 +9,13 @@
 {.used.}
 
 import
-  std/[os, sets, strutils],
+  std/sets,
   unittest2,
   ../../logos_chain/ledger/[balance, cryptarchia_state],
   ../../logos_chain/core/mantle/[operations, proofs, tx_hashing],
   ../../logos_chain/zk/zksign,
   ../zk/zksign_helpers,
   ../core/mantle/test_helpers
-
-const
-  testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
-  zksignFixtureDir = testsDir / "../fixtures/zksign"
-  fixtureVk = zksignFixtureDir / "verification_key.json"
-  fixtureProof = zksignFixtureDir / "proof.json"
-  fixturePublic = zksignFixtureDir / "public.json"
 
 suite "CryptarchiaState init":
   test "empty init has no utxos":
@@ -68,7 +61,7 @@ suite "CryptarchiaState reads":
 
 suite "tryApplyTransfer — error paths":
   setup:
-    check installZksignVk(fixtureVk)
+    check installZksignVk(zksignFixtureVk)
 
   test "missing input → InvalidNote (three shapes)":
     let
@@ -212,10 +205,10 @@ suite "tryApplyTransfer — happy paths (fixture-driven)":
     txHash: ZkHash
 
   setup:
-    check installZksignVk(fixtureVk)
+    check installZksignVk(zksignFixtureVk)
     signerPk = mkRealZkPubKey(1)
-    sig = loadProof(fixtureProof)
-    txHash = loadTxHash(fixturePublic)
+    sig = loadProof(zksignFixtureProof)
+    txHash = loadTxHash(zksignFixturePublic)
 
   test "1-in / 1-out same value":
     let

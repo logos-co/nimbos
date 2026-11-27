@@ -9,20 +9,13 @@
 {.used.}
 
 import
-  std/[os, sequtils, strutils],
+  std/[os, sequtils],
   unittest2,
   stew/io2,
   poseidon2/types,
   ../../logos_chain/core/crypto/types as crypto_types,
   ../../logos_chain/zk/[circuits, zksign],
-  ./[helpers, snarkjs_helpers]
-
-const
-  testsDir = currentSourcePath.rsplit({os.DirSep, os.AltSep}, 1)[0]
-  zksignFixtureDir = testsDir / "../fixtures/zksign"
-  fixtureVk = zksignFixtureDir / "verification_key.json"
-  fixtureProof = zksignFixtureDir / "proof.json"
-  fixturePublic = zksignFixtureDir / "public.json"
+  ./[helpers, snarkjs_helpers, zksign_helpers]
 
 func seedFr(seed: byte): FieldElement =
   var b: array[32, byte]
@@ -62,7 +55,7 @@ suite "zk/zksign — loadVk":
     let
       dir = uniqueTmpDir("good-vk")
       vkPath = verificationKeyPath(dir, Circuit.Signature)
-      vkBytes = readAllChars(fixtureVk).valueOr:
+      vkBytes = readAllChars(zksignFixtureVk).valueOr:
         raiseAssert "zksign fixture VK unreadable"
     check:
       createPath(dir / "signature").isOk
@@ -82,7 +75,7 @@ suite "zk/zksign — singleton lifecycle":
 
   test "double initVk returns VkAlreadyLoaded":
     let
-      vkText = readAllChars(fixtureVk).valueOr:
+      vkText = readAllChars(zksignFixtureVk).valueOr:
         raiseAssert "zksign fixture VK unreadable"
       vk = parseVk(vkText).valueOr:
         raiseAssert "zksign fixture VK unparseable"
@@ -94,7 +87,7 @@ suite "zk/zksign — singleton lifecycle":
     let
       dir = uniqueTmpDir("compose-vk")
       vkPath = verificationKeyPath(dir, Circuit.Signature)
-      vkBytes = readAllChars(fixtureVk).valueOr:
+      vkBytes = readAllChars(zksignFixtureVk).valueOr:
         raiseAssert "zksign fixture VK unreadable"
     check:
       createPath(dir / "signature").isOk
@@ -103,7 +96,7 @@ suite "zk/zksign — singleton lifecycle":
 
   test "resetVkForTesting clears prior install":
     let
-      vkText = readAllChars(fixtureVk).valueOr:
+      vkText = readAllChars(zksignFixtureVk).valueOr:
         raiseAssert "zksign fixture VK unreadable"
       vk = parseVk(vkText).valueOr:
         raiseAssert "zksign fixture VK unparseable"
@@ -151,14 +144,14 @@ suite "zk/zksign — zksignInput shape and padding":
       $r.error == "zksign: too many keys (max 32)"
 
 proc loadFixtureProof(): array[ProofBytesLen, byte] =
-  let proofText = readAllChars(fixtureProof).valueOr:
+  let proofText = readAllChars(zksignFixtureProof).valueOr:
     raiseAssert "zksign fixture proof.json unreadable"
   proofJsonToBytes(proofText).valueOr:
     raiseAssert "zksign fixture proof.json malformed"
 
 proc loadFixturePublic(): ZkSignVerifierInput =
   let
-    publicText = readAllChars(fixturePublic).valueOr:
+    publicText = readAllChars(zksignFixturePublic).valueOr:
       raiseAssert "zksign fixture public.json unreadable"
     inputs = publicJsonToInputs(publicText).valueOr:
       raiseAssert "zksign fixture public.json malformed"
@@ -172,7 +165,7 @@ suite "zk/zksign — verify against committed fixture":
   setup:
     zksign.resetVkForTesting()
     let
-      vkText = readAllChars(fixtureVk).valueOr:
+      vkText = readAllChars(zksignFixtureVk).valueOr:
         raiseAssert "zksign fixture VK unreadable"
       vk = parseVk(vkText).valueOr:
         raiseAssert "zksign fixture VK unparseable"

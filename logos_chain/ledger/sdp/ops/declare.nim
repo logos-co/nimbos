@@ -6,7 +6,7 @@
 # at your option, this file may not be copied, modified, or distributed except according to those terms.
 
 ## SDP Declare validation and application.
-## Spec: [Service Declaration Protocol v1.6.0](https://github.com/logos-co/logos-lips/blob/7c2ec59fadcdc2ba0ae74ff7600a14b55d90efcd/docs/blockchain/raw/bedrock-service-declaration-protocol.md)
+## Spec: [Service Declaration Protocol v1.8.0](https://github.com/logos-co/logos-lips/blob/bd1ca2c881ae94606d4ab23af1255fd922e85dd6/docs/blockchain/raw/bedrock-service-declaration-protocol.md)
 
 {.push raises: [], gcsafe.}
 
@@ -20,7 +20,7 @@ export util, registry, state
 
 func validateSdpDeclareState*(
     declaration: DeclarationMessage,
-    minStake: MinStake,
+    minStake: TokenValue,
     utxos: UtxoStore,
     channelNotes: ChannelNotes,
     state: SdpState,
@@ -40,16 +40,14 @@ func validateSdpDeclareState*(
       return err(LockedNoteNotFound)
     note = utxo.note
 
-  if note.value < minStake.stakeThreshold:
+  if note.value < minStake:
     return err(InsufficientStake)
 
-  let declarationId = declarationId(declaration).valueOr:
-    return err(error.toLedgerError)
-  if declarationId in state.declarations:
+  if declarationId(declaration) in state.declarations:
     return err(DuplicateDeclaration)
 
-  if hasProviderOrZkIdConflict(state, declaration.serviceType, declaration.providerId, declaration.zkId):
-    return err(DuplicateProviderOrZkId)
+  if hasProvider(state, declaration.serviceType, declaration.providerId):
+    return err(DuplicateProviderId)
 
   ok(note.zkPublicKey)
 
@@ -61,8 +59,7 @@ proc applySdpDeclare*(
   ## Mutation only; assumes validation passed.
   if getParametersAt(registry, declaration.serviceType, epoch).isNone:
     return err(MissingServiceParameters)
-  let declarationId = declarationId(declaration).valueOr:
-    return err(error.toLedgerError)
+  let declarationId = declarationId(declaration)
   registry.state = insertDeclaration(
     addDeclarationToLockedNote(
       registry.state,
@@ -79,7 +76,7 @@ proc applySdpDeclare*(
       created: epoch,
       active: Opt.none(EpochNumber),
       withdrawAt: Opt.none(EpochNumber),
-      nonce: 0'u64,
+      nonce: Nonce(lifecycleEpoch: epoch, sequence: 0),
     ),
   )
   ok(registry)
@@ -93,11 +90,8 @@ proc tryApplySdpDeclare*(
     channelNotes: ChannelNotes,
     epoch: EpochNumber,
 ): Result[SdpRegistry, LedgerError] =
-  let
-    minStake = getMinStakeAt(registry, epoch).valueOr:
-      return err(MinStakeNotFound)
-    notePk = ?validateSdpDeclareState(
-      declaration, minStake, utxos, channelNotes, registry.state)
+  let notePk = ?validateSdpDeclareState(
+    declaration, registry.params.minStake, utxos, channelNotes, registry.state)
   ?verifyZkSig(proof.zkSig, txHash, [notePk, declaration.zkId])
   applySdpDeclare(registry, declaration, epoch)
 

@@ -37,16 +37,14 @@ type
       ## node startup — wiring bug, not adversarial input
     # SDP (Service Declaration Protocol)
     DuplicateDeclaration
-    DuplicateProviderOrZkId
+    DuplicateProviderId
     LockedNoteNotFound
     InsufficientStake
     LockedNoteServiceConflict
     MissingServiceParameters
-    MinStakeNotFound
     DeclarationNotFound
     AlreadyWithdrawn
     InvalidNonce
-    LockedNoteIdMismatch
     DeclarationNotInLockedNote
     TargetEpochNotSet ## SDP Active submitted while no target epoch is set
     InvalidEpoch ## op epoch out of range
