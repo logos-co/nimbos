@@ -34,27 +34,23 @@ suite "ledger/sdp/ops/declare":
     let utxo = mkUtxo(value = 99, pkSeed = 3)
     var store = UtxoStore.init()
     store = store.insert(utxo.id, utxo).store
-    let declaration = DeclarationMessage(
-      serviceType: ServiceType.bn,
-      locators: @[mkLocator(30303)],
-      providerId: mkProvider(1),
-      lockedNoteId: utxo.id,
-      zkId: utxo.note.zkPublicKey,
-    )
     let
+      declaration = DeclarationMessage(
+        serviceType: ServiceType.bn,
+        locators: @[mkLocator(30303)],
+        providerId: mkProvider(1),
+        lockedNoteId: utxo.id,
+        zkId: utxo.note.zkPublicKey,
+      )
       registry = testSdpRegistry()
       registryCopy = registry
       lowStake = execDeclare(registryCopy, declaration, store, 1)
-    check:
-      lowStake.isErr
-      lowStake.error == InsufficientStake
+    check lowStake.error == InsufficientStake
 
     var missingNote = declaration
     missingNote.lockedNoteId = frFromBytesLE([byte(99)]).get
     let noNote = execDeclare(registry, missingNote, store, 1)
-    check:
-      noNote.isErr
-      noNote.error == LockedNoteNotFound
+    check noNote.error == LockedNoteNotFound
 
   test "validateSdpDeclareState accepts a note exactly at the threshold":
     # Pins `>=`: a strict comparison against the threshold fails this.
@@ -71,9 +67,7 @@ suite "ledger/sdp/ops/declare":
       )
       notePk = validateSdpDeclareState(
         declaration, 100, store, ChannelNotes.init(), SdpState.init())
-    check:
-      notePk.isOk
-      notePk.get == utxo.note.zkPublicKey
+    check notePk.get == utxo.note.zkPublicKey
 
   test "tryApplySdpDeclare rejects a channel note as collateral":
     let utxo = mkUtxo(value = 200, pkSeed = 7)
@@ -91,9 +85,7 @@ suite "ledger/sdp/ops/declare":
         .registerChannelNote(utxo.id, mkChannelId(1)).expect("fresh note")
       registry = testSdpRegistry()
       declareResult = execDeclare(registry, declaration, store, 1, channelNotes)
-    check:
-      declareResult.isErr
-      declareResult.error == ChannelNoteSpend
+    check declareResult.error == ChannelNoteSpend
 
   test "applySdpDeclare stores the created lifecycle nonce":
     # Fails if declare stores a nonce outside the `created` lifecycle.
@@ -130,9 +122,7 @@ suite "ledger/sdp/ops/declare":
         zkId: seeded.declaration.zkId,
       )
       declareResult = execDeclare(seeded.registry, declaration2, store, 11)
-    check:
-      declareResult.isErr
-      declareResult.error == DuplicateDeclaration
+    check declareResult.error == DuplicateDeclaration
 
   test "tryApplySdpDeclare rejects a provider_id already bound in the service":
     let
@@ -147,8 +137,6 @@ suite "ledger/sdp/ops/declare":
         zkId: utxo.note.zkPublicKey,
       )
       declareResult = execDeclare(seeded.registry, declaration2, store, 1)
-    check:
-      declareResult.isErr
-      declareResult.error == DuplicateProviderId
+    check declareResult.error == DuplicateProviderId
 
 {.pop.}
