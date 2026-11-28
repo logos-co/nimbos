@@ -74,7 +74,7 @@ suite "chain/orphan_pool":
       pool.addOrphan(child2)
       pool.len == 2
 
-    pool.reject(c1Id, remember = true)
+    pool.reject(c1Id)
     check:
       pool.len == 1
       not pool.hasOrphan(c1Id)
@@ -195,7 +195,7 @@ suite "chain/orphan_pool":
       pool.len == 4
 
     # Remove one sibling explicitly
-    pool.reject(b1Id, remember = true)
+    pool.reject(b1Id)
     check:
       pool.len == 3
       not pool.hasOrphan(b1Id)
@@ -272,6 +272,37 @@ suite "chain/orphan_pool":
       pool.hasOrphan(o2Id)
       not pool.isRejected(o2Id)
 
+  test "pruneSubtree purges entire descendant subtree without recording rejected":
+    let
+      pool = OrphanPool()
+      rootId = exampleBlockId(1)
+      c1 = mkAdmittedBlock(2, rootId)
+      c1Id = blockId(c1.header)
+      d1 = mkAdmittedBlock(3, c1Id)
+      d1Id = blockId(d1.header)
+      d2 = mkAdmittedBlock(4, d1Id)
+      d2Id = blockId(d2.header)
+      unrelated = mkAdmittedBlock(2, exampleBlockId(99))
+      unrelatedId = blockId(unrelated.header)
+
+    check:
+      pool.addOrphan(c1)
+      pool.addOrphan(d1)
+      pool.addOrphan(d2)
+      pool.addOrphan(unrelated)
+      pool.len == 4
+
+    # Prune rootId (purges c1 -> d1 -> d2 without recording rejected)
+    pool.pruneSubtree(rootId)
+    check:
+      pool.len == 1
+      not pool.hasOrphan(c1Id)
+      not pool.hasOrphan(d1Id)
+      not pool.hasOrphan(d2Id)
+      not pool.isRejected(rootId)
+      not pool.isRejected(c1Id)
+      pool.hasOrphan(unrelatedId)
+
   test "reject purges entire descendant subtree and records rejected IDs":
     let
       pool = OrphanPool()
@@ -293,7 +324,7 @@ suite "chain/orphan_pool":
       pool.len == 4
 
     # Reject rootId (purges c1 -> d1 -> d2 and remembers them)
-    pool.reject(rootId, remember = true)
+    pool.reject(rootId)
     check:
       pool.len == 1
       not pool.hasOrphan(c1Id)
@@ -321,7 +352,7 @@ suite "chain/orphan_pool":
       pool.len == 2
 
     # Remove b1 directly
-    pool.reject(b1Id, remember = true)
+    pool.reject(b1Id)
     check pool.len == 1
 
     # Compacting queue purges b1 from arrivalOrder

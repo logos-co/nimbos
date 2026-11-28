@@ -573,7 +573,7 @@ suite "chain/block_processor":
         p4 = childProposal(b3.header, id3, SlotNumber(4), [])
         peer = getRandomPeerId()
 
-      bp.orphanPool.reject(id1, remember = true)
+      bp.orphanPool.reject(id1)
       check:
         bp.orphanPool.addOrphan(admitBlock(b3).get())
         bp.orphanPool.len == 1

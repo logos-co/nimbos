@@ -18,6 +18,11 @@ import
 
 const
   MaxOrphans* = 128
+  # 16 * MaxOrphans (~120 KB), enough for normal fork/orphan noise.
+  # checkViability and gossip_processor store entries here before verify_signature.
+  # Signature verification alone wouldn't prevent 0-stake spam anyway: leaderKey
+  # is in the header, while validatePol requires parent state. Evicted entries
+  # can simply be revalidated if they resurface.
   MaxRejected = 2048
 
 type
@@ -44,10 +49,7 @@ func isMissingParent*(pool: OrphanPool, id: BlockId): bool =
 func isRejected*(pool: OrphanPool, id: BlockId): bool =
   pool.rejected.get(id).isSome
 
-proc reject*(pool: OrphanPool, rootId: BlockId, remember: bool) =
-  ## Removes `rootId` (if buffered) and all descendant subtrees waiting on it,
-  ## and records `rootId` and its descendants in `rejected` when `remember` is true.
-  ## Time: O(M), where M is the number of descendant nodes | Space: O(M) for BFS queue
+proc removeSubtree(pool: OrphanPool, rootId: BlockId, remember: bool) =
   pool.byBlockId.withValue(rootId, blk):
     let parentId = blk[].header.parentBlock
     pool.byBlockId.del(rootId)
@@ -75,6 +77,17 @@ proc reject*(pool: OrphanPool, rootId: BlockId, remember: bool) =
         pool.byBlockId.del(cid)
         markAndEnqueue(cid)
       pool.byParentId.del(parent)
+
+proc pruneSubtree*(pool: OrphanPool, rootId: BlockId) =
+  ## Removes `rootId` (if buffered) and all descendant subtrees waiting on it.
+  ## Time: O(M), where M is the number of descendant nodes | Space: O(M) for BFS queue
+  pool.removeSubtree(rootId, remember = false)
+
+proc reject*(pool: OrphanPool, rootId: BlockId) =
+  ## Removes `rootId` (if buffered) and all descendant subtrees waiting on it,
+  ## and records `rootId` and its descendants in `rejected`.
+  ## Time: O(M), where M is the number of descendant nodes | Space: O(M) for BFS queue
+  pool.removeSubtree(rootId, remember = true)
 
 proc takeChildren*(pool: OrphanPool, parentId: BlockId): seq[AdmittedBlock] =
   ## Extracts and removes all direct child blocks waiting on `parentId`.
@@ -111,7 +124,7 @@ proc pruneIncompatibleWithImmutable*(pool: OrphanPool, consensus: ConsensusState
       invalidIds.add(id)
 
   for id in invalidIds:
-    pool.reject(id, remember = true)
+    pool.reject(id)
 
   # reject deletes from byBlockId and byParentId but leaves stale entries in arrivalOrder
   # (to avoid O(N) deque removals). Compact eagerly after bulk LIB pruning to keep arrivalOrder clean.
@@ -134,7 +147,7 @@ proc addOrphan*(
   # Trade-offs:
   # 1. Simplicity & bounded memory vs. optimal chain weight: FIFO avoids expensive priority/weight
   #    scoring on unlinked orphan trees while bounding memory and resisting burst spam.
-  # 2. Cascading purge: Evicting an ancestor block cascades (via reject)
+  # 2. Cascading purge: Evicting an ancestor block cascades (via pruneSubtree)
   #    and drops all descendant subtrees waiting on it, since they can never be promoted without
   #    their ancestor. This prevents dead orphan branches from lingering in the pool.
   # 3. Lazy deque cleanup: Stale/already-resolved IDs are lazily skipped on pop during eviction,
@@ -142,7 +155,7 @@ proc addOrphan*(
   while pool.byBlockId.len >= MaxOrphans and pool.arrivalOrder.len > 0:
     let oldest = pool.arrivalOrder.popFirst()
     if pool.hasOrphan(oldest):
-      pool.reject(oldest, remember = false)
+      pool.pruneSubtree(oldest)
   if pool.arrivalOrder.len > MaxOrphans * 2:
     while pool.arrivalOrder.len > 0 and not pool.byBlockId.hasKey(pool.arrivalOrder.peekFirst()):
       discard pool.arrivalOrder.popFirst()

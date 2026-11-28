@@ -56,7 +56,7 @@ proc processProposal*(
     return ValidationResult.Ignore
 
   if bp.orphanPool.isRejected(proposal.header.parentBlock):
-    bp.orphanPool.reject(id, remember = true)
+    bp.orphanPool.reject(id)
     debug "GossipSub ignored proposal: parent was rejected",
       blockId = idHex, src
     return ValidationResult.Ignore
