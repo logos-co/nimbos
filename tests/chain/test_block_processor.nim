@@ -561,4 +561,28 @@ suite "chain/block_processor":
       p.signature.data[0] = p.signature.data[0] xor 1
       check bp.processProposal(p, getRandomPeerId()) == ValidationResult.Reject
 
+  asyncTest "processProposal ignores rejected proposal or parent and prunes waiting descendants":
+    withProcessor(chain):
+      let
+        b1 = childBlock(genesisBlk.header, gid, SlotNumber(1), [])
+        id1 = blockId(b1.header)
+        p2 = childProposal(b1.header, id1, SlotNumber(2), [])
+        id2 = blockId(p2.header)
+        b3 = childBlock(p2.header, id2, SlotNumber(3), [])
+        id3 = blockId(b3.header)
+        p4 = childProposal(b3.header, id3, SlotNumber(4), [])
+        peer = getRandomPeerId()
+
+      bp.orphanPool.reject(id1)
+      check:
+        bp.orphanPool.addOrphan(admitBlock(b3).get())
+        bp.orphanPool.len == 1
+        bp.processProposal(p2, peer) == ValidationResult.Ignore
+        bp.orphanPool.len == 0
+        bp.orphanPool.isRejected(id2)
+        bp.orphanPool.isRejected(id3)
+        bp.processProposal(p2, peer) == ValidationResult.Ignore
+        bp.processProposal(p4, peer) == ValidationResult.Ignore
+        bp.orphanPool.isRejected(blockId(p4.header))
+
 {.pop.}

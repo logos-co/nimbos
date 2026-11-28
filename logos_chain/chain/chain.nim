@@ -37,10 +37,12 @@ type
 
   BlockApplyErrorKind* {.pure.} = enum
     AlreadyApplied
+    AlreadyRejected
     InFlight
     FutureSlot
     InvalidStructure
     UnviableFork
+    InvalidAncestor
     LedgerRejected
     StatelessTxRejected
     OrphanBuffered
@@ -73,6 +75,7 @@ func isRecoverable*(kind: BlockApplyErrorKind): bool =
       BlockApplyErrorKind.OrphanAlreadyBuffered:
     true
   of BlockApplyErrorKind.InvalidStructure, BlockApplyErrorKind.UnviableFork,
+      BlockApplyErrorKind.AlreadyRejected, BlockApplyErrorKind.InvalidAncestor,
       BlockApplyErrorKind.LedgerRejected, BlockApplyErrorKind.StatelessTxRejected,
       BlockApplyErrorKind.UncleRejected:
     false
@@ -255,22 +258,111 @@ func toBlockApplyError*(err: BlockValidationError): BlockApplyError =
   of BlockValidationErrorKind.StatelessTxRejected:
     BlockApplyError(kind: StatelessTxRejected, statelessError: err.statelessError)
 
-func checkViability(
+proc checkViability(
     chain: Chain, hdr: Header, curSlot: SlotNumber
 ): Result[BlockId, BlockApplyError] =
   let id = blockId(hdr)
   # The tree keeps applied blocks whose states were pruned below the LIB.
   if chain.consensus.hasBlock(id):
     return err(BlockApplyError(kind: AlreadyApplied))
+  if chain.orphanPool.isRejected(id):
+    return err(BlockApplyError(kind: AlreadyRejected))
+  if chain.orphanPool.isRejected(hdr.parentBlock):
+    chain.orphanPool.reject(id)
+    return err(BlockApplyError(kind: InvalidAncestor))
   if chain.orphanPool.hasOrphan(id):
     return err(BlockApplyError(kind: OrphanAlreadyBuffered))
   # Slots increase along a chain, so a block at or before the LIB slot cannot
   # descend from the LIB. Holds without the parent, which pruning may remove.
   if hdr.slot <= chain.consensus.latestImmutable.slot:
+    chain.orphanPool.reject(id)
     return err(BlockApplyError(kind: UnviableFork))
   if hdr.slot > curSlot:
     return err(BlockApplyError(kind: FutureSlot))
   ok(id)
+
+func shouldRemember(err: LedgerError): bool =
+  ## `BlockId` commits to `tx.ops` via `bodyRoot`, not `tx.opProofs`.
+  ## A peer can tamper with `opProofs` on a valid block to trigger proof or
+  ## fee-overflow errors (`mandatory_fees` sizes `opProofs` before `tryApplyTx`
+  ## checks them), and local verifier/config wiring errors say nothing about
+  ## the block itself, so don't blacklist `BlockId` on those. Every other error
+  ## comes from `tx.ops` or parent state, which `BlockId` does commit to.
+  case err
+  of LedgerError.PermanentInvalidTxProof,
+      LedgerError.InvalidTxProof,
+      LedgerError.ThresholdUnmet,
+      LedgerError.GasOverflow,
+      LedgerError.VerifierNotInitialised,
+      LedgerError.UnsupportedLotteryF:
+    false
+  of LedgerError.ParentNotFound,
+      LedgerError.InvalidNote,
+      LedgerError.LockedNote,
+      LedgerError.InvalidProofOfLeadership,
+      LedgerError.BalanceOutOfRange,
+      LedgerError.UnsupportedOp,
+      LedgerError.InsufficientBalance,
+      LedgerError.TooMuchExecutionGas,
+      LedgerError.DuplicateDeclaration,
+      LedgerError.DuplicateProviderOrZkId,
+      LedgerError.LockedNoteNotFound,
+      LedgerError.InsufficientStake,
+      LedgerError.LockedNoteServiceConflict,
+      LedgerError.MissingServiceParameters,
+      LedgerError.MinStakeNotFound,
+      LedgerError.DeclarationNotFound,
+      LedgerError.AlreadyWithdrawn,
+      LedgerError.InvalidNonce,
+      LedgerError.LockedNoteIdMismatch,
+      LedgerError.DeclarationNotInLockedNote,
+      LedgerError.TargetEpochNotSet,
+      LedgerError.InvalidEpoch,
+      LedgerError.UnknownProvider,
+      LedgerError.HammingDistanceTooLarge,
+      LedgerError.DuplicateActiveMessage,
+      LedgerError.ChannelNotFound,
+      LedgerError.InvalidParent,
+      LedgerError.UnauthorizedSigner,
+      LedgerError.ChannelNoteSpend,
+      LedgerError.AlreadyChannelNote,
+      LedgerError.NotAChannelNote,
+      LedgerError.UnbalancedTransfer,
+      LedgerError.DuplicatedVoucherNullifier,
+      LedgerError.RewardsRootMismatch,
+      LedgerError.InvalidSlot,
+      LedgerError.TotalStakeOverflow:
+    true
+
+func shouldRemember(err: StatelessLedgerError): bool =
+  ## Same `BlockId` rule for stateless tx checks: `InvalidProof` touches
+  ## `tx.opProofs` and `VerifierNotInitialised` is local VK state; all other
+  ## variants inspect `tx.ops`, which `BlockId` commits to.
+  case err
+  of StatelessLedgerError.InvalidProof,
+      StatelessLedgerError.VerifierNotInitialised:
+    false
+  of StatelessLedgerError.DoubleSpend,
+      StatelessLedgerError.ZeroValueNote,
+      StatelessLedgerError.UnsupportedOp,
+      StatelessLedgerError.EmptyLocators,
+      StatelessLedgerError.TooManyLocators,
+      StatelessLedgerError.InvalidLocator,
+      StatelessLedgerError.InvalidChannelConfig,
+      StatelessLedgerError.EmptyInputs,
+      StatelessLedgerError.GenesisShape,
+      StatelessLedgerError.GenesisInscription,
+      StatelessLedgerError.GenesisInputs,
+      StatelessLedgerError.TooManyOps,
+      StatelessLedgerError.TooManyOutputs,
+      StatelessLedgerError.OperationDataExceeded:
+    true
+
+proc rejectOrPrune(pool: OrphanPool, id: BlockId, remember: bool) =
+  if remember:
+    pool.reject(id)
+  else:
+    pool.pruneSubtree(id)
 
 proc applyValidBlock(
     chain: var Chain,
@@ -281,12 +373,12 @@ proc applyValidBlock(
 ): Result[void, BlockApplyError] =
   let
     preparedState = prepareBlockUpdate(validBlk, chain.ledger, headerState).valueOr:
-      chain.orphanPool.pruneDescendants(id)
+      chain.orphanPool.rejectOrPrune(id, shouldRemember(error.ledgerError))
       return err(BlockApplyError(kind: LedgerRejected, ledgerError: error.ledgerError))
     oldTip = chain.consensus.canonicalTip.id
 
   if not chain.consensus.addHeaderAndTryUpdateTip(validBlk.header, id):
-    chain.orphanPool.pruneDescendants(id)
+    chain.orphanPool.reject(id)
     return err(BlockApplyError(kind: UnviableFork))
   chain.blockStore.put(id, validBlk)
   chain.ledger.commitUpdate(id, preparedState)
@@ -308,13 +400,13 @@ proc applyAdmittedBlock(
   # signature and proof checks. A bad uncle fails before the transaction
   # checks, whose cost grows with the block.
   let headerState = validatePol(admittedBlk, chain.ledger).valueOr:
-    chain.orphanPool.pruneDescendants(id)
+    chain.orphanPool.rejectOrPrune(id, shouldRemember(error.ledgerError))
     return err(toBlockApplyError(error))
   validateUncles(admittedBlk, chain.consensus, chain.ledger).isOkOr:
-    chain.orphanPool.pruneDescendants(id)
+    chain.orphanPool.reject(id)
     return err(BlockApplyError(kind: UncleRejected, uncleError: error))
   let validBlk = validateStatelessTransactions(admittedBlk, chain.mempool).valueOr:
-    chain.orphanPool.pruneDescendants(id)
+    chain.orphanPool.rejectOrPrune(id, shouldRemember(error.statelessError))
     return err(toBlockApplyError(error))
   chain.applyValidBlock(validBlk, headerState, id, curSlot)
 
@@ -363,15 +455,12 @@ proc tryApplyPromotedOrphan*(
   let
     curSlot = chain.currentWallclockSlot()
     hdr = header(admittedBlk)
-    id = chain.checkViability(hdr, curSlot).valueOr:
-      chain.orphanPool.pruneDescendants(blockId(hdr))
+    id = ?chain.checkViability(hdr, curSlot)
+    status = checkTopology(hdr, chain.consensus, chain.ledger).valueOr:
+      chain.orphanPool.reject(id)
       return err(error)
-
-  let status = checkTopology(hdr, chain.consensus, chain.ledger).valueOr:
-    chain.orphanPool.pruneDescendants(id)
-    return err(error)
   if status == TopologyStatus.Orphan:
-    chain.orphanPool.pruneDescendants(id)
+    chain.orphanPool.reject(id)
     return err(BlockApplyError(kind: UnviableFork))
 
   chain.applyAdmittedBlock(admittedBlk, id, curSlot)
@@ -384,7 +473,9 @@ proc tryApplyBlock*(
   let
     curSlot = chain.currentWallclockSlot()
     id = ?chain.checkViability(blk.header, curSlot)
-    status = ?checkTopology(blk.header, chain.consensus, chain.ledger)
+    status = checkTopology(blk.header, chain.consensus, chain.ledger).valueOr:
+      chain.orphanPool.reject(id)
+      return err(error)
     admittedBlk = admitBlock(blk).valueOr:
       return err(toBlockApplyError(error))
 
@@ -402,7 +493,9 @@ proc tryApplyProposalBlock*(
   let
     curSlot = chain.currentWallclockSlot()
     id = ?chain.checkViability(admittedBlk.header, curSlot)
-    status = ?checkTopology(admittedBlk.header, chain.consensus, chain.ledger)
+    status = checkTopology(admittedBlk.header, chain.consensus, chain.ledger).valueOr:
+      chain.orphanPool.reject(id)
+      return err(error)
 
   chain.admitOrBuffer(status, admittedBlk, id, curSlot)
 

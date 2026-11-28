@@ -60,7 +60,7 @@ suite "chain/orphan_pool":
     # Taking again returns empty sequence
     check pool.takeChildren(parentId).len == 0
 
-  test "removeOrphan removes orphan and cleans up parent mapping":
+  test "reject removes buffered orphan and cleans up parent mapping":
     let
       pool = OrphanPool()
       parentId = exampleBlockId(1)
@@ -74,7 +74,7 @@ suite "chain/orphan_pool":
       pool.addOrphan(child2)
       pool.len == 2
 
-    pool.removeOrphan(c1Id)
+    pool.reject(c1Id)
     check:
       pool.len == 1
       not pool.hasOrphan(c1Id)
@@ -195,7 +195,7 @@ suite "chain/orphan_pool":
       pool.len == 4
 
     # Remove one sibling explicitly
-    pool.removeOrphan(b1Id)
+    pool.reject(b1Id)
     check:
       pool.len == 3
       not pool.hasOrphan(b1Id)
@@ -268,9 +268,11 @@ suite "chain/orphan_pool":
     check:
       pool.len == 1
       not pool.hasOrphan(o1Id)
+      pool.isRejected(o1Id)
       pool.hasOrphan(o2Id)
+      not pool.isRejected(o2Id)
 
-  test "pruneDescendants purges entire descendant subtree":
+  test "pruneSubtree purges entire descendant subtree without recording rejected":
     let
       pool = OrphanPool()
       rootId = exampleBlockId(1)
@@ -290,14 +292,50 @@ suite "chain/orphan_pool":
       pool.addOrphan(unrelated)
       pool.len == 4
 
-    # Prune descendants of rootId (purges c1 -> d1 -> d2)
-    pool.pruneDescendants(rootId)
+    # Prune rootId (purges c1 -> d1 -> d2 without recording rejected)
+    pool.pruneSubtree(rootId)
     check:
       pool.len == 1
       not pool.hasOrphan(c1Id)
       not pool.hasOrphan(d1Id)
       not pool.hasOrphan(d2Id)
+      not pool.isRejected(rootId)
+      not pool.isRejected(c1Id)
       pool.hasOrphan(unrelatedId)
+
+  test "reject purges entire descendant subtree and records rejected IDs":
+    let
+      pool = OrphanPool()
+      rootId = exampleBlockId(1)
+      c1 = mkAdmittedBlock(2, rootId)
+      c1Id = blockId(c1.header)
+      d1 = mkAdmittedBlock(3, c1Id)
+      d1Id = blockId(d1.header)
+      d2 = mkAdmittedBlock(4, d1Id)
+      d2Id = blockId(d2.header)
+      unrelated = mkAdmittedBlock(2, exampleBlockId(99))
+      unrelatedId = blockId(unrelated.header)
+
+    check:
+      pool.addOrphan(c1)
+      pool.addOrphan(d1)
+      pool.addOrphan(d2)
+      pool.addOrphan(unrelated)
+      pool.len == 4
+
+    # Reject rootId (purges c1 -> d1 -> d2 and remembers them)
+    pool.reject(rootId)
+    check:
+      pool.len == 1
+      not pool.hasOrphan(c1Id)
+      not pool.hasOrphan(d1Id)
+      not pool.hasOrphan(d2Id)
+      pool.isRejected(rootId)
+      pool.isRejected(c1Id)
+      pool.isRejected(d1Id)
+      pool.isRejected(d2Id)
+      pool.hasOrphan(unrelatedId)
+      not pool.isRejected(unrelatedId)
 
   test "compactQueue removes stale deque entries":
     let
@@ -314,7 +352,7 @@ suite "chain/orphan_pool":
       pool.len == 2
 
     # Remove b1 directly
-    pool.removeOrphan(b1Id)
+    pool.reject(b1Id)
     check pool.len == 1
 
     # Compacting queue purges b1 from arrivalOrder
